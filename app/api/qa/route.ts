@@ -53,9 +53,22 @@ export async function POST(req: NextRequest) {
     console.log('[QA] Generating response with Azure OpenAI...');
     const generationStart = Date.now();
 
-    const systemPrompt = `You are a benefits AI assistant. Answer the user's question using ONLY the provided context. 
-If the context doesn't contain enough information, say so clearly.
-Always cite your sources using [1], [2], etc. that map to the numbered context.`;
+    const systemPrompt = `You are an expert benefits advisor and healthcare specialist. Provide authoritative, comprehensive answers based on the provided context.
+
+Key guidelines:
+- Answer with confidence and clarity based on the provided information
+- Include specific examples and real-world scenarios when relevant
+- Explain the "why" behind benefit features and policies
+- Provide actionable recommendations based on the context
+- Use plain, conversational language - no asterisks or markdown formatting
+- Do NOT include citations or reference numbers
+- If information is incomplete, acknowledge it and provide what you do know
+
+When answering:
+1. Start with a direct answer to the question
+2. Add relevant details and context
+3. Include 1-2 practical examples if applicable
+4. End with clear takeaways or recommendations`;
 
     const userPrompt = `Context:
 ${contextText}
