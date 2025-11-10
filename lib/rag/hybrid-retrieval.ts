@@ -43,10 +43,10 @@ let searchClient: any | null = null;
 function ensureSearchClient(): any | null {
   if (searchClient) return searchClient;
 
-  const endpoint = process.env.AZURE_SEARCH_ENDPOINT;
-  const apiKey = process.env.AZURE_SEARCH_API_KEY || process.env.AZURE_SEARCH_ADMIN_KEY;
+  const endpoint = process.env.AZURE_SEARCH_ENDPOINT?.trim();
+  const apiKey = (process.env.AZURE_SEARCH_API_KEY || process.env.AZURE_SEARCH_ADMIN_KEY)?.trim();
   // Production index locked to chunks_prod_v1 (499 docs). Do NOT use chunks_prod_v2 (3 test docs).
-  const indexName = process.env.AZURE_SEARCH_INDEX || process.env.AZURE_SEARCH_INDEX_NAME || "chunks_prod_v1";
+  const indexName = (process.env.AZURE_SEARCH_INDEX || process.env.AZURE_SEARCH_INDEX_NAME || "chunks_prod_v1").trim();
 
   // DIAGNOSTIC: Log which index we're actually using
   console.log(`[SEARCH] Initializing client with index: ${indexName} (env: ${process.env.AZURE_SEARCH_INDEX || 'NOT_SET'})`);
