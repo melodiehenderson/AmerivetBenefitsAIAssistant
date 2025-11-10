@@ -12,7 +12,6 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { 
   MessageSquare, 
   BarChart3, 
-  FileText, 
   Calculator, 
   Settings, 
   LogOut,
@@ -92,10 +91,6 @@ export default function SubdomainDashboardPage() {
 
   const navigateToAnalytics = () => {
     router.push('/subdomain/analytics');
-  };
-
-  const navigateToDocuments = () => {
-    router.push('/subdomain/documents');
   };
 
   const navigateToCalculator = () => {
@@ -206,25 +201,6 @@ export default function SubdomainDashboardPage() {
             <CardContent>
               <p className="text-sm text-gray-600">
                 Compare different benefit options and see potential savings.
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card className="hover:shadow-lg transition-shadow cursor-pointer" onClick={navigateToDocuments}>
-            <CardHeader>
-              <div className="flex items-center">
-                <FileText className="w-8 h-8 text-purple-600 mr-3" />
-                <div>
-                  <CardTitle>Document Center</CardTitle>
-                  <CardDescription>
-                    Access benefit documents
-                  </CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-gray-600">
-                View and search through your benefit plan documents.
               </p>
             </CardContent>
           </Card>
