@@ -1,5 +1,17 @@
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
+
+import OpenAI from "openai";
+
+const deploymentName = process.env.AZURE_OPENAI_DEPLOYMENT_NAME!;
+
+const openai = new OpenAI({ 
+  apiKey: process.env.AZURE_OPENAI_API_KEY, 
+  baseURL: `${process.env.AZURE_OPENAI_ENDPOINT?.replace(/\/$/, '')}/openai/deployments/${deploymentName}`,
+  defaultQuery: { 'api-version': process.env.AZURE_OPENAI_API_VERSION },
+  defaultHeaders: { 'api-key': process.env.AZURE_OPENAI_API_KEY }
+});
+
 /**
  * QA API Endpoint - Production RAG Orchestration
  * 
@@ -34,24 +46,41 @@ import {
   getTTLForTier,
   findMostSimilar,
 } from '../../../lib/rag/cache-utils';
+import { rerankChunks, buildContextFromReranked, logRerankingDetails } from '../../../lib/rag/reranker';
 import { QualityTracker } from '../../../lib/analytics/quality-tracker';
 import type { QARequest, QAResponse, Tier, Citation, ConversationQuality, RetrievalResult, Chunk } from '../../../types/rag';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Configuration
 // ─────────────────────────────────────────────────────────────────────────────
-
-const MAX_RETRIES = 2;                    // Max escalation retries
-const CACHE_SIMILARITY_THRESHOLD = 0.92;  // L1 semantic cache threshold
-const ENABLE_SEMANTIC_CACHE = true;
 const ENABLE_EXACT_CACHE = true;
+const ENABLE_SEMANTIC_CACHE = false;
+const MAX_RETRIES = 2; // Force recompile
+
+function pickCitations(chunks: Chunk[], max: number) {
+  if (max <= 0) return [];
+  const selected: Chunk[] = [];
+  const seenDocs = new Set<string>();
+  for (const chunk of chunks) {
+    const docId = chunk.docId ?? 'UNK';
+    if (seenDocs.has(docId)) continue;
+    selected.push(chunk);
+    seenDocs.add(docId);
+    if (selected.length >= max) {
+      return selected;
+    }
+  }
+  for (const chunk of chunks) {
+    if (selected.some((c) => c.id === chunk.id)) continue;
+    selected.push(chunk);
+    if (selected.length >= max) break;
+  }
+  return selected;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Cache Client (Safe Redis with Graceful Degradation)
-// ─────────────────────────────────────────────────────────────────────────────
-
 import { cacheGet, cacheSet, isCacheAvailable } from '@/lib/cache';
-import { log } from '@/lib/logger';
 
 async function getCachedResponse(cacheKey: string): Promise<QAResponse | null> {
   return cacheGet<QAResponse>(cacheKey);
@@ -72,109 +101,49 @@ async function setCachedResponse(
 async function generateResponse(
   query: string,
   context: string,
-  tier: Tier,
-  citations: Citation[]
-): Promise<{ text: string; usage: { promptTokens: number; completionTokens: number } }> {
-  // Use Azure OpenAI with tier-specific models
-  const { azureOpenAIService } = await import('@/lib/azure/openai');
-  
-  const systemPrompt = `You are a friendly benefits advisor colleague with deep knowledge of health insurance, retirement plans, and employee benefits. You're here to help in any circumstance, always approachable and knowledgeable.
-
-Your style combines:
-- Gemini's Friendliness: Warm, conversational, natural language - no corporate jargon
-- ChatGPT's Helpfulness: Proactive, thorough, anticipates follow-up questions
-- Claude's Intelligence: Precise, cites sources, acknowledges when uncertain
-
-Your Knowledge Base:
-${context}
-
-Conversation Guidelines:
-
-1. Write Naturally - Like a Helpful Colleague
-   Talk like you're explaining something over coffee, not reading from a manual.
-   
-   Good: "Great question! Let me break down how dental coverage works. So basically, you've got two types of services..."
-   
-   Bad: "Dental coverage is structured as follows: (a) preventive services (b) basic services..."
-
-2. Be Smart and Helpful
-   - Compare options when relevant: "The HSA plan makes more sense if you're generally healthy because you'll save on premiums"
-   - Point out hidden benefits: "Also, did you know preventive care is 100% covered? That means your annual checkup won't cost you anything"
-   - Warn about gotchas: "Watch out though - FSA funds expire at year-end, unlike HSA which rolls over"
-
-3. Be Proactive
-   - Ask clarifying questions: "Are you looking at this just for yourself, or for your whole family?"
-   - Suggest next steps: "Would you like me to help you compare the actual costs for your situation?"
-   - Offer related info: "Since you're asking about dental, you might also want to know about vision coverage"
-
-4. Stay Accurate
-   - Reference specific documents: "According to your 2026 Benefits Guide, page 12..."
-   - Use exact numbers: "The annual deductible is $1,500" (not "around $1,500")
-   - If unsure, be honest: "I don't see that specific detail in your documents. Let me connect you with HR to get you the exact answer"
-
-5. Format Clearly (but naturally)
-   - Use simple bullet points or numbered lists for multiple items
-   - Break long answers into short paragraphs (2-3 sentences max)
-   - NO asterisks, NO bold formatting, NO markdown symbols
-   - Just write naturally with proper spacing
-
-6. Personalize Your Help
-   - If they mention family size: "For a family of 4, you'd be looking at..."
-   - Consider their health situation: "Since you mentioned you're generally healthy, the high deductible plan could save you money"
-   - Remember context from earlier in the conversation
-
-Example of Your Style:
-
-Bad (robotic): "HSA eligibility requires enrollment in a High Deductible Health Plan (HDHP). Contributions are tax-deductible up to IRS limits."
-
-Good (friendly colleague): "To use an HSA, you'll need to enroll in our High Deductible Health Plan first. Think of it as a package deal. The cool part? Every dollar you put in is tax-free (up to $4,150 for individuals in 2026), and unlike an FSA, the money rolls over year after year. Want me to walk through whether the HDHP makes sense for your situation?"
-
-Remember: You're a helpful colleague, not a robot. Be warm, be smart, be useful. Help them in any circumstance. Never use asterisks or special formatting symbols in your responses.`;
-
-  // Determine deployment based on tier
-  const deployment = tier === 'L1' 
-    ? process.env.AZURE_OPENAI_DEPLOYMENT_L1 || 'gpt-4o-mini'
-    : tier === 'L3'
-    ? process.env.AZURE_OPENAI_DEPLOYMENT_L3 || 'gpt-4'
-    : process.env.AZURE_OPENAI_DEPLOYMENT_L1 || 'gpt-4o-mini';
+  companyId: string
+): Promise<string> {
+  // hard timeout so requests don't pin the event loop
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), 15000); // 15s
 
   try {
-    const response = await azureOpenAIService.generateChatCompletion(
-      [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: query }
-      ],
+    const messages = [
       {
-        temperature: 0.7,
-        maxTokens: 500
+        role: "system" as const,
+        content:
+          "You are a benefits assistant. Use ONLY the provided context to answer. If the context doesn't contain the answer, say so."
+      },
+      {
+        role: "user" as const,
+        content: `Company: ${companyId}\nContext:\n${context}\n\nQuestion: ${query}`
       }
-    );
+    ];
 
-    return {
-      text: response.content,
-      usage: {
-        promptTokens: response.usage?.promptTokens || 0,
-        completionTokens: response.usage?.completionTokens || 0,
-      },
-    };
-  } catch (error) {
-    console.error('[QA] LLM generation failed:', error);
-    // Fallback to simulated response on error
-    const simulatedResponse = `Based on the provided benefits documentation:
+    const resp = await openai.chat.completions
+      .create(
+        {
+          model: deploymentName,
+          messages,
+          temperature: 0.3,
+          max_tokens: 500
+        },
+        { signal: controller.signal }
+      )
+      .catch((err: any) => {
+        // prevent unhandled rejection paths from tearing down Next.js
+        console.error("[generateResponse] Azure SDK error:", err?.response?.data ?? err);
+        throw err;
+      });
 
-${context.substring(0, 200)}...
-
-[Error generating response. Please try again.]
-
-Citation: ${citations[0]?.chunkId || 'chunk-001'}`;
-
-    return {
-      text: simulatedResponse,
-      usage: {
-        promptTokens: 500,
-        completionTokens: 150,
-      },
-    };
+    const text = resp?.choices?.[0]?.message?.content?.trim();
+    return text && text.length > 0 ? text : "Unable to generate response from the provided context.";
+  } catch (err) {
+    // always return a safe string so the route never crashes
+    console.error("[generateResponse] Fatal error:", err);
+    return "I can't find a grounded answer in the current context.";
+  } finally {
+    clearTimeout(t);
   }
 }
 
@@ -192,7 +161,7 @@ export async function POST(req: NextRequest) {
   if (!healthCheckInitialized) {
     healthCheckInitialized = true;
     await ensureIndexHealthy().catch(err => {
-      log.error('[QA] Index health check failed', err as Error);
+      console.error('[QA] Index health check failed', err as Error);
     });
   }
 
@@ -281,22 +250,25 @@ export async function POST(req: NextRequest) {
       filters: {},
     };
     
-    let retrievalResult: RetrievalResult;
+  let retrievalResult: RetrievalResult;
+  let retrievalErrorMessage: string | undefined;
     try {
-      // Use optimized retrieval config for production
+      // Optimized retrieval config to balance relevance and context size
+      // Goal: Get highly relevant chunks while keeping total tokens under 6k
       retrievalResult = await hybridRetrieve(
         normalizedQuery,
         retrievalContext,
         {
-          vectorK: 40,           // More candidates for filtering
-          bm25K: 40,             // More candidates for filtering  
-          finalTopK: 16,         // More chunks after merging
-          rerankedTopK: 12,      // More final chunks for LLM context
-          enableReranking: true, // Enable semantic reranking
+          vectorK: 48,            // Broad but controlled beams
+          bm25K: 48,              // Match BM25 breadth to vector search
+          finalTopK: 20,          // Keep more candidates before reranking
+          rerankedTopK: 12,       // Allow enough chunks for grounding
+          enableReranking: false, // Preserve raw diversity for diagnostics
         }
       );
     } catch (retrievalError) {
-      console.warn('[QA] Retrieval unavailable, using demo fallback:', retrievalError instanceof Error ? retrievalError.message : retrievalError);
+      retrievalErrorMessage = retrievalError instanceof Error ? retrievalError.message : String(retrievalError);
+      console.warn('[QA] Retrieval unavailable, using demo fallback:', retrievalErrorMessage);
       // Demo fallback context when Azure Search is not configured
       const demoText = `This is a demo environment without connected search.
 
@@ -335,7 +307,7 @@ Dental benefits overview:
 
     // Handle zero-results case (index corpus starvation)
     if (retrievalResult.chunks.length === 0) {
-      log.warn('[QA] Zero retrieval results; returning fallback response', { query: normalizedQuery, companyId: request.companyId });
+      console.warn('[QA] Zero retrieval results; returning fallback response', { query: normalizedQuery, companyId: request.companyId });
       
       const fallbackResponse: QAResponse = {
         answer: `I'm having trouble finding specific information about **"${normalizedQuery.substring(0, 100)}"** in our benefits documents right now.
@@ -384,10 +356,10 @@ If you keep seeing this message, it might mean:
         if (isCacheAvailable()) {
           const negKey = buildCacheKey(normalizedQuery, request.companyId);
           await setCachedResponse(negKey, fallbackResponse, 300); // 5 minutes
-          log.info('[QA] Negative-cached zero-result fallback (300s)', { key: negKey });
+          console.info('[QA] Negative-cached zero-result fallback (300s)', { key: negKey });
         }
       } catch (err) {
-        log.warn('[QA] Negative-cache write failed (non-blocking)', { err: String(err) });
+        console.warn('[QA] Negative-cache write failed (non-blocking)', { err: String(err) });
       }
 
       return NextResponse.json(fallbackResponse);
@@ -401,21 +373,93 @@ If you keep seeing this message, it might mean:
 
     console.log(`[QA] Dedup: raw=${retrievalResult.chunks.length} unique=${deduped.length}`);
 
-    // Show more, keep all for validation
-    const SHOWN_CITATIONS = 12;
-    const citationsToShow = deduped.slice(0, SHOWN_CITATIONS);
+    const ids = deduped.map(c => c.docId);
+    const distinct = new Set(ids);
+    console.warn("[RETRIEVAL_DOC_IDS]", distinct.size);
+    console.warn("[RETRIEVAL_SAMPLE]", Array.from(distinct).slice(0, 20));
 
-    // Build context string and citations from chunks
-    const context = citationsToShow
-      .map((chunk, idx) => `[${idx + 1}] ${chunk.title}\n${chunk.content}`)
-      .join('\n\n');
+    // Remove early return now that diversity targets are met; proceed with normal pipeline
+
+    // ═══════════════════════════════════════════════════════════════════════════
+  // RERANKING: Select top chunks with distinct doc IDs
+    // This is the critical fix for low grounding scores (20-35% → target >50%)
+    // ═══════════════════════════════════════════════════════════════════════════
     
-    const citations: Citation[] = citationsToShow.map((chunk) => ({
+    // Log scores before reranking to see what we're working with
+    console.log('[QA][RERANK] Pre-rerank chunk scores:');
+    deduped.slice(0, 8).forEach((chunk, idx) => {
+      const score = (chunk.metadata.rrfScore ?? 0) + (chunk.metadata.relevanceScore ?? 0) + (chunk.metadata.vectorScore ?? 0);
+      console.log(`[QA][RERANK]   [${idx + 1}] score=${score.toFixed(4)} docId=${chunk.docId.substring(0, 40)}...`);
+    });
+    
+    const rerankResult = rerankChunks(deduped, {
+      topK: 8,
+      maxTokens: 3000,
+      maxPerDocPhase1: 1,
+      minDistinctDocs: 6,
+      enforceDistinctFirst: true,
+      mmrLambda: 0.7,
+      query: normalizedQuery,
+    });
+
+    // Adaptive reranker: if diversity low (<4 distinct docs) and we have enough candidates, retry enforcing distinct docs
+    let adaptiveApplied = false;
+    let adaptiveResult = rerankResult;
+    if (rerankResult.distinctDocIds < 4 && deduped.length >= 8) {
+      console.log('[QA][RERANK][ADAPT] Low diversity detected (distinct docs < 4). Retrying with enforceDistinctDocs=true…');
+      adaptiveResult = rerankChunks(deduped, {
+        topK: Math.min(6, deduped.length), // Allow one more chunk to improve coverage
+        maxTokens: 3000,
+        enforceDistinctDocs: true,
+        minRelevanceScore: undefined,
+      });
+      adaptiveApplied = true;
+      console.log(`[QA][RERANK][ADAPT] Applied adaptive rerank: distinct docs ${adaptiveResult.distinctDocIds}`);
+    }
+
+    // Debug logging for diagnostics
+    logRerankingDetails(deduped, rerankResult);
+
+  const chunksForContext = adaptiveResult.chunks;
+    
+    // Build context with reranked chunks (enforces token budget internally)
+    const context = buildContextFromReranked(chunksForContext, 3000);
+    
+    console.log(`[QA] Context built: ${chunksForContext.length} chunks, ~${rerankResult.totalTokens} tokens (distinct docs: ${rerankResult.distinctDocIds})`);
+    
+    // Enforce breadth: prefer one citation per distinct doc before reuse
+    function pickCitations(chunks: Chunk[], max: number): Chunk[] {
+      const out: Chunk[] = [];
+      const seenDocs = new Set<string>();
+      // Phase 1: one per distinct doc
+      for (const c of chunks) {
+        const d = c.docId ?? 'UNK';
+        if (seenDocs.has(d)) continue;
+        out.push(c);
+        seenDocs.add(d);
+        if (out.length >= max) break;
+      }
+      // Phase 2: backfill if room
+      if (out.length < max) {
+        for (const c of chunks) {
+          if (out.find(x => x.id === c.id)) continue;
+          out.push(c);
+          if (out.length >= max) break;
+        }
+      }
+      return out;
+    }
+    
+    const citationLimit = Math.min(8, chunksForContext.length);
+    const selectedCitations = pickCitations(chunksForContext, citationLimit);
+    
+    // Use reranked chunks for citations
+    const citations: Citation[] = selectedCitations.map((chunk: Chunk) => ({
       chunkId: chunk.id,
       docId: chunk.docId,
       title: chunk.title,
       section: chunk.sectionPath,
-      relevanceScore: chunk.metadata.relevanceScore || 0,
+      relevanceScore: chunk.metadata.rrfScore || chunk.metadata.relevanceScore || chunk.metadata.vectorScore || 0,
       excerpt: chunk.content.substring(0, 150),
       text: chunk.content.substring(0, 100), // For validation
     }));
@@ -449,25 +493,24 @@ If you keep seeing this message, it might mean:
     console.log('[QA] Tier selected:', currentTier);
 
     // Step 6: Generate response with retries for escalation
-    let response: { text: string; usage: { promptTokens: number; completionTokens: number } };
+    let responseText: string;
     let validationResult;
     let retryCount = 0;
 
     while (retryCount <= MAX_RETRIES) {
       // Generate response
       const generationStart = Date.now();
-      response = await generateResponse(
+      responseText = await generateResponse(
         normalizedQuery,
         context,
-        currentTier,
-        citations
+        request.companyId
       );
       generationTime = Date.now() - generationStart;
 
-      // Step 7: Validate response
+      // Step 7: Validate response (NOW ASYNC WITH SEMANTIC MATCHING)
       const validationStart = Date.now();
-      validationResult = validateResponse(
-        response.text,
+      validationResult = await validateResponse(
+        responseText,
         citations,
         retrievalResult.chunks,
         currentTier
@@ -499,19 +542,19 @@ If you keep seeing this message, it might mean:
     const qaResponse: QAResponse = {
       answer: validationResult!.piiDetected 
         ? validationResult!.redactedResponse! 
-        : response!.text,
+        : responseText!,
       citations,
       tier: currentTier,
       fromCache: false,
       usage: {
-        promptTokens: response!.usage.promptTokens,
-        completionTokens: response!.usage.completionTokens,
+        promptTokens: 100, // Stub values since we're not tracking tokens in simplified generateResponse
+        completionTokens: 50,
         latencyMs: Date.now() - startTime,
       },
       metadata: {
         retrievalCount: retrievalResult.chunks.length,
         usedCount: deduped.length,
-        shownCount: citationsToShow.length,
+        shownCount: citations.length,
         groundingScore: validationResult!.grounding.score,
         escalated: retryCount > 0,
         cacheKey: buildCacheKey(normalizedQuery, request.companyId),
@@ -519,7 +562,20 @@ If you keep seeing this message, it might mean:
         // NEW: Expose granular counts for diagnostics
         rawRetrievalCount: retrievalResult.chunks.length,
         dedupeCount: deduped.length,
-        citationCount: citationsToShow.length,
+        citationCount: citations.length,
+        // Reranker stats
+  rerankedCount: adaptiveResult.finalCount,
+  distinctDocIds: adaptiveResult.distinctDocIds,
+  rerankTokens: adaptiveResult.totalTokens,
+  rerankerAdaptiveApplied: adaptiveApplied,
+  rerankerDistinctDocsAfterAdaptive: adaptiveResult.distinctDocIds,
+        // Retrieval expansion diagnostics
+        distinctDocCountInitial: retrievalResult.distinctDocCountInitial,
+        distinctDocCountFinal: retrievalResult.distinctDocCountFinal,
+        expansionUsed: retrievalResult.expansionUsed,
+        droppedPlanYearFilter: retrievalResult.droppedPlanYearFilter,
+        bm25WideSweep: retrievalResult.bm25WideSweep,
+        expansionPhases: retrievalResult.expansionPhases,
       },
     };
 
@@ -532,14 +588,14 @@ If you keep seeing this message, it might mean:
 
     if (cacheTTL > 0 && isCacheAvailable() && canCache) {
       setCachedResponse(cacheKey, qaResponse, cacheTTL).then(() => {
-        log.info('[QA] Cache write completed', { tier: currentTier, ttl: `${cacheTTL}s` });
+        console.info('[QA] Cache write completed', { tier: currentTier, ttl: `${cacheTTL}s` });
       }).catch(err => {
-        log.warn('[QA] Cache write failed (non-blocking)', { err: String(err) });
+        console.warn('[QA] Cache write failed (non-blocking)', { err: String(err) });
       });
     } else if (!isCacheAvailable()) {
-      log.debug('[QA] Cache unavailable; skipping write');
+      console.debug('[QA] Cache unavailable; skipping write');
     } else if (!canCache) {
-      log.debug('[QA] Skipping cache write (insufficient grounding or low retrieval)');
+      console.debug('[QA] Skipping cache write (insufficient grounding or low retrieval)');
     }
 
     // Step 11: Record conversation quality metrics
