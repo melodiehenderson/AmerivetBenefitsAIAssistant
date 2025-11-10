@@ -76,7 +76,7 @@ function PureMultimodalInput({
   const resetHeight = () => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = '120px';
+      textareaRef.current.style.height = '200px';
     }
   };
 
