@@ -7,6 +7,7 @@ Uses BlobServiceClient to handle spaces in blob names and avoids 409 errors.
 import os
 import json
 import sys
+import io
 from pathlib import Path
 from azure.storage.blob import BlobServiceClient
 from azure.core.credentials import AzureKeyCredential
@@ -25,19 +26,19 @@ for line in env_file.read_text(encoding="utf-8").splitlines():
         k, v = line.split("=", 1)
         env[k.strip()] = v.strip()
 
-STORAGE_CS = env.get("AZURE_STORAGE_CONNECTION_STRING", "")
+STORAGE_CS = env.get("AZURE_STORAGE_CONNECTION_STRING", "") or os.environ.get("AZURE_STORAGE_CONNECTION_STRING", "")
 CONTAINER_NAME = "documents"
 COMPANY_ID = "amerivet"
 
 # Azure OpenAI for embeddings
-AOAI_ENDPOINT = env.get("AZURE_OPENAI_ENDPOINT", "").rstrip("/")
-AOAI_API_KEY = env.get("AZURE_OPENAI_API_KEY", "")
-EMB_DEPLOY = env.get("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "text-embedding-3-large")
+AOAI_ENDPOINT = (env.get("AZURE_OPENAI_ENDPOINT", "") or os.environ.get("AZURE_OPENAI_ENDPOINT", "")).rstrip("/")
+AOAI_API_KEY = env.get("AZURE_OPENAI_API_KEY", "") or os.environ.get("AZURE_OPENAI_API_KEY", "")
+EMB_DEPLOY = env.get("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "") or os.environ.get("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "text-embedding-3-large")
 
 # Azure Search
-SEARCH_ENDPOINT = env.get("AZURE_SEARCH_ENDPOINT", "").rstrip("/")
-SEARCH_KEY = env.get("AZURE_SEARCH_API_KEY", "")
-INDEX_NAME = env.get("AZURE_SEARCH_INDEX_NAME", "chunks_prod_v1")
+SEARCH_ENDPOINT = (env.get("AZURE_SEARCH_ENDPOINT", "") or os.environ.get("AZURE_SEARCH_ENDPOINT", "")).rstrip("/")
+SEARCH_KEY = env.get("AZURE_SEARCH_API_KEY", "") or os.environ.get("AZURE_SEARCH_API_KEY", "")
+INDEX_NAME = env.get("AZURE_SEARCH_INDEX_NAME", "") or os.environ.get("AZURE_SEARCH_INDEX_NAME", "chunks_prod_v1")
 
 print(f"📋 Configuration:")
 print(f"  - Storage: {STORAGE_CS[:50]}...")
@@ -89,21 +90,41 @@ def extract_docx_text(data: bytes) -> str:
 # Embedding Generation
 # ============================================================================
 
+from openai import AzureOpenAI
+
+# Initialize Azure OpenAI client once (reuse across all calls)
+aoai_client = AzureOpenAI(
+    api_key=AOAI_API_KEY,
+    api_version="2024-02-15-preview",
+    azure_endpoint=AOAI_ENDPOINT
+)
+
 def generate_embedding(text: str) -> list:
     """Generate 3072-dimensional embedding using Azure OpenAI"""
-    from openai import AzureOpenAI
-    
-    client = AzureOpenAI(
-        api_key=AOAI_API_KEY,
-        api_version="2024-02-15-preview",
-        azure_endpoint=AOAI_ENDPOINT
-    )
-    
-    response = client.embeddings.create(
+    response = aoai_client.embeddings.create(
         input=text,
         model=EMB_DEPLOY
     )
     return response.data[0].embedding
+
+def generate_embeddings_batch(texts: list) -> list:
+    """Generate embeddings for multiple texts in one API call"""
+    if not texts:
+        return []
+    
+    # Azure OpenAI can handle batches up to 16 texts
+    batch_size = 16
+    all_embeddings = []
+    
+    for i in range(0, len(texts), batch_size):
+        batch = texts[i:i+batch_size]
+        response = aoai_client.embeddings.create(
+            input=batch,
+            model=EMB_DEPLOY
+        )
+        all_embeddings.extend([item.embedding for item in response.data])
+    
+    return all_embeddings
 
 # ============================================================================
 # Chunking
@@ -147,35 +168,42 @@ def process_blob(blob_name: str, data: bytes) -> list:
     chunks = chunk_text(text)
     print(f"  ✓ Created {len(chunks)} chunks")
     
-    # Generate embeddings and build search documents
-    docs = []
-    for i, chunk in enumerate(chunks):
-        try:
-            embedding = generate_embedding(chunk)
-            doc_id = f"{blob_name.replace('/', '-').replace(' ', '_')}_{i}"
-            
-            docs.append({
-                "id": doc_id,
-                "document_id": blob_name,
-                "company_id": COMPANY_ID,
-                "chunk_index": i,
-                "content": chunk,
-                "content_vector": embedding,
-                "metadata": json.dumps({
-                    "fileName": blob_name,
-                    "chunkIndex": i,
-                    "totalChunks": len(chunks),
-                    "tokenCount": len(chunk) // 4,
-                })
-            })
-            
-            if (i + 1) % 5 == 0:
-                print(f"    - Processed {i+1}/{len(chunks)} chunks")
-        except Exception as e:
-            print(f"    ⚠️  Chunk {i} failed: {e}")
-            continue
+    # Generate stable doc_id for this source file (one per document)
+    import hashlib
+    stable_doc_id = f"doc-{hashlib.md5(blob_name.encode()).hexdigest()[:12]}"
+    print(f"  ✓ Assigned doc_id: {stable_doc_id}")
     
-    print(f"  ✓ Generated {len(docs)} searchable documents")
+    # Generate embeddings in batch for all chunks at once
+    print(f"  ⏳ Generating embeddings for {len(chunks)} chunks...")
+    try:
+        embeddings = generate_embeddings_batch(chunks)
+        print(f"  ✓ Generated {len(embeddings)} embeddings")
+    except Exception as e:
+        print(f"  ❌ Batch embedding failed: {e}")
+        return []
+    
+    # Build search documents
+    docs = []
+    for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
+        chunk_id = f"{stable_doc_id}-chunk-{i}"
+        
+        docs.append({
+            "chunk_id": chunk_id,
+            "doc_id": stable_doc_id,  # Shared across all chunks from this file
+            "document_id": blob_name,
+            "company_id": COMPANY_ID,
+            "chunk_index": i,
+            "content": chunk,
+            "content_vector": embedding,
+            "metadata": json.dumps({
+                "fileName": blob_name,
+                "chunkIndex": i,
+                "totalChunks": len(chunks),
+                "tokenCount": len(chunk) // 4,
+            })
+        })
+    
+    print(f"  ✓ Built {len(docs)} search documents")
     return docs
 
 # ============================================================================
@@ -193,21 +221,17 @@ def upload_docs(docs: list) -> int:
         uploaded = 0
         for i in range(0, len(docs), batch_size):
             batch = docs[i:i+batch_size]
-            actions = [
-                {
-                    "@search.action": "upload",
-                    **doc
-                }
-                for doc in batch
-            ]
             
-            result = search_client.index_documents(batch=actions)
-            uploaded += len([r for r in result if r.succeeded])
-            print(f"    - Batch {i//batch_size + 1}: {uploaded} docs uploaded")
+            result = search_client.upload_documents(documents=batch)
+            succeeded = sum(1 for r in result if r.succeeded)
+            uploaded += succeeded
+            print(f"    - Batch {i//batch_size + 1}: {succeeded}/{len(batch)} docs uploaded (total: {uploaded})")
         
         return uploaded
     except Exception as e:
         print(f"  ❌ Upload failed: {e}")
+        import traceback
+        traceback.print_exc()
         return 0
 
 # ============================================================================
@@ -215,7 +239,6 @@ def upload_docs(docs: list) -> int:
 # ============================================================================
 
 if __name__ == "__main__":
-    import io
     
     print("\n" + "="*70)
     print("Azure Blob → Search Ingestion (SDK-based)")

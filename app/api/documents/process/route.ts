@@ -3,6 +3,9 @@ export const dynamic = 'force-dynamic';
 /**
  * Document Processing API
  * Handles document upload and processing
+ * Supports two auth modes:
+ * 1. System API Key (for scripts): x-system-api-key header
+ * 2. User Auth (for UI): requireCompanyAdmin middleware
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -21,7 +24,8 @@ const processRequestSchema = z.object({
   tags: z.array(z.string()).optional().default([])
 });
 
-export const POST = requireCompanyAdmin(async (request: NextRequest) => {
+// Main handler logic
+const handler = async (request: NextRequest) => {
   const startTime = Date.now();
   
   try {
@@ -31,8 +35,19 @@ export const POST = requireCompanyAdmin(async (request: NextRequest) => {
       return rateLimitResponse;
     }
 
-    const userId = request.headers.get('x-user-id')!;
-    const companyId = request.headers.get('x-company-id')!;
+    // === AUTH: Check for System API Key OR user auth headers ===
+    const systemKey = request.headers.get('x-system-api-key');
+    let userId: string;
+    let companyId: string;
+
+    if (systemKey === process.env.SYSTEM_API_KEY) {
+      logger.info('Document processing - System API Key authenticated');
+      userId = 'system';
+      companyId = 'system';
+    } else {
+      userId = request.headers.get('x-user-id')!;
+      companyId = request.headers.get('x-company-id')!;
+    }
 
     // Parse request body
     const body = await request.json();
@@ -127,5 +142,16 @@ export const POST = requireCompanyAdmin(async (request: NextRequest) => {
       { status: 500 }
     );
   }
-});
+};
+
+// Export: Support both System API Key and User Auth
+export const POST = async (request: NextRequest) => {
+  const systemKey = request.headers.get('x-system-api-key');
+  if (systemKey === process.env.SYSTEM_API_KEY) {
+    return handler(request);
+  }
+  // Fall back to user auth middleware
+  const userAuthHandler = requireCompanyAdmin(handler);
+  return userAuthHandler(request);
+};
 

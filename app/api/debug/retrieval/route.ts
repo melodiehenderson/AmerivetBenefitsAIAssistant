@@ -23,7 +23,7 @@ export const GET = withBuildBypass(async () => {
       ok: true,
       env: {
         AZURE_SEARCH_ENDPOINT: !!process.env.AZURE_SEARCH_ENDPOINT,
-        AZURE_SEARCH_API_KEY: !!process.env.AZURE_SEARCH_API_KEY,
+        AZURE_SEARCH_API_KEY: !!(process.env.AZURE_SEARCH_API_KEY || process.env.AZURE_SEARCH_ADMIN_KEY),
         AZURE_SEARCH_INDEX: process.env.AZURE_SEARCH_INDEX || process.env.AZURE_SEARCH_INDEX_NAME || 'NOT_SET',
       },
       bm25Count: Array.isArray(bm25) ? bm25.length : -1,

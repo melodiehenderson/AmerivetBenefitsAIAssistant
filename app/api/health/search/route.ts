@@ -19,8 +19,8 @@ export async function GET(req: NextRequest) {
   try {
     // Get configuration
     const endpoint = process.env.AZURE_SEARCH_ENDPOINT;
-    const apiKey = process.env.AZURE_SEARCH_API_KEY;
-    const indexName = process.env.AZURE_SEARCH_INDEX || 'chunks_prod_v1';
+    const apiKey = process.env.AZURE_SEARCH_API_KEY || process.env.AZURE_SEARCH_ADMIN_KEY;
+    const indexName = process.env.AZURE_SEARCH_INDEX || process.env.AZURE_SEARCH_INDEX_NAME || 'chunks_prod_v1';
 
     diagnostics.config = {
       endpoint: endpoint ? endpoint.substring(0, 40) + '...' : 'MISSING',

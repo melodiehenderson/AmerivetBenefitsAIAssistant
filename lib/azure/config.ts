@@ -292,7 +292,7 @@ const parseAzureConfig = (): z.infer<typeof azureConfigSchema> => {
 
     // Azure Search (REQUIRED for RAG)
     searchEndpoint: (process.env.AZURE_SEARCH_ENDPOINT || '').trim(),
-    searchApiKey: (process.env.AZURE_SEARCH_API_KEY || '').trim(),
+    searchApiKey: (process.env.AZURE_SEARCH_API_KEY || process.env.AZURE_SEARCH_ADMIN_KEY || '').trim(),
     searchIndexName: (process.env.AZURE_SEARCH_INDEX || process.env.AZURE_SEARCH_INDEX_NAME || 'chunks_prod_v1').trim(),
 
     // Azure Functions (optional)

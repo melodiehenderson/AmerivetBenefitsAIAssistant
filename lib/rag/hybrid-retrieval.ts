@@ -44,9 +44,9 @@ function ensureSearchClient(): any | null {
   if (searchClient) return searchClient;
 
   const endpoint = process.env.AZURE_SEARCH_ENDPOINT;
-  const apiKey = process.env.AZURE_SEARCH_API_KEY;
+  const apiKey = process.env.AZURE_SEARCH_API_KEY || process.env.AZURE_SEARCH_ADMIN_KEY;
   // Production index locked to chunks_prod_v1 (499 docs). Do NOT use chunks_prod_v2 (3 test docs).
-  const indexName = process.env.AZURE_SEARCH_INDEX || "chunks_prod_v1";
+  const indexName = process.env.AZURE_SEARCH_INDEX || process.env.AZURE_SEARCH_INDEX_NAME || "chunks_prod_v1";
 
   // DIAGNOSTIC: Log which index we're actually using
   console.log(`[SEARCH] Initializing client with index: ${indexName} (env: ${process.env.AZURE_SEARCH_INDEX || 'NOT_SET'})`);
@@ -142,7 +142,6 @@ export async function retrieveVectorTopK(
     
     console.log(`[SEARCH][VECTOR] Query: "${query.substring(0, 50)}...", Filter: "${filterString}", K: ${k}`);
 
-    // Execute vector search with semantic ranking
     const results = await client.search(query, {
       vectorSearchOptions: {
         queries: [{
@@ -155,29 +154,25 @@ export async function retrieveVectorTopK(
       filter: filterString,
       top: k,
       select: [
-        "id",
+        "chunk_id",
+        "doc_id",
         "document_id",
         "company_id",
         "chunk_index",
         "content",
         "metadata",
       ],
-      semanticSearchOptions: {
-        configurationName: "default",
-        queryCaption: "extractive",
-        captions: "extractive|highlight=true"
-      },
-      queryType: "semantic",
-      semanticConfiguration: "default",
+      queryType: "simple",
     });
 
     // Convert results to Chunk objects
     const chunks: Chunk[] = [];
     for await (const result of results.results) {
       const metadata = result.document.metadata ? JSON.parse(result.document.metadata) : {};
+      const chunkId = result.document.chunk_id ?? result.document.id;
       chunks.push({
-        id: result.document.id,
-        docId: result.document.document_id,
+        id: chunkId,
+        docId: result.document.doc_id || result.document.document_id,
         companyId: result.document.company_id,
         sectionPath: metadata.fileName || "",
         content: result.document.content,
@@ -264,15 +259,15 @@ export async function retrieveBM25TopK(
     }
     const filterString = filters.join(" and ");
 
-    // Execute BM25 search with semantic ranking capability
+    // Execute BM25 full-text search (no semantic config present)
+    // Temporarily remove filter to debug BM25 - we'll filter in memory
     const results = await client.search(query, {
-      searchMode: "all",
-      queryType: "full",
-      searchFields: ["content"],
-      filter: filterString,
+      searchMode: "any",
+      queryType: "simple",
       top: k,
       select: [
-        "id",
+        "chunk_id",
+        "doc_id",
         "document_id",
         "company_id",
         "chunk_index",
@@ -285,8 +280,9 @@ export async function retrieveBM25TopK(
     const chunks: Chunk[] = [];
     for await (const result of results.results) {
       const metadata = result.document.metadata ? JSON.parse(result.document.metadata) : {};
+      const chunkId = result.document.chunk_id ?? result.document.id;
       chunks.push({
-        id: result.document.id,
+        id: chunkId,
         docId: result.document.document_id,
         companyId: result.document.company_id,
         sectionPath: metadata.fileName || "",
@@ -304,14 +300,29 @@ export async function retrieveBM25TopK(
       });
     }
 
+    // Filter results in memory by company_id and planYear
+    let filtered = chunks.filter(c => c.companyId === context.companyId);
+    if (context.planYear) {
+      // Try to filter by benefit_year if available in metadata
+      const yearStr = String(context.planYear);
+      filtered = filtered.filter(c => {
+        const metadata = c.metadata as any;
+        return !metadata.benefit_year || String(metadata.benefit_year) === yearStr;
+      });
+    }
+    // Limit to top k after filtering
+    filtered = filtered.slice(0, k);
+
     const latencyMs = Date.now() - startTime;
-    console.log(`[SEARCH][BM25] ✅ ${chunks.length} results in ${latencyMs}ms`);
+    console.log(`[SEARCH][BM25] ✅ ${filtered.length} results (${chunks.length} total before filter) in ${latencyMs}ms`);
     
-    if (chunks.length === 0) {
+    if (filtered.length === 0 && chunks.length > 0) {
+      console.warn(`[SEARCH][BM25] ⚠️ Filter removed all ${chunks.length} results! Filter: "${filterString}", companyId: "${context.companyId}"`);
+    } else if (filtered.length === 0) {
       console.warn(`[SEARCH][BM25] ⚠️ Zero results! Filter: "${filterString}", Query: "${query.substring(0, 80)}"`);
     }
 
-    return chunks;
+    return filtered;
   } catch (error) {
     console.error("[SEARCH][BM25] ❌ Search failed:", error);
     throw new Error(`BM25 retrieval error: ${error}`);
@@ -391,14 +402,37 @@ export async function rerankChunks(
   chunks: Chunk[],
   topN: number = 8
 ): Promise<Chunk[]> {
-  // Stub implementation - in production, use:
-  // 1. Azure AI Search semantic ranking (easier)
-  // 2. Separate cross-encoder model (more control)
-  
-  console.warn("Using stub re-ranking - integrate cross-encoder in production");
-  
-  // For now, just return top N by existing score
-  return chunks.slice(0, topN);
+  // Improved stub: sort by relevance/rrf score before slicing so LLM sees highest-ranked chunks.
+  console.warn("Using simple reranking - integrate cross-encoder or semantic ranker in production");
+  const score = (c: Chunk) =>
+    (c.metadata.rrfScore ?? 0) +
+    (c.metadata.relevanceScore ?? 0) +
+    (c.metadata.vectorScore ?? 0) +
+    (c.metadata.bm25Score ?? 0);
+
+  const sorted = [...chunks].sort((a, b) => score(b) - score(a));
+
+  // Enforce distinct-doc preference: pick at most one per doc until we reach topN or run out
+  const seenDocs = new Set<string>();
+  const primary: Chunk[] = [];
+  const leftovers: Chunk[] = [];
+
+  for (const c of sorted) {
+    if (!seenDocs.has(c.docId)) {
+      primary.push(c);
+      seenDocs.add(c.docId);
+      if (primary.length === topN) break;
+    } else {
+      leftovers.push(c);
+    }
+  }
+
+  // If we still don't have enough, fill from leftovers (allows duplicates only as needed)
+  const filled = primary.length >= topN
+    ? primary.slice(0, topN)
+    : primary.concat(leftovers.slice(0, Math.max(0, topN - primary.length)));
+
+  return filled;
 }
 
 // ============================================================================
@@ -416,10 +450,10 @@ export async function hybridRetrieve(
 ): Promise<RetrievalResult> {
   const startTime = Date.now();
 
-  // Default configuration - OPTIMIZED for production
+  // Default configuration - HYBRID SEARCH with both Vector + BM25
   const cfg: HybridSearchConfig = {
-    vectorK: config?.vectorK ?? 40,          // Increased from 24 to 40 for better filtering
-    bm25K: config?.bm25K ?? 40,              // Increased from 24 to 40 for better filtering
+    vectorK: config?.vectorK ?? 96,          // Dense vector search (semantic understanding)
+    bm25K: config?.bm25K ?? 24,              // ENABLED: Keyword search (exact matching) - 24 is standard
     rrfK: config?.rrfK ?? 60,
     finalTopK: config?.finalTopK ?? 16,      // Increased from 12 to 16 for more context
     rerankedTopK: config?.rerankedTopK ?? 12, // Increased from 8 to 12 for more grounding
@@ -427,31 +461,24 @@ export async function hybridRetrieve(
   };
 
   try {
-    // Execute vector and BM25 searches in parallel with fallback
-    const [vectorResultsOrError, bm25ResultsOrError] = await Promise.allSettled([
-      retrieveVectorTopK(query, context, cfg.vectorK),
-      retrieveBM25TopK(query, context, cfg.bm25K),
-    ]);
+    // Execute hybrid search (vector + BM25)
+    const vectorResultsOrError = await Promise.resolve(
+      retrieveVectorTopK(query, context, cfg.vectorK)
+    );
 
-    const vectorResults = vectorResultsOrError.status === 'fulfilled' ? vectorResultsOrError.value : [];
-    const bm25Results = bm25ResultsOrError.status === 'fulfilled' ? bm25ResultsOrError.value : [];
+    const vectorResults = await vectorResultsOrError;
+    
+    // Execute BM25 search if enabled
+    const bm25Results = cfg.bm25K > 0
+      ? await retrieveBM25TopK(query, context, cfg.bm25K)
+      : [];
 
-    if (vectorResultsOrError.status === 'rejected') {
-      console.warn(`[RAG] Vector search failed (graceful degradation): ${vectorResultsOrError.reason}`);
-    }
-    if (bm25ResultsOrError.status === 'rejected') {
-      console.error(`[RAG] BM25 search failed (CRITICAL):`, bm25ResultsOrError.reason);
-      // If both fail, throw error
-      if (vectorResultsOrError.status === 'rejected') {
-        throw new Error('Both vector and BM25 search failed');
-      }
-    }
+    console.log(`[RAG] v=${vectorResults.length} b=${bm25Results.length} (hybrid: vector + BM25)`);
+    console.log(`[RAG][DEBUG] vectorResults IDs: ${vectorResults.map(chunk => chunk.id).join(', ')}`);
 
-    console.log(`[RAG] v=${vectorResults.length} b=${bm25Results.length} (requested k=${cfg.vectorK})`);
-
-    // Merge using RRF
+    // Merge using RRF (both vector and BM25 results)
     const merged = rrfMerge(
-      [vectorResults, bm25Results],
+      [vectorResults, bm25Results].filter(r => r.length > 0),
       cfg.rrfK,
       cfg.finalTopK
     );
@@ -465,52 +492,61 @@ export async function hybridRetrieve(
 
     console.log(`[RAG] final=${final.length} (reranking=${cfg.enableReranking})`);
 
-    // Defensive guardrails: never return < 8 unless corpus starvation
-    let guardedFinal = final;
-    if (guardedFinal.length < 8) {
-      console.warn(`[RAG][GUARD] Low-results detected (final=${guardedFinal.length}). Expanding search…`);
+    const countDistinctDocs = (chunks: Chunk[]) => new Set(chunks.map((chunk) => chunk.docId)).size;
+    const needsMoreCoverage = (chunks: Chunk[]) => {
+      if (chunks.length < 8) return true;
+      return countDistinctDocs(chunks) < 8;
+    };
 
-      // 1) Expand K aggressively and retry with same filters
+    const logCoverage = (label: string, chunks: Chunk[]) => {
+      console.log(`[RAG][GUARD] ${label}: chunks=${chunks.length} docs=${countDistinctDocs(chunks)}`);
+    };
+
+  let guardedFinal = final;
+  const distinctInitial = new Set(final.map(c => c.docId)).size;
+  const expansionPhases: Array<{ phase: 'expand' | 'noYear' | 'bm25Wide'; chunks: number; distinctDocs: number }> = [];
+  let expansionUsed = false;
+  let droppedPlanYearFilter = false;
+  let bm25WideSweep = false;
+    if (needsMoreCoverage(guardedFinal)) {
+      console.warn('[RAG][GUARD] Low coverage detected, expanding search…');
+      logCoverage('initial coverage', guardedFinal);
+
       const expandK = Math.max(cfg.vectorK, 80);
-      const [v2OrError, b2OrError] = await Promise.allSettled([
-        retrieveVectorTopK(query, context, expandK),
-        retrieveBM25TopK(query, context, expandK),
-      ]);
-      const v2 = v2OrError.status === 'fulfilled' ? v2OrError.value : [];
-      const b2 = b2OrError.status === 'fulfilled' ? b2OrError.value : [];
-      const merged2 = rrfMerge([v2, b2], cfg.rrfK, Math.max(cfg.finalTopK, 24));
-      guardedFinal = cfg.enableReranking
-        ? await rerankChunks(query, merged2, Math.max(cfg.rerankedTopK, 12))
-        : merged2.slice(0, Math.max(cfg.rerankedTopK, 12));
-      console.log(`[RAG][GUARD] Expanded search results → final=${guardedFinal.length}`);
+      const expandResults = async (ctx: RetrievalContext, k: number) => {
+        const vOrError = await Promise.resolve(retrieveVectorTopK(query, ctx, k));
+        const v = await vOrError;
+        const merged = rrfMerge([v], cfg.rrfK, Math.max(cfg.finalTopK, 24));
+        return cfg.enableReranking
+          ? await rerankChunks(query, merged, Math.max(cfg.rerankedTopK, 12))
+          : merged.slice(0, Math.max(cfg.rerankedTopK, 12));
+      };
 
-      // 2) If still low and a planYear filter exists, drop planYear (keep company) and retry
-      if (guardedFinal.length < 8 && typeof context.planYear !== 'undefined') {
-        console.warn(`[RAG][GUARD] Still low after expansion; retrying without planYear filter`);
+  guardedFinal = await expandResults(context, expandK);
+  expansionUsed = true;
+  expansionPhases.push({ phase: 'expand', chunks: guardedFinal.length, distinctDocs: new Set(guardedFinal.map(c => c.docId)).size });
+      logCoverage('expanded coverage', guardedFinal);
+
+      if (needsMoreCoverage(guardedFinal) && typeof context.planYear !== 'undefined') {
+        console.warn('[RAG][GUARD] Still low; retrying without planYear filter');
         const contextNoYear: RetrievalContext = { ...context };
         delete (contextNoYear as any).planYear;
-        const [v3OrError, b3OrError] = await Promise.allSettled([
-          retrieveVectorTopK(query, contextNoYear, expandK),
-          retrieveBM25TopK(query, contextNoYear, expandK),
-        ]);
-        const v3 = v3OrError.status === 'fulfilled' ? v3OrError.value : [];
-        const b3 = b3OrError.status === 'fulfilled' ? b3OrError.value : [];
-        const merged3 = rrfMerge([v3, b3], cfg.rrfK, Math.max(cfg.finalTopK, 24));
-        guardedFinal = cfg.enableReranking
-          ? await rerankChunks(query, merged3, Math.max(cfg.rerankedTopK, 12))
-          : merged3.slice(0, Math.max(cfg.rerankedTopK, 12));
-        console.log(`[RAG][GUARD] No-year retry → final=${guardedFinal.length}`);
+        guardedFinal = await expandResults(contextNoYear, expandK);
+        droppedPlanYearFilter = true;
+        expansionPhases.push({ phase: 'noYear', chunks: guardedFinal.length, distinctDocs: new Set(guardedFinal.map(c => c.docId)).size });
+        logCoverage('no-year coverage', guardedFinal);
       }
 
-      // 3) Last-resort: BM25-only wide sweep (company filter only)
-      if (guardedFinal.length < 8) {
-        console.warn(`[RAG][GUARD] Final fallback: BM25-only wide sweep`);
+      if (needsMoreCoverage(guardedFinal)) {
+        console.warn('[RAG][GUARD] Final fallback: Vector-only wide sweep');
         const contextNoYear: RetrievalContext = { ...context };
         delete (contextNoYear as any).planYear;
-        const bWide = await retrieveBM25TopK(query, contextNoYear, 100);
-        const mergedWide = rrfMerge([bWide], cfg.rrfK, 32);
+        const vWide = await retrieveVectorTopK(query, contextNoYear, 150);
+        const mergedWide = rrfMerge([vWide], cfg.rrfK, 32);
         guardedFinal = mergedWide.slice(0, Math.max(8, cfg.rerankedTopK));
-        console.log(`[RAG][GUARD] BM25-wide → final=${guardedFinal.length}`);
+        bm25WideSweep = true;
+        expansionPhases.push({ phase: 'bm25Wide', chunks: guardedFinal.length, distinctDocs: new Set(guardedFinal.map(c => c.docId)).size });
+        logCoverage('vector-wide coverage', guardedFinal);
       }
     }
 
@@ -526,6 +562,12 @@ export async function hybridRetrieve(
         bm25: bm25Results.map((c) => c.metadata.bm25Score ?? 0),
         rrf: (guardedFinal.length ? guardedFinal : final).map((c) => c.metadata.rrfScore ?? 0),
       },
+      distinctDocCountInitial: distinctInitial,
+      distinctDocCountFinal: new Set(guardedFinal.map(c => c.docId)).size,
+      expansionUsed,
+      droppedPlanYearFilter,
+      bm25WideSweep,
+      expansionPhases,
     };
   } catch (error) {
     console.error("Hybrid retrieval failed:", error);

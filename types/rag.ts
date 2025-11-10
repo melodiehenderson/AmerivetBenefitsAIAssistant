@@ -60,6 +60,19 @@ export interface ResponseMetadata {
   citationCount?: number;        // Citations shown to user
   shownCount?: number;           // Alternative name for citationCount
   usedCount?: number;            // Alternative name for dedupeCount
+  rerankedCount?: number;        // Chunks after reranking
+  distinctDocIds?: number;       // Number of distinct documents in reranked chunks
+  rerankTokens?: number;         // Total tokens in reranked context
+  // Retrieval expansion diagnostics
+  distinctDocCountInitial?: number;
+  distinctDocCountFinal?: number;
+  expansionUsed?: boolean;
+  droppedPlanYearFilter?: boolean;
+  bm25WideSweep?: boolean;
+  expansionPhases?: Array<{ phase: 'expand' | 'noYear' | 'bm25Wide'; chunks: number; distinctDocs: number }>;
+  // Adaptive reranker diagnostics
+  rerankerAdaptiveApplied?: boolean;
+  rerankerDistinctDocsAfterAdaptive?: number;
 }
 
 // ============================================================================
@@ -213,6 +226,17 @@ export interface RetrievalResult {
     bm25?: number[];
     rrf?: number[];
   };
+  // Diagnostics & coverage expansion metadata
+  distinctDocCountInitial?: number;          // Distinct docIds before expansion/guard logic
+  distinctDocCountFinal?: number;            // Distinct docIds after any expansion phases
+  expansionUsed?: boolean;                   // True if an additional breadth expansion phase ran
+  droppedPlanYearFilter?: boolean;           // True if planYear filter was removed to increase coverage
+  bm25WideSweep?: boolean;                   // True if final BM25-only wide sweep fallback was used
+  expansionPhases?: Array<{
+    phase: 'expand' | 'noYear' | 'bm25Wide';
+    chunks: number;
+    distinctDocs: number;
+  }>;                                        // Ordered list of expansion phases with resulting counts
 }
 
 export interface HybridSearchConfig {

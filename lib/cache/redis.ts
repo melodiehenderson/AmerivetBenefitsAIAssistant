@@ -41,7 +41,7 @@ export function getRedis(): Redis | null {
       client = new Redis(url, {
         lazyConnect: true,
         maxRetriesPerRequest: 1,
-        enableOfflineQueue: false,
+        enableOfflineQueue: true, // fixes "Stream isn't writeable..." warning
         // Fail fast on Vercel cold starts (1.5s socket timeout)
         connectTimeout: 1500,
         commandTimeout: 2000,

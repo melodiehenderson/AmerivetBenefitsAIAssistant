@@ -15,7 +15,7 @@ async function ensureInitialized() {
   if (!isNodeRuntime && !isVitest) throw new Error('Server-only module');
 
   const endpoint = process.env.AZURE_SEARCH_ENDPOINT;
-  const apiKey = process.env.AZURE_SEARCH_API_KEY;
+  const apiKey = process.env.AZURE_SEARCH_API_KEY || process.env.AZURE_SEARCH_ADMIN_KEY;
   const indexName = process.env.AZURE_SEARCH_INDEX_NAME || 'document-chunks';
 
   if (!endpoint || !apiKey) {

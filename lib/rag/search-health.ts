@@ -23,8 +23,8 @@ export async function ensureIndexHealthy(): Promise<void> {
   healthCheckAttempted = true;
 
   const endpoint = process.env.AZURE_SEARCH_ENDPOINT;
-  const apiKey = process.env.AZURE_SEARCH_API_KEY;
-  const indexName = process.env.AZURE_SEARCH_INDEX || FALLBACK_INDEX;
+  const apiKey = process.env.AZURE_SEARCH_API_KEY || process.env.AZURE_SEARCH_ADMIN_KEY;
+  const indexName = process.env.AZURE_SEARCH_INDEX || process.env.AZURE_SEARCH_INDEX_NAME || FALLBACK_INDEX;
 
   if (!endpoint || !apiKey) {
     log.warn("[Search] Missing credentials; skipping health check");

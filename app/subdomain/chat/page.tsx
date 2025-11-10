@@ -239,7 +239,7 @@ export default function SubdomainChatPage() {
         credentials: 'include',
         body: JSON.stringify({
           query: userMessage.content,
-          conversationId: 'subdomain-chat',
+          sessionId: 'subdomain-chat-' + Date.now(), // FIX: Must use sessionId (not conversationId)
           companyId: 'amerivet', // FIX: Explicitly set company ID to match indexed documents
           userId: 'user-' + Date.now(), // Track user for personalization
         }),
