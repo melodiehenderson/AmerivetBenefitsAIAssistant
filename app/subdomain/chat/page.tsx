@@ -189,7 +189,8 @@ export default function SubdomainChatPage() {
       });
 
       if (!response.ok) {
-        throw new Error('Upload failed');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Upload failed with status ${response.status}`);
       }
 
       const result = await response.json();
@@ -207,7 +208,8 @@ export default function SubdomainChatPage() {
       setSelectedFile(null);
       
     } catch (err) {
-      setError('Failed to upload document. Please try again.');
+      const errorMsg = err instanceof Error ? err.message : 'Failed to upload document. Please try again.';
+      setError(errorMsg);
       console.error('Upload error:', err);
     } finally {
       setIsUploading(false);

@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { type NextRequest, NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 import { getRepositories } from '@/lib/azure/cosmos';
 import { storageServices } from '@/lib/storageServices';
 import { documentProcessingService } from '@/lib/services/document-processing.service';
@@ -14,19 +15,26 @@ import { DEFAULT_COMPANY_ID, DOCUMENT_CATEGORIES } from '@/lib/config';
  */
 export async function POST(request: NextRequest) {
   try {
-    // Check subdomain session
-    const sessionResponse = await fetch(new URL('/api/subdomain/auth/session', request.url), {
-      headers: request.headers,
-    });
-
-    if (!sessionResponse.ok) {
+    // Check subdomain session from cookie
+    const cookieStore = await cookies();
+    const sessionCookie = cookieStore.get('amerivet_session');
+    const sessionValue = sessionCookie?.value;
+    
+    if (!sessionValue) {
       return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
     }
-
-    const sessionData = await sessionResponse.json();
-    if (!sessionData.ok) {
+    
+    const role = sessionValue === 'admin' ? 'admin' : sessionValue === 'employee' ? 'employee' : null;
+    if (!role) {
       return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
     }
+    
+    const sessionData = { 
+      ok: true, 
+      role, 
+      userId: `${role}-user-${Date.now()}`,
+      permissions: role === 'admin' ? ['*'] : ['VIEW_BENEFITS', 'USE_CHAT', 'COMPARE_PLANS', 'VIEW_DOCUMENTS']
+    };
 
     const formData = await request.formData();
     const file = formData.get('file') as File;
