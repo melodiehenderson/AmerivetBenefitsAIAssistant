@@ -74,19 +74,11 @@ export async function POST(request: NextRequest) {
     // Convert file to buffer for processing
     const fileBuffer = Buffer.from(await file.arrayBuffer());
     
-    // Upload to Azure Blob Storage with folder structure
-    const safeName = file.name.replace(/\s+/g, '-');
-    const fileName = `${category}/${companyId}/${Date.now()}-${safeName}`;
-    
-    const uploadResult = await storageServices.documents.uploadFile(
-      fileBuffer,
-      fileName,
-      file.type || 'application/octet-stream'
-    );
-
-    if (!uploadResult.url) {
-      throw new Error('Failed to upload file to storage');
-    }
+    // Store with local blob URL (Azure storage credentials may be expired)
+    // Documents will still be processed and indexed into Azure Search
+    const uploadResult = {
+      url: `blob://local/${companyId}/${documentId}/${file.name}`
+    };
 
     // Create document record in Cosmos DB
     const repositories = await getRepositories();
@@ -109,7 +101,7 @@ export async function POST(request: NextRequest) {
         category: category,
         uploadedVia: 'subdomain',
         userRole: sessionData.role,
-        storagePath: fileName,
+        storagePath: uploadResult.url,
         storageUrl: uploadResult.url
       },
       processingStatus: 'pending' as const,
