@@ -208,7 +208,7 @@ export default function SubdomainChatPage() {
       setSelectedFile(null);
       
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Failed to upload document. Please try again.';
+      const errorMsg = err instanceof Error ? err.message : 'Upload failed. Please try again.';
       setError(errorMsg);
       console.error('Upload error:', err);
     } finally {
@@ -566,7 +566,7 @@ export default function SubdomainChatPage() {
               {!error && (
                 <Alert>
                   <AlertDescription>
-                    Your document will be analyzed using Azure AI to extract key benefits information, coverage details, and cost estimates.
+                    Upload your benefits document to add it to your knowledge base. You can then ask questions about it.
                   </AlertDescription>
                 </Alert>
               )}
