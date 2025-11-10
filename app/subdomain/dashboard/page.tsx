@@ -53,14 +53,16 @@ export default function SubdomainDashboardPage() {
       const data = await response.json();
       if (data.ok && data.role) {
         // Convert session response to user format
-        setUser({
+        const userData = {
           id: 'subdomain-user',
           email: 'user@amerivet.com',
           name: data.role === 'admin' ? 'Admin User' : 'Employee User',
           companyId: 'amerivet',
           roles: [data.role],
           permissions: data.permissions,
-        });
+        };
+        console.log('🔐 User authenticated:', userData);
+        setUser(userData);
       } else {
         throw new Error('No user data');
       }
@@ -139,6 +141,10 @@ export default function SubdomainDashboardPage() {
                 <div className="flex items-center gap-2 text-xs">
                   <Building className="w-3 h-3" />
                   {user?.companyId}
+                </div>
+                <div className="flex items-center gap-2 text-xs text-blue-600 font-semibold">
+                  <Shield className="w-3 h-3" />
+                  Role: {user?.roles?.[0] || 'unknown'}
                 </div>
               </div>
               <Button variant="outline" size="sm" onClick={handleLogout}>
