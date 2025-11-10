@@ -89,10 +89,6 @@ export default function SubdomainDashboardPage() {
     router.push('/subdomain/chat');
   };
 
-  const navigateToAnalytics = () => {
-    router.push('/subdomain/analytics');
-  };
-
   const navigateToCalculator = () => {
     router.push('/subdomain/calculator');
   };
@@ -205,25 +201,6 @@ export default function SubdomainDashboardPage() {
             </CardContent>
           </Card>
 
-          <Card className="hover:shadow-lg transition-shadow cursor-pointer" onClick={navigateToAnalytics}>
-            <CardHeader>
-              <div className="flex items-center">
-                <BarChart3 className="w-8 h-8 text-orange-600 mr-3" />
-                <div>
-                  <CardTitle>Analytics Dashboard</CardTitle>
-                  <CardDescription>
-                    View usage statistics
-                  </CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-gray-600">
-                Track your benefit usage and get insights.
-              </p>
-            </CardContent>
-          </Card>
-
           <Card className="hover:shadow-lg transition-shadow cursor-pointer" onClick={navigateToSettings}>
             <CardHeader>
               <div className="flex items-center">
@@ -244,30 +221,32 @@ export default function SubdomainDashboardPage() {
           </Card>
         </div>
 
-        {/* Quick Stats */}
-        <div className="mt-8">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Quick Stats</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Card>
-              <CardContent className="p-4">
-                <div className="text-2xl font-bold text-blue-600">0</div>
-                <div className="text-sm text-gray-600">Questions Asked</div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-4">
-                <div className="text-2xl font-bold text-green-600">0</div>
-                <div className="text-sm text-gray-600">Documents Viewed</div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-4">
-                <div className="text-2xl font-bold text-purple-600">0</div>
-                <div className="text-sm text-gray-600">Calculations Made</div>
-              </CardContent>
-            </Card>
+        {/* Quick Stats - Admin only */}
+        {user?.roles?.includes('admin') && (
+          <div className="mt-8">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Quick Stats</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Card>
+                <CardContent className="p-4">
+                  <div className="text-2xl font-bold text-blue-600">0</div>
+                  <div className="text-sm text-gray-600">Questions Asked</div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-4">
+                  <div className="text-2xl font-bold text-green-600">0</div>
+                  <div className="text-sm text-gray-600">Documents Viewed</div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-4">
+                  <div className="text-2xl font-bold text-purple-600">0</div>
+                  <div className="text-sm text-gray-600">Calculations Made</div>
+                </CardContent>
+              </Card>
+            </div>
           </div>
-        </div>
+        )}
       </main>
     </div>
   );
