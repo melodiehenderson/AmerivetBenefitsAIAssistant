@@ -516,86 +516,17 @@ export default function SubdomainChatPage() {
           <Card className="w-full max-w-md">
             <CardHeader>
               <CardTitle>Upload Benefits Document</CardTitle>
-              <CardDescription>Upload your benefits summary for AI-powered analysis</CardDescription>
+              <CardDescription>Coming Soon</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
-                <FileText className="h-12 w-12 mx-auto mb-4 text-gray-400" />
-                {selectedFile ? (
-                  <div className="space-y-2">
-                    <p className="text-sm font-medium text-gray-900">{selectedFile.name}</p>
-                    <p className="text-xs text-gray-500">{(selectedFile.size / 1024 / 1024).toFixed(2)} MB</p>
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      onClick={() => {
-                        setSelectedFile(null);
-                        if (fileInputRef.current) fileInputRef.current.value = '';
-                      }}
-                    >
-                      Change File
-                    </Button>
-                  </div>
-                ) : (
-                  <>
-                    <p className="text-sm text-gray-600 mb-2">Drag and drop your document here</p>
-                    <p className="text-xs text-gray-500 mb-4">or</p>
-                    <Button 
-                      variant="outline" 
-                      size="sm"
-                      onClick={() => fileInputRef.current?.click()}
-                    >
-                      Browse Files
-                    </Button>
-                    <p className="text-xs text-gray-500 mt-4">Supported: PDF, DOCX, TXT (Max 10MB)</p>
-                  </>
-                )}
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".pdf,.docx,.txt"
-                  onChange={handleFileSelect}
-                  className="hidden"
-                />
-              </div>
-              {error && (
-                <Alert variant="destructive">
-                  <AlertDescription>{error}</AlertDescription>
-                </Alert>
-              )}
-              {!error && (
-                <Alert>
-                  <AlertDescription>
-                    Upload your benefits document to add it to your knowledge base. You can then ask questions about it.
-                  </AlertDescription>
-                </Alert>
-              )}
+              <Alert>
+                <AlertDescription>
+                  Document upload feature is coming soon. For now, you can ask questions about your benefits and we'll provide answers based on available information.
+                </AlertDescription>
+              </Alert>
               <div className="flex gap-2">
-                <Button 
-                  variant="outline" 
-                  className="flex-1" 
-                  onClick={() => {
-                    setShowUploadModal(false);
-                    setSelectedFile(null);
-                    setError('');
-                  }}
-                  disabled={isUploading}
-                >
-                  Cancel
-                </Button>
-                <Button 
-                  className="flex-1" 
-                  onClick={handleFileUpload}
-                  disabled={!selectedFile || isUploading}
-                >
-                  {isUploading ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Uploading...
-                    </>
-                  ) : (
-                    'Upload & Analyze'
-                  )}
+                <Button className="flex-1" onClick={() => setShowUploadModal(false)}>
+                  Close
                 </Button>
               </div>
             </CardContent>
