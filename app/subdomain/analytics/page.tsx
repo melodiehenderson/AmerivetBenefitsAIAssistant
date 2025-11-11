@@ -10,10 +10,19 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ArrowLeft, BarChart3, TrendingUp, MessageSquare, FileText, Calculator as CalcIcon, X } from 'lucide-react';
 
+interface ActivityLog {
+  action: string;
+  description: string;
+  timeAgo: string;
+}
+
 export default function AnalyticsPage() {
   const router = useRouter();
   const [userRole, setUserRole] = useState<string>('');
+  const [userId, setUserId] = useState<string>('');
   const [faqFilter, setFaqFilter] = useState<string>('all');
+  const [activities, setActivities] = useState<ActivityLog[]>([]);
+  const [loadingActivities, setLoadingActivities] = useState(true);
 
   useEffect(() => {
     // Check auth and get role
@@ -25,8 +34,30 @@ export default function AnalyticsPage() {
         }
         const data = await res.json();
         setUserRole(data.role || 'employee');
+        setUserId(data.userId || '');
+        
+        // Fetch real activity logs from database
+        const query = new URLSearchParams({
+          role: data.role || 'employee',
+          limit: '10',
+          ...(data.userId && { userId: data.userId }),
+        });
+        
+        fetch(`/api/analytics/activity-log?${query}`, { credentials: 'include' })
+          .then(res => res.json())
+          .then(data => {
+            setActivities(data.activities || []);
+          })
+          .catch(err => {
+            console.error('Failed to fetch activity logs:', err);
+            setActivities([]);
+          })
+          .finally(() => setLoadingActivities(false));
       })
-      .catch(() => router.push('/subdomain/login'));
+      .catch(() => {
+        router.push('/subdomain/login');
+        setLoadingActivities(false);
+      });
   }, [router]);
 
   const employeeStats = [
@@ -44,6 +75,8 @@ export default function AnalyticsPage() {
   ];
 
   // FAQ data with categories
+  // NOTE: These are mock/sample numbers for demonstration purposes
+  // In production, these would be connected to real analytics data from Cosmos DB
   const faqData = [
     { id: 1, question: 'What are my plan options?', category: 'all', count: 156, desc: 'Health insurance, retirement plans' },
     { id: 2, question: 'What are the HSA plan details?', category: 'hsa', count: 89, desc: 'Health Savings Account specifics' },
@@ -102,9 +135,6 @@ export default function AnalyticsPage() {
             </div>
             {userRole === 'admin' && (
               <div className="flex items-center space-x-3">
-                <Button variant="outline" size="sm" onClick={() => router.push('/subdomain/documents-admin')}>
-                  Manage Documents
-                </Button>
                 <div className="bg-green-100 px-3 py-1 rounded-full">
                   <span className="text-sm font-medium text-green-800">Admin View</span>
                 </div>
@@ -195,9 +225,12 @@ export default function AnalyticsPage() {
             <Card className="mb-6">
               <CardHeader>
                 <CardTitle>FAQ - Frequently Asked Questions</CardTitle>
-                <CardDescription>Most common questions from users - filter by topic</CardDescription>
+                <CardDescription>Most common questions from users - filter by topic (Demo data for MVP)</CardDescription>
               </CardHeader>
               <CardContent>
+                <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800 mb-4">
+                  Note: Question counts are sample data for demonstration. In production, these will show real usage statistics from your user interactions.
+                </div>
                 <div className="mb-4">
                   <div className="flex flex-wrap gap-2">
                     {filterOptions.map((option) => (
@@ -246,27 +279,29 @@ export default function AnalyticsPage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between py-2 border-b">
-                    <div>
-                      <p className="font-medium text-gray-900">User logged in</p>
-                      <p className="text-sm text-gray-500">employee@amerivet.com</p>
+                  {loadingActivities ? (
+                    <div className="text-center py-6 text-gray-500">
+                      <p>Loading activity data...</p>
                     </div>
-                    <span className="text-sm text-gray-500">2 min ago</span>
-                  </div>
-                  <div className="flex items-center justify-between py-2 border-b">
-                    <div>
-                      <p className="font-medium text-gray-900">Document accessed</p>
-                      <p className="text-sm text-gray-500">Medical Plan Summary 2025</p>
+                  ) : activities.length > 0 ? (
+                    activities.map((activity, idx) => (
+                      <div
+                        key={idx}
+                        className={`flex items-center justify-between py-2 ${idx < activities.length - 1 ? 'border-b' : ''}`}
+                      >
+                        <div>
+                          <p className="font-medium text-gray-900">{activity.action}</p>
+                          <p className="text-sm text-gray-500">{activity.description}</p>
+                        </div>
+                        <span className="text-sm text-gray-500">{activity.timeAgo}</span>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-center py-6 text-gray-500">
+                      <p>No activity recorded yet</p>
+                      <p className="text-sm mt-1">Activities will appear here as users interact with the system</p>
                     </div>
-                    <span className="text-sm text-gray-500">15 min ago</span>
-                  </div>
-                  <div className="flex items-center justify-between py-2">
-                    <div>
-                      <p className="font-medium text-gray-900">Chat session completed</p>
-                      <p className="text-sm text-gray-500">5 messages exchanged</p>
-                    </div>
-                    <span className="text-sm text-gray-500">1 hour ago</span>
-                  </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
