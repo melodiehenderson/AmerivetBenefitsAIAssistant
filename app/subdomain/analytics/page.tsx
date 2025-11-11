@@ -252,16 +252,10 @@ export default function AnalyticsPage() {
                     filteredFAQ.map((faq) => (
                       <div
                         key={faq.id}
-                        className="flex items-center justify-between py-3 border-b hover:bg-gray-50 px-2 rounded cursor-pointer transition"
+                        className="py-3 border-b hover:bg-gray-50 px-2 rounded cursor-pointer transition"
                       >
-                        <div className="flex-1">
-                          <p className="font-medium text-gray-900">{faq.question}</p>
-                          <p className="text-sm text-gray-500">{faq.desc}</p>
-                        </div>
-                        <div className="text-right">
-                          <p className="font-semibold text-blue-600">{faq.count}</p>
-                          <p className="text-xs text-gray-500">asked</p>
-                        </div>
+                        <p className="font-medium text-gray-900">{faq.question}</p>
+                        <p className="text-sm text-gray-500 mt-1">{faq.desc}</p>
                       </div>
                     ))
                   )}

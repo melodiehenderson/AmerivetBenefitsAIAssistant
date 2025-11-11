@@ -4,6 +4,12 @@ import { azureOpenAIService } from '@/lib/azure/openai';
 import { validateResponse } from '@/lib/rag/validation';
 import { detectQueryIntent } from '@/lib/rag/query-intent-detector';
 import type { RetrievalContext } from '@/types/rag';
+import { 
+  findQueryClusterSimple, 
+  addQueryToClusterSimple,
+  queryToVector 
+} from '@/lib/rag/cache-utils';
+import { trackCacheHit } from '@/lib/rag/observability';
 
 export async function POST(req: NextRequest) {
   const startTime = Date.now();
@@ -44,6 +50,37 @@ export async function POST(req: NextRequest) {
     }
 
     console.log(`[QA] Retrieved ${result.chunks.length} chunks in ${retrievalTime}ms`);
+
+    // Phase 3: Query Clustering - Check for similar cached queries
+    console.log('[QA] Checking query cluster cache...');
+    
+    // Generate query vector for clustering
+    const queryVector = queryToVector(query);
+    
+    // Try to find a matching cluster (similar previously answered question)
+    const clusterMatch = findQueryClusterSimple(queryVector, companyId, 0.85);
+    
+    if (clusterMatch && clusterMatch.confidence >= 0.85) {
+      // CLUSTER HIT: Return cached answer from similar query
+      console.log(`[QA] Cluster hit found (confidence: ${clusterMatch.confidence.toFixed(3)}) - returning cached answer`);
+      trackCacheHit('cluster');
+      
+      return NextResponse.json({
+        answer: clusterMatch.answer,
+        tier: 'L1',
+        cacheSource: 'cluster',
+        metadata: {
+          groundingScore: clusterMatch.groundingScore || 0.85,
+          distinctDocIds: 0,
+          rerankedCount: 0,
+          retrievalTimeMs: Date.now() - startTime,
+          cacheHitType: 'cluster',
+          clusterConfidence: clusterMatch.confidence,
+        }
+      });
+    }
+
+    console.log('[QA] No suitable cluster found - proceeding with LLM generation');
 
     // Step 2: Build context from chunks
     const contextText = result.chunks
@@ -207,11 +244,34 @@ Provide a clear, concise answer based on the context above. Focus on what matter
 
     console.log(`[QA] Validation complete: grounding=${validation.grounding.score.toFixed(2)}, valid=${validation.grounding.ok}`);
 
+    // Phase 3: Update cluster with this new answer for future queries
+    if (validation.grounding.ok && validation.grounding.score >= 0.70) {
+      console.log('[QA] Updating query cluster with new high-quality answer...');
+      try {
+        addQueryToCluster(
+          query,
+          queryVector,
+          cleanedAnswer,
+          validation.grounding.score,
+          {
+            docIds: Array.from(new Set(result.chunks.map(c => c.docId))),
+            groundingScore: validation.grounding.score,
+            validationPassed: validation.grounding.ok,
+          }
+        );
+        console.log('[QA] Cluster updated successfully');
+      } catch (clusterError) {
+        // Non-fatal: cluster update failure doesn't break response
+        console.warn('[QA] Failed to update cluster:', clusterError);
+      }
+    }
+
     const totalTime = Date.now() - startTime;
 
     return NextResponse.json({
       answer: cleanedAnswer,
       tier: 'L1',
+      cacheSource: 'miss_with_cluster_update',
       metadata: {
         groundingScore: validation.grounding.score,
         distinctDocIds: distinctDocs,
@@ -220,6 +280,7 @@ Provide a clear, concise answer based on the context above. Focus on what matter
         generationTimeMs: generationTime,
         validationTimeMs: validationTime,
         totalTimeMs: totalTime,
+        clusterUpdated: true,
       }
     });
 
