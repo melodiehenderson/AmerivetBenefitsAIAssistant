@@ -24,6 +24,9 @@ export const metadata = {
   metadataBase: safeMetadataBase(),
   title: 'AmeriVet Benefits AI Assistant',
   description: 'Your personal AmeriVet benefits advisor powered by AI',
+  icons: {
+    icon: '/brand/amerivet-logo.png',
+  },
 };
 
 export const viewport = {
