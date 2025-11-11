@@ -108,13 +108,6 @@ export default function SubdomainChatPage() {
 
   useEffect(() => {
     checkAuth();
-    // Add welcome message
-    setMessages([{
-      id: '1',
-      role: 'assistant',
-      content: 'Hello! I\'m your Benefits Assistant. I can help you understand your health insurance, retirement plans, and other benefits. What would you like to know?',
-      timestamp: new Date(),
-    }]);
   }, []);
 
   useEffect(() => {
