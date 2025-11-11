@@ -30,8 +30,8 @@ import type { Tier, QAMetrics } from '../../types/rag';
 
 const METRICS_FLUSH_INTERVAL = 60000; // Flush metrics every 60 seconds
 const ENABLE_CONSOLE_LOGGING = true;
-const ENABLE_APP_INSIGHTS = false; // Enable when Azure Application Insights configured
-
+ // Enable when Azure Application Insights configured
+const ENABLE_APP_INSIGHTS = process.env.ENABLE_APP_INSIGHTS === 'true' || process.env.NEXT_PUBLIC_ENVIRONMENT === 'production'
 // Token pricing (per 1M tokens) - Update with current Azure OpenAI pricing
 const TOKEN_PRICING = {
   L1: {
