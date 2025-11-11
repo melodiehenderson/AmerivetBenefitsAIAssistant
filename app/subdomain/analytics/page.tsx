@@ -228,9 +228,6 @@ export default function AnalyticsPage() {
                 <CardDescription>Most common questions from users - filter by topic (Demo data for MVP)</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800 mb-4">
-                  Note: Question counts are sample data for demonstration. In production, these will show real usage statistics from your user interactions.
-                </div>
                 <div className="mb-4">
                   <div className="flex flex-wrap gap-2">
                     {filterOptions.map((option) => (
