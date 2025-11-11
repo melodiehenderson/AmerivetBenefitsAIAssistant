@@ -8,11 +8,12 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ArrowLeft, BarChart3, TrendingUp, MessageSquare, FileText, Calculator as CalcIcon } from 'lucide-react';
+import { ArrowLeft, BarChart3, TrendingUp, MessageSquare, FileText, Calculator as CalcIcon, X } from 'lucide-react';
 
 export default function AnalyticsPage() {
   const router = useRouter();
   const [userRole, setUserRole] = useState<string>('');
+  const [faqFilter, setFaqFilter] = useState<string>('all');
 
   useEffect(() => {
     // Check auth and get role
@@ -41,6 +42,43 @@ export default function AnalyticsPage() {
     { label: 'Documents Available', value: '12', icon: FileText, color: 'purple' },
     { label: 'Avg Response Time', value: '1.2s', icon: BarChart3, color: 'orange' },
   ];
+
+  // FAQ data with categories
+  const faqData = [
+    { id: 1, question: 'What are my plan options?', category: 'all', count: 156, desc: 'Health insurance, retirement plans' },
+    { id: 2, question: 'What are the HSA plan details?', category: 'hsa', count: 89, desc: 'Health Savings Account specifics' },
+    { id: 3, question: 'How does PPO coverage work?', category: 'ppo', count: 76, desc: 'Preferred Provider Organization info' },
+    { id: 4, question: 'What is DHMO?', category: 'dhmo', count: 63, desc: 'Dental Health Maintenance Organization' },
+    { id: 5, question: 'How much does it cost?', category: 'all', count: 134, desc: 'Premiums, deductibles, out-of-pocket' },
+    { id: 6, question: 'What are dental plan options?', category: 'dental', count: 98, desc: 'Dental coverage and providers' },
+    { id: 7, question: 'Tell me about vision benefits', category: 'vision', count: 54, desc: 'Eye care and vision coverage' },
+    { id: 8, question: "What's the difference between plans?", category: 'all', count: 98, desc: 'Plan comparison and coverage details' },
+    { id: 9, question: 'How do I enroll?', category: 'enrollment', count: 87, desc: 'Enrollment process and deadlines' },
+    { id: 10, question: 'What is open enrollment?', category: 'enrollment', count: 71, desc: 'Open enrollment timeline and changes' },
+    { id: 11, question: 'Can I contact a benefits counselor?', category: 'support', count: 62, desc: 'Support and assistance options' },
+    { id: 12, question: 'What retirement options do I have?', category: 'retirement', count: 58, desc: '401k, pension, and retirement plans' },
+    { id: 13, question: 'How do I submit a claim?', category: 'claims', count: 45, desc: 'Claim submission process' },
+    { id: 14, question: 'What is my deductible?', category: 'costs', count: 82, desc: 'Out-of-pocket costs and deductibles' },
+    { id: 15, question: 'Can I change plans mid-year?', category: 'enrollment', count: 41, desc: 'Plan changes and life events' },
+  ];
+
+  const filterOptions = [
+    { label: 'All', value: 'all' },
+    { label: 'HSA', value: 'hsa' },
+    { label: 'PPO', value: 'ppo' },
+    { label: 'DHMO', value: 'dhmo' },
+    { label: 'Dental', value: 'dental' },
+    { label: 'Vision', value: 'vision' },
+    { label: 'Retirement', value: 'retirement' },
+    { label: 'Enrollment', value: 'enrollment' },
+    { label: 'Claims', value: 'claims' },
+    { label: 'Costs', value: 'costs' },
+    { label: 'Support', value: 'support' },
+  ];
+
+  const filteredFAQ = faqFilter === 'all' 
+    ? faqData 
+    : faqData.filter(faq => faq.category === faqFilter || faq.category === 'all');
 
   const stats = userRole === 'admin' ? adminStats : employeeStats;
 
@@ -152,61 +190,47 @@ export default function AnalyticsPage() {
 
             <Card className="mb-6">
               <CardHeader>
-                <CardTitle>Common Queries</CardTitle>
-                <CardDescription>Most frequently asked questions from users</CardDescription>
+                <CardTitle>FAQ - Frequently Asked Questions</CardTitle>
+                <CardDescription>Most common questions from users - filter by topic</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between py-3 border-b hover:bg-gray-50 px-2 rounded cursor-pointer">
-                    <div className="flex-1">
-                      <p className="font-medium text-gray-900">What are my plan options?</p>
-                      <p className="text-sm text-gray-500">Health insurance, retirement plans</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-semibold text-blue-600">156</p>
-                      <p className="text-xs text-gray-500">questions</p>
-                    </div>
+                <div className="mb-4">
+                  <div className="flex flex-wrap gap-2">
+                    {filterOptions.map((option) => (
+                      <button
+                        key={option.value}
+                        onClick={() => setFaqFilter(option.value)}
+                        className={`px-3 py-1.5 rounded-full text-sm font-medium transition ${
+                          faqFilter === option.value
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
                   </div>
-                  <div className="flex items-center justify-between py-3 border-b hover:bg-gray-50 px-2 rounded cursor-pointer">
-                    <div className="flex-1">
-                      <p className="font-medium text-gray-900">How much does it cost?</p>
-                      <p className="text-sm text-gray-500">Premiums, deductibles, out-of-pocket</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-semibold text-green-600">134</p>
-                      <p className="text-xs text-gray-500">questions</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between py-3 border-b hover:bg-gray-50 px-2 rounded cursor-pointer">
-                    <div className="flex-1">
-                      <p className="font-medium text-gray-900">What's the difference between plans?</p>
-                      <p className="text-sm text-gray-500">Plan comparison and coverage details</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-semibold text-purple-600">98</p>
-                      <p className="text-xs text-gray-500">questions</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between py-3 border-b hover:bg-gray-50 px-2 rounded cursor-pointer">
-                    <div className="flex-1">
-                      <p className="font-medium text-gray-900">How do I enroll?</p>
-                      <p className="text-sm text-gray-500">Enrollment process and deadlines</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-semibold text-orange-600">87</p>
-                      <p className="text-xs text-gray-500">questions</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between py-3 hover:bg-gray-50 px-2 rounded cursor-pointer">
-                    <div className="flex-1">
-                      <p className="font-medium text-gray-900">Can I contact a benefits counselor?</p>
-                      <p className="text-sm text-gray-500">Support and assistance options</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-semibold text-red-600">62</p>
-                      <p className="text-xs text-gray-500">questions</p>
-                    </div>
-                  </div>
+                </div>
+                <div className="space-y-2 max-h-96 overflow-y-auto">
+                  {filteredFAQ.length === 0 ? (
+                    <p className="text-gray-500 py-4 text-center">No FAQs found for this category</p>
+                  ) : (
+                    filteredFAQ.map((faq) => (
+                      <div
+                        key={faq.id}
+                        className="flex items-center justify-between py-3 border-b hover:bg-gray-50 px-2 rounded cursor-pointer transition"
+                      >
+                        <div className="flex-1">
+                          <p className="font-medium text-gray-900">{faq.question}</p>
+                          <p className="text-sm text-gray-500">{faq.desc}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-semibold text-blue-600">{faq.count}</p>
+                          <p className="text-xs text-gray-500">asked</p>
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
               </CardContent>
             </Card>
