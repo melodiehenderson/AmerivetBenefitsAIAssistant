@@ -244,28 +244,6 @@ export function deserializeCacheEntry(cached: string): QAResponse {
 // ============================================================================
 
 /**
- * Calculate cosine similarity between two vectors
- */
-export function cosineSimilarity(a: number[], b: number[]): number {
-  if (a.length !== b.length) {
-    throw new Error("Vectors must have same dimension");
-  }
-
-  let dotProduct = 0;
-  let normA = 0;
-  let normB = 0;
-
-  for (let i = 0; i < a.length; i++) {
-    dotProduct += a[i] * b[i];
-    normA += a[i] * a[i];
-    normB += a[i] * a[i];
-  }
-
-  const magnitude = Math.sqrt(normA) * Math.sqrt(normB);
-  return magnitude === 0 ? 0 : dotProduct / magnitude;
-}
-
-/**
  * Find most similar query in semantic cache
  * Phase 1: Dynamic semantic threshold based on answer quality
  * * Thresholds (ADJUSTED FOR AGGRESSIVE CACHING):
