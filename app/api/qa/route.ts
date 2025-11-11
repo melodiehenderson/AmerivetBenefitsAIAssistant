@@ -65,10 +65,13 @@ export async function POST(req: NextRequest) {
 - Start immediately with the answer
 - Use plain, everyday language - never jargon-heavy
 
-2. ZERO FLUFF
-- NO asterisks, bold (*), italics (_), or markdown
-- NO citations, brackets [1][2][3], or reference numbers
-- Only plain text
+2. ZERO FORMATTING - THIS IS NON-NEGOTIABLE
+- NO asterisks (*), dashes (-), underscores (_), or any special characters for formatting
+- NO bold, italics, headers, or markdown of ANY kind
+- NO brackets [1] [2] [3], no citations, no reference numbers
+- ONLY plain text - nothing else
+- Write headers as: "Section Name:" (colon only, no special characters before)
+- Example: Write "Plan Comparison:" NOT "**Plan Comparison**" or "--- Plan Comparison ---"
 
 3. INTELLIGENT CONTEXT DETECTION
 - When someone mentions specific life events (pregnancy, chemotherapy, mental health, surgery, chronic conditions), IMMEDIATELY identify this as a high-stakes decision
@@ -106,7 +109,7 @@ B) FOR HIGH-STAKES HEALTH SCENARIOS (pregnancy, mental health, expensive treatme
 
 C) FOR COMPARATIVE QUESTIONS ("Plan A vs Plan B for [condition]")
 1. Pull the specific coverage details for that condition in each plan
-2. Create a mini-comparison table in text: "Plan A: [detail]. Plan B: [detail]."
+2. Create a mini-comparison using text lines: "Plan A: [detail]. Plan B: [detail]."
 3. Give a recommendation based on their specific needs
 
 D) FOR ENROLLMENT, DEADLINES, OR PROCESS QUESTIONS
@@ -132,7 +135,9 @@ If the context doesn't have specific details you need (e.g., maternity copay amo
 === TONE ===
 - Expert but accessible (explain like to a smart friend, not an insurance manual)
 - Warm but efficient (respect their time)
-- Confident in what you know, transparent about what you don't`;
+- Confident in what you know, transparent about what you don't
+
+REMEMBER: NO ASTERISKS, NO SPECIAL FORMATTING, ONLY PLAIN TEXT.`;
 
     const userPrompt = `Context:
 ${contextText}
@@ -174,6 +179,14 @@ Provide a clear, concise answer based on the context above. Focus on what matter
 
     const answer = completion.content;
 
+    // Post-process: Remove any asterisks, bold markers, or markdown formatting
+    const cleanedAnswer = answer
+      .replace(/\*\*/g, '') // Remove bold markers (**)
+      .replace(/\*/g, '') // Remove single asterisks
+      .replace(/__/g, '') // Remove bold underscores
+      .replace(/_/g, '') // Remove single underscores
+      .trim();
+
     const generationTime = Date.now() - generationStart;
     console.log(`[QA] Generated response in ${generationTime}ms`);
 
@@ -189,7 +202,7 @@ Provide a clear, concise answer based on the context above. Focus on what matter
       relevanceScore: chunk.metadata?.relevanceScore || 0,
     }));
 
-    const validation = await validateResponse(answer, citations, result.chunks, 'L1');
+    const validation = await validateResponse(cleanedAnswer, citations, result.chunks, 'L1');
     const validationTime = Date.now() - validationStart;
 
     console.log(`[QA] Validation complete: grounding=${validation.grounding.score.toFixed(2)}, valid=${validation.grounding.ok}`);
@@ -197,7 +210,7 @@ Provide a clear, concise answer based on the context above. Focus on what matter
     const totalTime = Date.now() - startTime;
 
     return NextResponse.json({
-      answer,
+      answer: cleanedAnswer,
       tier: 'L1',
       metadata: {
         groundingScore: validation.grounding.score,
