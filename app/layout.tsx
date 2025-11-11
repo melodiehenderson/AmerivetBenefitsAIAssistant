@@ -25,7 +25,7 @@ export const metadata = {
   title: 'AmeriVet Benefits AI Assistant',
   description: 'Your personal AmeriVet benefits advisor powered by AI',
   icons: {
-    icon: '/brand/amerivet-logo.png',
+    icon: '/favicon.ico',
   },
 };
 
