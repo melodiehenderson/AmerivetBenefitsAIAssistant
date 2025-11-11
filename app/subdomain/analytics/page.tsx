@@ -59,7 +59,10 @@ export default function AnalyticsPage() {
               </h1>
             </div>
             {userRole === 'admin' && (
-              <div className="flex items-center space-x-2">
+              <div className="flex items-center space-x-3">
+                <Button variant="outline" size="sm" onClick={() => router.push('/subdomain/documents-admin')}>
+                  Manage Documents
+                </Button>
                 <div className="bg-green-100 px-3 py-1 rounded-full">
                   <span className="text-sm font-medium text-green-800">Admin View</span>
                 </div>
@@ -141,6 +144,67 @@ export default function AnalyticsPage() {
                     </div>
                     <div className="w-full bg-gray-200 rounded-full h-2">
                       <div className="bg-purple-600 h-2 rounded-full" style={{ width: '92%' }}></div>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="mb-6">
+              <CardHeader>
+                <CardTitle>Common Queries</CardTitle>
+                <CardDescription>Most frequently asked questions from users</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between py-3 border-b hover:bg-gray-50 px-2 rounded cursor-pointer">
+                    <div className="flex-1">
+                      <p className="font-medium text-gray-900">What are my plan options?</p>
+                      <p className="text-sm text-gray-500">Health insurance, retirement plans</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-semibold text-blue-600">156</p>
+                      <p className="text-xs text-gray-500">questions</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between py-3 border-b hover:bg-gray-50 px-2 rounded cursor-pointer">
+                    <div className="flex-1">
+                      <p className="font-medium text-gray-900">How much does it cost?</p>
+                      <p className="text-sm text-gray-500">Premiums, deductibles, out-of-pocket</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-semibold text-green-600">134</p>
+                      <p className="text-xs text-gray-500">questions</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between py-3 border-b hover:bg-gray-50 px-2 rounded cursor-pointer">
+                    <div className="flex-1">
+                      <p className="font-medium text-gray-900">What's the difference between plans?</p>
+                      <p className="text-sm text-gray-500">Plan comparison and coverage details</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-semibold text-purple-600">98</p>
+                      <p className="text-xs text-gray-500">questions</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between py-3 border-b hover:bg-gray-50 px-2 rounded cursor-pointer">
+                    <div className="flex-1">
+                      <p className="font-medium text-gray-900">How do I enroll?</p>
+                      <p className="text-sm text-gray-500">Enrollment process and deadlines</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-semibold text-orange-600">87</p>
+                      <p className="text-xs text-gray-500">questions</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between py-3 hover:bg-gray-50 px-2 rounded cursor-pointer">
+                    <div className="flex-1">
+                      <p className="font-medium text-gray-900">Can I contact a benefits counselor?</p>
+                      <p className="text-sm text-gray-500">Support and assistance options</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-semibold text-red-600">62</p>
+                      <p className="text-xs text-gray-500">questions</p>
                     </div>
                   </div>
                 </div>
