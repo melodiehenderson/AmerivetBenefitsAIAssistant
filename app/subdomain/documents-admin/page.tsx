@@ -130,12 +130,16 @@ export default function DocumentsAdminPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <header className="bg-white shadow-sm border-b">
+      <header className="bg-white shadow-sm border-b sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center gap-4">
-            <Button variant="ghost" onClick={() => router.push('/subdomain/analytics')}>
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={() => router.push('/subdomain/analytics')}
+            >
               <ArrowLeft className="w-4 h-4 mr-2" />
-              Back
+              Back to Analytics
             </Button>
             <h1 className="text-2xl font-bold text-gray-900">Manage Documents</h1>
           </div>
