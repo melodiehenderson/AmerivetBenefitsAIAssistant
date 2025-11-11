@@ -99,6 +99,14 @@ export default function DocumentsAdminPage() {
     }
   };
 
+  const handleDeleteDocument = (docId: number, docName: string) => {
+    if (confirm(`Delete "${docName}"? This cannot be undone.`)) {
+      setDocuments(documents.filter(doc => doc.id !== docId));
+      setUploadMessage(`✓ "${docName}" deleted successfully`);
+      setTimeout(() => setUploadMessage(''), 3000);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -197,7 +205,12 @@ export default function DocumentsAdminPage() {
                         </div>
                       </div>
                     </div>
-                    <Button variant="ghost" size="sm" className="text-red-600 hover:text-red-700 hover:bg-red-50">
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      onClick={() => handleDeleteDocument(doc.id, doc.name)}
+                      className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                    >
                       <Trash2 className="w-4 h-4" />
                     </Button>
                   </div>
@@ -214,10 +227,9 @@ export default function DocumentsAdminPage() {
           </CardHeader>
           <CardContent className="text-blue-800 space-y-2">
             <p>1. Upload a PDF document using the form above</p>
-            <p>2. The system automatically extracts text and splits it into chunks</p>
-            <p>3. Chunks are indexed in the knowledge base within seconds</p>
-            <p>4. The AI bot will immediately use this information to answer employee questions</p>
-            <p>5. Use this to keep benefits information up-to-date (new plans, phone numbers, deadlines, etc.)</p>
+            <p>2. We remember it and make it available to the bot</p>
+            <p>3. Ask questions in the normal chat section - the bot will use this information in its answers</p>
+            <p>4. Use this to keep information up-to-date: new plans, phone numbers, deadlines, policy changes, etc.</p>
           </CardContent>
         </Card>
       </main>

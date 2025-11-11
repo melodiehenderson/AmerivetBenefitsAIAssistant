@@ -58,14 +58,6 @@ const SUGGESTED_SCENARIOS: Scenario[] = [
     action: 'chat'
   },
   {
-    id: 'document-analysis',
-    title: 'Document Analysis',
-    description: 'Upload and analyze your benefits documents',
-    icon: <FileText className="h-5 w-5" />,
-    message: "I'd like to upload my benefits summary document for analysis.",
-    action: 'upload'
-  },
-  {
     id: 'family-coverage',
     title: 'Family Coverage Planning',
     description: 'Plan benefits for your entire family',
@@ -99,7 +91,6 @@ export default function SubdomainChatPage() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [selectedScenario, setSelectedScenario] = useState<string | null>(null);
   const [showCalcOverlay, setShowCalcOverlay] = useState(false);
-  const [showUploadModal, setShowUploadModal] = useState(false);
   const [calcPrefs, setCalcPrefs] = useState({ household: 'individual', usage: 'moderate', provider: 'any' });
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -204,7 +195,6 @@ export default function SubdomainChatPage() {
       };
       
       setMessages(prev => [...prev, successMessage]);
-      setShowUploadModal(false);
       setSelectedFile(null);
       
     } catch (err) {
@@ -279,11 +269,6 @@ export default function SubdomainChatPage() {
 
   const runScenario = (scenario: Scenario) => {
     setSelectedScenario(scenario.id);
-    
-    if (scenario.action === 'upload') {
-      setShowUploadModal(true);
-      return;
-    }
     
     if (scenario.action === 'calculator') {
       setShowCalcOverlay(true);
@@ -504,30 +489,6 @@ export default function SubdomainChatPage() {
               <div className="flex gap-2">
                 <Button variant="outline" className="flex-1" onClick={() => setShowCalcOverlay(false)}>Cancel</Button>
                 <Button className="flex-1" onClick={submitCalculatorPrefs}>Get Recommendations</Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* Document Upload Modal */}
-      {showUploadModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <Card className="w-full max-w-md">
-            <CardHeader>
-              <CardTitle>Upload Benefits Document</CardTitle>
-              <CardDescription>Coming Soon</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <Alert>
-                <AlertDescription>
-                  Document upload feature is coming soon. For now, you can ask questions about your benefits and we'll provide answers based on available information.
-                </AlertDescription>
-              </Alert>
-              <div className="flex gap-2">
-                <Button className="flex-1" onClick={() => setShowUploadModal(false)}>
-                  Close
-                </Button>
               </div>
             </CardContent>
           </Card>
