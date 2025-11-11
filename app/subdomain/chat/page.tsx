@@ -293,9 +293,9 @@ export default function SubdomainChatPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-white dark:bg-gray-950">
       {/* Header */}
-      <header className="sticky top-0 z-10 bg-white shadow-sm border-b">
+      <header className="sticky top-0 z-10 bg-white dark:bg-gray-900 dark:border-gray-800 shadow-sm border-b">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center h-16">
             <Button
@@ -322,7 +322,7 @@ export default function SubdomainChatPage() {
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
           {/* Left Quick Prompts */}
           <aside className="hidden lg:block lg:col-span-1">
-            <Card className="h-[calc(100vh-140px)] sticky top-4 overflow-hidden flex flex-col">
+            <Card className="h-[calc(100vh-140px)] sticky top-4 overflow-hidden flex flex-col bg-white dark:bg-gray-900 dark:border-gray-800">
               <CardHeader className="pb-3 flex-shrink-0">
                 <CardTitle className="text-sm">Suggested Scenarios</CardTitle>
                 <CardDescription className="text-xs">Click any scenario to get started</CardDescription>
@@ -353,7 +353,7 @@ export default function SubdomainChatPage() {
 
           {/* Chat Column */}
           <div className="lg:col-span-3">
-            <Card className="h-[calc(100vh-140px)] flex flex-col">
+            <Card className="h-[calc(100vh-140px)] flex flex-col bg-white dark:bg-gray-900 dark:border-gray-800">
           <CardHeader className="pb-4">
             <CardTitle className="flex items-center">
               <Bot className="w-5 h-5 mr-2 text-blue-600" />
@@ -373,12 +373,12 @@ export default function SubdomainChatPage() {
                     className={`max-w-[80%] rounded-lg px-4 py-2 ${
                       message.role === 'user'
                         ? 'bg-blue-600 text-white'
-                        : 'bg-gray-100 text-gray-900'
+                        : 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-100'
                     }`}
                   >
                     <div className="flex items-start">
                       {message.role === 'assistant' && (
-                        <Bot className="w-4 h-4 mr-2 mt-1 text-blue-600 flex-shrink-0" />
+                        <Bot className="w-4 h-4 mr-2 mt-1 text-blue-600 dark:text-blue-400 flex-shrink-0" />
                       )}
                       {message.role === 'user' && (
                         <User className="w-4 h-4 mr-2 mt-1 text-white flex-shrink-0" />
