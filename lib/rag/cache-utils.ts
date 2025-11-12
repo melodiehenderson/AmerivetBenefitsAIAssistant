@@ -83,6 +83,14 @@ export function normalizeQueryWithSynonyms(query: string): string {
 }
 
 /**
+ * Hash query to SHA-256 hex string
+ * Used for cache keys and vector generation
+ */
+function hashQuery(query: string): string {
+  return createHash('sha256').update(query).digest('hex');
+}
+
+/**
  * Convert query to semantic vector for clustering
  * Uses deterministic hashing for reproducibility
  * Returns 16-dimensional vector normalized to [-1, 1]
