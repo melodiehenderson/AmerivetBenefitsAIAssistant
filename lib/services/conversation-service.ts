@@ -1,5 +1,6 @@
 import { logger } from '@/lib/logger';
 import { getClient } from '@/lib/azure/cosmos';
+import { Container } from '@azure/cosmos';
 
 export interface Message {
   id: string;
@@ -17,10 +18,11 @@ export interface Conversation {
   messages: Message[];
   createdAt: Date;
   updatedAt: Date;
+  metadata?: Record<string, any>;
 }
 
 class ConversationService {
-  private container: any = null;
+  private container: Container | null = null;
 
   private async ensureInitialized() {
     if (this.container) return;
@@ -63,14 +65,15 @@ class ConversationService {
   async createConversation(userId: string, companyId: string): Promise<Conversation> {
     await this.ensureInitialized();
     try {
-      const conversation: Conversation = {
-        id: crypto.randomUUID(),
-        userId,
-        companyId,
-        messages: [],
-        createdAt: new Date(),
-        updatedAt: new Date()
-      };
+    const conversation: Conversation = {
+      id: crypto.randomUUID(),
+      userId,
+      companyId,
+      messages: [],
+      metadata: {},
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
 
       const { resource } = await this.container.items.create(conversation);
       return resource!;
@@ -97,6 +100,23 @@ class ConversationService {
       logger.error({ error, userId, companyId }, 'Error fetching user conversations');
       return [];
     }
+  }
+
+  async patchMetadata(conversationId: string, patch: Record<string, any>): Promise<Conversation> {
+    await this.ensureInitialized();
+    const conversation = await this.getConversation(conversationId);
+    if (!conversation) {
+      throw new Error('Conversation not found');
+    }
+
+    conversation.metadata = {
+      ...(conversation.metadata ?? {}),
+      ...patch
+    };
+    conversation.updatedAt = new Date();
+
+    const { resource } = await this.container.item(conversationId).replace(conversation);
+    return resource!;
   }
 }
 

@@ -16,6 +16,11 @@ export default function ChatClient() {
   const [messages, setMessages] = React.useState<Message[]>([]);
   const [showSuggestions, setShowSuggestions] = React.useState(true);
   const [isMounted, setIsMounted] = React.useState(false);
+  const [initialQuestionsAnswered, setInitialQuestionsAnswered] = React.useState(false);
+  const [nameInput, setNameInput] = React.useState('');
+  const [stateInput, setStateInput] = React.useState('');
+  const [divisionInput, setDivisionInput] = React.useState('');
+  const [currentQuestion, setCurrentQuestion] = React.useState<'name' | 'state' | 'division' | null>('name');
   const abortRef = React.useRef<AbortController | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
   const messagesEndRef = React.useRef<HTMLDivElement>(null);

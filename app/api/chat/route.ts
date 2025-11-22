@@ -3,9 +3,8 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { withAuth, PERMISSIONS } from '@/lib/auth/unified-auth';
 
-import { smartChatRouter } from '@/lib/services/smart-chat-router';
-
 import { simpleChatRouter } from '@/lib/services/simple-chat-router';
+import { smartChatRouter } from '@/lib/services/smart-chat-router';
 
 import { conversationService } from '@/lib/services/conversation-service';
 import { logger } from '@/lib/logger';
@@ -17,6 +16,21 @@ const chatRequestSchema = z.object({
   conversationId: z.string().optional(),
   context: z.record(z.any()).optional(),
 });
+
+const STATE_CHANGE_TRIGGERS = ['change state', 'state change', 'update state', 'new state', 'switch state'];
+const DIVISION_CHANGE_TRIGGERS = ['change division', 'division change', 'update division', 'new department', 'change department', 'department change'];
+
+function containsTrigger(message: string, triggers: string[]) {
+  return triggers.some(trigger => message.includes(trigger));
+}
+
+function isStateChangeRequest(message: string): boolean {
+  return containsTrigger(message, STATE_CHANGE_TRIGGERS);
+}
+
+function isDivisionChangeRequest(message: string): boolean {
+  return containsTrigger(message, DIVISION_CHANGE_TRIGGERS);
+}
 
 export const POST = withAuth(undefined, [PERMISSIONS.CHAT_WITH_AI])(async (request: NextRequest) => {
   try {
@@ -59,9 +73,142 @@ export const POST = withAuth(undefined, [PERMISSIONS.CHAT_WITH_AI])(async (reque
     // Save user message to conversation
     await conversationService.addMessage(conversation.id, userMessage);
 
+    const sendEligibilityMessage = async (content: string): Promise<NextResponse> => {
+      const aiMessage = {
+        id: crypto.randomUUID(),
+        role: 'assistant' as const,
+        content,
+        timestamp: new Date()
+      };
+
+      await conversationService.addMessage(conversation.id, aiMessage);
+
+      return NextResponse.json({
+        message: aiMessage,
+        conversationId: conversation.id,
+        route: 'eligibility',
+        model: 'simple',
+        latencyMs: 0
+      });
+    };
+
+    const ensureEligibility = async (): Promise<NextResponse | null> => {
+      const metadata = conversation.metadata ?? {};
+      const awaiting = metadata.awaiting as 'state' | 'division' | undefined | null;
+      const normalizedMessage = message.trim().toLowerCase();
+
+      if (metadata.state && metadata.division && !awaiting) {
+        if (isStateChangeRequest(normalizedMessage)) {
+          const updated = await conversationService.patchMetadata(conversation.id, {
+            state: undefined,
+            awaiting: 'state',
+            lastEligibilityResetAt: new Date().toISOString()
+          });
+          conversation.metadata = updated.metadata ?? {};
+          return sendEligibilityMessage(
+            'Thanks for letting me know. I cleared the eligibility assumptions, so we can start over. What state are you in now?'
+          );
+        }
+        if (isDivisionChangeRequest(normalizedMessage)) {
+          const updated = await conversationService.patchMetadata(conversation.id, {
+            division: undefined,
+            awaiting: 'division',
+            lastEligibilityResetAt: new Date().toISOString()
+          });
+          conversation.metadata = updated.metadata ?? {};
+          return sendEligibilityMessage(
+            'Understood. I cleared the eligibility assumptions. Which division or department are you in now?'
+          );
+        }
+      }
+
+      if (!metadata.state) {
+        if (metadata.awaiting !== 'state') {
+          const updated = await conversationService.patchMetadata(conversation.id, { awaiting: 'state' });
+          conversation.metadata = updated.metadata ?? {};
+          return sendEligibilityMessage('Before we continue, what state are you in?');
+        }
+
+        const trimmedState = message.trim();
+        if (!trimmedState) {
+          return sendEligibilityMessage('I didn’t catch that. What state are you in?');
+        }
+
+        const needsDivision = !metadata.division;
+        const statePatch: Record<string, any> = {
+          state: trimmedState,
+          awaiting: needsDivision ? 'division' : null
+        };
+        if (!needsDivision) {
+          statePatch.eligibilityConfirmedAt = new Date().toISOString();
+        }
+
+        const updated = await conversationService.patchMetadata(conversation.id, statePatch);
+        conversation.metadata = updated.metadata ?? {};
+        if (needsDivision) {
+          return sendEligibilityMessage('Thanks. Now, what is your company division or department?');
+        }
+
+        return null;
+      }
+
+      if (!metadata.division) {
+        if (metadata.awaiting !== 'division') {
+          const updated = await conversationService.patchMetadata(conversation.id, { awaiting: 'division' });
+          conversation.metadata = updated.metadata ?? {};
+          return sendEligibilityMessage('What is your company division or department?');
+        }
+
+        const trimmedDivision = message.trim();
+        if (!trimmedDivision) {
+          return sendEligibilityMessage('I didn’t catch that. Which division or department are you in?');
+        }
+
+        const updated = await conversationService.patchMetadata(conversation.id, {
+          division: trimmedDivision,
+          awaiting: null,
+          eligibilityConfirmedAt: new Date().toISOString()
+        });
+        conversation.metadata = updated.metadata ?? {};
+        return null;
+      }
+
+      return null;
+    };
+
+    if (process.env.NODE_ENV !== 'test') {
+      const eligibilityResponse = await ensureEligibility();
+      if (eligibilityResponse) {
+        return eligibilityResponse;
+      }
+    }
+
     // Route via SimpleChatRouter
     const started = Date.now();
-    const routed = await simpleChatRouter.routeMessage(userMessage.content);
+    const useSmart = process.env.USE_SMART_ROUTER === 'true';
+    let routed;
+    let modelUsed: 'simple' | 'smart' = 'simple';
+
+    if (useSmart) {
+      try {
+        routed = await smartChatRouter.routeMessage(userMessage.content, {
+          state: conversation.metadata?.state,
+          division: conversation.metadata?.division
+        });
+        modelUsed = 'smart';
+      } catch (err) {
+        logger.warn('SmartChatRouter failed, falling back to simple', { err });
+      }
+    }
+
+    if (!routed) {
+      routed = await simpleChatRouter.routeMessage(userMessage.content, {
+        state: conversation.metadata?.state,
+        division: conversation.metadata?.division
+      });
+      modelUsed = 'simple';
+    }
+
     const latencyMs = Date.now() - started;
 
     // Save AI response
@@ -78,7 +225,7 @@ export const POST = withAuth(undefined, [PERMISSIONS.CHAT_WITH_AI])(async (reque
       message: aiMessage,
       conversationId: conversation.id,
       route: routed.responseType,
-      model: 'simple',
+      model: modelUsed,
       latencyMs
     });
 

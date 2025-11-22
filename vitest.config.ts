@@ -16,6 +16,7 @@ export default defineConfig({
   test: {
     environment: 'node',
     globals: true,
+    singleThread: true,
     setupFiles: ['tests/setup.ts', 'vitest.setup.ts'],
     include: [
       'tests/**/*.test.ts',
