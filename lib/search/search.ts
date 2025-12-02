@@ -1,6 +1,10 @@
 import { SearchClient, AzureKeyCredential } from '@azure/search-documents';
 import { OpenAI } from 'openai';
 
+const VECTOR_FIELD = process.env.AZURE_SEARCH_VECTOR_FIELD || 'content_vector';
+const COMPANY_FIELD = process.env.AZURE_SEARCH_COMPANY_FIELD || 'company_id';
+const sanitizeFilterValue = (value: string) => value.replace(/'/g, "''");
+
 // Client for getting query embeddings
 const openai = new OpenAI({
   apiKey: process.env.AZURE_OPENAI_API_KEY,
@@ -38,6 +42,7 @@ export async function search({ query, companyId }: { query: string; companyId: s
     input: query,
   });
   const queryVector = embeddingResponse.data[0].embedding;
+  const filter = `${COMPANY_FIELD} eq '${sanitizeFilterValue(companyId)}'`;
 
   // 2. Perform Hybrid Search
   const searchResults = await searchClient.search(query, {
@@ -45,10 +50,10 @@ export async function search({ query, companyId }: { query: string; companyId: s
       {
         vector: queryVector,
         kNearestNeighborsCount: 50,
-        fields: ['contentVector'], // Assumes vector field is named 'contentVector'
+        fields: [VECTOR_FIELD],
       },
     ],
-    filter: `company_id eq '${companyId}'`,
+    filter,
     top: 20, // Retrieve top 20 for reranking
   });
 

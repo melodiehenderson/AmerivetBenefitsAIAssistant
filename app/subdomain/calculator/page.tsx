@@ -1,5 +1,5 @@
 /**
- * Cost Calculator page for subdomain users
+ * Medical Plan Cost Comparison Tool page for subdomain users
  */
 
 'use client';
@@ -61,7 +61,7 @@ export default function CalculatorPage() {
               <ArrowLeft className="w-4 h-4 mr-2" />
               Back to Dashboard
             </Button>
-            <h1 className="text-2xl font-bold text-gray-900">Cost Calculator</h1>
+            <h1 className="text-2xl font-bold text-gray-900">Medical Plan Cost Comparison Tool</h1>
           </div>
         </div>
       </header>
@@ -71,7 +71,7 @@ export default function CalculatorPage() {
           <CardHeader>
             <CardTitle className="flex items-center">
               <Calculator className="w-6 h-6 mr-2 text-green-600" />
-              Interactive Benefits Cost Calculator
+              Interactive Benefits Medical Plan Cost Comparison Tool
             </CardTitle>
             <CardDescription>
               Select a plan, adjust expected usage, and see your costs update instantly
@@ -180,3 +180,4 @@ export default function CalculatorPage() {
     </div>
   );
 }
+

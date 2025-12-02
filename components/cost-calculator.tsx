@@ -81,7 +81,7 @@ export function CostCalculator() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <DollarSign className="size-5" />
-            Interactive Benefits Cost Calculator
+            Medical Plan Cost Comparison Tool
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">

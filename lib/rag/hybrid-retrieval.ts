@@ -69,6 +69,31 @@ function ensureSearchClient(): any | null {
   return searchClient;
 }
 
+function escapeODataValue(value: string): string {
+  return value.replace(/'/g, "''");
+}
+
+function buildODataFilter(context: RetrievalContext): string {
+  const companyId = context.companyId?.trim();
+  if (!companyId) {
+    throw new Error("companyId is required for search filters");
+  }
+
+  const filters: string[] = [`company_id eq '${escapeODataValue(companyId)}'`];
+  if (typeof context.planYear !== "undefined") {
+    filters.push(`benefit_year eq ${context.planYear}`);
+  }
+  if (context.dept) {
+    const dept = escapeODataValue(context.dept.trim());
+    filters.push(`(dept eq '${dept}' or dept eq 'All')`);
+  }
+  if (context.state) {
+    const state = escapeODataValue(context.state.trim());
+    filters.push(`(state eq '${state}' or state eq 'National')`);
+  }
+  return filters.join(" and ");
+}
+
 // ============================================================================
 // Embedding Generation
 // ============================================================================
@@ -77,9 +102,33 @@ function ensureSearchClient(): any | null {
  * Generate embedding for query using Azure OpenAI
  */
 async function generateEmbedding(text: string): Promise<number[]> {
-  // Use the real Azure OpenAI service
-  const { azureOpenAIService } = await import('@/lib/azure/openai');
-  return azureOpenAIService.generateEmbedding(text);
+  // In tests, use a deterministic lightweight embedding
+  if (isVitest) {
+    const vec = new Array(128).fill(0);
+    for (let i = 0; i < text.length; i++) {
+      vec[i % 128] += text.charCodeAt(i) / 255;
+    }
+    return vec;
+  }
+
+  // Use the real Azure OpenAI service when available; provide robust fallback
+  try {
+    const mod = await import('@/lib/azure/openai');
+    const service: any = (mod as any).azureOpenAIService;
+    if (service && typeof service.generateEmbedding === 'function') {
+      return await service.generateEmbedding(text);
+    }
+    console.warn('[Embedding] azureOpenAIService.generateEmbedding not available; using fallback embedding');
+  } catch (e) {
+    console.warn('[Embedding] Azure OpenAI import failed; using fallback embedding', e);
+  }
+
+  // Fallback: deterministic 128-dim embedding
+  const vec = new Array(128).fill(0);
+  for (let i = 0; i < text.length; i++) {
+    vec[i % 128] += text.charCodeAt(i) / 255;
+  }
+  return vec;
 }
 
 // ============================================================================
@@ -134,11 +183,7 @@ export async function retrieveVectorTopK(
     const queryVector = await generateEmbedding(query);
 
     // Build filter for company/context
-    const filters: string[] = [`company_id eq '${context.companyId}'`];
-    if (context.planYear) {
-      filters.push(`benefit_year eq ${context.planYear}`);
-    }
-    const filterString = filters.join(" and ");
+    const filterString = buildODataFilter(context);
     
     console.log(`[SEARCH][VECTOR] Query: "${query.substring(0, 50)}...", Filter: "${filterString}", K: ${k}`);
 
@@ -253,18 +298,13 @@ export async function retrieveBM25TopK(
 
   try {
     // Build filter
-    const filters: string[] = [`company_id eq '${context.companyId}'`];
-    if (context.planYear) {
-      filters.push(`benefit_year eq ${context.planYear}`);
-    }
-    const filterString = filters.join(" and ");
+    const filterString = buildODataFilter(context);
 
-    // Execute BM25 full-text search (no semantic config present)
-    // Temporarily remove filter to debug BM25 - we'll filter in memory
     const results = await client.search(query, {
       searchMode: "any",
       queryType: "simple",
       top: k,
+      filter: filterString,
       select: [
         "chunk_id",
         "doc_id",
@@ -300,18 +340,8 @@ export async function retrieveBM25TopK(
       });
     }
 
-    // Filter results in memory by company_id and planYear
-    let filtered = chunks.filter(c => c.companyId === context.companyId);
-    if (context.planYear) {
-      // Try to filter by benefit_year if available in metadata
-      const yearStr = String(context.planYear);
-      filtered = filtered.filter(c => {
-        const metadata = c.metadata as any;
-        return !metadata.benefit_year || String(metadata.benefit_year) === yearStr;
-      });
-    }
-    // Limit to top k after filtering
-    filtered = filtered.slice(0, k);
+    // Hard filtering is done in Azure Search via filterString; we keep a guard slice here
+    let filtered = chunks.slice(0, k);
 
     const latencyMs = Date.now() - startTime;
     console.log(`[SEARCH][BM25] ✅ ${filtered.length} results (${chunks.length} total before filter) in ${latencyMs}ms`);

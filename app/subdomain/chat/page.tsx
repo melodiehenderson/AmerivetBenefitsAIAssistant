@@ -75,7 +75,7 @@ const SUGGESTED_SCENARIOS: Scenario[] = [
   },
   {
     id: 'cost-calculator',
-    title: 'Personalized Cost Calculator',
+    title: 'Personalized Medical Plan Cost Comparison Tool',
     description: 'Calculate total costs based on your situation',
     icon: <Calculator className="h-5 w-5" />,
     message: "Help me calculate total healthcare costs for next year.",
@@ -490,3 +490,4 @@ export default function SubdomainChatPage() {
     </div>
   );
 }
+

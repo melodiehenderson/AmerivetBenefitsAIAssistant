@@ -309,7 +309,7 @@ export default function AnalyticsPage() {
               <div className="text-center py-8 text-gray-500">
                 <BarChart3 className="w-12 h-12 mx-auto mb-3 text-gray-400" />
                 <p>No activity recorded yet</p>
-                <p className="text-sm mt-1">Start using the AI Chat Assistant or Cost Calculator to see your usage stats</p>
+                <p className="text-sm mt-1">Start using the AI Chat Assistant or Medical Plan Cost Comparison Tool to see your usage stats</p>
               </div>
             </CardContent>
           </Card>
@@ -318,3 +318,4 @@ export default function AnalyticsPage() {
     </div>
   );
 }
+

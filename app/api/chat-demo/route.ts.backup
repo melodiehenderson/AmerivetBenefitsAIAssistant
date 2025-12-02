@@ -16,7 +16,7 @@ const getDemoResponse = (message: string): string => {
     return `Hi there! I'm your AmeriVet Benefits AI Assistant. I can help you with:
 
 🎯 **Plan Comparison** - Compare health, dental, and vision plans
-💰 **Cost Calculator** - Calculate total annual costs and savings  
+💰 **Medical Plan Cost Comparison Tool** - Calculate total annual costs and savings  
 📊 **Benefits Dashboard** - View your current enrollment and usage
 🏥 **HSA/FSA Info** - Learn about tax-advantaged accounts
 📚 **Document Analysis** - Upload and analyze your benefits documents
@@ -92,7 +92,7 @@ Is there a specific benefit you'd like to explore or update?`;
   }
   
   if (lowerMessage.includes('cost') || lowerMessage.includes('calculator') || lowerMessage.includes('calculate')) {
-    return `Great question! The cost calculator is one of our most powerful tools. Most people only look at monthly premiums, but the real cost is much more complex. Let me show you:
+    return `Great question! The Medical Plan Cost Comparison Tool is one of our most powerful tools. Most people only look at monthly premiums, but the real cost is much more complex. Let me show you:
 
 **Here's what we factor in:**
 • Monthly Premiums: Your base monthly cost
@@ -157,7 +157,7 @@ Based on your specific situation, I can help you determine which plan type makes
 • Mental health and wellness benefits
 • Family coverage options
 
-**Cost Calculator Features:**
+**Medical Plan Cost Comparison Tool Features:**
 • Compare total annual costs across plans
 • Factor in expected healthcare usage
 • Consider HSA/FSA contributions
@@ -1691,7 +1691,7 @@ Would you like help calculating your optimal FSA contribution?`;
   return `Hi there! I'm your AmeriVet Benefits AI Assistant. I can help you with:
 
 🎯 **Plan Comparison** - Compare health, dental, and vision plans
-💰 **Cost Calculator** - Calculate total annual costs and savings  
+💰 **Medical Plan Cost Comparison Tool** - Calculate total annual costs and savings  
 📊 **Benefits Dashboard** - View your current enrollment and usage
 🏥 **HSA/FSA Info** - Learn about tax-advantaged accounts
 📚 **Document Analysis** - Upload and analyze your benefits documents

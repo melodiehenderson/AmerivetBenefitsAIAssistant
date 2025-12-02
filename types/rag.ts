@@ -203,6 +203,8 @@ export interface RetrievalContext {
   persona?: Persona;
   locale?: string;
   filters?: SearchFilters;
+  state?: string;
+  dept?: string;
 }
 
 export interface SearchFilters {

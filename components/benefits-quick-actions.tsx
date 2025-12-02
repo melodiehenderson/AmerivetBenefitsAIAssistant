@@ -34,9 +34,9 @@ const quickActions: QuickAction[] = [
   },
   {
     icon: <Calculator className="size-4" />,
-    label: 'Cost Calculator',
+    label: 'Cost Comparison',
     description: 'Estimate costs',
-    prompt: 'Show me the cost calculator',
+    prompt: 'Show me the medical plan cost comparison tool',
     color: 'bg-purple-50 text-purple-700 border-purple-200',
   },
   {

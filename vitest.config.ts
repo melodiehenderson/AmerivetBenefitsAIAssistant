@@ -16,7 +16,6 @@ export default defineConfig({
   test: {
     environment: 'node',
     globals: true,
-    singleThread: true,
     setupFiles: ['tests/setup.ts', 'vitest.setup.ts'],
     include: [
       'tests/**/*.test.ts',
@@ -36,5 +35,15 @@ export default defineConfig({
     environmentOptions: { jsdom: { url: 'http://localhost' } },
     coverage: { provider: 'v8' },
     onConsoleLog: (log) => /TT: undefined function: 21/.test(log) ? false : undefined,
+    // Use threads pool on Windows to avoid fork runner timeouts
+    pool: 'threads',
+    poolOptions: {
+      threads: {
+        // Limit concurrency to reduce flakiness on CI/Windows
+        singleThread: false,
+        maxThreads: 2,
+        minThreads: 1,
+      },
+    },
   },
 });

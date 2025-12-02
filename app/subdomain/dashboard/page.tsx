@@ -215,7 +215,7 @@ export default function SubdomainDashboardPage() {
                     <Calculator className="w-6 h-6 text-green-600" />
                   </div>
                   <div className="ml-3">
-                    <CardTitle className="text-lg">Cost Calculator</CardTitle>
+                    <CardTitle className="text-lg">Medical Plan Cost Comparison Tool</CardTitle>
                     <CardDescription>Calculate benefit costs and savings</CardDescription>
                   </div>
                 </div>
@@ -319,3 +319,4 @@ export default function SubdomainDashboardPage() {
     </div>
   );
 }
+

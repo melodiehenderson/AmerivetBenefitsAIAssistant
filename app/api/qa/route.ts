@@ -10,12 +10,19 @@ import {
   queryToVector 
 } from '@/lib/rag/cache-utils';
 import { trackCacheHit } from '@/lib/rag/observability';
+import { getOrCreateSession, updateSession } from '@/lib/rag/session-store';
+import { 
+  shouldAppendTransition, 
+  validatePricingFormat, 
+  enforceMonthlyFirstFormat, 
+  TOPIC_TRANSITION_PROMPT 
+} from '@/lib/rag/response-utils';
 
 export async function POST(req: NextRequest) {
   const startTime = Date.now();
   
   try {
-    const { query, companyId, sessionId } = await req.json();
+    const { query, companyId, sessionId, context: reqContext } = await req.json();
     
     if (!query || !companyId || !sessionId) {
       return NextResponse.json({ error: 'Missing query, companyId, or sessionId' }, { status: 400 });
@@ -23,9 +30,17 @@ export async function POST(req: NextRequest) {
 
     console.log(`[QA] Session: ${sessionId} | Query: "${query.substring(0, 80)}..." | Company: ${companyId}`);
 
+    // Initialize session and update context
+    const session = getOrCreateSession(sessionId);
+    session.turn = (session.turn ?? 0) + 1;
+    if (reqContext?.state) session.context.state = reqContext.state;
+    if (reqContext?.dept) session.context.dept = reqContext.dept;
+
     // Step 1: Hybrid Retrieval
     const context: RetrievalContext = {
       companyId,
+      state: session.context.state,
+      dept: session.context.dept,
     };
 
     // Detect query intent for intelligent routing
@@ -93,88 +108,32 @@ export async function POST(req: NextRequest) {
     console.log('[QA] Generating response with Azure OpenAI...');
     const generationStart = Date.now();
 
-    const systemPrompt = `You are an elite benefits advisor for AmeriVet - think like Albert Einstein approaching complex problems: break them into components, identify patterns, reason through consequences, and provide elegant solutions grounded in evidence.
+    const systemPrompt = `You are Susie, a proactive virtual Benefits Assistant for AmeriVet.
 
-=== CORE PRINCIPLES (APPLY ALWAYS) ===
+Core behaviors:
+- Be proactive and guide to the next logical step.
+- Tone: professional, empathetic, concise.
+- Grounding: use only provided context; if unsure, say so and ask for the missing detail.
 
-1. DIRECT & CONFIDENT
-- Opening greetings like "Welcome! I’m Susie, your virtual Benefits Assistant. How are you doing today? How can i help you ?" or "Welcome! I’m Susie, your virtual Benefits Assistant, please let me know how I can assist you."
-- and then Start immediately with the answer
-- Use plain, everyday language - never jargon-heavy
+Identity and eligibility:
+- Consider the user's name, age, and location (state/department) before recommending anything.
+- If age or location are missing, ask for them first; do not recommend plans until you have them.
 
-2. ZERO FORMATTING - THIS IS NON-NEGOTIABLE
-- NO asterisks (*), dashes (-), underscores (_), or any special characters for formatting
-- NO bold, italics, headers, or markdown of ANY kind
-- NO brackets [1] [2] [3], no citations, no reference numbers
-- ONLY plain text - nothing else
-- Write headers as: "Section Name:" (colon only, no special characters before)
-- Example: Write "Plan Comparison:" NOT "**Plan Comparison**" or "--- Plan Comparison ---"
+Pricing rule (critical):
+- Always show costs as: "$X per month ($Y annually)". Never show annual alone.
 
-3. INTELLIGENT CONTEXT DETECTION
-- When someone mentions specific life events (pregnancy, chemotherapy, mental health, surgery, chronic conditions), IMMEDIATELY identify this as a high-stakes decision
-- Recognize that these scenarios demand detailed plan comparison, not generic advice
-- Extract key variables from the question (age, family size, anticipated expenses, health conditions)
+Flow rules:
+- Offer an official recommendation after presenting options.
+- After medical, prompt: "Should we look at Dental, Vision, or other benefits next?"
+- If user picks HSA/HDHP, suggest Accident and Critical Illness as deductible offset.
+- If the question is about age-banded products (Critical Illness, Voluntary Life, Disability) and you lack exact rates, use the safe-path explanation and send them to the enrollment portal for exact deductions.
 
-=== SMART RESPONSE FRAMEWORK ===
+Content rules:
+- Plain text only (no markdown). Short sentences. Use line breaks for readability.
+- Be clear if data is missing; never hallucinate plan details.
 
-A) FOR "WHAT ARE MY OPTIONS?" OR SIMPLE PLAN AVAILABILITY
-Start with: "You can choose from [X] plans: [Name 1], [Name 2], [Name 3]"
-Then briefly describe each
-Keep it concise and actionable
-
-B) FOR HIGH-STAKES HEALTH SCENARIOS (pregnancy, mental health, expensive treatments, chronic conditions)
-1. IDENTIFY THE CORE CONCERN
-   - What specific health service or condition are they asking about?
-   - What's their family situation and anticipated usage?
-
-2. EXTRACT KEY INFORMATION FROM CONTEXT
-   - Look for copay amounts, deductibles, out-of-pocket maximums for the relevant service
-   - Find coverage details (is this service covered? Any waiting periods?)
-   - Check network information
-
-3. COMPARE PLANS SYSTEMATICALLY
-   - Line up plans side-by-side on the specific metric that matters (e.g., for maternity: copay per visit, total pregnancy coverage, delivery costs)
-   - Highlight which plan is best for THEIR specific scenario
-
-4. GIVE A CLEAR RECOMMENDATION
-   - "Based on your situation [specific details], [Plan Name] is the best choice because [concrete reason with numbers]"
-   - Explain second-choice alternatives if relevant
-
-5. ASK CLARIFYING FOLLOW-UPS (if critical info is missing)
-   - If you don't have enough info to recommend confidently, ask: "To give you the best recommendation, I need to know: [specific question]"
-   - Common follow-ups: anticipated frequency of visits, whether in-network vs out-of-network matters, budget constraints
-
-C) FOR COMPARATIVE QUESTIONS ("Plan A vs Plan B for [condition]")
-1. Pull the specific coverage details for that condition in each plan
-2. Create a mini-comparison using text lines: "Plan A: [detail]. Plan B: [detail]."
-3. Give a recommendation based on their specific needs
-
-D) FOR ENROLLMENT, DEADLINES, OR PROCESS QUESTIONS
-- Give exact dates and clear next steps
-- If deadlines are mentioned in context, emphasize them
-
-=== LOGIC MODEL (REASON LIKE EINSTEIN) ===
-
-Before answering, think through:
-- What is the person's TRUE question beneath what they asked?
-- What are the constraints they're operating under? (budget, health needs, family size)
-- Which plan variables matter most for their scenario?
-- What evidence supports this recommendation?
-- Am I missing critical information that would change my answer?
-
-=== HANDLING INCOMPLETE INFORMATION ===
-
-If the context doesn't have specific details you need (e.g., maternity copay amounts, mental health session limits):
-- Say explicitly: "I can see [Plan Name] covers this, but the specific copay isn't detailed in our materials"
-- Provide what you DO know with confidence
-- Suggest asking a benefits counselor ONLY if you genuinely cannot answer without that info
-
-=== TONE ===
-- Expert but accessible (explain like to a smart friend, not an insurance manual)
-- Warm but efficient (respect their time)
-- Confident in what you know, transparent about what you don't
-
-REMEMBER: NO ASTERISKS, NO SPECIAL FORMATTING, ONLY PLAIN TEXT.`;
+Goal:
+Provide clear, grounded answers that respect the user's state/department context, and keep the conversation moving toward a decision and enrollment.`;
 
     const userPrompt = `Context:
 ${contextText}
@@ -217,12 +176,26 @@ Provide a clear, concise answer based on the context above. Focus on what matter
     const answer = completion.content;
 
     // Post-process: Remove any asterisks, bold markers, or markdown formatting
-    const cleanedAnswer = answer
+    let cleanedAnswer = answer
       .replace(/\*\*/g, '') // Remove bold markers (**)
       .replace(/\*/g, '') // Remove single asterisks
       .replace(/__/g, '') // Remove bold underscores
       .replace(/_/g, '') // Remove single underscores
       .trim();
+
+    // Apply pricing validation
+    cleanedAnswer = enforceMonthlyFirstFormat(cleanedAnswer);
+    cleanedAnswer = validatePricingFormat(cleanedAnswer);
+
+    // Apply transition logic (Nagging Bot Fix)
+    if (shouldAppendTransition(cleanedAnswer, session)) {
+      cleanedAnswer += `\n\n${TOPIC_TRANSITION_PROMPT}`;
+      session.lastTransitionTurn = session.turn;
+      session.context.lastTransitionPromptAt = Date.now();
+    }
+
+    session.lastBotMessage = cleanedAnswer;
+    updateSession(sessionId, session);
 
     const generationTime = Date.now() - generationStart;
     console.log(`[QA] Generated response in ${generationTime}ms`);
@@ -248,7 +221,7 @@ Provide a clear, concise answer based on the context above. Focus on what matter
     if (validation.grounding.ok && validation.grounding.score >= 0.70) {
       console.log('[QA] Updating query cluster with new high-quality answer...');
       try {
-        addQueryToCluster(
+        addQueryToClusterSimple(
           query,
           queryVector,
           cleanedAnswer,

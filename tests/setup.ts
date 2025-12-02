@@ -12,6 +12,11 @@ import { TextEncoder, TextDecoder } from 'node:util';
 (globalThis as any).TextEncoder = TextEncoder;
 (globalThis as any).TextDecoder = TextDecoder;
 
+// Force environment variables for ALL tests to prevent constructor crashes
+process.env.OPENAI_API_KEY = process.env.OPENAI_API_KEY || 'test-openai-key';
+process.env.AZURE_OPENAI_API_KEY = process.env.AZURE_OPENAI_API_KEY || 'test-azure-key';
+process.env.AZURE_OPENAI_ENDPOINT = process.env.AZURE_OPENAI_ENDPOINT || 'https://test.openai.azure.com';
+
 // Mock for window.crypto needed by Playwright in a Node environment
 // Set up global window object if it doesn't exist
 if (typeof globalThis.window === 'undefined') {
@@ -73,6 +78,9 @@ vi.mock('@/lib/azure/openai', () => ({
     generateChatCompletion: vi.fn().mockResolvedValue({ content: 'ok', usage: { tokens: 1 } }),
     generateText: vi.fn().mockResolvedValue('ok'),
     createChatCompletion: vi.fn().mockResolvedValue({ content: 'ok', usage: { tokens: 1 } }),
+    // Critical for hybrid-retrieval and ingestion tests
+    generateEmbedding: vi.fn().mockResolvedValue(new Array(1536).fill(0.1)),
+    generateEmbeddings: vi.fn().mockResolvedValue([new Array(1536).fill(0.1)]),
   }
 }));
 

@@ -9,7 +9,13 @@ type Session = {
   context: {
     state?: string;
     dept?: string;
+    lastTransitionPromptAt?: number;
+    lastRecommendationPromptAt?: number;
   };
+  // Conversational UX state
+  turn?: number;
+  lastBotMessage?: string;
+  lastTransitionTurn?: number;
 };
 
 const sessionStore = new Map<string, Session>();
@@ -58,13 +64,20 @@ const ENROLLMENT_HANDOFF_MSG = `Ready to enroll?
 
 Great! I'm your assistant, so you'll submit elections in the official system.
 
-Go to your enrollment portal: [Enrollment Portal Link]
+Go to your enrollment portal: {ENROLLMENT_PORTAL_URL}
 
 Do you want to review Dental or Vision before you head over?`;
 
 const ANCILLARY_MENU = `We can review Dental, Vision, Accident, Critical Illness, Hospital Indemnity, Life, or Disability. Which one would you like to explore next?`;
 
 const CROSS_SELL_TIP = `\n\nPro Tip: Since you're looking at an HSA/High Deductible plan, consider Accident and Critical Illness. They pay you cash to help offset the higher deductible if something happens.`;
+
+const FINAL_RECOMMENDATION_PROMPT = `Would you like my official recommendation based on what we've discussed?`;
+const TOPIC_TRANSITION_PROMPT = `Now that we've covered medical, should we move to Dental, Vision, or other benefits next?`;
+const ENROLLMENT_PORTAL_URL =
+  process.env.ENROLLMENT_PORTAL_URL
+  ?? process.env.ENROLLMENT_URL
+  ?? 'https://amerivetaibot.bcgenrolls.com/subdomain/login';
 
 export async function POST(req: NextRequest) {
   try {
@@ -76,6 +89,8 @@ export async function POST(req: NextRequest) {
 
     const sessionKey = sessionId || req.headers.get('x-session-id') || 'demo-session';
     const session = getOrCreateSession(sessionKey);
+    // Initialize or increment conversational turn counter
+    session.turn = (session.turn ?? 0) + 1;
     const hasAttachments = Array.isArray(attachments) && attachments.length > 0;
 
     // Sprint 1.1: Eligibility scoping (state -> dept)
@@ -106,7 +121,7 @@ export async function POST(req: NextRequest) {
       return respond(ANCILLARY_MENU, 'ancillary');
     }
     if (intent === 'enrollment_handoff') {
-      return respond(ENROLLMENT_HANDOFF_MSG, 'handoff');
+      return respond(ENROLLMENT_HANDOFF_MSG.replace('{ENROLLMENT_PORTAL_URL}', ENROLLMENT_PORTAL_URL), 'handoff');
     }
 
     // Main AI flow with system prompt + context
@@ -140,6 +155,28 @@ export async function POST(req: NextRequest) {
         content += CROSS_SELL_TIP;
       }
 
+      // Sprint 2.3: Offer official recommendation (guarded)
+      if (shouldAppendRecommendation(content, session)) {
+        content += `\n\n${FINAL_RECOMMENDATION_PROMPT}`;
+        session.context.lastRecommendationPromptAt = Date.now();
+      }
+
+      // Sprint 2.4: Proactive topic transition with state-aware gating to avoid nagging
+      if (shouldAppendTransition(content, session)) {
+        content += `\n${TOPIC_TRANSITION_PROMPT}`;
+        session.lastTransitionTurn = session.turn;
+        session.context.lastTransitionPromptAt = Date.now();
+      }
+
+      // Sprint 3.3: Ensure monthly-first pricing reminder when needed
+      content = enforceMonthlyFirstFormat(content);
+      // Additional post-processing: enforce monthly-first visibility via regex validator
+      content = validatePricingFormat(content);
+
+      // Persist last bot message for UX checks
+      session.lastBotMessage = content;
+      updateSession(sessionKey, session);
+
       return respond(content, 'azure-openai');
     } catch (aiError) {
       console.log(
@@ -165,6 +202,36 @@ function classifyIntent(message: string): 'age_banded_cost' | 'ancillary_switch'
   if (msg.includes('enroll') || msg.includes('sign up') || msg.includes('portal')) return 'enrollment_handoff';
 
   return 'general';
+}
+
+function hasPrompt(content: string, prompt: string) {
+  return content.toLowerCase().includes(prompt.toLowerCase());
+}
+
+function shouldAppendRecommendation(content: string, session: Session): boolean {
+  if (!content.trim()) return false;
+  if (hasPrompt(content, FINAL_RECOMMENDATION_PROMPT)) return false;
+
+  const last = session.context.lastRecommendationPromptAt ?? 0;
+  return Date.now() - last > 45_000;
+}
+
+function shouldAppendTransition(content: string, session: Session): boolean {
+  const trimmed = content.trim();
+  if (!trimmed) return false;
+  if (hasPrompt(content, TOPIC_TRANSITION_PROMPT)) return false;
+
+  const normalized = trimmed.toLowerCase();
+  if (normalized.includes('enrollment portal')) return false;
+  if (trimmed.endsWith('?')) return false;
+  if ((session.lastBotMessage || '').includes('Dental, Vision')) return false;
+
+  const lastTurn = session.lastTransitionTurn ?? -Infinity;
+  const currentTurn = session.turn ?? 0;
+  if (Number.isFinite(lastTurn) && currentTurn - lastTurn < 2) return false;
+
+  const lastTimestamp = session.context.lastTransitionPromptAt ?? 0;
+  return Date.now() - lastTimestamp > 45_000;
 }
 
 function isHsaDiscussion(response: string, query: string): boolean {
@@ -199,6 +266,27 @@ function respond(content: string, source: string) {
     },
     { status: 200 },
   );
+}
+
+// Helper to reinforce monthly-first pricing presentation
+function enforceMonthlyFirstFormat(text: string): string {
+  const hasAnnually = text.toLowerCase().includes('annually');
+  const hasPerMonth = text.toLowerCase().includes('per month');
+  if (hasAnnually && !hasPerMonth) {
+    return `Reminder: Show costs as "$X per month ($Y annually)".\n\n${text}`;
+  }
+  return text;
+}
+
+// Regex-based validator to ensure monthly pricing is present when annual pricing appears
+function validatePricingFormat(text: string): string {
+  // Detect annual pricing mentions such as "$4,800/year" or "$4,800 annually"
+  const annualPriceRegex = /\$[\d,]+(?:\s*\/|\s+per\s+)?(?:year|annually)/gi;
+  if (annualPriceRegex.test(text) && !text.toLowerCase().includes('month')) {
+    // Append a disclaimer rather than attempting arithmetic in code
+    return text + '\n_(Note: Please divide annual costs by 12 for your monthly premium)_';
+  }
+  return text;
 }
 
 // Pattern-matching fallback that honors the new UX and safety rules
