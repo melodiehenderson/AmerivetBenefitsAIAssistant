@@ -200,7 +200,7 @@ export const POST = withAuth(undefined, [PERMISSIONS.CHAT_WITH_AI])(async (reque
 
         const trimmedState = message.trim();
         if (!trimmedState) {
-          return sendEligibilityMessage('I didn't catch that. What state are you in?');
+          return sendEligibilityMessage("I didn't catch that. What state are you in?");
         }
 
         const needsDivision = !metadata.division;
