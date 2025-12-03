@@ -112,6 +112,35 @@ export const POST = withAuth(undefined, [PERMISSIONS.CHAT_WITH_AI])(async (reque
       });
     };
 
+    // Free-text onboarding extractor: parse name, age, state, division in one shot
+    const extractOnboarding = (text: string) => {
+      const t = text.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+      const tokens = t.split(' ');
+      const states = ['california','oregon','washington','texas','arizona','nevada','new york','florida','ca','or','wa','tx','az','nv','ny','fl'];
+      const deptAliases: Record<string,string> = { 'hr':'hr', 'human':'hr', 'resources':'hr', 'finance':'finance', 'accounting':'finance', 'it':'it', 'engineering':'engineering', 'ops':'operations', 'operations':'operations' };
+      let name: string | undefined;
+      let age: number | undefined;
+      let state: string | undefined;
+      let division: string | undefined;
+      for (let i = 0; i < tokens.length; i++) {
+        const tok = tokens[i];
+        if (!age && /^(1[6-9]|[2-6][0-9])$/.test(tok)) age = Number(tok);
+        if (!state && states.includes(tok)) state = tok.length === 2 ? ({ ca: 'california', or: 'oregon', wa: 'washington', tx: 'texas', az: 'arizona', nv: 'nevada', ny: 'new york', fl: 'florida' } as any)[tok] : tok;
+        if (!division && (deptAliases[tok] || tok === 'dept' || tok === 'department')) {
+          division = deptAliases[tok] || tokens[i+1] || 'general';
+          if (deptAliases[division]) division = deptAliases[division];
+        }
+      }
+      // naive name: first token that is not number/state/dept keyword
+      for (const tok of tokens) {
+        if (/^(1[6-9]|[2-6][0-9])$/.test(tok)) continue;
+        if (states.includes(tok)) continue;
+        if (deptAliases[tok] || tok === 'dept' || tok === 'department') continue;
+        if (!name) { name = tok; break; }
+      }
+      return { name, age, state, division };
+    };
+
     const ensureEligibility = async (): Promise<NextResponse | null> => {
       const metadata = conversation.metadata ?? {};
       const awaiting = metadata.awaiting as 'name' | 'age' | 'state' | 'division' | undefined | null;
@@ -122,7 +151,7 @@ export const POST = withAuth(undefined, [PERMISSIONS.CHAT_WITH_AI])(async (reque
         const updated = await conversationService.patchMetadata(conversation.id, { awaiting: 'name' });
         conversation.metadata = updated.metadata ?? {};
         return sendEligibilityMessage(
-          "Hi! 👋 I'm Susie, your Amerivet Benefits Assistant. I'm here to help you understand your benefits options and make informed decisions.\n\n⚠️ **Important**: I am NOT your enrollment platform. I'm here to help you learn and decide, but you'll make your final selections in your company's benefits enrollment system.\n\nLet's get started! What's your first name?"
+          "Hi! 👋 I'm Susie, your AmeriVet Benefits Assistant. My goal is to make this easy, friendly, and stress-free so you feel confident in your choices.\n\nℹ️ **Heads-up**: I'm here to help you learn and decide. You'll make your official selections later in your company's enrollment system.\n\nLet's begin—what's your first name?"
         );
       }
 
@@ -139,7 +168,7 @@ export const POST = withAuth(undefined, [PERMISSIONS.CHAT_WITH_AI])(async (reque
         });
         conversation.metadata = updated.metadata ?? {};
         return sendEligibilityMessage(
-          `Nice to meet you, ${userName}! 😊\n\nTo help me provide the most relevant benefits information, how old are you? (Just your age in years is fine)`
+          `Nice to meet you, ${userName}! 😊\n\nTo tailor the guidance, how old are you? (Just the number in years is perfect)`
         );
       }
 
@@ -161,7 +190,7 @@ export const POST = withAuth(undefined, [PERMISSIONS.CHAT_WITH_AI])(async (reque
         });
         conversation.metadata = updated.metadata ?? {};
         return sendEligibilityMessage(
-          `Got it, thanks ${metadata.userName}!\n\nNow, which state do you live in? This helps me show you benefits available in your area.`
+          `Thanks, ${metadata.userName}!\n\nWhich state do you live in? That helps me show what's available in your area.`
         );
       }
 
@@ -195,7 +224,7 @@ export const POST = withAuth(undefined, [PERMISSIONS.CHAT_WITH_AI])(async (reque
           const updated = await conversationService.patchMetadata(conversation.id, { awaiting: 'state' });
           conversation.metadata = updated.metadata ?? {};
           const greeting = metadata.userName ? `${metadata.userName}, which` : 'Which';
-          return sendEligibilityMessage(`${greeting} state are you in? This helps me show you location-specific benefits.`);
+          return sendEligibilityMessage(`${greeting} state are you in? This helps me show location-specific benefits.`);
         }
 
         const trimmedState = message.trim();
@@ -217,7 +246,7 @@ export const POST = withAuth(undefined, [PERMISSIONS.CHAT_WITH_AI])(async (reque
         if (needsDivision) {
           const userName = metadata.userName ? metadata.userName : 'there';
           return sendEligibilityMessage(
-            `Perfect, ${userName}! Last question: what is your company division or department? (For example: Sales, Engineering, Operations, etc.)`
+            `Perfect, ${userName}! Last question: what's your company division or department? (e.g., Sales, Engineering, Operations)`
           );
         }
 
@@ -249,17 +278,17 @@ export const POST = withAuth(undefined, [PERMISSIONS.CHAT_WITH_AI])(async (reque
         const ageContext = userAge ? ` At ${userAge}, you` : ' You';
         const enrollmentUrl = process.env.ENROLLMENT_PORTAL_URL || process.env.NEXT_PUBLIC_ENROLLMENT_URL;
         const enrollmentCta = enrollmentUrl 
-          ? `\n\n📋 **Ready to enroll?** When you're ready to make your official selections, visit your [benefits enrollment portal](${enrollmentUrl}).`
+          ? `\n\n📋 **When you're ready to enroll**: finalize your selections in your [benefits enrollment portal](${enrollmentUrl}).`
           : '';
         
         return sendEligibilityMessage(
-          `Awesome, ${userName}! 🎉\n\nI now have everything I need:
+            `Awesome, ${userName}! 🎉\n\nGreat, I have what I need:
 • Name: ${userName}
 • Age: ${userAge || 'Not specified'}
 • Location: ${metadata.state}
 • Department: ${trimmedDivision}
 
-${ageContext} may be eligible for various health, dental, vision, and retirement benefits in ${metadata.state}.\n\nI'm here to help you understand your options so you can make the best choices for you and your family. Let's explore together!\n\n**What would you like to discuss first?**
+        ${ageContext} may be eligible for health, dental, vision, and retirement benefits in ${metadata.state}.\n\nI'm here to keep things simple, friendly, and useful so you feel confident in your choices.\n\n**What would you like to look at first?**
 • Medical plans (PPO, HMO, HSA options)
 • Dental & Vision coverage
 • Critical Illness, Accident, or Hospital Indemnity
@@ -268,6 +297,18 @@ ${ageContext} may be eligible for various health, dental, vision, and retirement
         );
       }
 
+      // If user provided free-text onboarding details, parse and patch without re-asking
+      const parsed = extractOnboarding(message);
+      const patch: Record<string, any> = {};
+      if (parsed.name && !metadata.userName) patch.userName = parsed.name;
+      if (parsed.age && !metadata.userAge) patch.userAge = parsed.age;
+      if (parsed.state && !metadata.state) patch.state = parsed.state;
+      if (parsed.division && !metadata.division) patch.division = parsed.division;
+      if (Object.keys(patch).length) {
+        patch.awaiting = null;
+        const updated = await conversationService.patchMetadata(conversation.id, patch);
+        conversation.metadata = { ...(conversation.metadata||{}), ...(updated.metadata||{}) };
+      }
       return null;
     };
 
@@ -365,15 +406,19 @@ Which of these would you like to learn about next?`
     // Enrollment Portal CTA (Sprint 2.5) - Add to end of substantive responses
     const isSubstantiveResponse = enhancedContent.length > 200;
     const enrollmentUrl = process.env.ENROLLMENT_PORTAL_URL || process.env.NEXT_PUBLIC_ENROLLMENT_URL;
-    if (isSubstantiveResponse && enrollmentUrl && !conversation.metadata?.enrollmentLinkShown && normalizedMessage.match(/(enroll|sign up|how do i|where do i|ready to)/i)) {
+    // Transition guard: don't append transitions during onboarding
+    const onboardingActive = !!conversation.metadata?.awaiting;
+    if (!onboardingActive) {
+      if (isSubstantiveResponse && enrollmentUrl && !conversation.metadata?.enrollmentLinkShown && normalizedMessage.match(/(enroll|sign up|how do i|where do i|ready to)/i)) {
       enhancedContent += `\n\n---\n\n📝 **Ready to make it official?** You can finalize your benefit selections at your [benefits enrollment portal](${enrollmentUrl}).`;
       await conversationService.patchMetadata(conversation.id, { enrollmentLinkShown: true });
+      }
     }
 
     // Backend seed greeting: prepend once per conversation
     const seedShown = conversation.metadata?.seedGreetingShown === true;
     if (!seedShown) {
-      const greeting = "Hi! 👋 Welcome! I'm your virtual Benefits Assistant. I can help with AmeriVet benefits, plans, and enrollment guidance. I am NOT your enrollment platform — you'll still make official selections in your benefits system. How can I help today?";
+      const greeting = "Hi! 👋 Welcome! I'm your Benefits Assistant. I'll keep this friendly and easy so you feel confident about your benefits.\n\nℹ️ You'll make official selections in your company's enrollment system—I'm here to help you understand and decide. How can I help today?";
       enhancedContent = `${greeting}\n\n${enhancedContent}`;
       try {
         await conversationService.patchMetadata(conversation.id, { seedGreetingShown: true });
