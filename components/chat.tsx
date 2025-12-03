@@ -124,10 +124,10 @@ export function Chat({
           parts: [
             {
               type: 'text',
-              text: "Welcome! I'm your virtual Benefits Assistant today. I can help you with questions about your AmeriVet benefits, insurance plans, and more. I am NOT your enrollment platform. Once you make your choices, you will still need to log into your benefits enrollment system and enter your elections there. Tell me - what can I help you with today?",
+              text: "Hi! 👋 Hello!\n\nWelcome! I'm your virtual Benefits Assistant today. I can help you with questions about your AmeriVet benefits, insurance plans, and more. I am NOT your enrollment platform. Once you make your choices, you will still need to log into your benefits enrollment system and enter your elections there. Tell me - what can I help you with today?",
             },
           ],
-        },
+        }
       ]);
     }
   }, [messages.length, setMessages]);
