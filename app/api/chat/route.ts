@@ -269,9 +269,6 @@ ${ageContext} may be eligible for various health, dental, vision, and retirement
       }
 
       return null;
-      }
-
-      return null;
     };
 
     if (process.env.NODE_ENV !== 'test') {
