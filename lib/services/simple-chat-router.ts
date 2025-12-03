@@ -222,45 +222,34 @@ export class SimpleChatRouter {
 
   private handleAgeBandedCostQuestion(context?: ChatContext): ChatResponse {
     const contextIntro = this.buildContextIntro(context);
-    const response = `${contextIntro}Critical Illness, Life, and both Short-Term and Long-Term Disability products are age-rated. I can't quote or estimate exact costs because they depend on your age bracket. Please check the enrollment platform for the precise premium tied to your profile.`;
+      const enrollmentUrl = process.env.ENROLLMENT_PORTAL_URL || ENROLLMENT_URL;
+    
+      // Kevin's exact "Safe Path" language (Sprint 3.1)
+      const response = `${contextIntro}This is an age-rated product, which means the cost depends on your specific age bracket. I can't give you an exact quote here.\n\n**Your best bet is to log into your [benefits enrollment system](${enrollmentUrl})** to see your actual cost. It will show you the precise premium based on your age.\n\nWould you like to know more about what this coverage includes, or shall we look at other benefit options?`;
 
     return {
-      content: this.appendFinalCTA(response),
+        content: response,
       responseType: 'benefits',
-      confidence: 0.75,
+        confidence: 0.9,
       timestamp: new Date()
     };
   }
 
   private handleOtherPlansQuestion(context?: ChatContext): ChatResponse {
     const contextIntro = this.buildContextIntro(context);
-    const eligible = this.getEligibleBenefits(context);
-    let response = `${contextIntro}Here's our Ancillary Coverage Menu (no medical plans are listed here):\n\n`;
-
-    const categories = new Set<string>();
-    eligible.ancillary.forEach(plan => {
-      if (plan.voluntaryType) {
-        categories.add(plan.voluntaryType);
-      } else {
-        categories.add(plan.name);
-      }
-    });
-
-    if (categories.size === 0) {
-      response += '- No ancillary plans found for your eligibility.\n';
-    } else {
-      categories.forEach(option => {
-        response += `- ${option}\n`;
-      });
-    }
-
-    response += '\nWhich of these would you like to explore next?';
-    response += '\nLet me know if you want a recommendation for any of these categories.';
+      const userName = 'there';
+    
+      // Fix medical loop bug - show ancillary plans only (Sprint 1.2)
+      let response = `${contextIntro}Great question! Beyond medical, dental, and vision, here are the **voluntary/ancillary benefits** you can add:\n\n`;
+    
+      response += `**Financial Protection:**\n• Critical Illness Insurance - Cash payout if diagnosed with cancer, heart attack, stroke, etc.\n• Accident Insurance - Covers injuries from accidents (fractures, burns, etc.)\n• Hospital Indemnity - Pays you cash for hospital stays\n\n**Income Protection:**\n• Life Insurance (Term Life) - Financial protection for your family\n• Short-Term Disability (STD) - Income replacement if you can't work\n• Long-Term Disability (LTD) - Extended income protection\n\n**Savings & Retirement:**\n• Health Savings Account (HSA) - Tax-free medical savings (if eligible)\n• 401(k) Retirement Plan - Build your retirement savings\n\n`;
+    
+      response += `Which of these interests you most? I can explain how any of these work and whether they're a good fit for your situation!`;
 
     return {
-      content: this.appendFinalCTA(response),
+        content: response,
       responseType: 'benefits',
-      confidence: 0.85,
+        confidence: 0.95,
       timestamp: new Date()
     };
   }
@@ -353,7 +342,11 @@ export class SimpleChatRouter {
   }
 
   private appendFinalCTA(base: string): string {
-    const link = process.env.ENROLLMENT_URL || ENROLLMENT_URL;
+    const link =
+      process.env.ENROLLMENT_PORTAL_URL ||
+      process.env.NEXT_PUBLIC_ENROLLMENT_URL ||
+      process.env.ENROLLMENT_URL ||
+      ENROLLMENT_URL;
     return `${base}\n\nReady to make your official selections? [**Log in to Enroll Here**](${link})`;
   }
 
