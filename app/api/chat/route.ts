@@ -370,6 +370,16 @@ Which of these would you like to learn about next?`
       await conversationService.patchMetadata(conversation.id, { enrollmentLinkShown: true });
     }
 
+    // Backend seed greeting: prepend once per conversation
+    const seedShown = conversation.metadata?.seedGreetingShown === true;
+    if (!seedShown) {
+      const greeting = "Hi! 👋 Welcome! I'm your virtual Benefits Assistant. I can help with AmeriVet benefits, plans, and enrollment guidance. I am NOT your enrollment platform — you'll still make official selections in your benefits system. How can I help today?";
+      enhancedContent = `${greeting}\n\n${enhancedContent}`;
+      try {
+        await conversationService.patchMetadata(conversation.id, { seedGreetingShown: true });
+      } catch {}
+    }
+
     // Save AI response
     const aiMessage = {
       id: crypto.randomUUID(),
