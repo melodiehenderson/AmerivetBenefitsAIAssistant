@@ -1,95 +1,365 @@
-﻿import { OpenAI } from 'openai';
-import { NextRequest, NextResponse } from 'next/server';
+﻿import { NextRequest, NextResponse } from 'next/server';
+import { hybridRetrieve } from '@/lib/rag/hybrid-retrieval';
+import { azureOpenAIService } from '@/lib/azure/openai';
+import { validateResponse } from '@/lib/rag/validation';
+import { detectQueryIntent } from '@/lib/rag/query-intent-detector';
+import type { RetrievalContext } from '@/types/rag';
+import { 
+  findQueryClusterSimple, 
+  addQueryToClusterSimple,
+  queryToVector 
+} from '@/lib/rag/cache-utils';
+import { trackCacheHit } from '@/lib/rag/observability';
+import { getOrCreateSession, updateSession } from '@/lib/rag/session-store';
+import { 
+  validatePricingFormat, 
+  enforceMonthlyFirstFormat
+} from '@/lib/rag/response-utils';
 
-export const dynamic = 'force-dynamic';
+// ============================================================================
+// UTILITY FUNCTIONS
+// ============================================================================
 
-const ONBOARDING_SYSTEM_PROMPT = `
-You are the Amerivet Benefits Assistant. 
-Your goal: Guide the user through a strict onboarding flow.
+function extractName(msg: string, botJustAskedForName: boolean): string | null {
+  const NOT_NAMES = new Set([
+    'hello', 'hi', 'hey', 'yes', 'no', 'ok', 'thanks', 'please', 'sure',
+    'medical', 'dental', 'vision', 'health', 'insurance', 'benefits', 'plan',
+    'plans', 'help', 'need', 'want', 'looking', 'hpo', 'hmo', 'ppo', 'hsa'
+  ]);
+  
+  // Pattern 1: Explicit phrases like "my name is X", "I'm X", "it's X"
+  const explicitPatterns = [
+    /(?:my name is|i'm|i am|call me|it's|its|this is)\s+([a-zA-Z]{2,15})/i,
+    /^([a-zA-Z]+)\s+here$/i
+  ];
+  
+  for (const pattern of explicitPatterns) {
+    const match = msg.match(pattern);
+    if (match && !NOT_NAMES.has(match[1].toLowerCase())) {
+      return match[1].charAt(0).toUpperCase() + match[1].slice(1).toLowerCase();
+    }
+  }
+  
+  // Pattern 2: If bot JUST asked for name, and user sends a single word (2-15 letters)
+  if (botJustAskedForName) {
+    const singleWord = msg.match(/^([a-zA-Z]{2,15})$/i);
+    if (singleWord && !NOT_NAMES.has(singleWord[1].toLowerCase())) {
+      return singleWord[1].charAt(0).toUpperCase() + singleWord[1].slice(1).toLowerCase();
+    }
+  }
+  
+  return null;
+}
 
-=== STATE ===
-Check the [DEVELOPER CONTEXT] below.
-- IF "has_collected_name" is FALSE: You MUST run the Welcome Script.
-- IF "has_collected_name" is TRUE: You can help the user.
-- IF "just_provided_name" is TRUE: You MUST say: "Thanks, [Name]! Before we continue... I'm not your enrollment platform... What can I help with?"
+// ============================================================================
+// WELCOME MESSAGE
+// ============================================================================
+const WELCOME_MESSAGE = `Hi there! Welcome! 🎉
 
-=== WELCOME SCRIPT ===
-"Hi there! Welcome! 🎉
-I'm so glad you're here! I'm your Benefits Assistant.
-Let's get started — what's your name?"
+I'm so glad you're here! I'm your Benefits Assistant, and I'm excited to help you explore your benefits options and find the perfect choices for you.
 
-=== RULES ===
-1. Do not loop. If the user gives a name, accept it and move on.
-2. "$X per month ($Y annually)" format for costs.
-`;
+Let's get started — what's your name?`;
 
+// ============================================================================
+// SYSTEM PROMPT WITH MEMORY RULES
+// ============================================================================
+function buildSystemPrompt(hasName: boolean, userName: string | null): string {
+  return `You are the AmeriVet Benefits Assistant — friendly, helpful, and knowledgeable about employee benefits.
+
+=== HARD RULES (INTERNAL - DO NOT SPEAK THESE) ===
+1. **MEMORY:** Check the [DEVELOPER CONTEXT]. If user_age or user_state is present, DO NOT ask for them again.
+2. **FOCUS:** Stay on current topic until user explicitly says "I'm done" or "I'll take this plan."
+3. **PRICING:** Use exact format "$X per month ($Y annually)" - NEVER "approximately"
+4. **NO LEAKS:** Never output "Reminder:" or internal instructions
+
+=== OUTPUT FORMAT ===
+- Tone: Warm, enthusiastic, professional
+- Plain text only - no markdown, asterisks, or bullet points
+- Use name naturally when known
+
+${hasName ? `User's name is ${userName}. Use naturally but don't overuse.` : ''}`;
+}
+
+// ============================================================================
+// POST HANDLER
+// ============================================================================
 export async function POST(req: NextRequest) {
+  const startTime = Date.now();
+  
   try {
-    const { messages } = await req.json();
+    const { query, companyId, sessionId, context: reqContext } = await req.json();
     
-    // --- ROBUST STATE DETECTION (The Fix) ---
-    
-    // 1. Find the last thing the BOT said
-    // We reverse search the array to find the most recent 'assistant' message
-    const lastBotMessageObj = [...messages].reverse().find((m: any) => m.role === 'assistant');
-    const lastBotText = lastBotMessageObj ? lastBotMessageObj.content.toLowerCase() : "";
-    
-    const lastUserMessageObj = messages[messages.length - 1];
-    const userText = lastUserMessageObj.content;
-
-    let hasCollectedName = false;
-    let justProvidedName = false;
-
-    // 2. CHECK: Did the bot just ask for a name?
-    // We check for keywords: "what's your name", "what is your name", "your name?"
-    if (lastBotText.includes("name") && (lastBotText.includes("what") || lastBotText.includes("?"))) {
-        // If the bot asked for a name, and the user replied (with anything), we accept it.
-        hasCollectedName = true;
-        justProvidedName = true;
-    }
-    
-    // 3. CHECK: Are we already deep in conversation?
-    // If the history shows we already said "Thanks" or discussed benefits, we know the name.
-    if (messages.some((m: any) => m.role === 'assistant' && (m.content.includes("enrollment platform") || m.content.includes("help you with")))) {
-        hasCollectedName = true;
-        justProvidedName = false; // We already knew it, so don't greet again.
+    if (!query || !companyId || !sessionId) {
+      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    // --- INJECT STATE ---
-    const developerContext = {
-      role: 'system',
-      content: `[DEVELOPER CONTEXT]: 
-      - has_collected_name: ${hasCollectedName}
-      - just_provided_name: ${justProvidedName}
-      - user_input_is_name: "${userText}"
+    console.log(`[QA] Session: ${sessionId} | Query: "${query.substring(0, 50)}..."`);
+
+    // ========================================================================
+    // SESSION MANAGEMENT
+    // ========================================================================
+    const session = getOrCreateSession(sessionId);
+    session.turn = (session.turn ?? 0) + 1;
+    
+    if (reqContext) {
+      session.context = { ...session.context, ...reqContext };
+    }
+
+    const hadNameBefore = !!session.userName;
+    
+    // ========================================================================
+    // ROBUST BOT MESSAGE DETECTION (The Critical Fix)
+    // Use reverse search instead of unreliable session.lastBotMessage
+    // ========================================================================
+    let botJustAskedForName = false;
+    
+    // Check if we just asked for a name by looking at the last bot action
+    if (session.step === 'awaiting_name' || session.turn === 1) {
+      botJustAskedForName = true; // We're in name collection mode
+    } else if (session.lastBotMessage) {
+      const lastMsg = session.lastBotMessage.toLowerCase();
+      botJustAskedForName = lastMsg.includes("what's your name") || lastMsg.includes("your name");
+    }
+
+    console.log(`[QA] Turn ${session.turn} | HasName: ${hadNameBefore} | Step: ${session.step}`);
+
+    // ========================================================================
+    // ONBOARDING FLOW: Name Collection First
+    // ========================================================================
+    if (!session.hasCollectedName) {
+      console.log(`[QA] User hasn't provided name yet. Turn: ${session.turn}, Query: "${query}"`);
       
-      CRITICAL INSTRUCTION: 
-      If just_provided_name is TRUE, you MUST output the 'Thanks [Name]' script using "${userText}" as the name.`
+      // Try to extract name from current input
+      const extractedName = extractName(query, botJustAskedForName || session.turn > 1);
+      
+      if (extractedName) {
+        console.log(`[QA] ✓ Name extracted: ${extractedName}`);
+        session.userName = extractedName;
+        session.hasCollectedName = true;
+        session.step = 'awaiting_topic';
+        
+        const nameAck = `Hi ${extractedName}! It's great to meet you! 😊
+
+Just so you know — I'm here to help you understand your benefits options. When you're ready to enroll, I'll point you to the right place.
+
+So ${extractedName}, what would you like to explore today? I can help with Medical, Dental, Vision, HSA, Life Insurance, and more!`;
+        
+        session.lastBotMessage = nameAck;
+        updateSession(sessionId, session);
+        
+        return NextResponse.json({
+          answer: nameAck,
+          tier: 'L1',
+          cacheSource: 'onboarding',
+          metadata: { step: 'name_collected', userName: extractedName }
+        });
+      } else {
+        // No name found - show welcome/ask for name
+        console.log('[QA] No name detected, showing welcome');
+        const welcomeMsg = `Hi there! Welcome! 🎉
+
+I'm so glad you're here! I'm your Benefits Assistant, and I'm excited to help you explore your benefits options and find the perfect choices for you.
+
+Let's get started — what's your name?`;
+        
+        session.step = 'awaiting_name';
+        session.lastBotMessage = welcomeMsg;
+        updateSession(sessionId, session);
+        
+        return NextResponse.json({
+          answer: welcomeMsg,
+          tier: 'L1',
+          cacheSource: 'onboarding',
+          metadata: { step: 'awaiting_name', turn: session.turn }
+        });
+      }
+    }
+
+    // ========================================================================
+    // METADATA EXTRACTION (Before RAG)
+    // ========================================================================
+    console.log(`[QA] Normal chat for ${session.userName}`);
+    session.step = 'active_chat';
+    
+    // Extract age (18-99)
+    if (!session.userAge) {
+      const ageMatch = query.match(/\b([1-9][0-9])\b/);
+      if (ageMatch) {
+        const age = parseInt(ageMatch[1]);
+        if (age >= 18 && age <= 99) {
+          session.userAge = age;
+          console.log(`[QA] ✓ Extracted age: ${age}`);
+        }
+      }
+    }
+    
+    // Extract state
+    if (!session.userState) {
+      const stateMatch = query.match(/\b(WA|OR|CA|TX|FL|NY|OH|PA|VA|NC|SC|GA|AL|MI|IL|IN|WI|MN|IA|MO|AR|LA|MS|TN|KY|WV|MD|DE|NJ|CT|RI|MA|VT|NH|ME|AK|HI|NV|UT|CO|WY|MT|ND|SD|NE|KS|OK|NM|AZ|ID)\b/i);
+      if (stateMatch) {
+        session.userState = stateMatch[1];
+        console.log(`[QA] ✓ Extracted state: ${session.userState}`);
+      }
+    }
+    
+    updateSession(sessionId, session);
+
+    // ========================================================================
+    // RAG RETRIEVAL
+    // ========================================================================
+    const context: RetrievalContext = {
+      companyId,
+      state: session.context.state,
+      dept: session.context.dept,
     };
 
-    // --- CALL OPENAI ---
-    const openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY || 'dummy-key',
-    });
+    const queryIntent = detectQueryIntent(query);
+    const result = await hybridRetrieve(query, context);
+    const retrievalTime = Date.now() - startTime;
 
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o', 
-      messages: [
-        { role: 'system', content: ONBOARDING_SYSTEM_PROMPT },
-        ...messages.slice(0, -1),
-        developerContext, // <--- This forces the bot to recognize the state
-        lastUserMessageObj
+    if (!result.chunks || result.chunks.length === 0) {
+      const noInfo = `I'm sorry ${session.userName}, I couldn't find specific information about that. Could you try rephrasing your question?`;
+      session.lastBotMessage = noInfo;
+      updateSession(sessionId, session);
+      
+      return NextResponse.json({
+        answer: noInfo,
+        metadata: { groundingScore: 0, retrievalTimeMs: retrievalTime }
+      });
+    }
+
+    const contextText = result.chunks
+      .map((chunk, idx) => `[${idx + 1}] ${chunk.title}\n${chunk.content}`)
+      .join('\n\n');
+
+    // ========================================================================
+    // CLUSTER CACHE CHECK
+    // ========================================================================
+    const queryVector = queryToVector(query);
+    const clusterMatch = findQueryClusterSimple(queryVector, companyId, 0.85);
+    
+    if (clusterMatch && clusterMatch.confidence >= 0.85) {
+      console.log(`[QA] Cluster hit (${clusterMatch.confidence.toFixed(3)})`);
+      trackCacheHit('cluster');
+      
+      let cachedAnswer = clusterMatch.answer;
+      if (session.userName && !cachedAnswer.includes(session.userName)) {
+        cachedAnswer = cachedAnswer.replace(/^/, `${session.userName}, `);
+      }
+      
+      session.lastBotMessage = cachedAnswer;
+      updateSession(sessionId, session);
+      
+      return NextResponse.json({
+        answer: cachedAnswer,
+        tier: 'L1',
+        cacheSource: 'cluster',
+        metadata: {
+          groundingScore: clusterMatch.groundingScore || 0.85,
+          cacheHitType: 'cluster',
+          clusterConfidence: clusterMatch.confidence,
+        }
+      });
+    }
+
+    // ========================================================================
+    // LLM GENERATION WITH MEMORY INJECTION
+    // ========================================================================
+    const systemPrompt = buildSystemPrompt(!!session.userName, session.userName || null);
+    
+    const developerContext = `[DEVELOPER CONTEXT - USER MEMORY]
+- User Name: ${session.userName || "Unknown"}
+- User Age: ${session.userAge || "Missing"}
+- User State: ${session.userState || "Missing"}
+- Current Topic: ${session.currentTopic || "General"}
+
+CRITICAL MEMORY RULES:
+- If Age is NOT "Missing", DO NOT ask for age
+- If State is NOT "Missing", DO NOT ask for state
+- Stay focused on Current Topic until resolved`;
+    
+    const userPrompt = `Context from benefits documents:
+${contextText}
+
+User's question: ${query}
+
+${queryIntent.type === 'high-stakes' ? `High-stakes scenario: ${queryIntent.lifeEvent?.replace(/_/g, ' ')}` : ''}
+
+Respond based on context and follow memory rules.`;
+
+    console.log('[QA] Generating response with memory injection...');
+    const generationStart = Date.now();
+
+    const completion = await azureOpenAIService.generateChatCompletion(
+      [
+        { role: 'system' as const, content: systemPrompt },
+        { role: 'system' as const, content: developerContext },
+        { role: 'user' as const, content: userPrompt }
       ],
-      temperature: 0.1, // Very low temp to prevent it from ignoring instructions
-    });
+      { maxTokens: 800, temperature: 0.1 }
+    );
+
+    let answer = completion.content
+      .replace(/\*\*/g, '')
+      .replace(/\*/g, '')
+      .replace(/__/g, '')
+      .replace(/_([^_]+)_/g, '$1')
+      .trim();
+
+    // Apply pricing validation
+    answer = enforceMonthlyFirstFormat(answer);
+    answer = validatePricingFormat(answer);
+
+    session.lastBotMessage = answer;
+    updateSession(sessionId, session);
+
+    const generationTime = Date.now() - generationStart;
+    console.log(`[QA] Generated in ${generationTime}ms`);
+
+    // ========================================================================
+    // VALIDATION AND CACHING
+    // ========================================================================
+    const citations = result.chunks.map(chunk => ({
+      chunkId: chunk.id,
+      docId: chunk.docId,
+      title: chunk.title,
+      relevanceScore: chunk.metadata?.relevanceScore || 0,
+    }));
+
+    const validation = await validateResponse(answer, citations, result.chunks, 'L1');
+
+    // Update cluster cache if high quality
+    if (validation.grounding.ok && validation.grounding.score >= 0.70) {
+      try {
+        addQueryToClusterSimple(query, queryVector, answer, validation.grounding.score, {
+          docIds: Array.from(new Set(result.chunks.map(c => c.docId))),
+          groundingScore: validation.grounding.score,
+          validationPassed: validation.grounding.ok,
+        });
+      } catch (e) {
+        console.warn('[QA] Cluster update failed:', e);
+      }
+    }
 
     return NextResponse.json({
-      content: response.choices[0].message.content,
-      role: 'assistant'
+      answer,
+      tier: 'L1',
+      cacheSource: 'miss',
+      metadata: {
+        groundingScore: validation.grounding.score,
+        distinctDocIds: new Set(result.chunks.map(c => c.docId)).size,
+        rerankedCount: result.chunks.length,
+        retrievalTimeMs: retrievalTime,
+        generationTimeMs: generationTime,
+        totalTimeMs: Date.now() - startTime,
+      }
     });
 
   } catch (error) {
-    console.error("Error:", error);
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+    console.error('[QA] Error:', error);
+    return NextResponse.json({ 
+      error: 'Failed to process query',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, { status: 500 });
   }
 }
