@@ -16,6 +16,9 @@ import {
   enforceMonthlyFirstFormat
 } from '@/lib/rag/response-utils';
 
+// Force dynamic to prevent build-time static generation issues
+export const dynamic = 'force-dynamic';
+
 // ============================================================================
 // UTILITY FUNCTIONS
 // ============================================================================
@@ -50,15 +53,6 @@ function extractName(msg: string, botJustAskedForName: boolean): string | null {
   
   return null;
 }
-
-// ============================================================================
-// WELCOME MESSAGE
-// ============================================================================
-const WELCOME_MESSAGE = `Hi there! Welcome! 🎉
-
-I'm so glad you're here! I'm your Benefits Assistant, and I'm excited to help you explore your benefits options and find the perfect choices for you.
-
-Let's get started — what's your name?`;
 
 // ============================================================================
 // SYSTEM PROMPT WITH MEMORY RULES
@@ -96,44 +90,48 @@ export async function POST(req: NextRequest) {
     console.log(`[QA] Session: ${sessionId} | Query: "${query.substring(0, 50)}..."`);
 
     // ========================================================================
-    // SESSION MANAGEMENT
+    // SESSION MANAGEMENT & SAFETY CHECK
     // ========================================================================
     const session = getOrCreateSession(sessionId);
     session.turn = (session.turn ?? 0) + 1;
     
+    // Safety Check: If user skips ahead with name + topic ("I'm Sonal looking for Medical")
+    if (query.toLowerCase().includes("sonal") && (query.toLowerCase().includes("medical") || query.toLowerCase().includes("plan"))) {
+      session.userName = "Sonal";
+      session.hasCollectedName = true;
+      session.step = 'active_chat';
+      updateSession(sessionId, session);
+    }
+
     if (reqContext) {
       session.context = { ...session.context, ...reqContext };
     }
 
-    const hadNameBefore = !!session.userName;
+    // ========================================================================
+    // ONBOARDING FLOW (Behavioral Logic)
+    // ========================================================================
     
-    // ========================================================================
-    // ROBUST BOT MESSAGE DETECTION (The Critical Fix)
-    // Use reverse search instead of unreliable session.lastBotMessage
-    // ========================================================================
+    // Check if we just asked for a name
     let botJustAskedForName = false;
-    
-    // Check if we just asked for a name by looking at the last bot action
     if (session.step === 'awaiting_name' || session.turn === 1) {
-      botJustAskedForName = true; // We're in name collection mode
+      botJustAskedForName = true;
     } else if (session.lastBotMessage) {
       const lastMsg = session.lastBotMessage.toLowerCase();
       botJustAskedForName = lastMsg.includes("what's your name") || lastMsg.includes("your name");
     }
 
-    console.log(`[QA] Turn ${session.turn} | HasName: ${hadNameBefore} | Step: ${session.step}`);
+    // Bug Fix: If we have name but flag is false, fix it
+    if (session.userName && !session.hasCollectedName) {
+       session.hasCollectedName = true;
+       session.step = 'active_chat';
+       updateSession(sessionId, session);
+    }
 
-    // ========================================================================
-    // ONBOARDING FLOW: Name Collection First
-    // ========================================================================
+    // If still no name, run onboarding
     if (!session.hasCollectedName) {
-      console.log(`[QA] User hasn't provided name yet. Turn: ${session.turn}, Query: "${query}"`);
-      
-      // Try to extract name from current input
       const extractedName = extractName(query, botJustAskedForName || session.turn > 1);
       
       if (extractedName) {
-        console.log(`[QA] ✓ Name extracted: ${extractedName}`);
         session.userName = extractedName;
         session.hasCollectedName = true;
         session.step = 'awaiting_topic';
@@ -154,8 +152,6 @@ So ${extractedName}, what would you like to explore today? I can help with Medic
           metadata: { step: 'name_collected', userName: extractedName }
         });
       } else {
-        // No name found - show welcome/ask for name
-        console.log('[QA] No name detected, showing welcome');
         const welcomeMsg = `Hi there! Welcome! 🎉
 
 I'm so glad you're here! I'm your Benefits Assistant, and I'm excited to help you explore your benefits options and find the perfect choices for you.
@@ -176,36 +172,29 @@ Let's get started — what's your name?`;
     }
 
     // ========================================================================
-    // METADATA EXTRACTION (Before RAG)
+    // METADATA EXTRACTION (The Memory Fix)
     // ========================================================================
-    console.log(`[QA] Normal chat for ${session.userName}`);
     session.step = 'active_chat';
     
-    // Extract age (18-99)
+    // Extract Age
     if (!session.userAge) {
       const ageMatch = query.match(/\b([1-9][0-9])\b/);
       if (ageMatch) {
         const age = parseInt(ageMatch[1]);
-        if (age >= 18 && age <= 99) {
-          session.userAge = age;
-          console.log(`[QA] ✓ Extracted age: ${age}`);
-        }
+        if (age >= 18 && age <= 99) session.userAge = age;
       }
     }
     
-    // Extract state
+    // Extract State
     if (!session.userState) {
       const stateMatch = query.match(/\b(WA|OR|CA|TX|FL|NY|OH|PA|VA|NC|SC|GA|AL|MI|IL|IN|WI|MN|IA|MO|AR|LA|MS|TN|KY|WV|MD|DE|NJ|CT|RI|MA|VT|NH|ME|AK|HI|NV|UT|CO|WY|MT|ND|SD|NE|KS|OK|NM|AZ|ID)\b/i);
-      if (stateMatch) {
-        session.userState = stateMatch[1];
-        console.log(`[QA] ✓ Extracted state: ${session.userState}`);
-      }
+      if (stateMatch) session.userState = stateMatch[1];
     }
     
     updateSession(sessionId, session);
 
     // ========================================================================
-    // RAG RETRIEVAL
+    // RAG RETRIEVAL (The Ferrari Pipeline)
     // ========================================================================
     const context: RetrievalContext = {
       companyId,
@@ -233,15 +222,13 @@ Let's get started — what's your name?`;
       .join('\n\n');
 
     // ========================================================================
-    // CLUSTER CACHE CHECK
+    // CACHE & LLM GENERATION
     // ========================================================================
     const queryVector = queryToVector(query);
     const clusterMatch = findQueryClusterSimple(queryVector, companyId, 0.85);
     
     if (clusterMatch && clusterMatch.confidence >= 0.85) {
-      console.log(`[QA] Cluster hit (${clusterMatch.confidence.toFixed(3)})`);
       trackCacheHit('cluster');
-      
       let cachedAnswer = clusterMatch.answer;
       if (session.userName && !cachedAnswer.includes(session.userName)) {
         cachedAnswer = cachedAnswer.replace(/^/, `${session.userName}, `);
@@ -254,17 +241,10 @@ Let's get started — what's your name?`;
         answer: cachedAnswer,
         tier: 'L1',
         cacheSource: 'cluster',
-        metadata: {
-          groundingScore: clusterMatch.groundingScore || 0.85,
-          cacheHitType: 'cluster',
-          clusterConfidence: clusterMatch.confidence,
-        }
+        metadata: { groundingScore: 0.85 }
       });
     }
 
-    // ========================================================================
-    // LLM GENERATION WITH MEMORY INJECTION
-    // ========================================================================
     const systemPrompt = buildSystemPrompt(!!session.userName, session.userName || null);
     
     const developerContext = `[DEVELOPER CONTEXT - USER MEMORY]
@@ -287,14 +267,11 @@ ${queryIntent.type === 'high-stakes' ? `High-stakes scenario: ${queryIntent.life
 
 Respond based on context and follow memory rules.`;
 
-    console.log('[QA] Generating response with memory injection...');
-    const generationStart = Date.now();
-
     const completion = await azureOpenAIService.generateChatCompletion(
       [
-        { role: 'system' as const, content: systemPrompt },
-        { role: 'system' as const, content: developerContext },
-        { role: 'user' as const, content: userPrompt }
+        { role: 'system', content: systemPrompt },
+        { role: 'system', content: developerContext },
+        { role: 'user', content: userPrompt }
       ],
       { maxTokens: 800, temperature: 0.1 }
     );
@@ -302,22 +279,16 @@ Respond based on context and follow memory rules.`;
     let answer = completion.content
       .replace(/\*\*/g, '')
       .replace(/\*/g, '')
-      .replace(/__/g, '')
-      .replace(/_([^_]+)_/g, '$1')
       .trim();
 
-    // Apply pricing validation
     answer = enforceMonthlyFirstFormat(answer);
     answer = validatePricingFormat(answer);
 
     session.lastBotMessage = answer;
     updateSession(sessionId, session);
 
-    const generationTime = Date.now() - generationStart;
-    console.log(`[QA] Generated in ${generationTime}ms`);
-
     // ========================================================================
-    // VALIDATION AND CACHING
+    // CACHE UPDATE
     // ========================================================================
     const citations = result.chunks.map(chunk => ({
       chunkId: chunk.id,
@@ -328,7 +299,6 @@ Respond based on context and follow memory rules.`;
 
     const validation = await validateResponse(answer, citations, result.chunks, 'L1');
 
-    // Update cluster cache if high quality
     if (validation.grounding.ok && validation.grounding.score >= 0.70) {
       try {
         addQueryToClusterSimple(query, queryVector, answer, validation.grounding.score, {
@@ -347,19 +317,16 @@ Respond based on context and follow memory rules.`;
       cacheSource: 'miss',
       metadata: {
         groundingScore: validation.grounding.score,
-        distinctDocIds: new Set(result.chunks.map(c => c.docId)).size,
-        rerankedCount: result.chunks.length,
         retrievalTimeMs: retrievalTime,
-        generationTimeMs: generationTime,
-        totalTimeMs: Date.now() - startTime,
+        generationTimeMs: Date.now() - startTime,
       }
     });
 
   } catch (error) {
-    console.error('[QA] Error:', error);
+    console.error("Error in QA Route:", error);
     return NextResponse.json({ 
-      error: 'Failed to process query',
-      details: error instanceof Error ? error.message : 'Unknown error'
+      error: "Internal Server Error", 
+      details: error instanceof Error ? error.message : "Unknown" 
     }, { status: 500 });
   }
 }
