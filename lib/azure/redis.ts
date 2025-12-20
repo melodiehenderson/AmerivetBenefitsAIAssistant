@@ -66,8 +66,12 @@ export class RedisService {
   }
 
   async set(key: string, value: string, ttlSeconds?: number): Promise<void> {
+    const client = await getRedis();
+    if (!client) {
+      logger.warn('Redis SET skipped - no client available', { key });
+      return; // Silent return, let filesystem fallback handle it
+    }
     try {
-      const client = await getRedis();
       if (ttlSeconds) {
         await client.setex(key, ttlSeconds, value);
       } else {
@@ -81,8 +85,12 @@ export class RedisService {
   }
 
   async del(key: string): Promise<number> {
+    const client = await getRedis();
+    if (!client) {
+      logger.warn('Redis DEL skipped - no client available', { key });
+      return 0;
+    }
     try {
-      const client = await getRedis();
       const result = await client.del(key);
       logger.debug('Redis DEL operation', { key, deletedCount: result });
       return result;
@@ -93,8 +101,9 @@ export class RedisService {
   }
 
   async exists(key: string): Promise<boolean> {
+    const client = await getRedis();
+    if (!client) return false;
     try {
-      const client = await getRedis();
       const result = await client.exists(key);
       logger.debug('Redis EXISTS operation', { key, exists: result === 1 });
       return result === 1;
@@ -105,8 +114,9 @@ export class RedisService {
   }
 
   async expire(key: string, ttlSeconds: number): Promise<boolean> {
+    const client = await getRedis();
+    if (!client) return false;
     try {
-      const client = await getRedis();
       const result = await client.expire(key, ttlSeconds);
       logger.debug('Redis EXPIRE operation', { key, ttlSeconds, success: result === 1 });
       return result === 1;
@@ -117,8 +127,9 @@ export class RedisService {
   }
 
   async ttl(key: string): Promise<number> {
+    const client = await getRedis();
+    if (!client) return -2; // Key doesn't exist
     try {
-      const client = await getRedis();
       const result = await client.ttl(key);
       logger.debug('Redis TTL operation', { key, ttl: result });
       return result;
@@ -129,8 +140,9 @@ export class RedisService {
   }
 
   async keys(pattern: string): Promise<string[]> {
+    const client = await getRedis();
+    if (!client) return [];
     try {
-      const client = await getRedis();
       const result = await client.keys(pattern);
       logger.debug('Redis KEYS operation', { pattern, count: result.length });
       return result;
@@ -141,8 +153,9 @@ export class RedisService {
   }
 
   async flushdb(): Promise<void> {
+    const client = await getRedis();
+    if (!client) return;
     try {
-      const client = await getRedis();
       await client.flushdb();
       logger.info('Redis database flushed', {});
     } catch (error) {
@@ -152,8 +165,9 @@ export class RedisService {
   }
 
   async info(section?: string): Promise<string> {
+    const client = await getRedis();
+    if (!client) return 'Redis not available';
     try {
-      const client = await getRedis();
       const result = await client.info(section || '');
       logger.debug('Redis INFO operation', { section });
       return result;
@@ -164,8 +178,9 @@ export class RedisService {
   }
 
   async ping(): Promise<string> {
+    const client = await getRedis();
+    if (!client) return 'Redis not available';
     try {
-      const client = await getRedis();
       const result = await client.ping();
       logger.debug('Redis PING operation', { response: result });
       return result;
@@ -177,8 +192,9 @@ export class RedisService {
 
   // Hash operations
   async hget(key: string, field: string): Promise<string | null> {
+    const client = await getRedis();
+    if (!client) return null;
     try {
-      const client = await getRedis();
       const result = await client.hget(key, field);
       logger.debug('Redis HGET operation', { key, field, found: result !== null });
       return result;

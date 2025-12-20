@@ -94,6 +94,24 @@ export default function SubdomainChatPage() {
   const [calcPrefs, setCalcPrefs] = useState({ household: 'individual', usage: 'moderate', provider: 'any' });
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  // CRITICAL: Stable session ID - created once per browser session
+  const [sessionId] = useState(() => {
+    if (typeof window !== 'undefined') {
+      let id = sessionStorage.getItem('chat-session-id');
+      if (!id) {
+        id = 'subdomain-chat-' + Date.now() + '-' + Math.random().toString(36).substring(2, 9);
+        sessionStorage.setItem('chat-session-id', id);
+      }
+      return id;
+    }
+    return 'subdomain-chat-' + Date.now();
+  });
+  // SERVERLESS RESILIENCE: Cache session context from API responses
+  const [cachedContext, setCachedContext] = useState<{
+    userName?: string;
+    userAge?: number;
+    userState?: string;
+  } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const quickPrompts = [
     'What is covered under my medical plan?',
@@ -224,9 +242,11 @@ export default function SubdomainChatPage() {
         credentials: 'include',
         body: JSON.stringify({
           query: userMessage.content,
-          sessionId: 'subdomain-chat-' + Date.now(), // FIX: Must use sessionId (not conversationId)
-          companyId: 'amerivet', // FIX: Explicitly set company ID to match indexed documents
-          userId: 'user-' + Date.now(), // Track user for personalization
+          sessionId: sessionId, // FIXED: Use stable session ID
+          companyId: 'amerivet',
+          userId: 'user-' + sessionId.split('-').pop(), // Derive from session
+          // SERVERLESS RESILIENCE: Send cached context to restore lost sessions
+          context: cachedContext,
         }),
       });
 
@@ -235,6 +255,15 @@ export default function SubdomainChatPage() {
       }
 
       const data = await response.json();
+      
+      // SERVERLESS RESILIENCE: Cache session context from response
+      if (data.sessionContext) {
+        setCachedContext({
+          userName: data.sessionContext.userName,
+          userAge: data.sessionContext.userAge,
+          userState: data.sessionContext.userState,
+        });
+      }
       
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
