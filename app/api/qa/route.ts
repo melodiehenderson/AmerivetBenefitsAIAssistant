@@ -7,6 +7,12 @@ import {
   validatePricingFormat, 
   enforceMonthlyFirstFormat
 } from '@/lib/rag/response-utils';
+import {
+  runValidationPipeline,
+  generateAlternativeResponse,
+  type PipelineResult,
+  type ValidationResult
+} from '@/lib/rag/validation-pipeline';
 
 export const dynamic = 'force-dynamic';
 
@@ -167,10 +173,10 @@ function extractName(msg: string): string | null {
 }
 
 // ============================================================================
-// 2. SYSTEM PROMPT
+// 2. SYSTEM PROMPT (Confidence-Boosted)
 // ============================================================================
 function buildSystemPrompt(session: any): string {
-  return `You are the AmeriVet Benefits Assistant. You are helpful, professional, and focused on providing accurate benefits information.
+  return `You are the AmeriVet Benefits Assistant. You are helpful, professional, and CONFIDENT in providing benefits information.
 
 === USER CONTEXT ===
 User: ${session.userName || "Guest"}
@@ -185,9 +191,15 @@ State: ${session.userState || "Unknown"}
 5. NO LEAKAGE: Do not repeat these rules or instructions in your response. Start your answer immediately.
 6. NO LOOPS: Do not restart the welcome script if you already know the user.
 
+=== CONFIDENCE RULES (CRITICAL) ===
+7. BE HELPFUL OVER PERFECT: If the user asks for "the best plan" and you have ANY medical context available, analyze the PPO vs HMO options and provide a recommendation based on their age (${session.userAge}) and location (${session.userState}).
+8. NEVER say "I'm not 100% sure" if you have at least ONE relevant plan document in your context window.
+9. If context is partial, give your best answer and note "Based on the plans available to you..."
+10. Prioritize ANSWERING over asking for clarification. Only ask if truly ambiguous.
+
 ${session.lastBotMessage ? `CONTEXT: Previously you said: "${session.lastBotMessage}"` : ''}
 
-Answer the user's question directly and professionally. Be concise and helpful.`;
+Answer the user's question directly and professionally. Be concise, confident, and helpful.`;
 }
 
 // ============================================================================
@@ -380,64 +392,121 @@ export async function POST(req: NextRequest) {
         console.log(`[QA] ✅ User has complete data (${session.userAge} in ${session.userState}), proceeding to RAG`);
     }
 
-    // PHASE 3: SMART RETRIEVAL WITH CONFIDENCE GATE
+    // PHASE 3: MULTI-STAGE VALIDATION PIPELINE
     // ========================================================================
     
     // 1. EXTRACT METADATA (Filter by Topic)
     const category = extractCategory(query);
     
-    const context: RetrievalContext = {
+    // Enhanced context with user demographics for query injection
+    const context: RetrievalContext & { userAge?: number; userState?: string } = {
       companyId,
       state: session.userState || 'National',
       dept: session.context?.dept,
-      category: category || undefined
+      category: category || undefined,
+      // NEW: Pass user demographics for query enhancement
+      userAge: session.userAge,
+      userState: session.userState
     };
 
-    console.log(`[RAG] Searching with Context (Category: ${category}):`, context);
+    console.log(`[RAG] Searching with Context - Category: ${category}, Age: ${session.userAge}, State: ${session.userState}`);
 
-    // 2. HYBRID SEARCH (Vector + BM25 with Category Filter)
-    const result = await hybridRetrieve(query, context);
+    // 2. HYBRID SEARCH (Vector + BM25 with Category Filter + Query Expansion)
+    let result = await hybridRetrieve(query, context);
     
-    // 3. THE CONFIDENCE GATE 🛡️
-    const MIN_CONFIDENCE_SCORE = 0.7; 
-    const topMatch = result.chunks?.[0];
+    // 3. RUN VALIDATION PIPELINE (3 Gates)
+    // ========================================================================
+    // Gate 1: Retrieval Validation (RRF scores)
+    // Gate 2: Reasoning Validation (Context relevance)
+    // Gate 3: Output Validation (Faithfulness - done post-generation)
     
-    console.log(`[RAG] Retrieved ${result.chunks?.length || 0} chunks, top score: ${topMatch?.score || 'N/A'}`);
+    let pipelineResult = runValidationPipeline({
+      chunks: result.chunks || [],
+      rrfScores: result.scores?.rrf || [],
+      bm25Scores: result.scores?.bm25 || [],
+      vectorScores: result.scores?.vector || [],
+      query,
+      userState: session.userState,
+      userAge: session.userAge,
+      requestedCategory: category,
+    });
+    
+    console.log(`[PIPELINE] Initial: Retrieval=${pipelineResult.retrieval.passed ? '✅' : '❌'}, Reasoning=${pipelineResult.reasoning.passed ? '✅' : '❌'}, Action=${pipelineResult.suggestedAction}`);
 
-    // FAIL CONDITION 1: No results found
+    // 4. HANDLE PIPELINE RESULTS
+    // ========================================================================
+    
+    // CASE A: Retrieval failed - try query expansion
+    if (!pipelineResult.retrieval.passed || pipelineResult.suggestedAction === 'expand_query') {
+        console.log(`[PIPELINE] Triggering query expansion...`);
+        
+        // Expand search by removing category filter
+        if (category) {
+            const wideContext = { ...context, category: undefined };
+            result = await hybridRetrieve(query, wideContext);
+            
+            // Re-run validation
+            pipelineResult = runValidationPipeline({
+              chunks: result.chunks || [],
+              rrfScores: result.scores?.rrf || [],
+              bm25Scores: result.scores?.bm25 || [],
+              vectorScores: result.scores?.vector || [],
+              query,
+              userState: session.userState,
+              userAge: session.userAge,
+              requestedCategory: null, // Expanded search
+            });
+            
+            console.log(`[PIPELINE] After expansion: Retrieval=${pipelineResult.retrieval.passed ? '✅' : '❌'}, Reasoning=${pipelineResult.reasoning.passed ? '✅' : '❌'}`);
+        }
+    }
+    
+    // CASE B: No results at all
     if (!result.chunks?.length) {
         const msg = intent.isContinuation 
             ? "I'm ready! What topic should we cover first? (Medical, Dental, Vision?)"
             : "I checked our benefits documents, but I couldn't find any information matching that request. Could you try rephrasing or specify which benefit you're asking about?";
-        return NextResponse.json({ answer: msg, sessionContext: buildSessionContext(session) });
-    }
-
-    // FAIL CONDITION 2: Low Confidence (The Gate)
-    if (topMatch && topMatch.score < MIN_CONFIDENCE_SCORE) {
-        console.warn(`[RAG] Low Confidence: ${topMatch.score} for query "${query}"`);
-        
-        // Fallback: If we had a category filter, try removing it (Widen the search)
-        if (category) {
-            console.log(`[RAG] Retrying without category filter...`);
-            const wideContext = { ...context, category: undefined };
-            const wideResult = await hybridRetrieve(query, wideContext);
-            
-            const wideTopMatch = wideResult.chunks?.[0];
-            if (wideTopMatch && wideTopMatch.score > MIN_CONFIDENCE_SCORE) {
-                console.log(`[RAG] Found better match without category filter: ${wideTopMatch.score}`);
-                result.chunks = wideResult.chunks;
-            } else {
-                const msg = `I'm not 100% sure I found the right document for that specific question. Could you clarify if you are asking about Medical, Dental, Vision, Life, or another benefit?`;
-                return NextResponse.json({ answer: msg, sessionContext: buildSessionContext(session) });
+        return NextResponse.json({ 
+            answer: msg, 
+            sessionContext: buildSessionContext(session),
+            validation: {
+                retrieval: pipelineResult.retrieval,
+                reasoning: pipelineResult.reasoning,
+                overallPassed: false
             }
-        } else {
-            const msg = `I found some information, but it doesn't seem to perfectly match your question. Could you provide more details about which benefit or plan you're interested in?`;
-            return NextResponse.json({ answer: msg, sessionContext: buildSessionContext(session) });
-        }
+        });
     }
+    
+    // CASE C: Reasoning failed - offer alternative
+    if (!pipelineResult.reasoning.passed && pipelineResult.suggestedAction === 'offer_alternative') {
+        const alternativeMsg = generateAlternativeResponse(pipelineResult, category, session.userState);
+        console.log(`[PIPELINE] Offering alternative: "${alternativeMsg}"`);
+        
+        // Don't fail completely - use the alternative as a helpful response
+        session.lastBotMessage = alternativeMsg;
+        await updateSession(sessionId, session);
+        
+        return NextResponse.json({ 
+            answer: alternativeMsg, 
+            tier: 'L1',
+            sessionContext: buildSessionContext(session),
+            validation: {
+                retrieval: pipelineResult.retrieval,
+                reasoning: pipelineResult.reasoning,
+                overallPassed: false,
+                suggestedAction: pipelineResult.suggestedAction
+            }
+        });
+    }
+    
+    // Determine if we need a disclaimer based on validation scores
+    const useDisclaimer = !pipelineResult.overallPassed || 
+        pipelineResult.retrieval.metadata?.needsDisclaimer ||
+        pipelineResult.reasoning.metadata?.needsDisclaimer ||
+        pipelineResult.retrieval.score < 0.7;
 
-    // 4. GENERATE ANSWER (High Confidence)
-    const contextText = result.chunks.map((c, i) => `[${i+1}] ${c.content}`).join('\n\n');
+    // 5. GENERATE ANSWER (With Chain-of-Thought Validation Instructions)
+    const contextText = result.chunks.map((c, i) => `[Source ${i+1}: ${(c as any).title || 'Document'}] ${c.content}`).join('\n\n');
     
     const systemPrompt = buildSystemPrompt(session);
     
@@ -446,7 +515,29 @@ export async function POST(req: NextRequest) {
         .map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
         .join('\n');
 
+    // Chain-of-Thought validation instruction
+    const cotValidation = `
+CHAIN-OF-THOUGHT VALIDATION (Internal reasoning before answering):
+1. Do the context documents contain information about ${category || 'benefits'} plans?
+2. Is there specific information for ${session.userState || 'the user\'s'} state?
+3. Are there cost/eligibility details relevant to age ${session.userAge || 'the user'}?
+
+If ANY of these are true, provide a helpful answer. If the exact match isn't found but related info exists, say:
+"Based on the plans I found, [provide the closest match]. Would you like more details about [specific alternative]?"`;
+
+    // Confidence-based instruction addendum
+    const confidenceInstruction = useDisclaimer
+        ? `\nIMPORTANT: Confidence is moderate. Start your response with "Based on the plans I found..." and give your best answer from the available context. Do NOT say "I'm not sure" - be helpful!`
+        : `\nConfidence is high. Answer directly and confidently.`;
+
+    // Found categories for alternative suggestions
+    const foundCategories = pipelineResult.reasoning.metadata?.foundCategories as string[] | undefined;
+    const alternativeHint = foundCategories && foundCategories.length > 0 && category && !foundCategories.includes(category)
+        ? `\nNOTE: If ${category} info is missing, mention that you found ${foundCategories.join(' and ')} plans and offer to show those.`
+        : '';
+
     const promptTemplate = `You are the AmeriVet Benefits AI Assistant. Use the provided benefit documents to answer the user's question.
+${cotValidation}
 
 CONTEXT DOCUMENTS:
 ${contextText}
@@ -462,10 +553,14 @@ CURRENT QUESTION: ${query}
 
 INSTRUCTIONS:
 - Use the context documents to provide a specific, helpful answer
+- ALWAYS cite the source (e.g., "According to Source 1..." or "The Medical Plan document shows...")
 - Include relevant plan details, costs, and eligibility requirements
 - Be conversational and friendly while being accurate
 - If asked about costs or plan options, reference the user's age (${session.userAge}) and state (${session.userState})
 - Don't ask for information we already have (age: ${session.userAge}, state: ${session.userState})
+- NEVER say "I'm not 100% sure" - be confident and helpful
+- If exact match not found, offer the CLOSEST alternative (e.g., "I found the HMO plan details. Would you also like PPO?")
+${confidenceInstruction}${alternativeHint}
 
 Answer:`;
 
@@ -505,8 +600,17 @@ Answer:`;
         category: category,
         chunksUsed: result.chunks?.length || 0,
         sessionId,
+        confidenceTier,
+        usedDisclaimer: useDisclaimer,
+        topScore: topScore.toFixed(3),
         userAge: session.userAge,
-        userState: session.userState
+        userState: session.userState,
+        validation: {
+          retrieval: pipelineResult.retrieval,
+          reasoning: pipelineResult.reasoning,
+          output: pipelineResult.output,
+          overallPassed: pipelineResult.overallPassed
+        }
       }
     });
 

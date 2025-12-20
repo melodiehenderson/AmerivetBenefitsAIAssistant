@@ -1,11 +1,55 @@
 /**
  * Hybrid Retrieval System
  * Bootstrap Step 4: Vector + BM25 search with RRF merge and re-ranking
+ * 
+ * Enhanced with:
+ * - Query Expansion (Medical → HMO, PPO, Deductible, etc.)
+ * - Intent-Based Category Mapping (keyword short-circuiting)
+ * - Tiered Confidence with "Next Best" fallback
+ * - User Context Injection (Age/State prepended to queries)
  */
 
 import { SearchClient, AzureKeyCredential } from "@azure/search-documents";
 import type { Chunk, RetrievalContext, RetrievalResult, HybridSearchConfig } from "../../types/rag";
 import { isVitest } from '@/lib/ai/runtime';
+
+// ============================================================================
+// Query Expansion Maps (Keyword → Related Terms)
+// ============================================================================
+const QUERY_EXPANSION_MAP: Record<string, string[]> = {
+  medical: ["health plan", "HMO", "PPO", "deductible", "copay", "coinsurance", "premium", "prescription", "rx", "doctor", "hospital"],
+  dental: ["teeth", "orthodontics", "braces", "cleaning", "oral", "dentist", "crown", "filling", "root canal"],
+  vision: ["eye", "glasses", "contacts", "optometrist", "lens", "exam", "frames"],
+  life: ["death benefit", "beneficiary", "term life", "whole life", "AD&D", "accidental death"],
+  disability: ["STD", "LTD", "short term", "long term", "income protection", "wages"],
+  hsa: ["health savings", "FSA", "flexible spending", "tax-free", "contribution"],
+  voluntary: ["critical illness", "accident", "hospital indemnity", "supplemental", "injury"],
+};
+
+// ============================================================================
+// Intent-to-Category Mapping (Keyword Short-Circuiting)
+// ============================================================================
+const INTENT_CATEGORY_MAP: Record<string, string> = {
+  // Medical
+  medical: "Medical", health: "Medical", doctor: "Medical", hospital: "Medical",
+  ppo: "Medical", hmo: "Medical", deductible: "Medical", copay: "Medical",
+  prescription: "Medical", rx: "Medical", urgent: "Medical", emergency: "Medical",
+  // Dental
+  dental: "Dental", teeth: "Dental", dentist: "Dental", orthodontics: "Dental",
+  braces: "Dental", cleaning: "Dental", oral: "Dental",
+  // Vision
+  vision: "Vision", eye: "Vision", glasses: "Vision", contacts: "Vision",
+  optometrist: "Vision", lens: "Vision",
+  // Life
+  life: "Life", beneficiary: "Life", "death benefit": "Life",
+  // Disability
+  disability: "Disability", std: "Disability", ltd: "Disability",
+  // HSA/FSA
+  hsa: "Savings", fsa: "Savings", "health savings": "Savings", "flexible spending": "Savings",
+  // Voluntary/Supplemental
+  voluntary: "Voluntary", critical: "Voluntary", accident: "Voluntary",
+  supplemental: "Voluntary", injury: "Voluntary", "hospital indemnity": "Voluntary",
+};
 
 // ============================================================================
 // In-Memory Test Index (for Vitest)
@@ -20,6 +64,87 @@ export function __test_only_resetMemoryIndex() {
 
 export function __test_only_addToMemoryIndex(chunks: MemoryChunk[]) { 
   memoryIndex.push(...chunks); 
+}
+
+// ============================================================================
+// Query Expansion & Intent Detection
+// ============================================================================
+
+/**
+ * Detect the primary benefit category from a query using keyword short-circuiting.
+ * This avoids relying on vector search for obvious intents like "Medical" or "Dental".
+ */
+export function detectIntentCategory(query: string): string | null {
+  const lower = query.toLowerCase();
+  
+  // Check multi-word phrases first
+  for (const [keyword, category] of Object.entries(INTENT_CATEGORY_MAP)) {
+    if (keyword.includes(' ') && lower.includes(keyword)) {
+      console.log(`[INTENT] Short-circuit: "${keyword}" → ${category}`);
+      return category;
+    }
+  }
+  
+  // Check single keywords
+  const words = lower.split(/\s+/);
+  for (const word of words) {
+    if (INTENT_CATEGORY_MAP[word]) {
+      console.log(`[INTENT] Short-circuit: "${word}" → ${INTENT_CATEGORY_MAP[word]}`);
+      return INTENT_CATEGORY_MAP[word];
+    }
+  }
+  
+  return null;
+}
+
+/**
+ * Expand a query with related terms to improve recall.
+ * E.g., "Medical" → "Medical health plan HMO PPO deductible copay"
+ */
+export function expandQuery(query: string): string {
+  const lower = query.toLowerCase();
+  const expansions: string[] = [];
+  
+  for (const [keyword, relatedTerms] of Object.entries(QUERY_EXPANSION_MAP)) {
+    if (lower.includes(keyword)) {
+      // Add top 3 expansion terms to avoid query bloat
+      expansions.push(...relatedTerms.slice(0, 3));
+    }
+  }
+  
+  if (expansions.length > 0) {
+    const expanded = `${query} ${expansions.join(' ')}`;
+    console.log(`[QUERY_EXPAND] "${query}" → "${expanded}"`);
+    return expanded;
+  }
+  
+  return query;
+}
+
+/**
+ * Inject user context (age, state) into query for better filtering.
+ * This helps the vector search understand user-specific requirements.
+ */
+export function injectUserContext(
+  query: string, 
+  context: RetrievalContext & { userAge?: number; userState?: string }
+): string {
+  const parts: string[] = [];
+  
+  if (context.userAge) {
+    parts.push(`age ${context.userAge}`);
+  }
+  if (context.userState) {
+    parts.push(`state ${context.userState}`);
+  }
+  
+  if (parts.length > 0) {
+    const contextPrefix = parts.join(' ');
+    console.log(`[CONTEXT_INJECT] Prepending: "${contextPrefix}"`);
+    return `${contextPrefix} ${query}`;
+  }
+  
+  return query;
 }
 
 function cosineSimilarity(a: number[], b: number[]): number {
@@ -536,16 +661,49 @@ export async function rerankChunks(
 // Hybrid Retrieval (Main Entry Point)
 // ============================================================================
 
+/** Extended context with user demographics for query enhancement */
+export interface EnhancedRetrievalContext extends RetrievalContext {
+  userAge?: number;
+  userState?: string;
+}
+
 /**
  * Execute hybrid retrieval: vector + BM25 + RRF merge + re-rank
+ * 
+ * Enhanced with:
+ * - Query expansion (Medical → HMO, PPO, etc.)
+ * - User context injection (age/state prepended)
+ * - Intent-based category short-circuiting
+ * - Tiered confidence with "next best" fallback
+ * 
  * Returns top-K most relevant chunks for query
  */
 export async function hybridRetrieve(
   query: string,
-  context: RetrievalContext,
+  context: EnhancedRetrievalContext,
   config?: Partial<HybridSearchConfig>
 ): Promise<RetrievalResult> {
   const startTime = Date.now();
+
+  // =========================================================================
+  // STEP 0: INTENT DETECTION & QUERY ENHANCEMENT
+  // =========================================================================
+  
+  // A. Detect intent category via keyword short-circuiting
+  const detectedCategory = detectIntentCategory(query);
+  if (detectedCategory && !context.category) {
+    (context as any).category = detectedCategory;
+    console.log(`[RAG] Intent short-circuit: forcing category="${detectedCategory}"`);
+  }
+  
+  // B. Expand the query with related terms
+  const expandedQuery = expandQuery(query);
+  
+  // C. Inject user demographics into query for better relevance
+  const enhancedQuery = injectUserContext(expandedQuery, context);
+  
+  // D. DEBUG: Log the final search parameters
+  console.log(`DEBUG_SEARCH: Query="${enhancedQuery.substring(0, 100)}" | Category="${context.category || 'ALL'}" | State="${context.userState || 'ANY'}" | Age=${context.userAge || 'ANY'}`);
 
   // Default configuration - HYBRID SEARCH with both Vector + BM25
   const cfg: HybridSearchConfig = {
@@ -558,20 +716,20 @@ export async function hybridRetrieve(
   };
 
   try {
-    // Execute hybrid search (vector + BM25)
+    // Execute hybrid search with ENHANCED query (expanded + context-injected)
     const vectorResultsOrError = await Promise.resolve(
-      retrieveVectorTopK(query, context, cfg.vectorK)
+      retrieveVectorTopK(enhancedQuery, context, cfg.vectorK)
     );
 
     const vectorResults = await vectorResultsOrError;
     
-    // Execute BM25 search if enabled
+    // Execute BM25 search with ENHANCED query
     const bm25Results = cfg.bm25K > 0
-      ? await retrieveBM25TopK(query, context, cfg.bm25K)
+      ? await retrieveBM25TopK(enhancedQuery, context, cfg.bm25K)
       : [];
 
     console.log(`[RAG] v=${vectorResults.length} b=${bm25Results.length} (hybrid: vector + BM25)`);
-    console.log(`[RAG][DEBUG] vectorResults IDs: ${vectorResults.map(chunk => chunk.id).join(', ')}`);
+    console.log(`DEBUG_SEARCH: ResultsFound=${vectorResults.length + bm25Results.length} (vector=${vectorResults.length}, bm25=${bm25Results.length})`);
 
     // Merge using RRF (both vector and BM25 results)
     const merged = rrfMerge(
