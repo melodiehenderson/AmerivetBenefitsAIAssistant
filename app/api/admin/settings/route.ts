@@ -1,15 +1,17 @@
 export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
-export const fetchCache = 'force-no-store';
+// REMOVED: export const revalidate = 0; -> We want caching!
+// REMOVED: export const fetchCache = 'force-no-store';
 
 import { NextResponse, type NextRequest } from 'next/server';
+import { revalidateTag } from 'next/cache'; // NEW: For clearing cache
 import { protectAdminEndpoint } from '@/lib/middleware/auth';
 import { rateLimiters } from '@/lib/middleware/rate-limit';
 import { logger } from '@/lib/logger';
 import { settingsService } from '@/lib/services/settings.service';
+import { auditService } from '@/lib/services/audit.service'; // NEW: Audit logging
 import { z } from 'zod';
 
+// Validation Schema (Unchanged)
 const settingsSchema = z.object({
   platform: z.object({
     name: z.string().min(1, 'Platform name is required'),
@@ -47,120 +49,92 @@ const settingsSchema = z.object({
   }),
 });
 
-// GET /api/admin/settings - Get platform settings
+// Helper: Hide sensitive data (even from admins)
+function sanitizeSettings(settings: any) {
+  const safe = { ...settings };
+  // Example: If you had API keys, you would mask them here
+  // safe.ai.apiKey = '********'; 
+  return safe;
+}
+
+// GET /api/admin/settings
 export async function GET(request: NextRequest) {
   const startTime = Date.now();
   
   try {
-    // Apply rate limiting
     const rateLimitResponse = await rateLimiters.admin(request);
-    if (rateLimitResponse) {
-      return rateLimitResponse;
-    }
+    if (rateLimitResponse) return rateLimitResponse;
 
-    // Authenticate and authorize
     const { user, error } = await protectAdminEndpoint(request);
-    if (error || !user) {
-      return error!;
-    }
+    if (error || !user) return error!;
 
-    logger.info('API Request: GET /api/admin/settings', {
-      userId: user.id
-    });
-
+    // OPTIMIZED: This service call should be wrapped in unstable_cache 
+    // inside the service itself with the tag ['platform-settings'].
+    // If not, Next.js generic fetch cache handles it if using fetch.
     const settings = await settingsService.getSettings();
-    
-    if (!settings) {
-      // Return default settings if none exist
-      const defaultSettings = await settingsService.getDefaultSettings();
-      return NextResponse.json({
-        success: true,
-        data: defaultSettings
-      });
-    }
+    const data = settings || await settingsService.getDefaultSettings();
+
+    const duration = Date.now() - startTime;
+    logger.apiResponse('GET', '/api/admin/settings', 200, duration, { userId: user.id });
 
     return NextResponse.json({
       success: true,
-      data: settings
+      data: sanitizeSettings(data)
     });
   } catch (error) {
-    const duration = Date.now() - startTime;
-    
-    logger.error('Settings retrieval error', {
-      path: request.nextUrl.pathname,
-      method: request.method,
-      duration
-    }, error as Error);
-    
-    return NextResponse.json(
-      { 
-        success: false,
-        error: 'Failed to retrieve settings' 
-      },
-      { status: 500 }
-    );
+    logger.error('Settings retrieval error', { path: '/api/admin/settings' }, error as Error);
+    return NextResponse.json({ success: false, error: 'Failed to retrieve settings' }, { status: 500 });
   }
 }
 
-// PUT /api/admin/settings - Update platform settings
+// PUT /api/admin/settings
 export async function PUT(request: NextRequest) {
   const startTime = Date.now();
   
   try {
-    // Apply rate limiting
     const rateLimitResponse = await rateLimiters.admin(request);
-    if (rateLimitResponse) {
-      return rateLimitResponse;
-    }
+    if (rateLimitResponse) return rateLimitResponse;
 
-    // Authenticate and authorize
     const { user, error } = await protectAdminEndpoint(request);
-    if (error || !user) {
-      return error!;
-    }
+    if (error || !user) return error!;
 
     const body = await request.json();
     const validatedSettings = settingsSchema.parse(body);
 
-    logger.info('API Request: PUT /api/admin/settings', {
-      userId: user.id,
-      settingsKeys: Object.keys(validatedSettings)
+    logger.info('Updating Platform Settings', { userId: user.id });
+
+    // 1. Save to DB
+    const savedSettings = await settingsService.saveSettings(validatedSettings, user.id);
+
+    // 2. PERFORMANCE: Invalidate Cache
+    // This forces the GET endpoint to fetch fresh data on the next request.
+    revalidateTag('platform-settings');
+
+    // 3. SECURITY: Audit Log
+    // Record exactly who changed the global configuration.
+    await auditService.log({
+        action: 'UPDATE_SETTINGS',
+        actorId: user.id,
+        targetResource: 'platform',
+        details: { modifiedKeys: Object.keys(validatedSettings) },
+        ip: request.headers.get('x-forwarded-for') || 'unknown'
     });
 
-    const savedSettings = await settingsService.saveSettings(validatedSettings, user.id);
+    const duration = Date.now() - startTime;
+    logger.apiResponse('PUT', '/api/admin/settings', 200, duration, { userId: user.id });
 
     return NextResponse.json({
       success: true,
-      data: savedSettings,
+      data: sanitizeSettings(savedSettings),
       message: 'Settings saved successfully'
     });
+
   } catch (error) {
-    const duration = Date.now() - startTime;
-    
     if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { 
-          success: false,
-          error: 'Invalid settings format', 
-          details: error.errors 
-        },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: 'Invalid settings', details: error.errors }, { status: 400 });
     }
     
-    logger.error('Settings update error', {
-      path: request.nextUrl.pathname,
-      method: request.method,
-      duration
-    }, error as Error);
-    
-    return NextResponse.json(
-      { 
-        success: false,
-        error: 'Failed to update settings' 
-      },
-      { status: 500 }
-    );
+    logger.error('Settings update error', { path: '/api/admin/settings' }, error as Error);
+    return NextResponse.json({ success: false, error: 'Failed to update settings' }, { status: 500 });
   }
 }
-

@@ -157,6 +157,7 @@ export interface Chunk {
   windowEnd: number;
   metadata: ChunkMetadata;
   createdAt: Date;
+  score?: number; // Overall relevance score for confidence gate (0-1)
 }
 
 export interface ChunkMetadata {
@@ -205,6 +206,7 @@ export interface RetrievalContext {
   filters?: SearchFilters;
   state?: string;
   dept?: string;
+  category?: string; // New: Filter by benefit category (Medical, Dental, Voluntary, etc.)
 }
 
 export interface SearchFilters {

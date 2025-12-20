@@ -6,82 +6,99 @@ import { rateLimiters } from '@/lib/middleware/rate-limit';
 import { logger } from '@/lib/logger';
 import { getRepositories } from '@/lib/azure/cosmos';
 
-// GET /api/admin/users - List all users
+// GET /api/admin/users
 export async function GET(request: NextRequest) {
   const startTime = Date.now();
   
   try {
-    // Apply rate limiting
+    // 1. Rate Limiting
     const rateLimitResponse = await rateLimiters.admin(request);
-    if (rateLimitResponse) {
-      return rateLimitResponse;
-    }
+    if (rateLimitResponse) return rateLimitResponse;
 
-    // Authenticate and authorize
+    // 2. Auth & Role Check
     const { user, error } = await protectAdminEndpoint(request);
-    if (error || !user) {
-      return error!;
+    if (error || !user) return error!;
+
+    // 3. Parse Query Parameters (Pagination & Search)
+    const { searchParams } = new URL(request.url);
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1'));
+    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '20'))); // Cap at 100
+    const search = searchParams.get('search') || '';
+    const status = searchParams.get('status');
+
+    logger.info('API Request: List Users', { userId: user.id, page, limit });
+
+    // 4. Construct DB Query (The Optimized Part)
+    // We determine the target Company ID effectively.
+    // If Super Admin AND no company filter provided -> Query All (Careful!)
+    // Otherwise -> Enforce User's Company ID
+    let targetCompanyId = user.companyId;
+    
+    if (user.roles.includes('super-admin') && searchParams.get('companyId')) {
+       targetCompanyId = searchParams.get('companyId')!;
     }
 
-    logger.info('API Request: GET /api/admin/users', {
-      userId: user.id,
-      companyId: user.companyId
-    });
-
-    // Get all users from database
     const repositories = await getRepositories();
-    const users = await repositories.users.list();
 
-    // Filter users based on admin permissions
-    let filteredUsers = users;
-    if (!user.roles.includes('super-admin')) {
-      // Company admins can only see users from their company
-      filteredUsers = users.filter(u => u.companyId === user.companyId);
-    }
+    // 5. Execute Efficient Query
+    // Note: repositories.users.query() should accept SQL-like parameters
+    // Query: "SELECT * FROM c WHERE c.companyId = @companyId ..."
+    const querySpec = {
+      query: `
+        SELECT * FROM c 
+        WHERE c.companyId = @companyId
+        ${status ? 'AND c.status = @status' : ''}
+        ${search ? 'AND (CONTAINS(c.displayName, @search, true) OR CONTAINS(c.email, @search, true))' : ''}
+        ORDER BY c.createdAt DESC
+        OFFSET @offset LIMIT @limit
+      `,
+      parameters: [
+        { name: '@companyId', value: targetCompanyId },
+        { name: '@status', value: status },
+        { name: '@search', value: search },
+        { name: '@offset', value: (page - 1) * limit },
+        { name: '@limit', value: limit }
+      ].filter(p => p.value !== undefined && p.value !== '')
+    };
 
-    // Remove sensitive information
-    const safeUsers = filteredUsers.map(u => ({
+    // Parallelize "Get Data" and "Get Total Count" for UI pagination
+    const [users, countResult] = await Promise.all([
+      repositories.users.query(querySpec),
+      repositories.users.count(targetCompanyId, { search, status }) // Optimized count query
+    ]);
+
+    // 6. Safe Mapping
+    const safeUsers = users.map((u: any) => ({
       id: u.id,
       email: u.email,
       displayName: u.displayName,
       roles: u.roles,
-      companyId: u.companyId,
       status: u.status,
       createdAt: u.createdAt,
       lastActive: u.lastActive
     }));
 
     const duration = Date.now() - startTime;
-    
-    logger.apiResponse('GET', '/api/admin/users', 200, duration, {
-      userId: user.id,
-      companyId: user.companyId,
-      userCount: safeUsers.length
-    });
+    logger.apiResponse('GET', '/api/admin/users', 200, duration, { count: safeUsers.length });
 
     return NextResponse.json({
       success: true,
       data: {
         users: safeUsers,
-        total: safeUsers.length
+        pagination: {
+          total: countResult,
+          page,
+          limit,
+          pages: Math.ceil(countResult / limit)
+        }
       }
     });
+
   } catch (error) {
-    const duration = Date.now() - startTime;
-    
-    logger.error('Users list error', {
-      path: request.nextUrl.pathname,
-      method: request.method,
-      duration
-    }, error as Error);
-    
+    logger.error('Users list error', { path: '/api/admin/users' }, error as Error);
     return NextResponse.json(
-      { 
-        success: false,
-        error: 'Failed to retrieve users' 
-      },
+      { success: false, error: 'Failed to retrieve users' },
       { status: 500 }
     );
   }
 }
-

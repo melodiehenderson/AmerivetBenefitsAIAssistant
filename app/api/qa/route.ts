@@ -1,10 +1,8 @@
 ﻿import { NextRequest, NextResponse } from 'next/server';
 import { hybridRetrieve } from '@/lib/rag/hybrid-retrieval';
 import { azureOpenAIService } from '@/lib/azure/openai';
-import { validateResponse } from '@/lib/rag/validation';
 import type { RetrievalContext } from '@/types/rag';
-import { trackCacheHit } from '@/lib/rag/observability';
-import { getOrCreateSession, updateSession } from '@/lib/rag/session-store';
+import { getOrCreateSession, updateSession, type Session } from '@/lib/rag/session-store';
 import { 
   validatePricingFormat, 
   enforceMonthlyFirstFormat
@@ -13,327 +11,513 @@ import {
 export const dynamic = 'force-dynamic';
 
 // ============================================================================
-// 1. THE BRAIN: Intent Classification
+// 1. THE BRAIN: Intent Classification (Enhanced)
 // ============================================================================
+// US States mapping for better detection
+const US_STATES_MAP: Record<string, string> = {
+  "alabama": "AL", "al": "AL", "alaska": "AK", "ak": "AK",
+  "arizona": "AZ", "az": "AZ", "arkansas": "AR", "ar": "AR",
+  "california": "CA", "ca": "CA", "colorado": "CO", "co": "CO",
+  "connecticut": "CT", "ct": "CT", "delaware": "DE", "de": "DE",
+  "florida": "FL", "fl": "FL", "georgia": "GA", "ga": "GA",
+  "hawaii": "HI", "hi": "HI", "idaho": "ID", "id": "ID",
+  "illinois": "IL", "il": "IL", "indiana": "IN", "in": "IN",
+  "iowa": "IA", "ia": "IA", "kansas": "KS", "ks": "KS",
+  "kentucky": "KY", "ky": "KY", "louisiana": "LA", "la": "LA",
+  "maine": "ME", "me": "ME", "maryland": "MD", "md": "MD",
+  "massachusetts": "MA", "ma": "MA", "michigan": "MI", "mi": "MI",
+  "minnesota": "MN", "mn": "MN", "mississippi": "MS", "ms": "MS",
+  "missouri": "MO", "mo": "MO", "montana": "MT", "mt": "MT",
+  "nebraska": "NE", "ne": "NE", "nevada": "NV", "nv": "NV",
+  "new hampshire": "NH", "nh": "NH", "new jersey": "NJ", "nj": "NJ",
+  "new mexico": "NM", "nm": "NM", "new york": "NY", "ny": "NY",
+  "north carolina": "NC", "nc": "NC", "north dakota": "ND", "nd": "ND",
+  "ohio": "OH", "oh": "OH", "oklahoma": "OK", "ok": "OK",
+  "oregon": "OR", "or": "OR", "pennsylvania": "PA", "pa": "PA",
+  "rhode island": "RI", "ri": "RI", "south carolina": "SC", "sc": "SC",
+  "south dakota": "SD", "sd": "SD", "tennessee": "TN", "tn": "TN",
+  "texas": "TX", "tx": "TX", "utah": "UT", "ut": "UT",
+  "vermont": "VT", "vt": "VT", "virginia": "VA", "va": "VA",
+  "washington": "WA", "wa": "WA", "west virginia": "WV", "wv": "WV",
+  "wisconsin": "WI", "wi": "WI", "wyoming": "WY", "wy": "WY"
+};
+
+const US_STATE_CODES = new Set(Object.values(US_STATES_MAP));
+
+function extractStateCode(msg: string, hasAge: boolean): { code: string | null; token: string | null } {
+  const original = msg.trim();
+  const lower = original.toLowerCase();
+
+  // 1) Prefer full state names (handles "new york", "washington", etc.)
+  // Note: we only consider map keys longer than 2 chars to avoid pronouns like "me".
+  let bestName: string | null = null;
+  for (const key of Object.keys(US_STATES_MAP)) {
+    if (key.length <= 2) continue;
+    if (!lower.includes(key)) continue;
+    // Require word boundaries-ish to avoid partial matches
+    const re = new RegExp(`\\b${key.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}\\b`, 'i');
+    if (re.test(original)) {
+      if (!bestName || key.length > bestName.length) bestName = key;
+    }
+  }
+  if (bestName) {
+    return { code: US_STATES_MAP[bestName], token: bestName };
+  }
+
+  // 2) Two-letter codes (avoid false positives like "me" in "for me")
+  const hasLocationCue = /\b(in|from|live|located|state)\b/i.test(original);
+  const agePlusState = original.match(/\b(1[8-9]|[2-9][0-9])\b\s*[,\-\/\s]+\s*([A-Za-z]{2})\b/);
+  const statePlusAge = original.match(/\b([A-Za-z]{2})\b\s*[,\-\/\s]+\s*\b(1[8-9]|[2-9][0-9])\b/);
+  const adjacentToken = (agePlusState?.[2] || statePlusAge?.[1] || null)?.trim();
+
+  const rawTokens = original.split(/[\s,.;:()\[\]{}<>"']+/).filter(Boolean);
+  for (const raw of rawTokens) {
+    const cleaned = raw.replace(/[^A-Za-z]/g, '');
+    if (cleaned.length !== 2) continue;
+
+    const upper = cleaned.toUpperCase();
+    if (!US_STATE_CODES.has(upper)) continue;
+
+    // If it's a common English word that collides with a state code, only accept
+    // when it is clearly intended as a location.
+    const lower2 = cleaned.toLowerCase();
+    const ambiguousCode = lower2 === 'me' || lower2 === 'or' || lower2 === 'in';
+
+    const isUpperInOriginal = cleaned === upper;
+    const isAdjacentToAge = adjacentToken ? adjacentToken.toLowerCase() === lower2 : false;
+    const accept =
+      isUpperInOriginal ||
+      isAdjacentToAge ||
+      (hasLocationCue && !ambiguousCode) ||
+      (hasLocationCue && ambiguousCode) ||
+      (hasAge && !ambiguousCode) ||
+      (hasAge && isAdjacentToAge);
+
+    if (!accept) continue;
+    if (ambiguousCode && !isUpperInOriginal && !hasLocationCue && !isAdjacentToAge && !hasAge) continue;
+
+    return { code: upper, token: cleaned };
+  }
+
+  return { code: null, token: null };
+}
+
 function classifyInput(msg: string) {
   const clean = msg.toLowerCase().trim();
   
-  // A. Continuation (The "Go Ahead" Fix)
-  const isContinuation = /^(ok|okay|go ahead|sure|yes|yep|yeah|please|continue|next|right|correct|proceed)$/i.test(clean);
+  // A. Continuation ("Go ahead", "Sure", "Okay")
+  const isContinuation = /^(ok|okay|go ahead|sure|yes|yep|yeah|please|continue|next|right|correct|proceed|got it)$/i.test(clean);
   
-  // B. Topic Jump (The "Medical" Fix)
-  const isTopic = /medical|dental|vision|life|disability|hsa|ppo|hmo|coverage|plan|benefits|enroll/i.test(clean);
+  // B. Topic Jump - EXPANDED LIST
+  // Added: insurance, critical, accident, injury, voluntary, help, select, choose, premium, coverage, claim
+  const isTopic = /medical|dental|vision|life|disability|hsa|ppo|hmo|coverage|plan|benefits|enroll|cost|price|insurance|critical|accident|injury|voluntary|help|select|choose|premium|claim|supplemental|accidental/i.test(clean);
   
-  // C. Demographics ("42 in WA")
-  const hasAge = /\b([1-9][0-9])\b/.test(clean);
-  const hasState = /\b(wa|or|ca|tx|fl|ny|oh|il|pa|ga|nc|mi|nj|va|washington|oregon|california)\b/i.test(clean);
+  // C. Demographics ("25 in WA", "California", "Age 40", "24 and ohio")
+  const hasAge = /\b(1[8-9]|[2-9][0-9])\b/.test(clean);
+
+  const extractedState = extractStateCode(msg, hasAge);
+  const hasState = !!extractedState.code;
+  const foundState = extractedState.token;
+  
   const isDemographics = hasAge || hasState;
 
-  return { isContinuation, isTopic, isDemographics, hasAge, hasState };
+  return { isContinuation, isTopic, isDemographics, hasAge, hasState, foundState, stateCode: extractedState.code };
 }
 
+// ============================================================================
+// 1.5 SMART METADATA EXTRACTION (Topic Classifier)
+// ============================================================================
+// Map user keywords to your specific Document Categories (Metadata)
+function extractCategory(msg: string): string | null {
+  const lower = msg.toLowerCase();
+  
+  if (lower.includes('medical') || lower.includes('health') || lower.includes('doctor') || lower.includes('rx') || lower.includes('prescription') || lower.includes('ppo') || lower.includes('hmo')) return 'Medical';
+  if (lower.includes('dental') || lower.includes('teeth') || lower.includes('ortho') || lower.includes('cleaning')) return 'Dental';
+  if (lower.includes('vision') || lower.includes('eye') || lower.includes('glasses') || lower.includes('contact') || lower.includes('exam')) return 'Vision';
+  if (lower.includes('life') || lower.includes('beneficiary') || lower.includes('death') || lower.includes('survivor')) return 'Life';
+  if (lower.includes('disability') || lower.includes('std') || lower.includes('ltd') || lower.includes('income') || lower.includes('wages')) return 'Disability';
+  if (lower.includes('hsa') || lower.includes('fsa') || lower.includes('spending') || lower.includes('savings')) return 'Savings';
+  
+  // Specific fix for "Critical Injury" issue - these are Voluntary benefits
+  if (lower.includes('critical') || lower.includes('accident') || lower.includes('injury') || lower.includes('hospital') || lower.includes('supplemental') || lower.includes('voluntary')) return 'Voluntary';
+  
+  return null; // Fallback to searching everything
+}
+
+// Smart Name Extractor
 function extractName(msg: string): string | null {
-  const NOT_NAMES = new Set(['hello', 'hi', 'medical', 'dental', 'vision', 'help', 'benefits']);
+  const NOT_NAMES = new Set(['hello', 'hi', 'hlo', 'hey', 'medical', 'dental', 'vision', 'help', 'benefits', 'insurance', 'quote', 'cost', 'ok', 'yes', 'no']);
   
   // 1. Explicit: "My name is Sonal"
   const match = msg.match(/(?:name is|i'm|i am|call me)\s+([a-zA-Z]{2,15})/i);
   if (match && !NOT_NAMES.has(match[1].toLowerCase())) return match[1];
 
-  // 2. Implicit: Single word that looks like a name
+  // 2. Implicit: Single word that looks like a name ("Sonal")
   const words = msg.trim().split(/\s+/);
-  if (words.length <= 2 && !NOT_NAMES.has(words[0].toLowerCase()) && /^[a-zA-Z]+$/.test(words[0])) {
+  const firstWord = words[0].toLowerCase();
+  
+  // Must be 3+ characters, all letters, not a common word, and have vowels
+  if (words.length <= 2 && 
+      !NOT_NAMES.has(firstWord) && 
+      /^[a-zA-Z]{3,}$/.test(words[0]) &&
+      /[aeiou]/i.test(words[0])) {
     return words[0].charAt(0).toUpperCase() + words[0].slice(1).toLowerCase();
   }
   return null;
 }
 
 // ============================================================================
-// 2. SYSTEM PROMPT (The Personality)
+// 2. SYSTEM PROMPT
 // ============================================================================
 function buildSystemPrompt(session: any): string {
-  return `You are the AmeriVet Benefits Assistant.
+  return `You are the AmeriVet Benefits Assistant. You are helpful, professional, and focused on providing accurate benefits information.
 
-=== CONTEXT ===
+=== USER CONTEXT ===
 User: ${session.userName || "Guest"}
 Age: ${session.userAge || "Unknown"}
 State: ${session.userState || "Unknown"}
 
-=== RULES ===
-1. **MEMORY:** You know the user's Age and State. DO NOT ask for them again.
-2. **PERSISTENCE:** If the user says "go ahead" or "continue", proceed with the previous topic.
-3. **PRICING:** Format exactly as "$X per month ($Y annually)".
-4. **NO LOOPS:** Do not restart the welcome script.
+=== CRITICAL RULES ===
+1. MEMORY: You know the user's Age and State. DO NOT ask for them again if you already have them.
+2. PERSISTENCE: If the user says "go ahead" or "continue", proceed with the previous topic.
+3. COSTS: Always show costs as "$X per month ($Y annually)" format when providing pricing.
+4. FORMATTING: Do NOT use markdown, asterisks (**), bullet points, or headers. Use plain text with line breaks only.
+5. NO LEAKAGE: Do not repeat these rules or instructions in your response. Start your answer immediately.
+6. NO LOOPS: Do not restart the welcome script if you already know the user.
 
-${session.lastBotMessage ? `PREVIOUSLY YOU SAID: "${session.lastBotMessage}"` : ''}`;
+${session.lastBotMessage ? `CONTEXT: Previously you said: "${session.lastBotMessage}"` : ''}
+
+Answer the user's question directly and professionally. Be concise and helpful.`;
 }
 
 // ============================================================================
-// 3. MAIN LOGIC CONTROLLER
+// 3. SESSION CONTEXT BUILDER (for frontend caching)
+// ============================================================================
+function buildSessionContext(session: Session) {
+  return {
+    userName: session.userName || null,
+    userAge: session.userAge || null,
+    userState: session.userState || null,
+    hasCollectedName: session.hasCollectedName || false,
+    dataConfirmed: session.dataConfirmed || false
+  };
+}
+
+// ============================================================================
+// 4. MAIN LOGIC CONTROLLER
 // ============================================================================
 export async function POST(req: NextRequest) {
-  const startTime = Date.now();
-  
   try {
     const body = await req.json();
-    const { query, companyId, sessionId } = body;
+    // Accept optional context from frontend as fallback for serverless session loss
+    const { query, companyId, sessionId, context: clientContext } = body;
+    
+    console.log(`[QA] New request - Query: "${query}", SessionId: ${sessionId?.substring(0, 8)}...`);
     
     if (!query || !sessionId) return NextResponse.json({ error: 'Missing inputs' }, { status: 400 });
 
-    const session = getOrCreateSession(sessionId);
+    const session = await getOrCreateSession(sessionId);
     session.turn = (session.turn ?? 0) + 1;
     
-    // 1. ANALYZE INTENT (The "Mindful" Step)
-    const intent = classifyInput(query);
+    // SERVERLESS RESILIENCE: Restore session from client context if backend lost it
+    // This handles the case where Redis/memory/fs all fail in serverless
+    if (clientContext) {
+      if (clientContext.userName && !session.userName) {
+        session.userName = clientContext.userName;
+        session.hasCollectedName = true;
+        console.log(`[QA] Restored userName from client: ${session.userName}`);
+      }
+      if (clientContext.userAge && !session.userAge) {
+        session.userAge = clientContext.userAge;
+        console.log(`[QA] Restored userAge from client: ${session.userAge}`);
+      }
+      if (clientContext.userState && !session.userState) {
+        session.userState = clientContext.userState;
+        console.log(`[QA] Restored userState from client: ${session.userState}`);
+      }
+      if (session.userName && session.userAge && session.userState) {
+        session.dataConfirmed = true;
+        session.step = 'active_chat';
+      }
+    }
     
-    // 2. SELF-HEALING (Fixing the "Go Ahead" Crash)
-    // If we are 'lost' (no name) but the user implies continuity, we auto-recover.
+    console.log(`[QA] Session state - Turn: ${session.turn}, HasName: ${session.hasCollectedName}, User: ${session.userName}, Age: ${session.userAge}, State: ${session.userState}`);
+    
+    // ------------------------------------------------------------------------
+    // STEP 1: READ THE USER'S MIND (Intent Analysis)
+    // ------------------------------------------------------------------------
+    const intent = classifyInput(query);
+    console.log(`[QA] Intent analysis:`, intent);
+
+    // ------------------------------------------------------------------------
+    // STEP 2: SELF-HEALING (The "Win-Win" Fix)
+    // ------------------------------------------------------------------------
+    // PROBLEM: Server restarts, session is empty.
+    // FIX: If user input looks like "25 in CA" or "Medical", we force a session restore.
+    
     if (!session.hasCollectedName && (intent.isContinuation || intent.isTopic || intent.isDemographics)) {
-       session.userName = "Guest";
+       console.log(`[Self-Healing] Restoring lost session for input: "${query}"`);
+       session.userName = "Guest"; // Fallback name so we don't loop
        session.hasCollectedName = true;
        session.step = 'active_chat';
     }
 
-    // 3. DATA EXTRACTION (The "Memory" Step)
-    if (intent.hasAge) session.userAge = parseInt(query.match(/\b([1-9][0-9])\b/)![1]);
-    if (intent.hasState) session.userState = query.match(/\b(wa|or|ca|tx|fl|ny|oh|il|pa|ga|nc|mi|nj|va)\b/i)![1].toUpperCase();
+    // ------------------------------------------------------------------------
+    // STEP 3: FLASHBULB MEMORY (Data Extraction)
+    // ------------------------------------------------------------------------
+    // Extract Age/State regardless of where we are in the flow
+    if (intent.hasAge) {
+        const ageMatch = query.match(/\b(1[8-9]|[2-9][0-9])\b/);
+        if (ageMatch) {
+            session.userAge = parseInt(ageMatch[0]);
+            console.log(`[QA] Extracted age: ${session.userAge}`);
+        }
+    }
+    if (intent.hasState && intent.stateCode) {
+      session.userState = intent.stateCode;
+      console.log(`[QA] Extracted state: ${session.userState}`);
+    }
     
-    // If we just got the data we were waiting for, move state forward
-    if (session.step === 'awaiting_demographics' && (session.userAge || session.userState)) {
+    // Ensure session is saved after data extraction
+    if ((intent.hasAge && session.userAge) || (intent.hasState && session.userState)) {
+      await updateSession(sessionId, session);
+        console.log(`[QA] Session updated - Age: ${session.userAge}, State: ${session.userState}`);
+    }
+    
+    // If we have data now, ensure the gate is open and acknowledge
+    if (session.userAge && session.userState && !session.dataConfirmed) {
         session.step = 'active_chat';
+        session.dataConfirmed = true; // Prevent repeated confirmations
+        
+        // If query was ONLY data ("43 CA"), confirm it
+        if (query.length < 40 && !query.includes("?") && intent.isDemographics) {
+            const msg = `Perfect! ${session.userAge} in ${session.userState}. Now I can show you accurate pricing. What would you like to explore? (Medical, Dental, Vision?)`;
+            session.lastBotMessage = msg;
+        await updateSession(sessionId, session);
+            return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session) });
+        }
     }
 
-    // ========================================================================
-    // STATE MACHINE (The "Intuitive" Logic)
-    // ========================================================================
+    // ------------------------------------------------------------------------
+    // STEP 4: CONVERSATION FLOW (State Machine)
+    // ------------------------------------------------------------------------
 
-    // PHASE 1: GET NAME
+    // PHASE 1: GET NAME (Only if session is empty AND input is NOT data/topic)
     if (!session.hasCollectedName) {
         const name = extractName(query);
         if (name) {
             session.userName = name;
             session.hasCollectedName = true;
             session.step = 'awaiting_demographics';
-            const msg = `Thanks, ${name}! To give you accurate pricing, could you share your **Age** and **State**?`;
+            const msg = `Thanks, ${name}! It's great to meet you. 😊\n\nTo help me find the best plans for *you*, could you please share your **Age** and **State**?`;
             
             session.lastBotMessage = msg;
-            updateSession(sessionId, session);
-            return NextResponse.json({ answer: msg, tier: 'L1' });
+        await updateSession(sessionId, session);
+            return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session) });
         } else {
-            const msg = `Hi! I'm your AmeriVet Benefits Assistant. Let's get started — what's your name?`;
+            // Default Welcome
+            const msg = `Hi there! Welcome! 🎉\n\nI'm your AmeriVet Benefits Assistant. I'm here to help you compare plans and find the right fit.\n\nLet's get started — what's your name?`;
             session.lastBotMessage = msg;
-            updateSession(sessionId, session);
-            return NextResponse.json({ answer: msg, tier: 'L1' });
+        await updateSession(sessionId, session);
+            return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session) });
         }
     }
 
-    // PHASE 2: GET DEMOGRAPHICS (The Gate)
-    // We only block if we truly have nothing AND the user isn't just saying "ok/go ahead"
-    if ((!session.userAge || !session.userState) && !intent.isContinuation) {
-        // Did they just provide it?
-        if (intent.isDemographics) {
-             session.step = 'active_chat'; 
-             // If query was ONLY data ("42 in WA"), confirm it.
-             if (query.length < 30) {
-                 const msg = `Got it! ${session.userAge} in ${session.userState}. What can I help you with? (Medical, Dental, Vision?)`;
-                 session.lastBotMessage = msg;
-                 updateSession(sessionId, session);
-                 return NextResponse.json({ answer: msg, tier: 'L1' });
-             }
-        } else {
-             // Still missing.
-             const msg = `To check specific plans for you, I need your **Age** and **State** (e.g., "I'm 42 in WA").`;
+    // PHASE 2: THE STRICT GATEKEEPER
+    // Sanitize Data (Fix the "undefined" bug)
+    if (session.userState === "undefined" || session.userState === "null") {
+        session.userState = null;
+    }
+    // Only nullify age if it's actually invalid, not if it's a valid number
+    if (session.userAge !== null && (typeof session.userAge !== 'number' || isNaN(session.userAge))) {
+        console.log(`[QA] Nullifying invalid age: ${session.userAge}`);
+        session.userAge = null;
+    }
+
+    const hasAge = !!session.userAge;
+    const hasState = !!session.userState;
+    const hasData = hasAge && hasState;
+
+    console.log(`[QA] Gatekeeper check - Age: ${session.userAge}, State: ${session.userState}, HasAge: ${hasAge}, HasState: ${hasState}, HasData: ${hasData}`);
+
+    // CRITICAL FIX: If we have data, always allow the request through
+    if (!hasData && !intent.isContinuation) {
+        
+        // Scenario A: User asks "Medical PPO" or "critical injury insurance" but we don't know their State.
+        // STOP THEM explicitly.
+        if (intent.isTopic) {
+             const missing = !hasState ? "State" : "Age";
+             const msg = `I can definitely help you with ${query}, but plan availability and costs vary by location.\n\nFirst, please tell me your ${missing} so I can give you the correct information.`;
+             
              session.lastBotMessage = msg;
-             updateSession(sessionId, session);
-             return NextResponse.json({ answer: msg, tier: 'L1' });
+         await updateSession(sessionId, session);
+             return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session) });
         }
+
+        // Scenario B: User provided PARTIAL data (e.g. just "43")
+        if (intent.isDemographics) {
+             const missing = !hasState ? "State" : "Age";
+             const current = session.userAge ? `Age ${session.userAge}` : `State ${session.userState}`;
+             
+             const msg = `Got it (${current}). To pull the accurate rates, I just need your ${missing}.`;
+             
+             session.lastBotMessage = msg;
+         await updateSession(sessionId, session);
+             return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session) });
+        }
+
+        // Scenario C: Generic chitchat while waiting for data
+        const nameRef = session.userName !== "Guest" ? session.userName : "there";
+        const msg = `Thanks ${nameRef}. Before we look at plans, I need your Age and State (e.g., "I'm 25 in CA") to calculate your costs.`;
+        
+        session.lastBotMessage = msg;
+       await updateSession(sessionId, session);
+        return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session) });
     }
 
-    // PHASE 3: THE BRAIN (RAG)
+    // Log when user with complete data proceeds to RAG
+    if (hasData) {
+        console.log(`[QA] ✅ User has complete data (${session.userAge} in ${session.userState}), proceeding to RAG`);
+    }
+
+    // PHASE 3: SMART RETRIEVAL WITH CONFIDENCE GATE
+    // ========================================================================
+    
+    // 1. EXTRACT METADATA (Filter by Topic)
+    const category = extractCategory(query);
+    
     const context: RetrievalContext = {
       companyId,
-      state: session.userState, 
+      state: session.userState || 'National',
       dept: session.context?.dept,
+      category: category || undefined
     };
 
+    console.log(`[RAG] Searching with Context (Category: ${category}):`, context);
+
+    // 2. HYBRID SEARCH (Vector + BM25 with Category Filter)
     const result = await hybridRetrieve(query, context);
     
-    // Fallback if RAG fails
+    // 3. THE CONFIDENCE GATE 🛡️
+    const MIN_CONFIDENCE_SCORE = 0.7; 
+    const topMatch = result.chunks?.[0];
+    
+    console.log(`[RAG] Retrieved ${result.chunks?.length || 0} chunks, top score: ${topMatch?.score || 'N/A'}`);
+
+    // FAIL CONDITION 1: No results found
     if (!result.chunks?.length) {
-        // If user said "Go ahead" and we have no context, ask for a topic
-        if (intent.isContinuation) {
-            const msg = `I'm ready! What topic should we cover? (Medical, Dental, Vision?)`;
-            return NextResponse.json({ answer: msg });
-        }
-        return NextResponse.json({ answer: "I couldn't find specific details on that. Could you clarify which benefit you're asking about?" });
+        const msg = intent.isContinuation 
+            ? "I'm ready! What topic should we cover first? (Medical, Dental, Vision?)"
+            : "I checked our benefits documents, but I couldn't find any information matching that request. Could you try rephrasing or specify which benefit you're asking about?";
+        return NextResponse.json({ answer: msg, sessionContext: buildSessionContext(session) });
     }
 
+    // FAIL CONDITION 2: Low Confidence (The Gate)
+    if (topMatch && topMatch.score < MIN_CONFIDENCE_SCORE) {
+        console.warn(`[RAG] Low Confidence: ${topMatch.score} for query "${query}"`);
+        
+        // Fallback: If we had a category filter, try removing it (Widen the search)
+        if (category) {
+            console.log(`[RAG] Retrying without category filter...`);
+            const wideContext = { ...context, category: undefined };
+            const wideResult = await hybridRetrieve(query, wideContext);
+            
+            const wideTopMatch = wideResult.chunks?.[0];
+            if (wideTopMatch && wideTopMatch.score > MIN_CONFIDENCE_SCORE) {
+                console.log(`[RAG] Found better match without category filter: ${wideTopMatch.score}`);
+                result.chunks = wideResult.chunks;
+            } else {
+                const msg = `I'm not 100% sure I found the right document for that specific question. Could you clarify if you are asking about Medical, Dental, Vision, Life, or another benefit?`;
+                return NextResponse.json({ answer: msg, sessionContext: buildSessionContext(session) });
+            }
+        } else {
+            const msg = `I found some information, but it doesn't seem to perfectly match your question. Could you provide more details about which benefit or plan you're interested in?`;
+            return NextResponse.json({ answer: msg, sessionContext: buildSessionContext(session) });
+        }
+    }
+
+    // 4. GENERATE ANSWER (High Confidence)
     const contextText = result.chunks.map((c, i) => `[${i+1}] ${c.content}`).join('\n\n');
+    
     const systemPrompt = buildSystemPrompt(session);
     
-    // Inject Memory into the AI so it acts "Mindful"
-    const finalPrompt = `CONTEXT:\n${contextText}\n\nUSER QUERY: ${query}\n\nINSTRUCTION: Answer using the context. Be concise.`;
+    // Build conversation history for context
+    const historyText = (session.messages || []).slice(-4)
+        .map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
+        .join('\n');
+
+    const promptTemplate = `You are the AmeriVet Benefits AI Assistant. Use the provided benefit documents to answer the user's question.
+
+CONTEXT DOCUMENTS:
+${contextText}
+
+USER DEMOGRAPHICS:
+- Age: ${session.userAge}
+- State: ${session.userState}
+
+CONVERSATION HISTORY:
+${historyText}
+
+CURRENT QUESTION: ${query}
+
+INSTRUCTIONS:
+- Use the context documents to provide a specific, helpful answer
+- Include relevant plan details, costs, and eligibility requirements
+- Be conversational and friendly while being accurate
+- If asked about costs or plan options, reference the user's age (${session.userAge}) and state (${session.userState})
+- Don't ask for information we already have (age: ${session.userAge}, state: ${session.userState})
+
+Answer:`;
+
+    console.log(`[RAG] Generating answer with ${result.chunks.length} chunks`);
 
     const completion = await azureOpenAIService.generateChatCompletion([
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: finalPrompt }
+      { role: 'system', content: promptTemplate }
     ], { temperature: 0.1 });
 
     let answer = completion.content.trim();
     answer = enforceMonthlyFirstFormat(answer);
     answer = validatePricingFormat(answer);
 
+    console.log(`[RAG] Final answer generated (${answer.length} chars) with ${result.chunks?.length || 0} citations`);
+
     session.lastBotMessage = answer;
-    updateSession(sessionId, session);
+    
+    // Store message in session history for future context
+    if (!session.messages) session.messages = [];
+    session.messages.push(
+        { role: 'user', content: query },
+        { role: 'assistant', content: answer }
+    );
+    // Keep only last 6 messages (3 exchanges) for context
+    if (session.messages.length > 6) {
+        session.messages = session.messages.slice(-6);
+    }
+    
+    await updateSession(sessionId, session);
 
     return NextResponse.json({
       answer,
       tier: 'L1',
-      citations: result.chunks
+      citations: result.chunks,
+      sessionContext: buildSessionContext(session),
+      metadata: {
+        category: category,
+        chunksUsed: result.chunks?.length || 0,
+        sessionId,
+        userAge: session.userAge,
+        userState: session.userState
+      }
     });
 
   } catch (error) {
     console.error('[QA] Error:', error);
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
-  }
-}
-
-    // ------------------------------------------------------------------------
-    // B. "YES PLEASE" LOOP FIX
-    // ------------------------------------------------------------------------
-    // If the user says "yes", "sure", "please" and we don't have a name, 
-    // we assume we lost the session state but they are deep in chat.
-    // We auto-recover by setting a Guest name so they don't get the Welcome Loop.
-    const isContinuation = /^(yes|sure|ok|please|yep|yeah|right|correct)/i.test(query);
-    if (!session.hasCollectedName && isContinuation) {
-        session.userName = "Guest";
-        session.hasCollectedName = true;
-        session.step = 'active_chat';
-    }
-
-    // ------------------------------------------------------------------------
-    // C. STEP 1: NAME COLLECTION
-    // ------------------------------------------------------------------------
-    if (!session.hasCollectedName) {
-        // 1. Check if user provided name
-        const lastMsg = session.lastBotMessage?.toLowerCase() || "";
-        const botAskedForName = lastMsg.includes("what's your name") || lastMsg.includes("your name");
-        const name = extractName(query, botAskedForName || session.turn === 1);
-
-        if (name) {
-            session.userName = name;
-            session.hasCollectedName = true;
-            // UPDATE: Don't go to active_chat yet. Go to Step 2.
-            session.step = 'awaiting_demographics';
-            
-            const response = `Thanks, ${name}! It's great to meet you. 😊\n\nTo help me find the best plans for *you*, I just need two quick details:\n\n**What is your Age and State?**`;
-            
-            session.lastBotMessage = response;
-            updateSession(sessionId, session);
-            return NextResponse.json({ answer: response, tier: 'L1' });
-        } else {
-            // Force Welcome
-            const welcome = `Hi there! Welcome! 🎉\n\nI'm your AmeriVet Benefits Assistant. I'm here to help you compare plans and find the right fit.\n\nLet's get started — what's your name?`;
-            session.lastBotMessage = welcome;
-            updateSession(sessionId, session);
-            return NextResponse.json({ answer: welcome, tier: 'L1' });
-        }
-    }
-
-    // ------------------------------------------------------------------------
-    // D. STEP 2: DEMOGRAPHICS COLLECTION (High Precision Gate)
-    // ------------------------------------------------------------------------
-    // We strictly require Age and State for accurate pricing.
-    // We ask for it IF:
-    // 1. We don't have it yet AND
-    // 2. The user isn't just saying "Hi" or "Thanks" (intent check) AND
-    // 3. The user isn't asking a generic definition question (e.g. "What is a PPO?")
     
-    const hasDemographics = session.userAge && session.userState;
-    const isGenericQuestion = query.toLowerCase().includes("what is") || query.toLowerCase().includes("define") || query.toLowerCase().includes("explain");
-    
-    if (!hasDemographics && !isGenericQuestion) {
-        
-        // Did they just provide it in this turn? (Metadata extraction ran above)
-        if (session.userAge && session.userState) {
-            // YES! They gave it. Transition to help.
-            session.step = 'active_chat';
-            
-            // If they ONLY gave data ("I'm 42 in WA"), confirm receipt.
-            const isDataOnly = query.length < 50 && !query.includes("?");
-            if (isDataOnly) {
-                const readyMsg = `Got it! ${session.userAge} in ${session.userState}. Thanks!\n\nNow I can give you accurate pricing and eligibility.\n\nWhat would you like to look at first? (Medical, Dental, Vision, Life?)`;
-                session.lastBotMessage = readyMsg;
-                updateSession(sessionId, session);
-                return NextResponse.json({ answer: readyMsg, tier: 'L1' });
-            }
-            // If they asked a question too ("I'm 42 in WA, what's the PPO cost?"), FALL THROUGH to RAG.
-        } else {
-            // NO. We are missing data. We MUST interrupt to get it.
-            // This ensures we never give a generic answer when a specific one is needed.
-            const ask = `Thanks ${session.userName}. To check your specific eligibility and costs, I need to know your **Age** and **State** (e.g., "42 in Washington").`;
-            session.lastBotMessage = ask;
-            updateSession(sessionId, session);
-            return NextResponse.json({ answer: ask, tier: 'L1' });
-        }
-    }
-
-    // ------------------------------------------------------------------------
-    // E. STEP 3: RAG PIPELINE (High Precision)
-    // ------------------------------------------------------------------------
-    const context: RetrievalContext = {
-      companyId,
-      state: session.userState || session.context?.state,
-      dept: session.context?.dept,
-    };
-
-    const result = await hybridRetrieve(query, context);
-    
-    if (!result.chunks || result.chunks.length === 0) {
-      const fallback = `I'm sorry ${session.userName !== "Guest" ? session.userName : ""}, I couldn't find specific details about that. Could you try asking differently?`;
-      session.lastBotMessage = fallback;
-      updateSession(sessionId, session);
-      return NextResponse.json({ answer: fallback });
-    }
-
-    const contextText = result.chunks
-      .map((c, i) => `[${i+1}] ${c.content}`)
-      .join('\n\n');
-
-    const systemPrompt = buildSystemPrompt(session.userName !== "Guest", session.userName);
-    const memoryContext = `[DEVELOPER CONTEXT - USER PROFILE]
-    - User: ${session.userName}
-    - Age: ${session.userAge || "Unknown"}
-    - State: ${session.userState || "Unknown"}
-    - Turn: ${session.turn}
-    
-    CRITICAL INSTRUCTIONS:
-    1. If Age/State is known, DO NOT ask for it again
-    2. Use their age and state for personalized recommendations
-    3. Mention specific costs for their state when available
-    4. ${session.userAge && session.userAge < 30 ? 'Focus on affordable options for young adults' : session.userAge && session.userAge > 50 ? 'Highlight comprehensive coverage for mature adults' : 'Provide balanced coverage options'}
-    5. Always be specific with pricing in "$X per month ($Y annually)" format`;
-
-    const completion = await azureOpenAIService.generateChatCompletion([
-      { role: 'system', content: systemPrompt },
-      { role: 'system', content: memoryContext },
-      { role: 'user', content: `Context:\n${contextText}\n\nQuestion: ${query}` }
-    ], { temperature: 0.1 });
-
-    let answer = completion.content.trim();
-    answer = enforceMonthlyFirstFormat(answer);
-    answer = validatePricingFormat(answer);
-
-    session.lastBotMessage = answer;
-    updateSession(sessionId, session);
-
-    return NextResponse.json({
-      answer,
+    return NextResponse.json({ 
+      answer: "I apologize for the technical difficulty. Let me help you get back on track. What would you like to know about your benefits?",
+      error: 'Internal Server Error',
       tier: 'L1',
-      citations: result.chunks
-    });
-
-  } catch (error) {
-    console.error('[QA] Error:', error);
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+      sessionContext: null  // Session may be corrupted
+    }, { status: 200 });
   }
 }

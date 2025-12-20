@@ -21,12 +21,10 @@ export const POST = requireCompanyAdmin(async (request: NextRequest) => {
   const startTime = Date.now();
   try {
     const rateLimitResponse = await rateLimiters.admin(request);
-    if (rateLimitResponse) {
-      return rateLimitResponse;
-    }
+    if (rateLimitResponse) return rateLimitResponse;
 
     const userId = request.headers.get('x-user-id')!;
-    const headerCompanyId = request.headers.get('x-company-id')!;
+    const headerCompanyId = request.headers.get('x-company-id')!; // Use this for security check if needed
 
     const body = await request.json();
     const validatedData = bulkActionSchema.parse(body);
@@ -44,7 +42,8 @@ export const POST = requireCompanyAdmin(async (request: NextRequest) => {
     const results = {
       success: 0,
       failed: 0,
-      errors: [] as string[]
+      errors: [] as string[],
+      data: undefined as string | undefined // Used for export
     };
 
     switch (action) {
@@ -64,10 +63,7 @@ export const POST = requireCompanyAdmin(async (request: NextRequest) => {
         await handleBulkDelete(employeeIds, companyId, repositories, results);
         break;
       default:
-        return NextResponse.json(
-          { success: false, error: 'Invalid action' },
-          { status: 400 }
-        );
+        return NextResponse.json({ success: false, error: 'Invalid action' }, { status: 400 });
     }
 
     const duration = Date.now() - startTime;
@@ -75,7 +71,7 @@ export const POST = requireCompanyAdmin(async (request: NextRequest) => {
       userId,
       companyId,
       action,
-      results
+      results: { ...results, data: results.data ? '[CSV CONTENT]' : undefined } // Don't log full CSV
     });
 
     return NextResponse.json({
@@ -83,6 +79,7 @@ export const POST = requireCompanyAdmin(async (request: NextRequest) => {
       message: `Bulk ${action} completed`,
       results
     });
+
   } catch (error) {
     const duration = Date.now() - startTime;
 
@@ -106,24 +103,36 @@ export const POST = requireCompanyAdmin(async (request: NextRequest) => {
   }
 });
 
+// ============================================================================
+// BULK HANDLERS (Optimized with Promise.all)
+// ============================================================================
+
 async function handleBulkActivate(
   employeeIds: string[],
   companyId: string,
   repositories: any,
   results: { success: number; failed: number; errors: string[] }
 ) {
-  for (const employeeId of employeeIds) {
+  const promises = employeeIds.map(async (employeeId) => {
     try {
       await repositories.users.update(employeeId, {
         isActive: true,
         updatedAt: new Date()
       }, companyId);
-      results.success++;
+      return { success: true };
     } catch (error) {
-      results.failed++;
-      results.errors.push(`Failed to activate employee ${employeeId}: ${(error as Error).message}`);
+      return { success: false, id: employeeId, error: (error as Error).message };
     }
-  }
+  });
+
+  const outcomes = await Promise.all(promises);
+  outcomes.forEach(o => {
+    if (o.success) results.success++;
+    else {
+      results.failed++;
+      results.errors.push(`Failed to activate ${o.id}: ${o.error}`);
+    }
+  });
 }
 
 async function handleBulkDeactivate(
@@ -132,18 +141,26 @@ async function handleBulkDeactivate(
   repositories: any,
   results: { success: number; failed: number; errors: string[] }
 ) {
-  for (const employeeId of employeeIds) {
+  const promises = employeeIds.map(async (employeeId) => {
     try {
       await repositories.users.update(employeeId, {
         isActive: false,
         updatedAt: new Date()
       }, companyId);
-      results.success++;
+      return { success: true };
     } catch (error) {
-      results.failed++;
-      results.errors.push(`Failed to deactivate employee ${employeeId}: ${(error as Error).message}`);
+      return { success: false, id: employeeId, error: (error as Error).message };
     }
-  }
+  });
+
+  const outcomes = await Promise.all(promises);
+  outcomes.forEach(o => {
+    if (o.success) results.success++;
+    else {
+      results.failed++;
+      results.errors.push(`Failed to deactivate ${o.id}: ${o.error}`);
+    }
+  });
 }
 
 async function handleBulkEmail(
@@ -155,17 +172,15 @@ async function handleBulkEmail(
   repositories: any,
   results: { success: number; failed: number; errors: string[] }
 ) {
-  for (const employeeId of employeeIds) {
+  const subject = emailSubject || `Welcome to ${companyId} Benefits Assistant`;
+  const message = emailMessage || `Welcome to your company's benefits assistant!`;
+
+  const promises = employeeIds.map(async (employeeId) => {
     try {
       const employee = await repositories.users.getById(employeeId, companyId);
-      if (!employee) {
-        results.failed++;
-        results.errors.push(`Employee ${employeeId} not found`);
-        continue;
+      if (!employee || !employee.email) {
+        return { success: false, id: employeeId, error: 'Employee not found or no email' };
       }
-
-      const subject = emailSubject || `Welcome to ${companyId} Benefits Assistant`;
-      const message = emailMessage || `Welcome to your company's benefits assistant!`;
 
       await emailService.sendEmail({
         to: employee.email,
@@ -173,37 +188,46 @@ async function handleBulkEmail(
         textContent: message
       });
 
-      results.success++;
+      return { success: true };
     } catch (error) {
-      results.failed++;
-      results.errors.push(`Failed to send email to employee ${employeeId}: ${(error as Error).message}`);
+      return { success: false, id: employeeId, error: (error as Error).message };
     }
-  }
+  });
+
+  const outcomes = await Promise.all(promises);
+  outcomes.forEach(o => {
+    if (o.success) results.success++;
+    else {
+      results.failed++;
+      results.errors.push(`Failed to email ${o.id}: ${o.error}`);
+    }
+  });
 }
 
 async function handleBulkExport(
   employeeIds: string[],
   companyId: string,
   repositories: any,
-  results: { success: number; failed: number; errors: string[] }
+  results: { success: number; failed: number; errors: string[]; data?: string }
 ) {
   try {
-    const employees = [];
-    for (const employeeId of employeeIds) {
-      const employee = await repositories.users.getById(employeeId, companyId);
-      if (employee) {
-        employees.push(employee);
-      }
+    // Fetch all requested employees in parallel
+    const promises = employeeIds.map(id => repositories.users.getById(id, companyId));
+    const employees = (await Promise.all(promises)).filter(e => e !== null);
+
+    if (employees.length === 0) {
+      results.errors.push('No valid employees found to export');
+      return;
     }
 
-    // Convert to CSV format
-    const csvContent = convertEmployeesToCSV(employees);
-    
+    // Convert to CSV
+    results.data = convertEmployeesToCSV(employees);
     results.success = employees.length;
     results.failed = employeeIds.length - employees.length;
+
   } catch (error) {
     results.failed = employeeIds.length;
-    results.errors.push(`Failed to export employees: ${(error as Error).message}`);
+    results.errors.push(`Export failed: ${(error as Error).message}`);
   }
 }
 
@@ -213,17 +237,26 @@ async function handleBulkDelete(
   repositories: any,
   results: { success: number; failed: number; errors: string[] }
 ) {
-  for (const employeeId of employeeIds) {
+  const promises = employeeIds.map(async (employeeId) => {
     try {
       await repositories.users.delete(employeeId, companyId);
-      results.success++;
+      return { success: true };
     } catch (error) {
-      results.failed++;
-      results.errors.push(`Failed to delete employee ${employeeId}: ${(error as Error).message}`);
+      return { success: false, id: employeeId, error: (error as Error).message };
     }
-  }
+  });
+
+  const outcomes = await Promise.all(promises);
+  outcomes.forEach(o => {
+    if (o.success) results.success++;
+    else {
+      results.failed++;
+      results.errors.push(`Failed to delete ${o.id}: ${o.error}`);
+    }
+  });
 }
 
+// Helper: CSV Generator
 function convertEmployeesToCSV(employees: any[]): string {
   if (employees.length === 0) return '';
 
@@ -233,13 +266,12 @@ function convertEmployeesToCSV(employees: any[]): string {
     emp.displayName || emp.name || '',
     emp.email,
     emp.role,
-    emp.isActive ? 'active' : 'inactive',
-    emp.department || '',
+    emp.isActive ? 'Active' : 'Inactive',
+    emp.department || 'N/A',
     emp.createdAt ? new Date(emp.createdAt).toISOString() : ''
   ]);
 
-  return [headers, ...rows].map(row => 
-    row.map(field => `"${String(field).replace(/"/g, '""')}"`).join(',')
-  ).join('\n');
+  return [headers, ...rows]
+    .map(row => row.map(field => `"${String(field).replace(/"/g, '""')}"`).join(','))
+    .join('\n');
 }
-

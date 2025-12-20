@@ -91,6 +91,13 @@ function buildODataFilter(context: RetrievalContext): string {
     const state = escapeODataValue(context.state.trim());
     filters.push(`(state eq '${state}' or state eq 'National')`);
   }
+  
+  // NEW: Category filtering for smart metadata extraction
+  if (context.category) {
+    const category = escapeODataValue(context.category.trim());
+    filters.push(`category eq '${category}'`);
+  }
+  
   return filters.join(" and ");
 }
 
@@ -231,6 +238,7 @@ export async function retrieveVectorTopK(
           ...parseMetadata(result.document.metadata),
         },
         createdAt: new Date(),
+        score: result.score, // Overall relevance score for confidence gate
       });
     }
 
@@ -289,6 +297,7 @@ export async function retrieveBM25TopK(
       windowEnd: s.chunk.text.length,
       metadata: { tokenCount: Math.ceil(s.chunk.text.length / 4), bm25Score: s.score },
       createdAt: new Date(),
+      score: s.score, // Overall relevance score for confidence gate
     }));
   }
 
@@ -337,6 +346,7 @@ export async function retrieveBM25TopK(
           ...metadata,
         },
         createdAt: new Date(),
+        score: result.score, // Overall relevance score for confidence gate
       });
     }
 
@@ -412,6 +422,7 @@ export function rrfMerge(
         rrfScore: score,
         relevanceScore: score, // Use RRF as relevance
       },
+      score: score, // Overall score for confidence gate
     }))
     .slice(0, topN);  // ONLY slice here, after merge and dedupe
 

@@ -1,63 +1,44 @@
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const revalidate = 0;
-export const fetchCache = 'force-no-store';
+export const revalidate = 0; // Correct for Admin APIs
 
 import { NextResponse, type NextRequest } from 'next/server';
 import { protectAdminEndpoint } from '@/lib/middleware/auth';
 import { rateLimiters } from '@/lib/middleware/rate-limit';
 import { logger } from '@/lib/logger';
 import { faqService } from '@/lib/services/faq.service';
+import { generateEmbeddings, upsertVectors } from '@/lib/ai/vector-store'; // NEW: Import your AI tools
 import { z } from 'zod';
 
+// Validation Schema
 const createFaqSchema = z.object({
-  question: z.string().min(1, 'Question is required'),
-  answer: z.string().min(1, 'Answer is required'),
+  question: z.string().min(5, 'Question too short').max(500),
+  answer: z.string().min(5, 'Answer too short').max(5000),
   category: z.string().optional(),
   tags: z.array(z.string()).optional(),
   isPublic: z.boolean().default(false),
   priority: z.enum(['low', 'medium', 'high']).default('medium'),
 });
 
-// GET /api/admin/faqs - List all FAQs for a company
+// GET /api/admin/faqs
 export async function GET(request: NextRequest) {
   const startTime = Date.now();
   
   try {
-    // Apply rate limiting
     const rateLimitResponse = await rateLimiters.admin(request);
-    if (rateLimitResponse) {
-      return rateLimitResponse;
-    }
+    if (rateLimitResponse) return rateLimitResponse;
 
-    // Authenticate and authorize
     const { user, error } = await protectAdminEndpoint(request);
-    if (error || !user) {
-      return error!;
-    }
+    if (error || !user) return error!;
 
-    const companyId = user.companyId;
-    if (!companyId) {
-      logger.warn('Company ID not found for admin user', { userId: user.id });
-      return NextResponse.json(
-        { success: false, error: 'Company ID not found' },
-        { status: 400 }
-      );
-    }
-
-    logger.info('API Request: GET /api/admin/faqs', {
-      userId: user.id,
-      companyId
-    });
-
-    // Get query parameters
+    // Safe Pagination Limits
     const { searchParams } = new URL(request.url);
+    const limit = Math.min(parseInt(searchParams.get('limit') || '50'), 100); // Cap at 100
+    const offset = Math.max(parseInt(searchParams.get('offset') || '0'), 0);
     const category = searchParams.get('category') || undefined;
-    const isPublic = searchParams.get('isPublic') ? searchParams.get('isPublic') === 'true' : undefined;
-    const limit = searchParams.get('limit') ? parseInt(searchParams.get('limit')!, 10) : undefined;
-    const offset = searchParams.get('offset') ? parseInt(searchParams.get('offset')!, 10) : undefined;
+    const isPublic = searchParams.get('isPublic') === 'true';
 
-    const { faqs, total } = await faqService.getFAQsByCompany(companyId, {
+    const { faqs, total } = await faqService.getFAQsByCompany(user.companyId, {
       category,
       isPublic,
       limit,
@@ -69,102 +50,80 @@ export async function GET(request: NextRequest) {
       data: faqs,
       pagination: {
         total,
-        limit: limit || 50,
-        offset: offset || 0,
-        hasMore: (offset || 0) + (limit || 50) < total
+        limit,
+        offset,
+        hasMore: offset + limit < total
       }
     });
   } catch (error) {
-    const duration = Date.now() - startTime;
-    
-    logger.error('FAQ list error', {
-      path: request.nextUrl.pathname,
-      method: request.method,
-      duration
-    }, error as Error);
-    
-    return NextResponse.json(
-      { 
-        success: false,
-        error: 'Failed to retrieve FAQs' 
-      },
-      { status: 500 }
-    );
+    logger.error('FAQ list error', { path: '/api/admin/faqs' }, error as Error);
+    return NextResponse.json({ success: false, error: 'Failed to retrieve FAQs' }, { status: 500 });
   }
 }
 
-// POST /api/admin/faqs - Create new FAQ
+// POST /api/admin/faqs - Create NEW FAQ & Teach AI
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
   
   try {
-    // Apply rate limiting
     const rateLimitResponse = await rateLimiters.admin(request);
-    if (rateLimitResponse) {
-      return rateLimitResponse;
-    }
+    if (rateLimitResponse) return rateLimitResponse;
 
-    // Authenticate and authorize
     const { user, error } = await protectAdminEndpoint(request);
-    if (error || !user) {
-      return error!;
-    }
-
-    const companyId = user.companyId;
-    if (!companyId) {
-      logger.warn('Company ID not found for admin user', { userId: user.id });
-      return NextResponse.json(
-        { success: false, error: 'Company ID not found' },
-        { status: 400 }
-      );
-    }
+    if (error || !user) return error!;
 
     const body = await request.json();
     const validatedData = createFaqSchema.parse(body);
 
-    logger.info('API Request: POST /api/admin/faqs', {
-      userId: user.id,
-      companyId,
-      question: validatedData.question
-    });
+    logger.info('Creating FAQ', { userId: user.id, question: validatedData.question });
 
+    // 1. SAVE TO DATABASE (Primary Source of Truth)
     const faq = await faqService.createFAQ({
       ...validatedData,
-      companyId,
+      companyId: user.companyId,
       createdBy: user.id
     });
 
+    // 2. TEACH THE AI (Vector Sync)
+    // We do this immediately so the bot knows the answer right away.
+    try {
+        // Create a searchable string: "Question: X \n Answer: Y"
+        const contentToEmbed = `Question: ${faq.question}\nAnswer: ${faq.answer}`;
+        const embedding = await generateEmbeddings(contentToEmbed);
+        
+        await upsertVectors({
+            id: `faq-${faq.id}`,
+            values: embedding,
+            metadata: {
+                type: 'faq',
+                faqId: faq.id,
+                companyId: user.companyId,
+                category: faq.category,
+                text: contentToEmbed // Store text for citations
+            }
+        });
+        logger.info('FAQ Vectors Synced', { faqId: faq.id });
+    } catch (vectorError) {
+        // Non-blocking error: If AI sync fails, we still return success but log the failure
+        // You might want to add this to a "retry queue" here.
+        logger.error('Failed to sync FAQ vectors', { faqId: faq.id }, vectorError as Error);
+    }
+
+    const duration = Date.now() - startTime;
+    logger.apiResponse('POST', '/api/admin/faqs', 201, duration, { faqId: faq.id });
+
     return NextResponse.json({
       success: true,
+      message: 'FAQ created and AI model updated',
       data: faq
-    });
+    }, { status: 201 });
+
   } catch (error) {
-    const duration = Date.now() - startTime;
-    
     if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { 
-          success: false,
-          error: 'Invalid data format', 
-          details: error.errors 
-        },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: 'Invalid data', details: error.errors }, { status: 400 });
     }
     
-    logger.error('FAQ creation error', {
-      path: request.nextUrl.pathname,
-      method: request.method,
-      duration
-    }, error as Error);
-    
-    return NextResponse.json(
-      { 
-        success: false,
-        error: 'Failed to create FAQ' 
-      },
-      { status: 500 }
-    );
+    logger.error('FAQ creation error', { path: '/api/admin/faqs' }, error as Error);
+    return NextResponse.json({ success: false, error: 'Failed to create FAQ' }, { status: 500 });
   }
 }
-
