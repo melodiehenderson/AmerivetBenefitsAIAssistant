@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url';
 import { URL } from 'node:url';
 import tsconfigPaths from 'vite-tsconfig-paths';
 
+const isWindows = process.platform === 'win32';
+
 export default defineConfig({
   plugins: [tsconfigPaths()],
   resolve: {
@@ -40,8 +42,8 @@ export default defineConfig({
     poolOptions: {
       threads: {
         // Limit concurrency to reduce flakiness on CI/Windows
-        singleThread: false,
-        maxThreads: 2,
+        singleThread: isWindows,
+        maxThreads: isWindows ? 1 : 2,
         minThreads: 1,
       },
     },

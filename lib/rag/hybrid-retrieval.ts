@@ -73,32 +73,82 @@ function escapeODataValue(value: string): string {
   return value.replace(/'/g, "''");
 }
 
-function buildODataFilter(context: RetrievalContext): string {
+type ODataFilterOptions = {
+  includePlanYear?: boolean;
+  includeDept?: boolean;
+  includeState?: boolean;
+  includeCategory?: boolean;
+};
+
+function tryExtractMissingFilterField(error: unknown): string | null {
+  const message = String((error as any)?.message ?? error ?? "");
+  const match = message.match(/Could not find a property named '([^']+)'/i);
+  return match?.[1] ?? null;
+}
+
+function isLikelyODataFilterSchemaError(error: unknown): boolean {
+  const message = String((error as any)?.message ?? error ?? "");
+  return /Parameter name:\s*\$filter/i.test(message) || /Invalid expression/i.test(message);
+}
+
+function buildODataFilter(context: RetrievalContext, options: ODataFilterOptions = {}): string {
   const companyId = context.companyId?.trim();
   if (!companyId) {
     throw new Error("companyId is required for search filters");
   }
 
+  const {
+    includePlanYear = true,
+    includeDept = true,
+    includeState = false,
+    includeCategory = false,
+  } = options;
+
   const filters: string[] = [`company_id eq '${escapeODataValue(companyId)}'`];
-  if (typeof context.planYear !== "undefined") {
+  if (includePlanYear && typeof context.planYear !== "undefined") {
     filters.push(`benefit_year eq ${context.planYear}`);
   }
-  if (context.dept) {
+  if (includeDept && context.dept) {
     const dept = escapeODataValue(context.dept.trim());
     filters.push(`(dept eq '${dept}' or dept eq 'All')`);
   }
-  if (context.state) {
-    const state = escapeODataValue(context.state.trim());
+  // Optional filters (disabled by default because current index schema may not include these fields).
+  if (includeState && (context as any).state) {
+    const state = escapeODataValue(String((context as any).state).trim());
     filters.push(`(state eq '${state}' or state eq 'National')`);
   }
-  
-  // NEW: Category filtering for smart metadata extraction
-  if (context.category) {
-    const category = escapeODataValue(context.category.trim());
+  if (includeCategory && (context as any).category) {
+    const category = escapeODataValue(String((context as any).category).trim());
     filters.push(`category eq '${category}'`);
   }
   
   return filters.join(" and ");
+}
+
+async function searchWithFilterFallback(
+  client: any,
+  query: string,
+  context: RetrievalContext,
+  baseOptions: Record<string, any>,
+  logPrefix: string
+): Promise<any> {
+  const fullFilter = buildODataFilter(context);
+  try {
+    return await client.search(query, { ...baseOptions, filter: fullFilter });
+  } catch (error) {
+    if (!isLikelyODataFilterSchemaError(error)) {
+      throw error;
+    }
+
+    const missingField = tryExtractMissingFilterField(error);
+    const minimalFilter = buildODataFilter(context, { includePlanYear: false, includeDept: false });
+
+    console.warn(
+      `${logPrefix} Filter schema mismatch${missingField ? ` (missing: ${missingField})` : ""}; retrying with minimal filter. Original filter: "${fullFilter}"`
+    );
+
+    return await client.search(query, { ...baseOptions, filter: minimalFilter });
+  }
 }
 
 // ============================================================================
@@ -189,12 +239,7 @@ export async function retrieveVectorTopK(
     // Generate query embedding
     const queryVector = await generateEmbedding(query);
 
-    // Build filter for company/context
-    const filterString = buildODataFilter(context);
-    
-    console.log(`[SEARCH][VECTOR] Query: "${query.substring(0, 50)}...", Filter: "${filterString}", K: ${k}`);
-
-    const results = await client.search(query, {
+    const searchOptions = {
       vectorSearchOptions: {
         queries: [{
           kind: "vector",
@@ -203,7 +248,6 @@ export async function retrieveVectorTopK(
           kNearestNeighborsCount: k,
         }],
       },
-      filter: filterString,
       top: k,
       select: [
         "chunk_id",
@@ -215,7 +259,17 @@ export async function retrieveVectorTopK(
         "metadata",
       ],
       queryType: "simple",
-    });
+    };
+
+    console.log(`[SEARCH][VECTOR] Query: "${query.substring(0, 50)}...", K: ${k}`);
+
+    const results = await searchWithFilterFallback(
+      client,
+      query,
+      context,
+      searchOptions,
+      "[SEARCH][VECTOR]"
+    );
 
     // Convert results to Chunk objects
     const chunks: Chunk[] = [];
@@ -246,7 +300,7 @@ export async function retrieveVectorTopK(
     console.log(`[SEARCH][VECTOR] ✅ ${chunks.length} results in ${latencyMs}ms`);
     
     if (chunks.length === 0) {
-      console.warn(`[SEARCH][VECTOR] ⚠️ Zero results! Filter: "${filterString}", Query: "${query.substring(0, 80)}"`);
+      console.warn(`[SEARCH][VECTOR] ⚠️ Zero results! companyId: "${context.companyId}", Query: "${query.substring(0, 80)}"`);
     }
 
     return chunks;
@@ -306,14 +360,10 @@ export async function retrieveBM25TopK(
   }
 
   try {
-    // Build filter
-    const filterString = buildODataFilter(context);
-
-    const results = await client.search(query, {
+    const searchOptions = {
       searchMode: "any",
       queryType: "simple",
       top: k,
-      filter: filterString,
       select: [
         "chunk_id",
         "doc_id",
@@ -323,7 +373,15 @@ export async function retrieveBM25TopK(
         "content",
         "metadata",
       ],
-    });
+    };
+
+    const results = await searchWithFilterFallback(
+      client,
+      query,
+      context,
+      searchOptions,
+      "[SEARCH][BM25]"
+    );
 
     // Convert results to Chunk objects
     const chunks: Chunk[] = [];
@@ -332,7 +390,7 @@ export async function retrieveBM25TopK(
       const chunkId = result.document.chunk_id ?? result.document.id;
       chunks.push({
         id: chunkId,
-        docId: result.document.document_id,
+        docId: result.document.doc_id || result.document.document_id,
         companyId: result.document.company_id,
         sectionPath: metadata.fileName || "",
         content: result.document.content,
@@ -356,10 +414,8 @@ export async function retrieveBM25TopK(
     const latencyMs = Date.now() - startTime;
     console.log(`[SEARCH][BM25] ✅ ${filtered.length} results (${chunks.length} total before filter) in ${latencyMs}ms`);
     
-    if (filtered.length === 0 && chunks.length > 0) {
-      console.warn(`[SEARCH][BM25] ⚠️ Filter removed all ${chunks.length} results! Filter: "${filterString}", companyId: "${context.companyId}"`);
-    } else if (filtered.length === 0) {
-      console.warn(`[SEARCH][BM25] ⚠️ Zero results! Filter: "${filterString}", Query: "${query.substring(0, 80)}"`);
+    if (filtered.length === 0) {
+      console.warn(`[SEARCH][BM25] ⚠️ Zero results! companyId: "${context.companyId}", Query: "${query.substring(0, 80)}"`);
     }
 
     return filtered;
