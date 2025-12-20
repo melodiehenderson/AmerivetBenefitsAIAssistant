@@ -511,11 +511,15 @@ Answer:`;
     });
 
   } catch (error) {
-    console.error('[QA] Error:', error);
+    // Enhanced error logging for debugging
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : 'No stack trace';
+    console.error('[QA] Error:', errorMessage);
+    console.error('[QA] Stack:', errorStack);
     
     return NextResponse.json({ 
       answer: "I apologize for the technical difficulty. Let me help you get back on track. What would you like to know about your benefits?",
-      error: 'Internal Server Error',
+      error: errorMessage,
       tier: 'L1',
       sessionContext: null  // Session may be corrupted
     }, { status: 200 });
