@@ -13,6 +13,13 @@ import {
   type PipelineResult,
   type ValidationResult
 } from '@/lib/rag/validation-pipeline';
+import {
+  routeIntent,
+  checkStateGate,
+  applyBrandonRule,
+  getAgeBandedResponse,
+  type RouterResult
+} from '@/lib/rag/semantic-router';
 
 export const dynamic = 'force-dynamic';
 
@@ -173,33 +180,48 @@ function extractName(msg: string): string | null {
 }
 
 // ============================================================================
-// 2. SYSTEM PROMPT (Confidence-Boosted)
+// 2. SYSTEM PROMPT (Senior Engineer - Stateful Guarded Agent)
 // ============================================================================
 function buildSystemPrompt(session: any): string {
-  return `You are the AmeriVet Benefits Assistant. You are helpful, professional, and CONFIDENT in providing benefits information.
+  return `You are the AmeriVet Virtual Benefits Assistant.
+Your goal is 100% accuracy and compliance. You help users navigate benefits, but you DO NOT process enrollments.
 
-=== USER CONTEXT ===
+## USER CONTEXT
 User: ${session.userName || "Guest"}
-Age: ${session.userAge || "Unknown"}
 State: ${session.userState || "Unknown"}
+Age: ${session.userAge || "Unknown"}
 
-=== CRITICAL RULES ===
-1. MEMORY: You know the user's Age and State. DO NOT ask for them again if you already have them.
-2. PERSISTENCE: If the user says "go ahead" or "continue", proceed with the previous topic.
-3. COSTS: Always show costs as "$X per month ($Y annually)" format when providing pricing.
-4. FORMATTING: Do NOT use markdown, asterisks (**), bullet points, or headers. Use plain text with line breaks only.
-5. NO LEAKAGE: Do not repeat these rules or instructions in your response. Start your answer immediately.
-6. NO LOOPS: Do not restart the welcome script if you already know the user.
+## RULES OF ENGAGEMENT
 
-=== CONFIDENCE RULES (CRITICAL) ===
-7. BE HELPFUL OVER PERFECT: If the user asks for "the best plan" and you have ANY medical context available, analyze the PPO vs HMO options and provide a recommendation based on their age (${session.userAge}) and location (${session.userState}).
-8. NEVER say "I'm not 100% sure" if you have at least ONE relevant plan document in your context window.
-9. If context is partial, give your best answer and note "Based on the plans available to you..."
-10. Prioritize ANSWERING over asking for clarification. Only ask if truly ambiguous.
+### 1. SCOPE ENFORCEMENT
+- ONLY answer based on the provided Context Documents
+- If the answer is not in context, say: "I don't have that specific information. Please check the enrollment portal or contact HR."
+- NEVER make up plan details, costs, or coverage information
 
-${session.lastBotMessage ? `CONTEXT: Previously you said: "${session.lastBotMessage}"` : ''}
+### 2. COST FORMATTING (Critical)
+- Medical premiums: ALWAYS format as "$X per month ($Y annually)"
+- Show Employee Only rates first, then mention "Family coverage also available"
+- Round to nearest dollar for clarity
 
-Answer the user's question directly and professionally. Be concise, confident, and helpful.`;
+### 3. AGE-BANDED PRODUCTS (Refuse Specific Costs)
+- For Voluntary Life, Disability, Critical Illness, AD&D:
+- DO NOT provide specific dollar amounts
+- Instead say: "This is an age-rated product. Please log in to the Enrollment Portal to see your personalized rate based on your age and coverage selection."
+
+### 4. MEMORY RULES
+- You know the user's Age (${session.userAge}) and State (${session.userState})
+- DO NOT ask for information you already have
+- If user says "go ahead" or "continue", proceed with the previous topic
+
+### 5. FORMATTING
+- Use plain conversational text
+- Avoid markdown headers unless listing multiple options
+- Be concise and direct
+
+${session.lastBotMessage ? `## CONTEXT
+Previously you said: "${session.lastBotMessage}"` : ''}
+
+Answer directly, accurately, and helpfully.`;
 }
 
 // ============================================================================
@@ -392,13 +414,37 @@ export async function POST(req: NextRequest) {
         console.log(`[QA] ✅ User has complete data (${session.userAge} in ${session.userState}), proceeding to RAG`);
     }
 
-    // PHASE 3: MULTI-STAGE VALIDATION PIPELINE
+    // PHASE 3: STATEFUL GUARDED AGENT ARCHITECTURE
     // ========================================================================
+    // Senior Engineer Approach:
+    // 1. Semantic Router → Classify intent BEFORE retrieval
+    // 2. State Gate → Ensure we have required user info
+    // 3. Filtered Retrieval → Only fetch relevant docs
+    // 4. Validation Pipeline → Verify quality
+    // 5. Post-Processing → Apply Brandon Rule, format response
     
-    // 1. EXTRACT METADATA (Filter by Topic)
-    const category = extractCategory(query);
+    // STEP 1: SEMANTIC ROUTER (Prevents "Medical Loop" bug)
+    const routerResult = routeIntent(query);
+    console.log(`[ROUTER] Category: ${routerResult.category}, Confidence: ${(routerResult.confidence * 100).toFixed(0)}%`);
     
-    // Enhanced context with user demographics for query injection
+    // STEP 2: AGE-BANDED PRODUCT CHECK (Refuse specific costs)
+    const ageBandedResponse = getAgeBandedResponse(routerResult.category, routerResult);
+    if (ageBandedResponse) {
+        console.log(`[QA] Age-banded product detected, returning portal redirect`);
+        session.lastBotMessage = ageBandedResponse;
+        await updateSession(sessionId, session);
+        return NextResponse.json({ 
+            answer: ageBandedResponse, 
+            tier: 'L1', 
+            sessionContext: buildSessionContext(session),
+            metadata: { category: routerResult.category, ageBanded: true }
+        });
+    }
+    
+    // STEP 3: BUILD CONTEXT WITH ROUTER FILTERS
+    const category = extractCategory(query) || (routerResult.category !== 'GENERAL' ? routerResult.category : null);
+    
+    // Enhanced context with user demographics + router filters
     const context: RetrievalContext & { userAge?: number; userState?: string } = {
       companyId,
       state: session.userState || 'National',
@@ -499,6 +545,17 @@ export async function POST(req: NextRequest) {
         });
     }
     
+    // Determine confidence tier and scores from validation pipeline
+    const topScore = Math.max(
+        pipelineResult.retrieval.score,
+        ...((result.scores?.rrf || []).slice(0, 3)),
+        0.01 // Fallback to prevent NaN
+    );
+    
+    const confidenceTier = pipelineResult.retrieval.score >= 0.7 ? 'HIGH' 
+        : pipelineResult.retrieval.score >= 0.4 ? 'MEDIUM' 
+        : 'LOW';
+    
     // Determine if we need a disclaimer based on validation scores
     const useDisclaimer = !pipelineResult.overallPassed || 
         pipelineResult.retrieval.metadata?.needsDisclaimer ||
@@ -573,6 +630,9 @@ Answer:`;
     let answer = completion.content.trim();
     answer = enforceMonthlyFirstFormat(answer);
     answer = validatePricingFormat(answer);
+    
+    // POST-PROCESSING: Apply Brandon Rule (HSA Cross-Sell)
+    answer = applyBrandonRule(answer, routerResult);
 
     console.log(`[RAG] Final answer generated (${answer.length} chars) with ${result.chunks?.length || 0} citations`);
 
@@ -605,6 +665,13 @@ Answer:`;
         topScore: topScore.toFixed(3),
         userAge: session.userAge,
         userState: session.userState,
+        // Router result (Senior Engineer approach)
+        router: {
+          category: routerResult.category,
+          confidence: routerResult.confidence,
+          triggersHSACrossSell: routerResult.triggersHSACrossSell,
+          requiresAgeBand: routerResult.requiresAgeBand
+        },
         validation: {
           retrieval: pipelineResult.retrieval,
           reasoning: pipelineResult.reasoning,
