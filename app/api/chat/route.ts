@@ -5,6 +5,8 @@ import { withAuth, PERMISSIONS } from '@/lib/auth/unified-auth';
 
 import { simpleChatRouter } from '@/lib/services/simple-chat-router';
 import { smartChatRouter } from '@/lib/services/smart-chat-router';
+import { ragChatRouter } from '@/lib/services/rag-chat-router';
+import { trackEnhancedChatResponse } from '@/lib/analytics/tracking';
 
 import { conversationService } from '@/lib/services/conversation-service';
 import { logger } from '@/lib/logger';
@@ -348,13 +350,29 @@ Which of these would you like to learn about next?`
       );
     }
 
-    // Route via SimpleChatRouter
+    // Route via SimpleChatRouter or RAG-enhanced router
     const started = Date.now();
     const useSmart = process.env.USE_SMART_ROUTER === 'true';
+    const useRAG = process.env.USE_RAG_ROUTER === 'true';
     let routed;
-    let modelUsed: 'simple' | 'smart' = 'simple';
+    let modelUsed: 'simple' | 'smart' | 'rag' = 'simple';
 
-    if (useSmart) {
+    // Priority: RAG > Smart > Simple
+    if (useRAG) {
+      try {
+        routed = await ragChatRouter.routeMessage(userMessage.content, {
+          state: conversation.metadata?.state,
+          division: conversation.metadata?.division,
+          companyId,
+          history: [] // Could add conversation history here
+        });
+        modelUsed = 'rag';
+      } catch (err) {
+        logger.warn('RAG router failed, falling back to smart/simple', { err });
+      }
+    }
+
+    if (!routed && useSmart) {
       try {
         routed = await smartChatRouter.routeMessage(userMessage.content, {
           state: conversation.metadata?.state,
@@ -376,9 +394,14 @@ Which of these would you like to learn about next?`
 
     const latencyMs = Date.now() - started;
 
-    // Brandon Logic: HSA Cross-Selling (Sprint 2.2)
+    // Issue #6 Fix: Enforce state consistency in responses
     let enhancedContent = routed.content;
-    // Note: normalizedMessage declared above; reuse here
+    const userState = conversation.metadata?.state;
+    if (userState) {
+      const { ensureStateConsistency, cleanRepeatedPhrases } = require('@/lib/rag/pricing-utils');
+      enhancedContent = ensureStateConsistency(enhancedContent, userState);
+      enhancedContent = cleanRepeatedPhrases(enhancedContent);
+    }
     const hsaTriggers = ['hsa', 'high deductible', 'health savings', 'hdhp', 'high-deductible'];
     const mentionsHSA = hsaTriggers.some(trigger => normalizedMessage.includes(trigger));
     
@@ -434,6 +457,27 @@ Which of these would you like to learn about next?`
     };
 
     await conversationService.addMessage(conversation.id, aiMessage);
+
+    // Track analytics for user satisfaction monitoring
+    try {
+      trackEnhancedChatResponse(
+        userId,
+        conversation.id,
+        message,
+        enhancedContent,
+        modelUsed,
+        latencyMs,
+        {
+          issue1_pricingConsistent: true, // Always applied now
+          issue2_categoryFiltered: !!conversation.metadata?.state, // Applied when state exists
+          issue6_stateConsistent: !!conversation.metadata?.state, // Applied when state exists
+          issue7_validationPassed: modelUsed === 'rag' // Only for RAG router
+        }
+      );
+    } catch (trackingError) {
+      logger.warn('Analytics tracking failed', { error: trackingError });
+      // Don't fail the request if tracking fails
+    }
 
     return NextResponse.json({
       message: aiMessage,

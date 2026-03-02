@@ -11,6 +11,7 @@ import { getPlansByRegion } from '@/lib/data/amerivet-benefits';
 type ChatContext = {
   state?: string;
   division?: string;
+  history?: Array<{ role: 'user' | 'assistant'; content: string }>;
 };
 
 interface ChatResponse {
@@ -20,7 +21,7 @@ interface ChatResponse {
   timestamp: Date;
 }
 
-const ENROLLMENT_URL = 'https://amerivetaibot.bcgenrolls.com/subdomain/login';
+const ENROLLMENT_URL = 'https://wd5.myworkday.com/amerivet/login.htmld';
 
 export class SimpleChatRouter {
   private static readonly MEDICAL_TRANSITION =
@@ -33,8 +34,15 @@ export class SimpleChatRouter {
 
   constructor() {}
 
+  private conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+
   async routeMessage(message: string, context?: ChatContext, attachments?: any[]): Promise<ChatResponse> {
     try {
+      // Store conversation history for context extraction
+      if (context?.history) {
+        this.conversationHistory = context.history;
+      }
+      
       const normalizedMessage = message.toLowerCase();
 
       if (attachments && attachments.length > 0) {
@@ -59,6 +67,18 @@ export class SimpleChatRouter {
 
       if (this.isCostQuestion(normalizedMessage)) {
         return this.handleCostQuestion(context);
+      }
+
+      if (this.isAllBenefitsQuestion(normalizedMessage)) {
+        return this.handleAllBenefitsQuestion(context);
+      }
+
+      if (this.isCostProjectionQuestion(normalizedMessage)) {
+        return this.handleCostProjectionQuestion(context);
+      }
+
+      if (this.isMaternityQuestion(normalizedMessage)) {
+        return this.handleMaternityQuestion(context);
       }
 
       return this.getDefaultResponse(context);
@@ -103,6 +123,50 @@ export class SimpleChatRouter {
       'ltd'
     ];
     return keywords.some(keyword => message.includes(keyword));
+  }
+
+  private isAllBenefitsQuestion(message: string): boolean {
+    const patterns = [
+      /all benefits/i,
+      /everything/i,
+      /total.*deduct/i,
+      /per paycheck.*all/i,
+      /enroll.*all/i,
+      /combined.*cost/i,
+      /total.*cost/i
+    ];
+    return patterns.some(pattern => pattern.test(message));
+  }
+
+  private isCostProjectionQuestion(message: string): boolean {
+    const patterns = [
+      /projected.*cost/i,
+      /next year/i,
+      /estimate.*cost/i,
+      /calculate.*healthcare/i,
+      /usage.*level/i,
+      /moderate.*usage/i,
+      /high.*usage/i,
+      /low.*usage/i,
+      /family[0-9]*\+/i
+    ];
+    return patterns.some(pattern => pattern.test(message));
+  }
+
+  private isMaternityQuestion(message: string): boolean {
+    const patterns = [
+      /maternity/i,
+      /pregnant/i,
+      /pregnancy/i,
+      /baby/i,
+      /newborn/i,
+      /expecting/i,
+      /prenatal/i,
+      /postnatal/i,
+      /delivery/i,
+      /ob[- ]?gyn/i
+    ];
+    return patterns.some(pattern => pattern.test(message));
   }
 
   private handleBenefitsQuestion(message: string, context?: ChatContext): ChatResponse {
@@ -223,7 +287,7 @@ export class SimpleChatRouter {
   private handleAgeBandedCostQuestion(context?: ChatContext): ChatResponse {
     const contextIntro = this.buildContextIntro(context);
       const enrollmentUrl = process.env.ENROLLMENT_PORTAL_URL || ENROLLMENT_URL;
-    
+
       // Kevin's exact "Safe Path" language (Sprint 3.1)
       const response = `${contextIntro}This is an age-rated product, which means the cost depends on your specific age bracket. I can't give you an exact quote here.\n\n**Your best bet is to log into your [benefits enrollment system](${enrollmentUrl})** to see your actual cost. It will show you the precise premium based on your age.\n\nWould you like to know more about what this coverage includes, or shall we look at other benefit options?`;
 
@@ -231,6 +295,229 @@ export class SimpleChatRouter {
         content: response,
       responseType: 'benefits',
         confidence: 0.9,
+      timestamp: new Date()
+    };
+  }
+
+  private handleAllBenefitsQuestion(context?: ChatContext): ChatResponse {
+    const contextIntro = this.buildContextIntro(context);
+    const eligible = this.getEligibleBenefits(context);
+    const enrollmentUrl = process.env.ENROLLMENT_PORTAL_URL || ENROLLMENT_URL;
+
+    // Calculate total monthly cost for all core benefits (medical + dental + vision)
+    const medicalPrimary = eligible.medical[0];
+    const dentalPrimary = eligible.dental[0];
+    const visionPrimary = eligible.vision[0];
+
+    const medicalMonthly = medicalPrimary ? this.getEmployeeOnlyMonthly(medicalPrimary) : 0;
+    const dentalMonthly = dentalPrimary ? this.getEmployeeOnlyMonthly(dentalPrimary) : 0;
+    const visionMonthly = visionPrimary ? this.getEmployeeOnlyMonthly(visionPrimary) : 0;
+    const totalMonthly = medicalMonthly + dentalMonthly + visionMonthly;
+    const totalAnnual = totalMonthly * 12;
+    const totalPerPaycheck = Math.round((totalAnnual / 24) * 100) / 100;
+
+    let response = `${contextIntro}**Total Benefits Cost Summary**\n\n`;
+    response += "Here's what you'd pay if you enrolled in **all core benefits** (medical + dental + vision):\n\n";
+    response += "**Monthly Premium Breakdown:**\n";
+    if (medicalPrimary) {
+      response += `• ${medicalPrimary.name}: ${this.formatMonthlyYearly(medicalMonthly)}\n`;
+    } else {
+      response += "• Medical: No plans available for your eligibility\n";
+    }
+    if (dentalPrimary) {
+      response += `• ${dentalPrimary.name}: ${this.formatMonthlyYearly(dentalMonthly)}\n`;
+    }
+    if (visionPrimary) {
+      response += `• ${visionPrimary.name}: ${this.formatMonthlyYearly(visionMonthly)}\n`;
+    }
+
+    response += `\n**Total Cost:**\n`;
+    response += `• **$${totalMonthly.toFixed(2)}/month** ($${totalAnnual.toLocaleString('en-US', { minimumFractionDigits: 2 })}/year)\n`;
+    response += `• **$${totalPerPaycheck.toFixed(2)} per paycheck** (biweekly, 24 pay periods)\n\n`;
+
+    response += `**Note:** This includes core medical, dental, and vision plans. Voluntary benefits (Critical Illness, Accident, Life Insurance, Disability) have separate premiums based on your age and coverage selections.\n\n`;
+
+    response += `**Ready to enroll?** You can make your official selections here: [Benefits Enrollment Portal](${enrollmentUrl})\n\n`;
+
+    response += `Would you like me to break down the costs for specific plans or explain what each covers?`;
+
+    return {
+      content: response,
+      responseType: 'benefits',
+      confidence: 0.95,
+      timestamp: new Date()
+    };
+  }
+
+  private handleCostProjectionQuestion(context?: ChatContext): ChatResponse {
+    const contextIntro = this.buildContextIntro(context);
+    const enrollmentUrl = process.env.ENROLLMENT_PORTAL_URL || ENROLLMENT_URL;
+
+    // Extract usage level from typical patterns
+    const usageLevel = this.extractUsageLevel();
+    const coverageTier = this.extractCoverageTier();
+    const network = this.extractNetworkPreference();
+
+    // Use the pricing-utils estimateCostProjection function
+    const { estimateCostProjection } = require('@/lib/rag/pricing-utils');
+    const projection = estimateCostProjection({
+      coverageTier: coverageTier || 'Employee Only',
+      usage: usageLevel,
+      network,
+      state: context?.state,
+      age: undefined // Would need to extract from conversation metadata
+    });
+
+    let response = `${contextIntro}**Projected Healthcare Costs for Next Year**\n\n`;
+    response += `Based on **${usageLevel} usage** assumptions`;
+    if (network) {
+      response += ` and **${network} network**`;
+    }
+    if (context?.state) {
+      response += ` in **${context.state}**`;
+    }
+    response += `:\n\n`;
+    response += projection;
+    response += `\n\n**Note:** These are rough estimates. Actual costs depend on your specific healthcare needs and claims.\n\n`;
+    response += `For personalized enrollment, visit: [Benefits Enrollment Portal](${enrollmentUrl})`;
+
+    return {
+      content: response,
+      responseType: 'benefits',
+      confidence: 0.85,
+      timestamp: new Date()
+    };
+  }
+
+  private extractUsageLevel(): 'low' | 'moderate' | 'high' {
+    // Extract usage level from conversation context
+    const message = this.getLastUserMessage();
+    const messageLower = message.toLowerCase();
+    
+    if (messageLower.includes('high') || messageLower.includes('heavy') || messageLower.includes('frequent')) {
+      return 'high';
+    }
+    if (messageLower.includes('low') || messageLower.includes('light') || messageLower.includes('minimal') || messageLower.includes('healthy')) {
+      return 'low';
+    }
+    if (messageLower.includes('moderate') || messageLower.includes('average') || messageLower.includes('normal')) {
+      return 'moderate';
+    }
+    
+    // Infer from context clues
+    if (messageLower.includes('surgery') || messageLower.includes('procedure') || messageLower.includes('chronic')) {
+      return 'high';
+    }
+    if (messageLower.includes('checkup') || messageLower.includes('routine') || messageLower.includes('preventive')) {
+      return 'low';
+    }
+    
+    return 'moderate'; // Default
+  }
+
+  private extractCoverageTier(): string | null {
+    const message = this.getLastUserMessage();
+    const messageLower = message.toLowerCase();
+    
+    // Check for family size indicators
+    const familyPatterns = [
+      /family[0-9]*\+?/i,
+      /employee\s*[\+&]\s*family/i,
+      /spouse\s*[\+&]\s*children/i,
+      /kids?/i,
+      /children/i,
+      /dependents/i
+    ];
+    
+    const spousePatterns = [
+      /employee\s*[\+&]\s*spouse/i,
+      /just\s*me\s*and\s*(my\s*)?spouse/i,
+      /couple/i
+    ];
+    
+    const childPatterns = [
+      /employee\s*[\+&]\s*child/i,
+      /single\s*parent/i,
+      /just\s*me\s*and\s*(my\s*)?kids?/i,
+      /just\s*me\s*and\s*(my\s*)?children/i
+    ];
+    
+    if (familyPatterns.some(p => p.test(message))) {
+      // Try to extract number
+      const numMatch = message.match(/family([0-9]+)/i);
+      if (numMatch) {
+        const num = parseInt(numMatch[1]);
+        if (num >= 4) return 'Employee + Family';
+        if (num >= 2) return 'Employee + Child(ren)';
+      }
+      return 'Employee + Family';
+    }
+    
+    if (spousePatterns.some(p => p.test(message))) {
+      return 'Employee + Spouse';
+    }
+    
+    if (childPatterns.some(p => p.test(message))) {
+      return 'Employee + Child(ren)';
+    }
+    
+    // Check for single/employee only
+    if (messageLower.includes('single') || messageLower.includes('just me') || messageLower.includes('employee only')) {
+      return 'Employee Only';
+    }
+    
+    return null;
+  }
+
+  private extractNetworkPreference(): string | null {
+    const message = this.getLastUserMessage();
+    const messageLower = message.toLowerCase();
+    
+    if (messageLower.includes('kaiser')) {
+      return 'Kaiser';
+    }
+    if (messageLower.includes('ppo')) {
+      return 'PPO';
+    }
+    if (messageLower.includes('hmo')) {
+      return 'HMO';
+    }
+    if (messageLower.includes('hsa') || messageLower.includes('hdhp')) {
+      return 'HSA';
+    }
+    
+    return null;
+  }
+
+  private getLastUserMessage(): string {
+    // Try to get from conversation history if available
+    if (this.conversationHistory && this.conversationHistory.length > 0) {
+      // Find last user message
+      for (let i = this.conversationHistory.length - 1; i >= 0; i--) {
+        if (this.conversationHistory[i].role === 'user') {
+          return this.conversationHistory[i].content;
+        }
+      }
+    }
+    return '';
+  }
+
+  private handleMaternityQuestion(context?: ChatContext): ChatResponse {
+    const contextIntro = this.buildContextIntro(context);
+    const coverageTier = context?.division ? 'Employee + Family' : 'Employee Only';
+    
+    // Use the enhanced compareMaternityCosts function from pricing-utils
+    const { compareMaternityCosts } = require('@/lib/rag/pricing-utils');
+    const maternityComparison = compareMaternityCosts(coverageTier);
+
+    let response = `${contextIntro}**Maternity Coverage Comparison**\n\n`;
+    response += "Great question! Planning for a baby is exciting, and choosing the right plan can save you thousands.\n\n";
+    response += maternityComparison;
+
+    return {
+      content: response,
+      responseType: 'benefits',
+      confidence: 0.9,
       timestamp: new Date()
     };
   }
@@ -347,7 +634,7 @@ export class SimpleChatRouter {
       process.env.NEXT_PUBLIC_ENROLLMENT_URL ||
       process.env.ENROLLMENT_URL ||
       ENROLLMENT_URL;
-    return `${base}\n\nReady to make your official selections? [**Log in to Enroll Here**](${link})`;
+    return `${base}\n\nReady to make your official selections? Enroll here: ${link}`;
   }
 
   private getCrossSellSuggestion(message: string): string | null {
@@ -361,13 +648,15 @@ export class SimpleChatRouter {
   }
 
   private formatMonthlyYearly(monthly: number): string {
-    const monthlyFormatted = this.formatCurrency(monthly);
-    const annualFormatted = this.formatCurrency(monthly * 12);
+    const monthlyRounded = Math.round(monthly * 100) / 100;
+    const annualRounded = Math.round(monthly * 12 * 100) / 100;
+    const monthlyFormatted = monthlyRounded.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const annualFormatted = annualRounded.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     return `$${monthlyFormatted}/month ($${annualFormatted}/year)`;
   }
 
   private formatCurrency(value: number): string {
-    return value.toLocaleString('en-US', { maximumFractionDigits: 0 });
+    return value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
 
   private getEligibleBenefits(context?: ChatContext): {

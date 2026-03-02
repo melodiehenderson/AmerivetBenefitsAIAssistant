@@ -462,27 +462,96 @@ export function generateAlternativeResponse(
   userState: string | null
 ): string {
   const { suggestedAction, alternativeOffer, reasoning } = pipelineResult;
-  
+
   if (alternativeOffer) {
     return alternativeOffer;
   }
-  
+
   const foundCategories = reasoning.metadata?.foundCategories as string[] | undefined;
-  
+
   switch (suggestedAction) {
     case 'offer_alternative':
       if (foundCategories && foundCategories.length > 0) {
         return `I found information about ${foundCategories.join(' and ')} plans${userState ? ` for ${userState}` : ''}. Would you like to explore those options?`;
       }
       return 'I found some related benefit information. Would you like me to show you what\'s available?';
-    
+
     case 'ask_clarification':
       return `I want to make sure I find the right plan for you. Are you looking for Medical, Dental, Vision, or another type of benefit?`;
-    
+
     case 'expand_query':
       return `I'm searching for more options${requestedCategory ? ` related to ${requestedCategory}` : ''}. One moment...`;
-    
+
     default:
       return 'Let me help you find the right benefit information.';
   }
+}
+
+// ============================================================================
+// Issue #7 Fix: Chunk-Presence Validation for Specific Claims
+// ============================================================================
+
+/**
+ * Validate that specific benefit claims are grounded in retrieved chunks.
+ * This prevents hallucinations about benefits like orthodontics coverage.
+ *
+ * E.g., If answer mentions "orthodontics" but no chunk contains "orthodont",
+ * remove or flag the claim as ungrounded.
+ */
+export function validateChunkPresenceForClaims(answer: string, chunks: Chunk[]): {
+  valid: boolean;
+  ungroundedClaims: string[];
+  sanitizedAnswer: string;
+} {
+  const ungroundedClaims: string[] = [];
+  let sanitizedAnswer = answer;
+
+  // Define specific benefit claims that require chunk grounding
+  const BENEFIT_CLAIMS: Record<string, RegExp[]> = {
+    orthodontics: [/orthodontic/i, /orthodontia/i, /braces coverage/i, /braces benefit/i],
+    maternity: [/maternity/i, /pregnancy coverage/i, /prenatal/i, /postnatal/i],
+    criticalIllness: [/critical illness/i, /cancer payout/i, /heart attack coverage/i, /stroke benefit/i],
+    accident: [/accident insurance/i, /fracture coverage/i, /burn benefit/i],
+    hospitalIndemnity: [/hospital indemnity/i, /hospital stay payout/i, /hospitalization cash/i],
+  };
+
+  // Combine all chunk content for validation
+  const allChunkContent = chunks.map(c => c.content + ' ' + (c.title || '')).join(' ').toLowerCase();
+
+  // Check each benefit claim
+  for (const [benefit, patterns] of Object.entries(BENEFIT_CLAIMS)) {
+    const answerMentions = patterns.some(pattern => answer.match(pattern));
+    const chunkMentions = patterns.some(pattern => allChunkContent.match(pattern));
+
+    if (answerMentions && !chunkMentions) {
+      ungroundedClaims.push(benefit);
+      console.warn(`[CHUNK_VALIDATION] Ungrounded claim detected: ${benefit}`);
+    }
+  }
+
+  // Remove or flag ungrounded claims
+  if (ungroundedClaims.length > 0) {
+    for (const claim of ungroundedClaims) {
+      // Remove specific sentences mentioning the ungrounded benefit
+      const patterns = BENEFIT_CLAIMS[claim];
+      for (const pattern of patterns) {
+        // Simple removal: replace sentences containing the pattern
+        sanitizedAnswer = sanitizedAnswer.replace(new RegExp(`[^.]*${pattern.source}[^.]*\\.?`, 'gi'), '');
+      }
+    }
+
+    // Clean up extra whitespace
+    sanitizedAnswer = sanitizedAnswer.replace(/\s+/g, ' ').trim();
+
+    // Add disclaimer if we removed content
+    if (sanitizedAnswer.length < answer.length * 0.8) {
+      sanitizedAnswer += '\n\n**Note:** For detailed coverage information, please check your benefits enrollment portal.';
+    }
+  }
+
+  return {
+    valid: ungroundedClaims.length === 0,
+    ungroundedClaims,
+    sanitizedAnswer
+  };
 }

@@ -52,6 +52,59 @@ const INTENT_CATEGORY_MAP: Record<string, string> = {
 };
 
 // ============================================================================
+// Post-Retrieval Category Filter (Safety Net)
+// ============================================================================
+/**
+ * Filter chunks by category after retrieval to prevent wrong benefit types.
+ * This is a safety net in case Azure Search category filtering fails.
+ * 
+ * E.g., If user asks for "Medical", filter out Accident/Life/Disability chunks.
+ */
+export function filterChunksByCategory(chunks: Chunk[], category: string): Chunk[] {
+  if (!category) return chunks;
+  
+  const categoryLower = category.toLowerCase();
+  
+  // Define keywords that indicate each category in chunk content/metadata
+  const CATEGORY_KEYWORDS: Record<string, string[]> = {
+    Medical: ['medical', 'health', 'ppo', 'hmo', 'deductible', 'copay', 'coinsurance', 'prescription', 'rx', 'doctor', 'hospital', 'urgent care', 'emergency', 'provider', 'network'],
+    Dental: ['dental', 'teeth', 'dentist', 'orthodont', 'braces', 'cleaning', 'oral', 'crown', 'filling', 'root canal', 'molar'],
+    Vision: ['vision', 'eye', 'glasses', 'contacts', 'lens', 'optometrist', 'exam', 'frames', 'retinal'],
+    Life: ['life', 'death benefit', 'beneficiary', 'ad&d', 'accidental death', 'term life'],
+    Disability: ['disability', 'std', 'ltd', 'short term', 'long term', 'income protection', 'wages'],
+    Savings: ['hsa', 'fsa', 'health savings', 'flexible spending', 'tax-free', 'contribution'],
+    Voluntary: ['critical illness', 'accident', 'hospital indemnity', 'supplemental', 'injury', 'cancer', 'stroke', 'heart attack'],
+  };
+  
+  const keywords = CATEGORY_KEYWORDS[category] || [];
+  if (keywords.length === 0) {
+    console.warn(`[CATEGORY_FILTER] Unknown category: ${category}`);
+    return chunks;
+  }
+  
+  const filtered = chunks.filter(chunk => {
+    const content = (chunk.content + ' ' + (chunk.title || '') + ' ' + (chunk.sectionPath || '')).toLowerCase();
+    const metadata = chunk.metadata || {};
+    const metadataStr = JSON.stringify(metadata).toLowerCase();
+    const combined = content + ' ' + metadataStr;
+    
+    // Check if chunk contains ANY of the category keywords
+    const hasKeyword = keywords.some(kw => combined.includes(kw));
+    return hasKeyword;
+  });
+  
+  console.log(`[CATEGORY_FILTER] ${category}: ${chunks.length} → ${filtered.length} chunks`);
+  
+  // If filtering removes too many results, return original to avoid empty responses
+  if (filtered.length < Math.max(3, chunks.length * 0.3)) {
+    console.warn(`[CATEGORY_FILTER] Too aggressive! Only ${filtered.length}/${chunks.length} kept. Returning original.`);
+    return chunks;
+  }
+  
+  return filtered;
+}
+
+// ============================================================================
 // In-Memory Test Index (for Vitest)
 // ============================================================================
 
@@ -257,7 +310,9 @@ async function searchWithFilterFallback(
   baseOptions: Record<string, any>,
   logPrefix: string
 ): Promise<any> {
-  const fullFilter = buildODataFilter(context);
+  // Category filtering: Try with category first, fall back if index doesn't support it
+  // This prevents returning wrong benefit types (e.g., Accident Insurance when user asks for Medical)
+  let fullFilter = buildODataFilter(context, { includeCategory: true });
   try {
     return await client.search(query, { ...baseOptions, filter: fullFilter });
   } catch (error) {
@@ -266,7 +321,17 @@ async function searchWithFilterFallback(
     }
 
     const missingField = tryExtractMissingFilterField(error);
-    const minimalFilter = buildODataFilter(context, { includePlanYear: false, includeDept: false });
+    // If category field doesn't exist, try without it
+    const hasCategory = missingField?.toLowerCase().includes('category') || error?.toString().includes('category');
+    console.warn(
+      `${logPrefix} Filter error${missingField ? ` (missing: ${missingField})` : ""}; retrying${hasCategory ? ' without category filter' : ' with minimal filter'}. Original: "${fullFilter}"`
+    );
+    
+    const minimalFilter = buildODataFilter(context, { 
+      includePlanYear: false, 
+      includeDept: false, 
+      includeCategory: !hasCategory  // Only include category if error wasn't about missing category field
+    });
 
     console.warn(
       `${logPrefix} Filter schema mismatch${missingField ? ` (missing: ${missingField})` : ""}; retrying with minimal filter. Original filter: "${fullFilter}"`
@@ -399,7 +464,7 @@ export async function retrieveVectorTopK(
     // Convert results to Chunk objects
     const chunks: Chunk[] = [];
     for await (const result of results.results) {
-      const metadata = result.document.metadata ? JSON.parse(result.document.metadata) : {};
+      const metadata = parseMetadata(result.document.metadata);
       const chunkId = result.document.chunk_id ?? result.document.id;
       chunks.push({
         id: chunkId,
@@ -511,7 +576,7 @@ export async function retrieveBM25TopK(
     // Convert results to Chunk objects
     const chunks: Chunk[] = [];
     for await (const result of results.results) {
-      const metadata = result.document.metadata ? JSON.parse(result.document.metadata) : {};
+      const metadata = parseMetadata(result.document.metadata);
       const chunkId = result.document.chunk_id ?? result.document.id;
       chunks.push({
         id: chunkId,
@@ -807,18 +872,24 @@ export async function hybridRetrieve(
 
     const latencyMs = Date.now() - startTime;
 
+    // Apply post-retrieval category filtering as safety net (Issue #2 fix)
+    let finalChunks = guardedFinal;
+    if (context.category) {
+      finalChunks = filterChunksByCategory(guardedFinal, context.category);
+    }
+
     return {
-      chunks: guardedFinal,
+      chunks: finalChunks,
       method: "hybrid",
       totalResults: vectorResults.length + bm25Results.length,
       latencyMs,
       scores: {
         vector: vectorResults.map((c) => c.metadata.vectorScore ?? 0),
         bm25: bm25Results.map((c) => c.metadata.bm25Score ?? 0),
-        rrf: (guardedFinal.length ? guardedFinal : final).map((c) => c.metadata.rrfScore ?? 0),
+        rrf: (finalChunks.length ? finalChunks : final).map((c) => c.metadata.rrfScore ?? 0),
       },
       distinctDocCountInitial: distinctInitial,
-      distinctDocCountFinal: new Set(guardedFinal.map(c => c.docId)).size,
+      distinctDocCountFinal: new Set(finalChunks.map(c => c.docId)).size,
       expansionUsed,
       droppedPlanYearFilter,
       bm25WideSweep,
