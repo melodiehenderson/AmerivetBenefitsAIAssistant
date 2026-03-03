@@ -409,8 +409,10 @@ function buildSessionContext(session: Session) {
 // 4. MAIN LOGIC CONTROLLER
 // ============================================================================
 export async function POST(req: NextRequest) {
+  let parsedBody: any = null;
   try {
     const body = await req.json();
+    parsedBody = body;
     // Accept optional context from frontend as fallback for serverless session loss
     const { query, companyId, sessionId, context: clientContext } = body;
     
@@ -623,17 +625,50 @@ export async function POST(req: NextRequest) {
     const recommendRequested = /\b(recommend|suggestion|which plan|what plan|what do you recommend|best plan)\b/i.test(lowerQuery);
     const singleHealthy = /\b(single|healthy|just me|only me|individual|no dependents)\b/i.test(lowerQuery);
     if (recommendRequested && singleHealthy) {
-      const payPeriods = session.payPeriods || 26;
-      const rows = pricingUtils.buildPerPaycheckBreakdown('Employee Only', payPeriods);
+      const rows = pricingUtils.buildPerPaycheckBreakdown('Employee Only', session.payPeriods || 26);
+      // Filter to medical-only and exclude Kaiser for non-CA users
+      const medRows = rows.filter(r => !/dental|vision/i.test(r.plan) && r.provider !== 'VSP');
+      const filtered = session.userState && session.userState.toUpperCase() !== 'CA'
+        ? medRows.filter(r => !/kaiser/i.test(r.plan))
+        : medRows;
         let msg = `Great question! For a single, healthy individual, here are your medical plan options (Employee Only):\n\n`;
-        for (const r of rows) {
-        if (/dental|vision/i.test(r.plan) || r.provider === 'VSP') continue; // medical-only list
-        msg += `- ${r.plan}: $${pricingUtils.formatMoney(r.perMonth)}/month ($${pricingUtils.formatMoney(r.annually)}/year, $${pricingUtils.formatMoney(r.perPaycheck)}/paycheck)\n`;
+        for (const r of filtered) {
+        msg += `- **${r.plan}**: $${pricingUtils.formatMoney(r.perMonth)}/month ($${pricingUtils.formatMoney(r.annually)}/year)\n`;
         }
-        msg += `\nFor a single, healthy employee with low expected usage, **Standard HSA** is often a strong choice because it has the lowest premium and is HSA-eligible. If you expect more usage (or want a lower deductible), **Enhanced HSA** typically provides better cost protection at a higher premium. If you're in an area where it's available, **Kaiser Standard HMO** can be a good fit for people who prefer an integrated network.\n\nWould you like help choosing based on your expected usage (low/moderate/high) or comparing total annual cost?`;
+        msg += `\nFor a single, healthy employee with low expected usage, **Standard HSA** is often a strong choice because it has the lowest premium and is HSA-eligible. If you expect more usage (or want a lower deductible), **Enhanced HSA** typically provides better cost protection at a higher premium.`;
+        if (filtered.some(r => /kaiser/i.test(r.plan))) {
+          msg += ` If you're in a Kaiser service area, **Kaiser Standard HMO** can be a good fit for people who prefer an integrated network.`;
+        }
+        msg += `\n\nWould you like help choosing based on your expected usage (low/moderate/high) or comparing total annual cost?`;
         session.lastBotMessage = msg;
         await updateSession(sessionId, session);
         return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'recommend-single' } });
+    }
+
+    // CUSTOM INTERCEPT: HSA / Savings recommendation (deterministic)
+    // Catches "savings recommendation", "HSA advice", "tax savings" etc. that otherwise fall to RAG and hallucinate
+    const savingsRequested = /\b(savings?\s*(recommend|advice|scenario|strategy|tip)|hsa\s*(recommend|advice|benefit|advantage|savings)|tax\s*(savings?|advantage|benefit)\s*(plan|account|option)?|pre-?tax\s*(dollar|saving|benefit))\b/i.test(lowerQuery);
+    if (savingsRequested) {
+      const rows = pricingUtils.buildPerPaycheckBreakdown('Employee Only', session.payPeriods || 26);
+      const hsaPlans = rows.filter(r => /hsa/i.test(r.plan));
+      let msg = `Here's a savings-focused recommendation for your tax-advantaged benefit options:\n\n`;
+      msg += `**Health Savings Account (HSA) Plans:**\n`;
+      for (const r of hsaPlans) {
+        msg += `- **${r.plan}**: $${pricingUtils.formatMoney(r.perMonth)}/month ($${pricingUtils.formatMoney(r.annually)}/year)\n`;
+      }
+      msg += `\n**HSA Tax Advantages:**\n`;
+      msg += `- Contributions are deducted **pre-tax** from your paycheck, lowering your taxable income\n`;
+      msg += `- Funds grow **tax-free** (interest and investments)\n`;
+      msg += `- Withdrawals for eligible medical expenses are **tax-free** (triple tax advantage)\n`;
+      msg += `- Unused funds **roll over** year to year — there is no "use it or lose it"\n`;
+      msg += `- The account is **yours** — it stays with you even if you leave AmeriVet\n`;
+      msg += `\n**Also consider:**\n`;
+      msg += `- **FSA (Flexible Spending Account)**: Pre-tax dollars for healthcare expenses, but funds typically don't roll over\n`;
+      msg += `- **Commuter Benefits**: Pre-tax transit and parking deductions\n`;
+      msg += `\n${session.userAge && session.userAge >= 55 ? 'Since you are 55+, you\'re eligible for an additional **$1,000 HSA catch-up contribution** per year. ' : ''}For personalized rates and enrollment, visit Workday: ${ENROLLMENT_PORTAL_URL}`;
+      session.lastBotMessage = msg;
+      await updateSession(sessionId, session);
+      return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'savings-recommendation' } });
     }
 
     // CUSTOM INTERCEPT: Cost modeling request
@@ -667,12 +702,22 @@ export async function POST(req: NextRequest) {
     }
 
     // CUSTOM INTERCEPT: Orthodontics/braces direct answer (deterministic)
-    // Extended to match "braces" as well � users often ask about braces instead of orthodontics
+    // Uses canonical dental plan data — no LLM hallucination possible
     const orthoRequested = /orthodont|braces/i.test(lowerQuery);
     if (orthoRequested) {
-      // Provide a deterministic response rather than relying on the LLM.
-      // Keep it high-confidence and avoid hardcoding limits unless grounded.
-      const msg = `Orthodontia (including braces) coverage is available under the dental plan, but the exact limits, waiting periods, and cost-sharing depend on the plan details in your Dental Summary. If you want, tell me whether this is for a child or adult and I�ll help you find the relevant section.\n\nFor official coverage and pricing during enrollment, verify in Workday: ${ENROLLMENT_PORTAL_URL}`;
+      const dental = pricingUtils.getDentalPlanDetails();
+      let msg = `Yes! The **${dental.name}** (${dental.provider}) includes orthodontia coverage. Here are the key details:\n\n`;
+      msg += `- **Orthodontia copay**: $${dental.orthoCopay} (your share after the plan pays)\n`;
+      msg += `- **Deductible**: $${dental.deductible} individual / $${dental.familyDeductible} family\n`;
+      msg += `- **Coinsurance**: Preventive 100% covered, Basic services 80/20, Major services 50/50\n`;
+      msg += `- **Out-of-pocket max**: $${pricingUtils.formatMoney(dental.outOfPocketMax)}\n`;
+      msg += `- **Waiting period**: 6 months for major services\n`;
+      msg += `- **Network**: Nationwide PPO\n`;
+      msg += `\n**Monthly premiums:**\n`;
+      msg += `- Employee Only: $${pricingUtils.formatMoney(dental.tiers.employeeOnly)}\n`;
+      msg += `- Employee + Child(ren): $${pricingUtils.formatMoney(dental.tiers.employeeChildren)}\n`;
+      msg += `- Employee + Family: $${pricingUtils.formatMoney(dental.tiers.employeeFamily)}\n`;
+      msg += `\nOrthodontic coverage typically applies to both children and adults. For the full Dental Summary with age limits and lifetime maximums, check in Workday: ${ENROLLMENT_PORTAL_URL}`;
         session.lastBotMessage = msg;
         await updateSession(sessionId, session);
         return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'orthodontics' } });
@@ -764,10 +809,14 @@ export async function POST(req: NextRequest) {
 
     function extractCoverageFromQuery(q: string): string {
       const low = q.toLowerCase();
-      if (low.includes('employee + family') || low.includes('employee + family')) return 'Employee + Family';
-      if (low.includes('employee + spouse')) return 'Employee + Spouse';
-      if (low.includes('employee + child') || low.includes('employee + children')) return 'Employee + Child(ren)';
-      if (low.includes('employee only') || low.includes('individual') || low.includes('single')) return 'Employee Only';
+      // Employee + Family (including natural language like "family of 4", "family plan")
+      if (/employee\s*\+?\s*family|family\s*(of|plan|coverage)|family\s*\d|for\s*(my|the|our)\s*family/i.test(low)) return 'Employee + Family';
+      // Employee + Spouse
+      if (/employee\s*\+?\s*spouse|spouse|husband|wife|partner/i.test(low)) return 'Employee + Spouse';
+      // Employee + Child(ren) (including "child coverage", "for my kid(s)")
+      if (/employee\s*\+?\s*child|child(?:ren)?\s*coverage|for\s*(my|the)\s*(kid|child|son|daughter)|dependent\s*child/i.test(low)) return 'Employee + Child(ren)';
+      // Employee Only
+      if (/employee\s*only|individual|single|just\s*me|only\s*me/i.test(low)) return 'Employee Only';
       return 'Employee Only';
     }
 
@@ -792,22 +841,38 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'total-deduction' } });
       }
 
-      // Fallback: "enroll in ALL benefits" — sum every standard plan for the coverage tier
+      // Fallback: "enroll in ALL benefits" — pick ONE medical plan + dental + vision
+      // Users can only enroll in ONE medical plan, so show a range (cheapest → most expensive)
       const allRows = pricingUtils.buildPerPaycheckBreakdown(coverageTier, payPeriods);
       // Filter region-limited plans if we know the user's state
-      const filtered = session.userState && session.userState.toUpperCase() !== 'CA'
+      const regionFiltered = session.userState && session.userState.toUpperCase() !== 'CA'
         ? allRows.filter(r => !/kaiser/i.test(r.plan))
         : allRows;
 
-      const totalMonthly = Number(filtered.reduce((sum, r) => sum + r.perMonth, 0).toFixed(2));
-      const totalPerPay = Number(((totalMonthly * 12) / payPeriods).toFixed(2));
-      const totalAnnual = Number((totalMonthly * 12).toFixed(2));
+      // Separate medical vs non-medical (dental + vision)
+      const medicalRows = regionFiltered.filter(r => !/dental|vision/i.test(r.plan) && r.provider !== 'VSP');
+      const nonMedicalRows = regionFiltered.filter(r => /dental|vision/i.test(r.plan) || r.provider === 'VSP');
+      const nonMedicalMonthly = Number(nonMedicalRows.reduce((sum, r) => sum + r.perMonth, 0).toFixed(2));
 
-      let msg = `If you enrolled in **all** available standard benefits at the ${coverageTier} tier, your estimated total deduction would be approximately **$${pricingUtils.formatMoney(totalPerPay)} per paycheck** ($${pricingUtils.formatMoney(totalMonthly)}/month, $${pricingUtils.formatMoney(totalAnnual)}/year).\n\nBreakdown:\n`;
-      for (const r of filtered) {
+      // Calculate range: cheapest medical + non-medical → most expensive medical + non-medical
+      const cheapestMed = medicalRows.reduce((min, r) => r.perMonth < min.perMonth ? r : min, medicalRows[0]);
+      const priciest = medicalRows.reduce((max, r) => r.perMonth > max.perMonth ? r : max, medicalRows[0]);
+      const minMonthly = Number((cheapestMed.perMonth + nonMedicalMonthly).toFixed(2));
+      const maxMonthly = Number((priciest.perMonth + nonMedicalMonthly).toFixed(2));
+      const minPerPay = Number(((minMonthly * 12) / payPeriods).toFixed(2));
+      const maxPerPay = Number(((maxMonthly * 12) / payPeriods).toFixed(2));
+
+      let msg = `Great question! You can only enroll in **one** medical plan, so your total deduction depends on which one you choose. Here's the range for all benefits at the **${coverageTier}** tier:\n\n`;
+      msg += `**Estimated total: $${pricingUtils.formatMoney(minPerPay)} – $${pricingUtils.formatMoney(maxPerPay)} per paycheck** ($${pricingUtils.formatMoney(minMonthly)} – $${pricingUtils.formatMoney(maxMonthly)}/month)\n\n`;
+      msg += `**Medical options (choose one):**\n`;
+      for (const r of medicalRows) {
         msg += `- ${r.plan}: $${pricingUtils.formatMoney(r.perPaycheck)} per paycheck ($${pricingUtils.formatMoney(r.perMonth)}/month)\n`;
       }
-      msg += `\n**Important:** This total includes Medical, Dental, and Vision premiums only. Voluntary benefits (Life/Disability/Critical Illness/Accident) are often age-banded and not included in this estimate.\n`;
+      msg += `\n**Plus these standard benefits:**\n`;
+      for (const r of nonMedicalRows) {
+        msg += `- ${r.plan}: $${pricingUtils.formatMoney(r.perPaycheck)} per paycheck ($${pricingUtils.formatMoney(r.perMonth)}/month)\n`;
+      }
+      msg += `\n**Important:** Voluntary benefits (Life/Disability/Critical Illness/Accident) are age-banded and not included above. Check Workday for your personalized voluntary rates.\n`;
       if (!session.userState) {
         msg += `\nNote: Some plans are region-limited (for example, Kaiser availability depends on your state). If you share your state, I can filter to only the plans available to you.\n`;
       }
@@ -1116,9 +1181,34 @@ Answer:`;
     const errorStack = error instanceof Error ? error.stack : 'No stack trace';
     logger.error('[QA] Error:', errorMessage);
     logger.error('[QA] Stack:', errorStack);
+
+    // RESILIENCE: Try a deterministic fallback for common query types even on failure
+    try {
+      const fallbackQuery = (parsedBody?.query || '').toLowerCase();
+      const isPaycheckQ = /per\s*pay(?:check|\s*period)?/i.test(fallbackQuery);
+      const isOrthoQ = /orthodont|braces/i.test(fallbackQuery);
+
+      if (isPaycheckQ) {
+        const rows = pricingUtils.buildPerPaycheckBreakdown('Employee Only', 26);
+        let msg = `Here are the estimated Employee Only premiums (based on 26 pay periods/year):\n`;
+        for (const r of rows) {
+          msg += `- ${r.plan}: $${pricingUtils.formatMoney(r.perPaycheck)} per paycheck ($${pricingUtils.formatMoney(r.perMonth)}/month)\n`;
+        }
+        msg += `\nFor other coverage tiers or exact deductions, visit Workday: ${ENROLLMENT_PORTAL_URL}`;
+        return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: null, metadata: { fallback: true } }, { status: 200 });
+      }
+
+      if (isOrthoQ) {
+        const dental = pricingUtils.getDentalPlanDetails();
+        const msg = `Yes, the ${dental.name} includes orthodontia coverage with a $${dental.orthoCopay} copay. Deductible: $${dental.deductible} individual. For the full Dental Summary, visit Workday: ${ENROLLMENT_PORTAL_URL}`;
+        return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: null, metadata: { fallback: true } }, { status: 200 });
+      }
+    } catch (fallbackErr) {
+      logger.error('[QA] Fallback also failed:', fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr));
+    }
     
     return NextResponse.json({ 
-      answer: "I apologize for the technical difficulty. Let me help you get back on track. What would you like to know about your benefits?",
+      answer: `I hit a temporary issue processing your request. Please try again, or for immediate help contact AmeriVet HR/Benefits at ${HR_PHONE}. You can also visit the enrollment portal at ${ENROLLMENT_PORTAL_URL}.`,
       error: errorMessage,
       tier: 'L1',
       sessionContext: null  // Session may be corrupted

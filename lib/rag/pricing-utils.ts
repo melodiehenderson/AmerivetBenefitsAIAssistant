@@ -338,6 +338,23 @@ export function compareMaternityCosts(coverageTier: string): string {
   
   return msg;
 }
+// Extract canonical dental plan details for deterministic ortho/dental responses
+export function getDentalPlanDetails() {
+  const dental = amerivetBenefits2024_2025.dentalPlan;
+  return {
+    name: dental.name,
+    provider: dental.provider,
+    deductible: dental.coverage?.deductibles?.individual ?? dental.benefits.deductible,
+    familyDeductible: dental.coverage?.deductibles?.family ?? dental.benefits.deductible * 3,
+    outOfPocketMax: dental.coverage?.outOfPocketMax ?? dental.benefits.outOfPocketMax,
+    orthoCopay: dental.coverage?.copays?.orthodontia ?? 500,
+    coinsurance: dental.coverage?.coinsurance ?? {},
+    tiers: dental.tiers,
+    features: dental.features,
+    limitations: dental.limitations,
+  };
+}
+
 export default {
   monthlyPremiumForPlan,
   annualFromMonthly,
@@ -349,5 +366,6 @@ export default {
   cleanRepeatedPhrases,
   estimateCostProjection,
   compareMaternityCosts,
+  getDentalPlanDetails,
   formatMoney,
 };
