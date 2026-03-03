@@ -261,10 +261,20 @@ function detectDecision(query: string): { category: string; decision: string; st
   const explicitDecline = /^(no thanks|i'?m good|not for me|pass|skip it|skip this|i'?ll pass|not interested|no need)$/i.test(lower.trim());
   // This will be handled with session.currentTopic in the route logic
 
+  // GUARD: Don't match selection patterns if user is asking for information, not making a decision
+  // Prevents false positives like "I want to know the difference" being treated as a plan selection
+  if (/\b(want\s+to\s+(?:know|understand|learn|see|compare|find|hear|look|explore|ask|talk)|what\s+(?:is|are)|tell\s+me|explain|difference|available|options|which\s+(?:plan|one)|compare|between|about)\b/i.test(query)) {
+    return null;
+  }
+
   // Selection patterns: "I'll go with Kaiser", "I want the PPO", "sign me up for HDHP"
   const selectMatch = lower.match(/(?:i'?ll?\s*(?:go\s*with|take|choose|want|pick)|let'?s?\s*go\s*with|i\s*(?:chose|picked|selected|want)|sign\s*me\s*up\s*for|enroll\s*(?:me\s*)?in|i\s*(?:like|prefer))\s+(?:the\s+)?(.+?)(?:\s*plan)?$/i);
   if (selectMatch) {
     const plan = selectMatch[1].trim();
+    // Extra guard: if captured "plan" is > 40 chars or contains verbs, it's likely not a real selection
+    if (plan.length > 40 || /\b(to|know|understand|difference|available|compare|what|about|between)\b/i.test(plan)) {
+      return null;
+    }
     const cat = normalizeBenefitCategory(plan);
     return { category: cat, decision: plan.charAt(0).toUpperCase() + plan.slice(1), status: 'selected' };
   }
@@ -397,6 +407,233 @@ ${session.lastBotMessage ? `## CONTEXT
 Previously you said: "${session.lastBotMessage}"` : ''}
 
 Answer directly, accurately, and helpfully.`;
+}
+
+// ============================================================================
+// 2b. CATEGORY EXPLORATION RESPONSE BUILDER (Deterministic)
+// ============================================================================
+// Returns a rich deterministic overview when user asks about a benefit category.
+// This ensures we NEVER return dead-end "couldn't find pricing" for basic queries.
+import { amerivetBenefits2024_2025 } from '@/lib/data/amerivet';
+
+function buildCategoryExplorationResponse(
+  queryLower: string,
+  session: Session,
+  coverageTier: string
+): string | null {
+  const tierKey = coverageTier === 'Employee + Spouse' ? 'employeeSpouse'
+    : coverageTier === 'Employee + Child(ren)' ? 'employeeChildren'
+    : coverageTier === 'Employee + Family' ? 'employeeFamily'
+    : 'employeeOnly';
+  const tierLabel = coverageTier || 'Employee Only';
+  const userState = session.userState || '';
+  const isCA = /^CA$/i.test(userState);
+
+  // Detect if this is a category exploration (not a specific calculation/comparison already handled)
+  // Skip if user is asking for very specific things handled by other intercepts
+  if (/per[\s-]*pay(?:check|period)?|deduct(?:ion|ed)|enroll\s+in\s+all|total\s+cost|how\s+much\s+would|maternity|pregnan|orthodont|braces|recommend|which\s+plan\s+should/i.test(queryLower)) {
+    return null; // Let the specialized intercepts handle these
+  }
+
+  const catalog = amerivetBenefits2024_2025;
+
+  // MEDICAL exploration
+  if (/\b(medical|health\s*(?:care|insurance|plan|coverage)?)\b/i.test(queryLower)) {
+    const plans = catalog.medicalPlans.filter(p =>
+      isCA || !p.regionalAvailability.includes('California')
+    );
+
+    let response = `Here's an overview of the medical plans available to you:\n\n`;
+
+    for (const plan of plans) {
+      const monthly = plan.tiers[tierKey];
+      const annual = Number((monthly * 12).toFixed(2));
+      const biweeklyAmt = Number(((monthly * 12) / 26).toFixed(2));
+      const ded = plan.coverage?.deductibles;
+      const coins = plan.coverage?.coinsurance;
+      const copays = plan.coverage?.copays;
+
+      response += `**${plan.name}** (${plan.provider})`;
+      if (plan.regionalAvailability.includes('California')) {
+        response += ` — California only`;
+      }
+      response += `\n`;
+      response += `- Premium (${tierLabel}): **$${monthly.toFixed(2)}/month** ($${annual.toFixed(2)}/year, $${biweeklyAmt}/paycheck)\n`;
+      response += `- Deductible: $${ded?.individual?.toLocaleString() ?? plan.benefits.deductible.toLocaleString()} individual / $${ded?.family?.toLocaleString() ?? (plan.benefits.deductible * 2).toLocaleString()} family\n`;
+      response += `- Out-of-Pocket Max: $${plan.benefits.outOfPocketMax.toLocaleString()}\n`;
+      response += `- Coinsurance: ${Math.round((coins?.inNetwork ?? plan.benefits.coinsurance) * 100)}% in-network\n`;
+      if (copays) {
+        const copayParts: string[] = [];
+        if (copays.primaryCare !== undefined) copayParts.push(`PCP $${copays.primaryCare}`);
+        if (copays.specialist !== undefined) copayParts.push(`Specialist $${copays.specialist}`);
+        if (copayParts.length > 0) response += `- Copays: ${copayParts.join(', ')}\n`;
+      }
+      response += `- Key features: ${plan.features.slice(0, 3).join(', ')}\n\n`;
+    }
+
+    if (!isCA && userState) {
+      response += `*Note: Kaiser HMO is available only for California residents and is not shown for your state (${userState}).*\n\n`;
+    } else if (!userState) {
+      response += `*Note: Kaiser HMO is available only for California residents. Let me know your state and I can filter plans for you.*\n\n`;
+    }
+
+    response += `Would you like to:\n- Compare two specific plans in detail?\n- See pricing for a different coverage tier (e.g., Employee + Family)?\n- Explore another benefit like Dental or Vision?`;
+
+    return response;
+  }
+
+  // DENTAL exploration
+  if (/\b(dental)\b/i.test(queryLower)) {
+    const plan = catalog.dentalPlan;
+    const monthly = plan.tiers[tierKey];
+    const annual = Number((monthly * 12).toFixed(2));
+    const biweeklyAmt = Number(((monthly * 12) / 26).toFixed(2));
+    const ded = plan.coverage?.deductibles;
+    const coins = plan.coverage?.coinsurance;
+
+    let response = `Here's your dental plan overview:\n\n`;
+    response += `**${plan.name}** (${plan.provider})\n`;
+    response += `- Premium (${tierLabel}): **$${monthly.toFixed(2)}/month** ($${annual.toFixed(2)}/year, $${biweeklyAmt}/paycheck)\n`;
+    response += `- Deductible: $${ded?.individual ?? plan.benefits.deductible} individual / $${ded?.family ?? plan.benefits.deductible * 3} family\n`;
+    response += `- Preventive care: Covered at 100% (cleanings, exams, X-rays)\n`;
+    response += `- Basic services (fillings, extractions): ${coins?.basic !== undefined ? `${Math.round(coins.basic * 100)}% coinsurance` : '20% coinsurance'}\n`;
+    response += `- Major services (crowns, bridges): ${coins?.major !== undefined ? `${Math.round(coins.major * 100)}% coinsurance` : '50% coinsurance'}\n`;
+    response += `- Annual maximum: $${plan.benefits.outOfPocketMax?.toLocaleString() ?? '1,500'}\n`;
+    response += `- Orthodontia: $${plan.coverage?.copays?.orthodontia ?? 500} copay (with coverage)\n`;
+    response += `- Network: Nationwide PPO\n\n`;
+    response += `Would you like to:\n- See pricing for a different coverage tier?\n- Learn more about orthodontia coverage?\n- Explore another benefit like Vision or Medical?`;
+
+    return response;
+  }
+
+  // VISION exploration
+  if (/\b(vision|eye)\b/i.test(queryLower)) {
+    const plan = catalog.visionPlan;
+    const monthly = plan.tiers[tierKey];
+    const annual = Number((monthly * 12).toFixed(2));
+    const biweeklyAmt = Number(((monthly * 12) / 26).toFixed(2));
+
+    let response = `Here's your vision plan overview:\n\n`;
+    response += `**${plan.name}** (${plan.provider})\n`;
+    response += `- Premium (${tierLabel}): **$${monthly.toFixed(2)}/month** ($${annual.toFixed(2)}/year, $${biweeklyAmt}/paycheck)\n`;
+    response += `- Eye exam: $${plan.coverage?.copays?.exam ?? 10} copay (covered every 12 months)\n`;
+    response += `- Frames: $200 allowance every 12 months\n`;
+    response += `- Contact lens allowance included\n`;
+    response += `- LASIK discounts available\n`;
+    response += `- Lenses: $${plan.coverage?.copays?.lenses ?? 25} copay\n`;
+    response += `- Network: VSP nationwide\n\n`;
+    response += `Would you like to:\n- See pricing for a different coverage tier?\n- Explore another benefit like Medical or Dental?`;
+
+    return response;
+  }
+
+  // LIFE INSURANCE exploration
+  if (/\b(life\s*(?:insurance)?|life\b)\b/i.test(queryLower)) {
+    let response = `Here's an overview of the life insurance options available to you:\n\n`;
+
+    response += `**1. UNUM Basic Life & AD&D** (Employer-Paid)\n`;
+    response += `- Coverage: $25,000 flat benefit\n`;
+    response += `- Cost: **$0** — fully paid by AmeriVet\n`;
+    response += `- Includes Accidental Death & Dismemberment (AD&D)\n`;
+    response += `- All benefits-eligible employees are automatically enrolled\n\n`;
+
+    response += `**2. UNUM Voluntary Term Life**\n`;
+    response += `- Coverage: Additional term life insurance you can purchase\n`;
+    response += `- Options: 1x to 5x salary (up to $500,000)\n`;
+    response += `- Pricing: Age-banded (rates vary by age bracket)\n`;
+    response += `- Guaranteed Issue: Up to $150,000 without medical questions during open enrollment\n`;
+    response += `- Spouse and dependent child coverage also available\n\n`;
+
+    response += `**3. Allstate Whole Life**\n`;
+    response += `- Coverage: Permanent life insurance that builds cash value\n`;
+    response += `- Pricing: Age-banded (rates locked at enrollment age)\n`;
+    response += `- Portable: You keep it even if you leave AmeriVet\n`;
+    response += `- Cash value accumulates over time\n\n`;
+
+    response += `**💡 Quick Tip**: The 20/80 strategy is popular — rely on the employer-paid $25K basic life as your foundation (20%), then supplement with voluntary coverage to reach your target (80%).\n\n`;
+
+    response += `Would you like to:\n- Learn more about any specific life insurance option?\n- Get a term life quote (I'll need your age)?\n- Explore other benefits like Medical or Dental?`;
+
+    return response;
+  }
+
+  // DISABILITY exploration
+  if (/\b(disability|std|ltd|short[\s-]*term|long[\s-]*term)\b/i.test(queryLower)) {
+    let response = `Here's an overview of the disability insurance options:\n\n`;
+
+    response += `**Short-Term Disability (STD)** — UNUM\n`;
+    response += `- Replaces a portion of income if you can't work due to illness/injury\n`;
+    response += `- Typical benefit: 60% of weekly salary\n`;
+    response += `- Waiting period: 7 days (illness) / 0 days (accident)\n`;
+    response += `- Benefit duration: Up to 13 weeks\n\n`;
+
+    response += `**Long-Term Disability (LTD)** — UNUM\n`;
+    response += `- Kicks in after STD benefits end\n`;
+    response += `- Typical benefit: 60% of monthly salary (up to $10,000/month)\n`;
+    response += `- Waiting period: 90 days\n`;
+    response += `- Benefit duration: Up to age 65 or Social Security Normal Retirement Age\n\n`;
+
+    response += `*Pricing for disability coverage is age-banded. For exact rates, please visit the enrollment portal at ${ENROLLMENT_PORTAL_URL} or contact HR at ${HR_PHONE}.*\n\n`;
+
+    response += `Would you like to explore a different benefit category?`;
+
+    return response;
+  }
+
+  // CRITICAL ILLNESS / ACCIDENT exploration
+  if (/\b(critical\s*illness|accident|ad&d|supplemental)\b/i.test(queryLower)) {
+    let response = `Here's an overview of supplemental coverage options:\n\n`;
+
+    response += `**Critical Illness Insurance** — Allstate\n`;
+    response += `- Lump-sum cash benefit if diagnosed with a covered condition\n`;
+    response += `- Covered conditions: Heart attack, stroke, cancer, organ transplant, and more\n`;
+    response += `- Benefit amounts: $10,000 to $30,000 (age-banded pricing)\n`;
+    response += `- Covers employee, spouse, and dependent children\n\n`;
+
+    response += `**Accident Insurance** — Allstate\n`;
+    response += `- Cash benefit for covered accidents (fractures, dislocations, burns, etc.)\n`;
+    response += `- Includes initial treatment, follow-up, hospitalization, and rehab\n`;
+    response += `- Works alongside your medical plan to offset out-of-pocket costs\n\n`;
+
+    response += `*Both are age-banded products. For exact rates, visit ${ENROLLMENT_PORTAL_URL} or call HR at ${HR_PHONE}.*\n\n`;
+
+    response += `Would you like to explore a different benefit category?`;
+
+    return response;
+  }
+
+  // HSA / FSA exploration
+  if (/\b(hsa|fsa|flexible\s*spending|health\s*savings|tax[\s-]*(?:free|advantaged))\b/i.test(queryLower)) {
+    const hsa = catalog.specialCoverage.hsa;
+    const fsa = catalog.specialCoverage.fsa;
+
+    let response = `Here's an overview of your tax-advantaged savings accounts:\n\n`;
+
+    response += `**Health Savings Account (HSA)**\n`;
+    response += `- Available with: Standard HSA or Enhanced HSA medical plans\n`;
+    response += `- Employer contribution: **$${hsa.employerContribution}/year** (seeded by AmeriVet)\n`;
+    response += `- 2025 IRS limits: $4,300 (individual) / $8,550 (family)\n`;
+    response += `- Triple tax advantage: Tax-free contributions, growth, and withdrawals for medical expenses\n`;
+    response += `- Funds roll over year to year — no "use it or lose it"\n`;
+    response += `- Portable: You keep it if you leave AmeriVet\n\n`;
+
+    response += `**Flexible Spending Account (FSA)**\n`;
+    response += `- Maximum contribution: $${fsa.maximumContribution.toLocaleString()}/year\n`;
+    response += `- Pre-tax contributions reduce taxable income\n`;
+    response += `- Available for: Healthcare FSA, Dependent Care FSA, and Limited Purpose FSA\n`;
+    response += `- ⚠️ Use-it-or-lose-it: Funds must be used within the plan year\n`;
+    response += `- Cannot have both a general FSA and an HSA simultaneously\n\n`;
+
+    response += `**Commuter Benefits**\n`;
+    response += `- Monthly benefit: Up to $${catalog.specialCoverage.commuter.monthlyBenefit}/month pre-tax\n`;
+    response += `- Covers: Transit, parking, and qualified commuter expenses\n\n`;
+
+    response += `Would you like to:\n- Learn how HSA vs. FSA compares for your situation?\n- Explore another benefit category?`;
+
+    return response;
+  }
+
+  return null;
 }
 
 // ============================================================================
@@ -793,6 +1030,19 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'orthodontics' } });
     }
 
+    // ========================================================================
+    // CATEGORY EXPLORATION INTERCEPT (Deterministic — no RAG needed)
+    // ========================================================================
+    // When user says "medical", "dental", "life insurance", "vision", etc.
+    // we return a deterministic overview from canonical data. This prevents
+    // RAG retrieval failures from producing dead-end "couldn't find" messages.
+    const categoryExplorationIntercept = buildCategoryExplorationResponse(lowerQuery, session, extractCoverageFromQuery(query));
+    if (categoryExplorationIntercept) {
+        session.lastBotMessage = categoryExplorationIntercept;
+        await updateSession(sessionId, session);
+        return NextResponse.json({ answer: categoryExplorationIntercept, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'category-exploration' } });
+    }
+
     // INTERCEPT: DECISION DETECTION (Track user choices for summary)
     // ========================================================================
     const decision = detectDecision(query);
@@ -1019,9 +1269,16 @@ export async function POST(req: NextRequest) {
       // If the user explicitly asked for a specific category (e.g., "medical"), do NOT drop the category filter.
       // Dropping the filter can return unrelated voluntary/accident docs and confuse pricing.
       if (category && explicitCategoryRequested) {
-        logger.debug('[PIPELINE] Explicit category requested; skipping expansion to avoid cross-category leakage');
-        // Offer an alternative message instead of expanding
-        const alt = `I searched our documents for ${category} plans but couldn't find confident pricing for your request. Please try rephrasing (for example: "How much per paycheck for Employee + Child under PPO?") or check the enrollment portal at ${ENROLLMENT_PORTAL_URL} for the exact rate.`;
+        logger.debug('[PIPELINE] Explicit category requested; trying deterministic fallback before dead-end');
+        // Try deterministic fallback FIRST instead of a dead-end message
+        const deterministicFallback = buildCategoryExplorationResponse(category.toLowerCase(), session, extractCoverageFromQuery(query));
+        if (deterministicFallback) {
+          session.lastBotMessage = deterministicFallback;
+          await updateSession(sessionId, session);
+          return NextResponse.json({ answer: deterministicFallback, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { expanded: false, explicitCategoryRequested, deterministicFallback: true } });
+        }
+        // Last resort: helpful message (not a dead-end)
+        const alt = `I'd be happy to help with ${category} benefits! Could you tell me more about what you'd like to know? For example:\n- Plan options and what they cover\n- Pricing for your coverage tier\n- How to compare plans\n\nOr check the enrollment portal at ${ENROLLMENT_PORTAL_URL} for full details.`;
         session.lastBotMessage = alt;
         await updateSession(sessionId, session);
         return NextResponse.json({ answer: alt, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { expanded: false, explicitCategoryRequested } });

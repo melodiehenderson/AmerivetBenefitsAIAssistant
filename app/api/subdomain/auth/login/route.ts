@@ -62,10 +62,12 @@ export async function POST(req: Request) {
     if (!password) return json(400, { ok: false, error: 'MISSING_PASSWORD' });
 
     // Read from environment variables (no hardcoded passwords)
-    // CRITICAL: trim() to remove any line endings from Vercel web UI
-    // NFKC normalization for Unicode security (prevents lookalike attacks)
-    const EMP = (process.env.EMPLOYEE_PASSWORD ?? '').trim().normalize('NFKC');
-    const ADM = (process.env.ADMIN_PASSWORD ?? '').trim().normalize('NFKC');
+    // Aggressive sanitization: strip literal \r\n text, control chars, and whitespace
+    // that Vercel CLI / PowerShell piping may inject into env vars
+    const sanitize = (v: string) =>
+      v.replace(/\\r\\n$|\\n$|\\r$/g, '').replace(/[\x00-\x1f\x7f]/g, '').trim().normalize('NFKC');
+    const EMP = sanitize(process.env.EMPLOYEE_PASSWORD ?? '');
+    const ADM = sanitize(process.env.ADMIN_PASSWORD ?? '');
 
     if (!EMP || !ADM) {
       return json(500, { ok: false, error: 'SERVER_MISCONFIG' });

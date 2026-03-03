@@ -14,7 +14,7 @@ interface RateLimitEntry {
 const store = new Map<string, RateLimitEntry>();
 
 const WINDOW_MS = 15 * 60 * 1000; // 15 minutes
-const MAX_ATTEMPTS = 3;
+const MAX_ATTEMPTS = 10;
 
 export function checkRateLimit(identifier: string): { allowed: boolean; remaining: number } {
   const now = Date.now();
