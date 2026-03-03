@@ -140,7 +140,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         { 
           success: false,
           error: 'Invalid data format', 
-          details: error.errors 
+          details: error.issues 
         },
         { status: 400 }
       );

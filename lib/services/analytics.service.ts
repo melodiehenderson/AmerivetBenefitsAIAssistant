@@ -394,7 +394,7 @@ class AnalyticsService {
       const repositories = await getRepositories();
       
       let usersQuery = 'SELECT * FROM c';
-      let parameters: any[] = [];
+      const parameters: any[] = [];
       
       if (companyId) {
         usersQuery += ' WHERE c.companyId = @companyId';
@@ -451,7 +451,7 @@ class AnalyticsService {
       const repositories = await getRepositories();
       
       let conversationsQuery = 'SELECT * FROM c';
-      let parameters: any[] = [];
+      const parameters: any[] = [];
       
       if (companyId) {
         conversationsQuery += ' WHERE c.companyId = @companyId';

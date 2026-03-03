@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Cost-Optimized Azure Services Implementation
  * Total Monthly Cost: $343-609

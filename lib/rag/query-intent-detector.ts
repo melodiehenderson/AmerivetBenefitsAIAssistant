@@ -47,7 +47,7 @@ export function detectQueryIntent(query: string): QueryIntent {
   let keywords: string[] = [];
   let lifeEvent: string | undefined;
   let needsFollowUp = false;
-  let followUpQuestions: string[] = [];
+  const followUpQuestions: string[] = [];
 
   const variables = {
     familySize: extractFamilySize(query),

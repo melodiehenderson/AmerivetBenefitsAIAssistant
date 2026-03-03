@@ -91,7 +91,7 @@ export async function POST(request: NextRequest) {
         const contentToEmbed = `Question: ${faq.question}\nAnswer: ${faq.answer}`;
         const embedding = await generateEmbeddings(contentToEmbed);
         
-        await upsertVectors({
+        await upsertVectors([{
             id: `faq-${faq.id}`,
             values: embedding,
             metadata: {
@@ -101,7 +101,7 @@ export async function POST(request: NextRequest) {
                 category: faq.category,
                 text: contentToEmbed // Store text for citations
             }
-        });
+        }]);
         logger.info('FAQ Vectors Synced', { faqId: faq.id });
     } catch (vectorError) {
         // Non-blocking error: If AI sync fails, we still return success but log the failure
@@ -120,7 +120,7 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return NextResponse.json({ success: false, error: 'Invalid data', details: error.errors }, { status: 400 });
+      return NextResponse.json({ success: false, error: 'Invalid data', details: error.issues }, { status: 400 });
     }
     
     logger.error('FAQ creation error', { path: '/api/admin/faqs' }, error as Error);

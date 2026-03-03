@@ -1,62 +1,145 @@
-// Pricing utilities for server-side deterministic calculations and normalization
-const COVERAGE_MULTIPLIERS: Record<string, number> = {
-  'employee only': 1,
-  'employee + spouse': 1.8,
-  'employee + child': 1.5,
-  'employee + children': 1.5,
-  'employee + family': 2.5,
+// Pricing utilities for server-side deterministic calculations and normalization.
+// IMPORTANT: Use the canonical AmeriVet plan catalog as the source of truth.
+// This avoids drift between the chat, admin analytics, and the cost comparison tool.
+
+import { amerivetBenefits2024_2025, type BenefitPlan, type BenefitTier } from '@/lib/data/amerivet';
+
+const DEFAULT_PAY_PERIODS = 26; // biweekly
+
+const moneyFmt = new Intl.NumberFormat('en-US', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+export function formatMoney(amount: number): string {
+  const safe = Number.isFinite(amount) ? amount : 0;
+  return moneyFmt.format(safe);
+}
+
+function normalizeWhitespace(s: string): string {
+  return s.replace(/\s+/g, ' ').trim();
+}
+
+function normalizePlanToken(input: string): string {
+  return normalizeWhitespace(input)
+    .toLowerCase()
+    .replace(/\(.*?\)/g, '')
+    .replace(/[^a-z0-9+ ]/g, '')
+    .trim();
+}
+
+const ALL_PLANS: BenefitPlan[] = [
+  ...amerivetBenefits2024_2025.medicalPlans,
+  amerivetBenefits2024_2025.dentalPlan,
+  amerivetBenefits2024_2025.visionPlan,
+  ...amerivetBenefits2024_2025.voluntaryPlans,
+];
+
+const PLAN_BY_ID = new Map<string, BenefitPlan>(ALL_PLANS.map((p) => [p.id, p]));
+const PLAN_BY_NAME = new Map<string, BenefitPlan>(
+  ALL_PLANS.map((p) => [normalizePlanToken(p.name), p])
+);
+
+// Common aliases seen in UI copy, legacy code, and admin analytics.
+const PLAN_ALIASES: Record<string, string> = {
+  // HDHP/HSA
+  'hsa high deductible': 'standard hsa',
+  'standard hsa': 'standard hsa',
+  'bcbstx standard hsa': 'standard hsa',
+  'enhanced hsa': 'enhanced hsa',
+  'bcbstx enhanced hsa': 'enhanced hsa',
+  // Kaiser
+  'kaiser hmo': 'kaiser standard hmo',
+  'kaiser standard': 'kaiser standard hmo',
+  'kaiser standard hmo': 'kaiser standard hmo',
+  // PPO naming varies across artifacts; map generic "ppo" to the catalog PPO when present.
+  // (If your catalog adds multiple PPO variants later, update this mapping.)
+  'bcbstx ppo': 'standard hsa', // fallback: avoid hard failure; better than returning null
+  'ppo standard': 'standard hsa',
 };
 
-// Base monthly premiums (employee only) - keep in sync with components/cost-calculator.tsx
-const BASE_MONTHLY_PREMIUMS: Record<string, number> = {
-  'HSA High Deductible': 250,
-  'PPO Standard': 400,
-  'PPO Premium': 500,
-  'Kaiser HMO': 300,
-};
+function resolvePlan(planNameOrId: string): BenefitPlan | null {
+  if (!planNameOrId) return null;
 
-const PLAN_META: Record<string, { deductible: number; outOfPocketMax: number }> = {
-  'HSA High Deductible': { deductible: 3500, outOfPocketMax: 7000 },
-  'PPO Standard': { deductible: 1000, outOfPocketMax: 5000 },
-  'PPO Premium': { deductible: 500, outOfPocketMax: 3000 },
-  'Kaiser HMO': { deductible: 0, outOfPocketMax: 3500 },
-};
+  const trimmed = planNameOrId.trim();
+  const byId = PLAN_BY_ID.get(trimmed);
+  if (byId) return byId;
+
+  const norm = normalizePlanToken(trimmed);
+  const alias = PLAN_ALIASES[norm] ?? norm;
+  const direct = PLAN_BY_NAME.get(alias);
+  if (direct) return direct;
+
+  // Last-chance fuzzy match: if token contains a known plan name, pick that plan.
+  for (const [nameKey, plan] of PLAN_BY_NAME.entries()) {
+    if (alias.includes(nameKey)) return plan;
+  }
+  return null;
+}
+
+function normalizeCoverageTierToBenefitTier(token: string | null): BenefitTier {
+  const lower = normalizeWhitespace((token || 'employee only').toLowerCase());
+  if (/(employee\s*only|individual|single|just me|employee-only)/i.test(lower)) return 'employeeOnly';
+  if (/(employee\s*\+\s*spouse|employee\s*spouse|emp\s*\+\s*spouse)/i.test(lower)) return 'employeeSpouse';
+  if (/(employee\s*\+\s*child|employee\s*\+\s*children|employee\s*children|child\(ren\)|emp\s*\+\s*child)/i.test(lower)) {
+    return 'employeeChildren';
+  }
+  if (/(employee\s*\+\s*family|employee\s*family|family)/i.test(lower)) return 'employeeFamily';
+  return 'employeeOnly';
+}
 
 export function normalizeCoverageToken(token: string | null): string {
-  if (!token) return 'Employee Only';
-  const lower = token.toLowerCase();
-  for (const k of Object.keys(COVERAGE_MULTIPLIERS)) {
-    if (lower.includes(k)) return k; // Return the key as-is (lowercase)
+  const tier = normalizeCoverageTierToBenefitTier(token);
+  switch (tier) {
+    case 'employeeSpouse':
+      return 'employee + spouse';
+    case 'employeeChildren':
+      return 'employee + child';
+    case 'employeeFamily':
+      return 'employee + family';
+    case 'employeeOnly':
+    default:
+      return 'employee only';
   }
-  return 'Employee Only';
 }
 
 export function monthlyPremiumForPlan(planName: string, coverageTier: string = 'Employee Only'): number | null {
-  const base = BASE_MONTHLY_PREMIUMS[planName];
-  if (typeof base === 'undefined') return null;
-  // Normalize coverage tier to lowercase for lookup
-  const tierKey = (coverageTier || 'employee only').toLowerCase();
-  const mult = COVERAGE_MULTIPLIERS[tierKey] ?? 1;
-  return Math.round(base * mult);
+  const plan = resolvePlan(planName);
+  if (!plan) return null;
+  const tier = normalizeCoverageTierToBenefitTier(coverageTier);
+  const amount = plan.tiers?.[tier];
+  if (typeof amount !== 'number') return null;
+  return Number(amount.toFixed(2));
 }
 
 export function annualFromMonthly(monthly: number): number {
-  return Math.round(monthly * 12);
+  return Number((monthly * 12).toFixed(2));
 }
 
 export function perPaycheckFromMonthly(monthly: number, payPeriods: number = 24): number {
+  const pp = payPeriods || DEFAULT_PAY_PERIODS;
   const annual = monthly * 12;
-  return Math.round(annual / payPeriods);
+  return Number((annual / pp).toFixed(2));
 }
 
 // Build a deterministic per-paycheck breakdown for all standard plans
 export function buildPerPaycheckBreakdown(coverageTier: string, payPeriods: number = 24) {
-  const rows: Array<{ plan: string; perPaycheck: number; perMonth: number; annually: number }> = [];
-  for (const plan of Object.keys(BASE_MONTHLY_PREMIUMS)) {
-    const perMonth = monthlyPremiumForPlan(plan, coverageTier) ?? 0;
+  const pp = payPeriods || DEFAULT_PAY_PERIODS;
+  const tier = normalizeCoverageTierToBenefitTier(coverageTier);
+  const rows: Array<{ plan: string; perPaycheck: number; perMonth: number; annually: number; planId: string; provider: string }> = [];
+
+  // Deterministic ordering: medical plans first, then dental/vision.
+  const plans = [
+    ...amerivetBenefits2024_2025.medicalPlans,
+    amerivetBenefits2024_2025.dentalPlan,
+    amerivetBenefits2024_2025.visionPlan,
+  ];
+
+  for (const p of plans) {
+    const perMonth = typeof p.tiers?.[tier] === 'number' ? Number(p.tiers[tier].toFixed(2)) : 0;
     const annually = annualFromMonthly(perMonth);
-    const perPay = perPaycheckFromMonthly(perMonth, payPeriods);
-    rows.push({ plan, perPaycheck: perPay, perMonth, annually });
+    const perPay = perPaycheckFromMonthly(perMonth, pp);
+    rows.push({ plan: p.name, planId: p.id, provider: p.provider, perPaycheck: perPay, perMonth, annually });
   }
   return rows;
 }
@@ -66,41 +149,56 @@ export function computeTotalMonthlyFromSelections(decisionsTracker: Record<strin
   if (!decisionsTracker) return 0;
   let total = 0;
   for (const [category, entry] of Object.entries(decisionsTracker)) {
-    if (!entry || entry.status !== 'selected') continue;
-    const planName = (entry.value || '').toString();
+    // Session can store either a plain string or a DecisionEntry-like object.
+    const e: any = entry;
+    const status = typeof e === 'string' ? 'selected' : e?.status;
+    if (status !== 'selected') continue;
+
+    const value = typeof e === 'string' ? e : (e?.value ?? '');
+    const planName = (value || '').toString();
     const monthly = monthlyPremiumForPlan(planName, coverageTier);
-    if (monthly) total += monthly;
+    if (typeof monthly === 'number' && Number.isFinite(monthly)) total += monthly;
   }
-  return Math.round(total);
+  return Number(total.toFixed(2));
 }
 
 // Normalize pricing mentions in an LLM answer: ensure monthly-first and include annual
 export function normalizePricingInText(text: string, payPeriods: number = 24): string {
   let result = text;
-  // Find explicit annual-only mentions like "$1,924.32 annually" and convert
-  const annualRegex = /\$([\d,]+(?:\.\d{1,2})?)\s*(?:per year|annually|\/year|per annum)/gi;
+
+  const pp = payPeriods || DEFAULT_PAY_PERIODS;
+
+  const parseMoney = (raw: string): number | null => {
+    const n = Number(raw.replace(/,/g, ''));
+    return Number.isFinite(n) ? n : null;
+  };
+
+  // Annual-only mentions → monthly + annual
+  const annualRegex = /\$([\d,]+(?:\.\d{1,2})?)\s*(?:per year|annually|\/year|\/yr|per annum)/gi;
   result = result.replace(annualRegex, (m, g1) => {
-    const annual = parseFloat(g1.replace(/,/g, ''));
-    if (isNaN(annual)) return m;
-    const monthly = Math.round(annual / 12);
-    return `$${monthly} per month ($${annual.toLocaleString('en-US')}/year)`;
+    const annual = parseMoney(g1);
+    if (annual === null) return m;
+    const monthly = Number((annual / 12).toFixed(2));
+    return `$${formatMoney(monthly)} per month ($${formatMoney(annual)} annually)`;
   });
 
-  // Find per-month mentions with decimals and normalize to integer dollars and add annual
-  const monthRegex = /\$([\d,]+(?:\.\d{1,2})?)\s*(?:per month|monthly|\/month)/gi;
+  // Per-month mentions → ensure 2-decimals + annual
+  const monthRegex = /\$([\d,]+(?:\.\d{1,2})?)\s*(?:per month|monthly|\/month|\/mo)/gi;
   result = result.replace(monthRegex, (m, g1) => {
-    const monthly = Math.round(parseFloat(g1.replace(/,/g, '')));
-    const annual = Math.round(monthly * 12);
-    return `$${monthly} per month ($${annual.toLocaleString('en-US')} annually)`;
+    const monthly = parseMoney(g1);
+    if (monthly === null) return m;
+    const annual = Number((monthly * 12).toFixed(2));
+    return `$${formatMoney(monthly)} per month ($${formatMoney(annual)} annually)`;
   });
 
-  // Normalize per-paycheck mentions to show per-paycheck + per-month + annual
-  const ppRegex = /\$([\d,]+(?:\.\d{1,2})?)\s*(?:per pay(?:check|period)|per pay)/gi;
+  // Per-paycheck mentions → per-paycheck + per-month + annual
+  const ppRegex = /\$([\d,]+(?:\.\d{1,2})?)\s*(?:per pay(?:check|period)?|per pay)\b/gi;
   result = result.replace(ppRegex, (m, g1) => {
-    const perPay = Math.round(parseFloat(g1.replace(/,/g, '')));
-    const annual = Math.round(perPay * payPeriods);
-    const monthly = Math.round(annual / 12);
-    return `$${perPay} per paycheck ($${monthly} per month / $${annual} annually)`;
+    const perPay = parseMoney(g1);
+    if (perPay === null) return m;
+    const annual = Number((perPay * pp).toFixed(2));
+    const monthly = Number((annual / 12).toFixed(2));
+    return `$${formatMoney(perPay)} per paycheck ($${formatMoney(monthly)} per month / $${formatMoney(annual)} annually)`;
   });
 
   return result;
@@ -128,8 +226,8 @@ export function ensureStateConsistency(answer: string, userStateCode: string | n
     if (userStateName && s.toLowerCase() === userStateName.toLowerCase()) continue;
     const re = new RegExp(`\\b${s}\\b`, 'gi');
     if (re.test(result)) {
-      // Remove or replace the state mention to avoid confusion
-      result = result.replace(re, userStateName || userStateCode);
+      // Replace other state mentions with a neutral phrase to avoid wrong geo guidance.
+      result = result.replace(re, userStateName ? userStateName : 'your state');
     }
   }
   return result;
@@ -153,63 +251,83 @@ export interface CostProjectionParams {
 }
 
 export function estimateCostProjection(params: CostProjectionParams): string {
-  const { coverageTier, usage, network, state, age } = params;
-  // Base premiums
-  const rows = buildPerPaycheckBreakdown(coverageTier, 24);
+  const { coverageTier, usage, network, state } = params;
+  const tier = normalizeCoverageTierToBenefitTier(coverageTier);
+
   let msg = `Projected costs for ${coverageTier} coverage`;
-  if (network) msg += ` on the ${network} network`;
+  if (network) msg += ` (network preference: ${network})`;
   if (state) msg += ` (state: ${state})`;
   msg += ` with ${usage} usage:\n`;
 
-  // Usage factors roughly correspond to % of deductible
+  // Rough usage factors correspond to % of deductible and some portion beyond.
   const usageFactor = usage === 'low' ? 0.25 : usage === 'high' ? 0.75 : 0.5;
 
-  for (const r of rows) {
-    const meta = PLAN_META[r.plan] || { deductible: 0, outOfPocketMax: 0 };
-    const expectedOOP = Math.round(meta.deductible * usageFactor + (meta.outOfPocketMax - meta.deductible) * usageFactor * 0.2);
-    msg += `- ${r.plan}: premium $${r.perMonth}/month, expected out-of-pocket ~$${expectedOOP} for ${usage} usage\n`;
+  const plans = amerivetBenefits2024_2025.medicalPlans.filter((p) => {
+    if (!network) return true;
+    const n = network.toLowerCase();
+    if (n.includes('kaiser')) return p.provider.toLowerCase().includes('kaiser');
+    if (n.includes('bcbs') || n.includes('bcbstx')) return p.provider.toLowerCase().includes('bcbstx');
+    return true;
+  });
+
+  for (const p of plans) {
+    // Regional availability gate (only show Kaiser if user is in a supported region)
+    if (state && p.provider.toLowerCase().includes('kaiser')) {
+      const allowed = p.regionalAvailability.some((r) => r.toLowerCase() === 'california' || r.toLowerCase() === state.toLowerCase());
+      if (!allowed && !p.regionalAvailability.includes('nationwide')) {
+        continue;
+      }
+    }
+
+    const monthlyPremium = typeof p.tiers[tier] === 'number' ? Number(p.tiers[tier].toFixed(2)) : 0;
+    const annualPremium = annualFromMonthly(monthlyPremium);
+
+    const deductible = p.benefits?.deductible ?? 0;
+    const oopMax = p.benefits?.outOfPocketMax ?? 0;
+    const coinsurance = p.benefits?.coinsurance ?? 0.2;
+
+    const expectedOOPRaw = deductible * usageFactor + Math.max(0, oopMax - deductible) * usageFactor * coinsurance * 0.5;
+    const expectedOOP = Number(Math.min(expectedOOPRaw, oopMax || expectedOOPRaw).toFixed(0));
+
+    msg += `- ${p.name}: $${formatMoney(monthlyPremium)}/month ($${formatMoney(annualPremium)}/year) + expected out-of-pocket ~$${expectedOOP.toLocaleString()}\n`;
   }
 
-  msg += `\nThese are rough estimates. Actual costs depend on claims and network access.`;
-  if (network && network.toLowerCase().includes('kaiser') && state && !['CA','OR','WA'].includes((state||'').toUpperCase())) {
-    msg += `\nNote: Kaiser network is not available in ${state}, so those rows may not apply.`;
-  }
+  msg += `\nThese are rough estimates. Actual costs depend on claims, copays, network use, and covered services.`;
   return msg;
 }
 
 // Compare maternity exposure across plans (assumes typical $10k maternity cost)
 export function compareMaternityCosts(coverageTier: string): string {
   const typical = 10000;
+  const tier = normalizeCoverageTierToBenefitTier(coverageTier);
   let msg = `Maternity cost comparison (${coverageTier}):\n\n`;
-  msg += `**Assumptions:** Typical maternity care costs ~$10,000 (prenatal visits, delivery, postnatal care)\n\n`;
-  
-  for (const plan of Object.keys(PLAN_META)) {
-    const meta = PLAN_META[plan];
-    const afterDeductible = Math.max(0, typical - meta.deductible);
-    // assume 20% coinsurance on amount above deductible
-    const coinsurance = Math.round(afterDeductible * 0.2);
-    const totalOOP = meta.deductible + coinsurance;
-    
-    // Cap at out-of-pocket max
-    const cappedOOP = Math.min(totalOOP, meta.outOfPocketMax);
-    
-    // Get premium for this tier
-    const monthlyPremium = monthlyPremiumForPlan(plan, coverageTier) || 0;
+  msg += `**Assumptions:** Typical maternity care costs ~$10,000 (prenatal visits, delivery, postnatal care).\n\n`;
+
+  for (const p of amerivetBenefits2024_2025.medicalPlans) {
+    const deductible = p.benefits?.deductible ?? 0;
+    const oopMax = p.benefits?.outOfPocketMax ?? 0;
+    const coins = p.benefits?.coinsurance ?? 0.2;
+
+    const afterDeductible = Math.max(0, typical - deductible);
+    const coinsurance = Math.round(afterDeductible * coins);
+    const totalOOP = deductible + coinsurance;
+    const cappedOOP = oopMax > 0 ? Math.min(totalOOP, oopMax) : totalOOP;
+
+    const monthlyPremium = typeof p.tiers[tier] === 'number' ? Number(p.tiers[tier].toFixed(2)) : 0;
     const annualPremium = annualFromMonthly(monthlyPremium);
-    
-    msg += `**${plan}:**\n`;
-    msg += `• Estimated out-of-pocket: **$${cappedOOP.toLocaleString()}**\n`;
-    msg += `  - Deductible: $${meta.deductible.toLocaleString()}\n`;
-    msg += `  - Coinsurance (20%): $${coinsurance.toLocaleString()}\n`;
-    msg += `  - Out-of-pocket max: $${meta.outOfPocketMax.toLocaleString()}\n`;
-    msg += `• Annual premium: **$${annualPremium.toLocaleString()}** ($${monthlyPremium}/month)\n`;
-    msg += `• **Total estimated cost:** $${(cappedOOP + annualPremium).toLocaleString()}\n\n`;
+    const total = cappedOOP + annualPremium;
+
+    msg += `**${p.name}:**\n`;
+    msg += `• Estimated out-of-pocket: **$${cappedOOP.toLocaleString()}** (deductible $${deductible.toLocaleString()}, coinsurance ${(coins * 100).toFixed(0)}%)\n`;
+    if (oopMax) msg += `  - Out-of-pocket max: $${oopMax.toLocaleString()}\n`;
+    msg += `• Annual premium: **$${formatMoney(annualPremium)}** ($${formatMoney(monthlyPremium)}/month)\n`;
+    msg += `• **Total estimated annual cost:** $${formatMoney(total)}\n\n`;
   }
   
   msg += `**Key Considerations for Maternity:**\n`;
-  msg += `• **PPO Premium** typically offers lowest out-of-pocket for high-usage scenarios\n`;
-  msg += `• **HSA plans** let you use pre-tax dollars for qualified medical expenses\n`;
-  msg += `• **Kaiser HMO** (if available) provides integrated prenatal/postnatal care\n`;
+  msg += `• Lower deductibles and out-of-pocket maximums generally reduce exposure for delivery\n`;
+  msg += `• HSA-eligible plans can be attractive if you want to pay expenses with pre-tax dollars\n`;
+  msg += `• Network availability matters (e.g., Kaiser only in certain regions)\n`;
   msg += `• Prenatal visits, delivery, and postnatal care all count toward your deductible and OOP max\n\n`;
   
   msg += `**Recommendation:** If you're planning a pregnancy, consider plans with lower deductibles and out-of-pocket maximums, even if premiums are higher.\n\n`;
@@ -231,4 +349,5 @@ export default {
   cleanRepeatedPhrases,
   estimateCostProjection,
   compareMaternityCosts,
+  formatMoney,
 };

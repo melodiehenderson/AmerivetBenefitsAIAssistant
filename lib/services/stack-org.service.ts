@@ -35,7 +35,7 @@ export class StackOrgService {
       await repositories.documents.create({
         ...organization,
         type: 'organization'
-      });
+      } as any);
 
       // Also create in companies collection for compatibility
       await repositories.companies.create({
@@ -79,7 +79,7 @@ export class StackOrgService {
         return null;
       }
 
-      return doc as Organization;
+      return doc as unknown as Organization;
     } catch (error) {
       logger.error({ data: error }, 'Failed to get organization:');
       return null;
@@ -109,14 +109,14 @@ export class StackOrgService {
       };
 
       // Update in both collections
-      await repositories.documents.update(orgId, updatedOrg, 'organizations');
+      await repositories.documents.update(orgId, updatedOrg as any, 'organizations');
       await repositories.companies.update(orgId, {
         name: updatedOrg.name,
         domain: updatedOrg.domain,
         slug: updatedOrg.slug,
         metadata: updatedOrg.metadata,
         updatedAt: updatedOrg.updatedAt,
-      }, 'organizations');
+      } as any, 'organizations');
 
       logger.info({
         orgId,
@@ -158,9 +158,10 @@ export class StackOrgService {
       const query = `SELECT * FROM c WHERE c.type = 'organization' ORDER BY c.createdAt DESC`;
       const parameters: any[] = [];
       
-      const resources = await repositories.documents.query({ query, parameters });
+      const result = await repositories.documents.query({ query, parameters });
+      const items = ((result as any).items ?? result) as any[];
 
-      return resources.slice(0, limit);
+      return items.slice(0, limit);
     } catch (error) {
       logger.error({ data: error }, 'Failed to list organizations:');
       return [];
@@ -177,9 +178,10 @@ export class StackOrgService {
       const query = `SELECT * FROM c WHERE c.domain = @domain AND c.type = 'organization'`;
       const parameters = [{ name: '@domain', value: domain }];
       
-      const resources = await repositories.documents.query({ query, parameters });
+      const result2 = await repositories.documents.query({ query, parameters });
+      const items2 = ((result2 as any).items ?? result2) as any[];
 
-      return resources[0] || null;
+      return items2[0] || null;
     } catch (error) {
       logger.error({ data: error }, 'Failed to get organization by domain:');
       return null;
@@ -196,9 +198,10 @@ export class StackOrgService {
       const query = `SELECT * FROM c WHERE c.slug = @slug AND c.type = 'organization'`;
       const parameters = [{ name: '@slug', value: slug }];
       
-      const resources = await repositories.documents.query({ query, parameters });
+      const result3 = await repositories.documents.query({ query, parameters });
+      const items3 = ((result3 as any).items ?? result3) as any[];
 
-      return resources[0] || null;
+      return items3[0] || null;
     } catch (error) {
       logger.error({ data: error }, 'Failed to get organization by slug:');
       return null;

@@ -37,15 +37,21 @@ export default defineConfig({
     environmentOptions: { jsdom: { url: 'http://localhost' } },
     coverage: { provider: 'v8' },
     onConsoleLog: (log) => /TT: undefined function: 21/.test(log) ? false : undefined,
-    // Use threads pool on Windows to avoid fork runner timeouts
-    pool: 'threads',
-    poolOptions: {
-      threads: {
-        // Limit concurrency to reduce flakiness on CI/Windows
-        singleThread: isWindows,
-        maxThreads: isWindows ? 1 : 2,
-        minThreads: 1,
-      },
-    },
+    // Windows: forks pool is more reliable (threads can exit 1 despite passing)
+    pool: isWindows ? 'forks' : 'threads',
+    poolOptions: isWindows
+      ? {
+          forks: {
+            singleFork: true,
+            maxForks: 1,
+            minForks: 1,
+          },
+        }
+      : {
+          threads: {
+            maxThreads: 2,
+            minThreads: 1,
+          },
+        },
   },
 });

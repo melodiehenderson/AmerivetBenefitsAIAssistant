@@ -80,7 +80,7 @@ export async function GET(request: NextRequest) {
     }
 
     const { resources: conversations } = await container.items
-      .query<any>(query, {
+      .query(query, {
         parameters: userRole === 'employee' && userId ? [{ name: '@userId', value: userId }] : [],
       })
       .fetchAll();

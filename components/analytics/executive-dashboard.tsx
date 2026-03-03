@@ -408,7 +408,7 @@ export function ExecutiveDashboard({ companyId, timeRange = '30d' }: ExecutiveDa
                     <span className="font-medium">{quality.avgGroundingScore.toFixed(1)}%</span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span>Excellent (>90%):</span>
+                    <span>Excellent (&gt;90%):</span>
                     <span className="font-medium">{quality.groundingDistribution.excellent}</span>
                   </div>
                   <div className="flex justify-between text-sm">
@@ -416,7 +416,7 @@ export function ExecutiveDashboard({ companyId, timeRange = '30d' }: ExecutiveDa
                     <span className="font-medium">{quality.groundingDistribution.good}</span>
                   </div>
                   <div className="flex justify-between text-sm text-red-600">
-                    <span>Poor (<70%):</span>
+                    <span>Poor (&lt;70%):</span>
                     <span className="font-medium">{quality.groundingDistribution.poor}</span>
                   </div>
                 </div>

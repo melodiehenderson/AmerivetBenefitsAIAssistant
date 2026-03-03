@@ -8,10 +8,12 @@ export const isTestEnvironment = Boolean(
 
 export const guestRegex = /^guest-\d+$/;
 
-// Generate a dummy password for development/testing
-export const DUMMY_PASSWORD = 'TempPass123!@#';
+// Dummy password for development/testing only — gated so it cannot leak into production
+export const DUMMY_PASSWORD = process.env.NODE_ENV === 'production'
+  ? (() => { throw new Error('DUMMY_PASSWORD must not be used in production'); })()
+  : 'TempPass123!@#';
 
-// Firebase Collection Names
+// Collection Names (Azure Cosmos DB containers)
 export const COLLECTIONS = {
   USERS: 'users',
   COMPANIES: 'companies',

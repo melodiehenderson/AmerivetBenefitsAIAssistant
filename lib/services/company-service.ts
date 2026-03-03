@@ -40,7 +40,7 @@ class CompanyService {
 
       query += ' ORDER BY c.createdAt DESC';
 
-      const { resources } = await this.container.items.query<Company>({
+      const { resources } = await this.container.items.query({
         query,
         parameters
       }).fetchAll();
@@ -74,7 +74,7 @@ class CompanyService {
   async getCompanyById(id: string): Promise<Company | null> {
     await this.ensureInitialized();
     try {
-      const { resource } = await this.container.item(id).read<Company>();
+      const { resource } = await this.container.item(id).read();
       return resource || null;
     } catch (error) {
       if ((error as any).code === 404) {

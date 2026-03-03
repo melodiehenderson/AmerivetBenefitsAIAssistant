@@ -121,9 +121,26 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       fileUrl: uploadResult,
       storagePath: fileName,
       documentType: parsedMetadata.documentType,
+      type: (parsedMetadata.documentType as 'policy' | 'benefit_plan' | 'faq' | 'guide') || 'guide',
+      content: '', // Will be populated during processing
+      metadata: {
+        author: user.id,
+        tags: parsedMetadata.tags || [],
+        category: parsedMetadata.category || 'general',
+      },
+      processingStatus: 'pending' as const,
       category: parsedMetadata.category,
       tags: parsedMetadata.tags || [],
       companyId,
+      version: {
+        current: 1,
+        history: [{
+          version: 1,
+          timestamp: new Date().toISOString(),
+          userId: user.id,
+          changes: 'Initial upload',
+        }],
+      },
       status: 'pending',
       uploadedBy: user.id,
       createdAt: new Date().toISOString(),

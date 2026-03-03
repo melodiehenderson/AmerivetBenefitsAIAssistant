@@ -138,7 +138,7 @@ export const POST = requireCompanyAdmin(async (request: NextRequest) => {
         { 
           success: false,
           error: 'Invalid configuration format', 
-          details: error.errors 
+          details: error.issues 
         },
         { status: 400 }
       );

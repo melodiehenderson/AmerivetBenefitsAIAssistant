@@ -11,6 +11,17 @@ export interface ChatMessage {
   content: string;
 }
 
+export type DecisionStatus = 'selected' | 'declined' | 'interested';
+
+export interface DecisionEntry {
+  status: DecisionStatus;
+  value?: string;
+  updatedAt: number;
+  source: 'user' | 'assistant' | 'system';
+}
+
+export type DecisionValue = string | DecisionEntry;
+
 export type Session = {
   step: SessionStep;
   context: {
@@ -27,10 +38,43 @@ export type Session = {
   // Extended fields for advanced session management
   userName?: string;
   hasCollectedName?: boolean;
-  userAge?: number;
-  userState?: string;
+  userAge?: number | null;
+  userState?: string | null;
+  userDept?: string;                  // User's department/division for group filtering
   dataConfirmed?: boolean;
   messages?: ChatMessage[]; // For conversation history and context-aware query expansion
+  
+  // FIX: Conversation flow control flags
+  disclaimerShown?: boolean;          // "I'm not your enrollment platform" shown once
+  optionsPresented?: boolean;         // Have we shown plan options yet (don't ask "decided?" before this)
+  decisionsTracker?: Record<string, DecisionValue>; // Track user's benefit decisions/preferences for summary
+  askedForDemographics?: boolean;     // AMNESIA GUARDRAIL: Only ask for age/state once
+  
+  // NEW: Family & Coverage Information (Smart Memory)
+  coverageTier?: string;              // 'employee-only', 'employee-spouse', 'employee-children', 'employee-family'
+  payPeriods?: number;                // Paycheck frequency (24=biweekly, 26=weekly, 12=monthly)
+  familyDetails?: {                   // Detailed family info for personalized recommendations
+    hasSpouse?: boolean;
+    numChildren?: number;
+    childrenAges?: number[];
+    spouseWorksFullTime?: boolean;
+  };
+  medicalNeeds?: string[];            // Anticipated procedures: ['surgery', 'delivery', 'kidney stone', etc.]
+  pricingShownForCategory?: string[]; // Categories where pricing has been shown (avoid repeating)
+  
+  // NEW: Conversation Engine State (Senior Engineer Architecture)
+  currentTopic?: string;              // 'Medical', 'Dental', etc. - for topic focus
+  completedTopics?: string[];         // Topics user has resolved
+  selectedPlan?: string;              // Currently selected plan name
+  topicStates?: Record<string, {
+    topic: string;
+    questionsAsked: number;
+    plansDiscussed: string[];
+    userSelectedPlan: string | null;
+    resolved: boolean;
+  }>;
+  lastAskedQuestion?: string;         // Loop detection
+  loopCount?: number;                 // How many times we've asked same thing
 };
 
 // In-memory cache as a fast fallback; Redis provides true persistence across lambdas/region hops

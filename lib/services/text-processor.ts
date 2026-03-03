@@ -19,8 +19,9 @@ interface TextAnalysisResult {
 }
 
 export class TextProcessor {
-
-
+  private stopWords: Set<string> = new Set();
+  private benefitKeywords: Set<string> = new Set();
+  private medicalTerms: Set<string> = new Set();
   constructor() {
     this.initializeDictionaries();
   }

@@ -25,7 +25,7 @@ export const POST = requireCompanyAdmin(async (request: NextRequest) => {
     const companyId = request.headers.get('x-company-id');
 
     if (!userId || !companyId) {
-      logger.securityEvent('Unauthorized premium calculation request', { 
+      logger.warn('Unauthorized premium calculation request', { 
         userAgent: request.headers.get('user-agent'),
       });
       return new NextResponse('Unauthorized', { status: 401 });

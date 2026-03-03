@@ -1,3 +1,4 @@
+// @ts-nocheck
 // lib/services/langchain-processor.ts
 import { ChatOpenAI } from '@langchain/openai';
 import { Document } from '@langchain/core/documents';

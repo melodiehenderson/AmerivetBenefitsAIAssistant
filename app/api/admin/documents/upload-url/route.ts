@@ -5,7 +5,7 @@ import { requireCompanyAdmin } from '@/lib/auth/unified-auth';
 import { rateLimiters } from '@/lib/middleware/rate-limit';
 import { logger } from '@/lib/logger';
 import { getStorageServices } from '@/lib/azure/storage';
-import { crypto } from 'crypto'; // Native Node module for UUIDs
+import { randomUUID } from 'crypto'; // Native Node module for UUIDs
 
 // 1. SECURITY: Define allowed file types
 const ALLOWED_MIME_TYPES = new Set([
@@ -54,7 +54,7 @@ export const POST = requireCompanyAdmin(async (request: NextRequest) => {
     // 4. ROBUST NAMING: Use UUID to prevent collisions & sanitize filename
     // Sanitize: "My Report (2024).pdf" -> "my-report-2024.pdf"
     const sanitizedName = fileName.toLowerCase().replace(/[^a-z0-9.]/g, '-');
-    const blobName = `${crypto.randomUUID()}-${sanitizedName}`;
+    const blobName = `${randomUUID()}-${sanitizedName}`;
     
     // 5. CRITICAL FIX: Generate a WRITE-capable SAS URL
     // Note: Ensure your storage service has a method that creates a SAS with "write" permissions.

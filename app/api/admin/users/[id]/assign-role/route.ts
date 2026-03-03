@@ -96,7 +96,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         { 
           success: false,
           error: 'Invalid data format', 
-          details: error.errors 
+          details: error.issues 
         },
         { status: 400 }
       );

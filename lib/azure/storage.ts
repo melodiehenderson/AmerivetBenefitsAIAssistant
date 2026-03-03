@@ -1,4 +1,4 @@
-import { BlobServiceClient } from '@azure/storage-blob';
+import { BlobServiceClient, BlobSASPermissions, generateBlobSASQueryParameters, StorageSharedKeyCredential, SASProtocol } from '@azure/storage-blob';
 
 const isBuild = () => process.env.NEXT_PHASE === 'phase-production-build';
 
@@ -48,6 +48,42 @@ function createStorageServices(blobServiceClient: BlobServiceClient) {
           chunks.push(chunk instanceof Uint8Array ? chunk : new Uint8Array(Buffer.from(chunk)));
         }
         return Buffer.concat(chunks);
+      },
+
+      generateUploadUrl: async (blobName: string, contentType: string): Promise<string> => {
+        const containerClient = blobServiceClient.getContainerClient('documents');
+        await containerClient.createIfNotExists();
+        const blockBlobClient = containerClient.getBlockBlobClient(blobName);
+        
+        // Try to generate SAS token with proper permissions
+        // Fall back to the blob URL if credential extraction fails (e.g., managed identity)
+        try {
+          const accountName = blobServiceClient.accountName;
+          const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING || '';
+          const keyMatch = connectionString.match(/AccountKey=([^;]+)/);
+          
+          if (accountName && keyMatch?.[1]) {
+            const sharedKeyCredential = new StorageSharedKeyCredential(accountName, keyMatch[1]);
+            const startsOn = new Date();
+            const expiresOn = new Date(startsOn.getTime() + 30 * 60 * 1000); // 30 min
+            
+            const sasToken = generateBlobSASQueryParameters({
+              containerName: 'documents',
+              blobName,
+              permissions: BlobSASPermissions.parse('cw'), // create + write
+              startsOn,
+              expiresOn,
+              contentType,
+              protocol: SASProtocol.Https,
+            }, sharedKeyCredential).toString();
+            
+            return `${blockBlobClient.url}?${sasToken}`;
+          }
+        } catch {
+          // Fall through to direct URL
+        }
+        
+        return blockBlobClient.url;
       },
     },
     images: {

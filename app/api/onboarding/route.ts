@@ -227,7 +227,7 @@ export async function POST(req: NextRequest) {
     // PHASE 3: THE RESPONSE (RAG)
     const context: RetrievalContext = {
       companyId,
-      state: session.userState, 
+      state: session.userState ?? undefined, 
       dept: session.context?.dept,
     };
 

@@ -3,9 +3,6 @@
 **Frequency:** Monthly (1st of each month)  
 **Owner:** DevOps/Security Team  
 **Duration:** ~30 minutes  
-
----
-
 ## Pre-Audit Checklist
 
 - [ ] Ensure you have Azure CLI installed and authenticated

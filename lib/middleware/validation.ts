@@ -17,7 +17,7 @@ export function validateBody<T>(schema: z.ZodSchema<T>) {
         const errorResponse = NextResponse.json(
           {
             error: 'Validation failed',
-            details: error.errors.map(err => ({
+            details: error.issues.map(err => ({
               field: err.path.join('.'),
               message: err.message,
             })),
@@ -49,7 +49,7 @@ export function validateQuery<T>(schema: z.ZodSchema<T>) {
         const errorResponse = NextResponse.json(
           {
             error: 'Query validation failed',
-            details: error.errors.map(err => ({
+            details: error.issues.map(err => ({
               field: err.path.join('.'),
               message: err.message,
             })),
@@ -79,7 +79,7 @@ export function validateParams<T>(schema: z.ZodSchema<T>) {
         const errorResponse = NextResponse.json(
           {
             error: 'Parameter validation failed',
-            details: error.errors.map(err => ({
+            details: error.issues.map(err => ({
               field: err.path.join('.'),
               message: err.message,
             })),

@@ -39,7 +39,7 @@ const configs: Record<Environment, EnvironmentConfig> = {
   development: {
     name: 'Development',
     azureProject:
-      process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'benefits-dev',
+      process.env.AZURE_PROJECT_ID || 'benefits-dev',
     apiUrl: 'http://localhost:3000/api',
     appUrl: 'http://localhost:3000',
     features: {
@@ -70,10 +70,11 @@ const configs: Record<Environment, EnvironmentConfig> = {
   staging: {
     name: 'Staging',
     azureProject:
-      process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'benefits-staging',
+      process.env.AZURE_PROJECT_ID || 'benefits-staging',
     apiUrl:
-      `${process.env.NEXT_PUBLIC_APP_URL}/api` ||
-      'https://staging.benefitsbot.com/api',
+      process.env.NEXT_PUBLIC_APP_URL
+        ? `${process.env.NEXT_PUBLIC_APP_URL}/api`
+        : 'https://staging.benefitsbot.com/api',
     appUrl:
       process.env.NEXT_PUBLIC_APP_URL || 'https://staging.benefitsbot.com',
     features: {
@@ -104,9 +105,11 @@ const configs: Record<Environment, EnvironmentConfig> = {
   production: {
     name: 'Production',
     azureProject:
-      process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'benefits-prod',
+      process.env.AZURE_PROJECT_ID || 'benefits-prod',
     apiUrl:
-      `${process.env.NEXT_PUBLIC_APP_URL}/api` || 'https://benefitsbot.com/api',
+      process.env.NEXT_PUBLIC_APP_URL
+        ? `${process.env.NEXT_PUBLIC_APP_URL}/api`
+        : 'https://benefitsbot.com/api',
     appUrl: process.env.NEXT_PUBLIC_APP_URL || 'https://benefitsbot.com',
     features: {
       aiChat: true,

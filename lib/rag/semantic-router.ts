@@ -148,6 +148,32 @@ export function routeIntent(query: string): RouterResult {
       winningCategory = category as IntentCategory;
     }
   }
+
+  // COST_CHECK is usually a modifier ("how much") rather than the actual benefit category.
+  // If we have any concrete benefit signals, prefer those so retrieval can be filtered.
+  if (winningCategory === 'COST_CHECK') {
+    const benefitCategories: IntentCategory[] = ['MEDICAL', 'DENTAL_VISION', 'ANCILLARY', 'LIFE_DISABILITY', 'HSA_FSA'];
+    let bestBenefit: IntentCategory | null = null;
+    let bestBenefitScore = 0;
+    for (const cat of benefitCategories) {
+      if (scores[cat] > bestBenefitScore) {
+        bestBenefitScore = scores[cat];
+        bestBenefit = cat;
+      }
+    }
+
+    const hasCoverageTierCue = /(employee\s*\+\s*(?:child|children|spouse|family)|employee\s*only|per\s*pay(?:check|period)|per\s*pay\b)/i.test(query);
+    const hasVoluntaryCue = /(accident|critical illness|hospital indemnity|supplemental|voluntary|ad&d)/i.test(query);
+    const hasMedicalCue = /(ppo|hmo|hdhp|hsa|kaiser|medical|health)/i.test(query);
+
+    if (bestBenefit && bestBenefitScore >= 2) {
+      winningCategory = bestBenefit;
+      maxScore = bestBenefitScore;
+    } else if (!hasVoluntaryCue && (hasMedicalCue || hasCoverageTierCue)) {
+      // Most "coverage tier + per paycheck" questions are about medical plan premiums.
+      winningCategory = 'MEDICAL';
+    }
+  }
   
   // Calculate confidence (normalized)
   const totalScore = Object.values(scores).reduce((a, b) => a + b, 0);
@@ -322,9 +348,9 @@ export function getAgeBandedResponse(
     return null;
   }
   
-  return `Since this is an **age-rated product**, the cost varies based on your exact age and coverage amount you select. 
+  return `Since this is an age-rated product, the cost varies based on your exact age and coverage amount you select. 
 
-To see your personalized rate, please log in to the **Enrollment Portal** where you can view the exact premium for your age bracket and customize your coverage level.
+To see your personalized rate, please log in to the enrollment portal at ${process.env.ENROLLMENT_PORTAL_URL || 'https://wd5.myworkday.com/amerivet/login.htmld'} where you can view the exact premium for your age bracket and customize your coverage level.
 
 Would you like me to explain what this coverage includes instead?`;
 }

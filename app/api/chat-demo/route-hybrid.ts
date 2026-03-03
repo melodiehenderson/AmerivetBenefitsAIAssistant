@@ -77,7 +77,7 @@ const TOPIC_TRANSITION_PROMPT = `Now that we've covered medical, should we move 
 const ENROLLMENT_PORTAL_URL =
   process.env.ENROLLMENT_PORTAL_URL
   ?? process.env.ENROLLMENT_URL
-  ?? 'https://amerivetaibot.bcgenrolls.com/subdomain/login';
+  ?? 'https://wd5.myworkday.com/amerivet/login.htmld';
 
 export async function POST(req: NextRequest) {
   try {

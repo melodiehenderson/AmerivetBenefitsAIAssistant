@@ -234,7 +234,7 @@ function PureArtifact({
 
   const artifactDefinition = artifactDefinitions.find(
     (definition) => definition.kind === artifact.kind,
-  );
+  ) as any;
 
   if (!artifactDefinition) {
     throw new Error('Artifact definition not found!');

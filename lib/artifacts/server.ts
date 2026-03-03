@@ -119,7 +119,7 @@ export async function getDocument(documentId: string, userId: string): Promise<D
     const repositories = await getRepositories();
     const documentsRepository = repositories.documents;
     
-    const document = await documentsRepository.getById(documentId);
+    const document = await documentsRepository.getById(documentId) as any;
     
     if (!document) {
       console.warn('Document not found', { documentId, userId });
@@ -159,16 +159,17 @@ export async function listDocuments(userId: string, limit: number = 50, offset: 
       { name: '@limit', value: limit }
     ];
     
-    const result = await documentsRepository.query<Document>({ query, parameters });
+    const result = await documentsRepository.query({ query, parameters });
+    const items = ((result as any).items ?? result) as Document[];
     
     console.log('Documents listed successfully', {
       userId,
       limit,
       offset,
-      resultCount: result.length
+      resultCount: items.length
     });
     
-    return result;
+    return items;
   } catch (error) {
     logError('Failed to list documents:', error);
     return [];
@@ -196,7 +197,7 @@ async function saveDocument(props: SaveDocumentProps) {
 
     if (existingDocument) {
       // Update existing document
-      await documentsRepository.update(props.id, documentData, props.userId);
+      await documentsRepository.update(props.id, documentData as any, props.userId);
       console.log('Document updated in Cosmos DB', { 
         documentId: props.id, 
         title: props.title,
@@ -204,7 +205,7 @@ async function saveDocument(props: SaveDocumentProps) {
       });
     } else {
       // Create new document
-      await documentsRepository.create(documentData);
+      await documentsRepository.create(documentData as any);
       console.log('Document created in Cosmos DB', { 
         documentId: props.id, 
         title: props.title,

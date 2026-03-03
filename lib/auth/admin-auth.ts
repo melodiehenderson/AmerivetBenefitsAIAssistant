@@ -13,14 +13,27 @@ export interface AdminAuthClaims {
 export class AdminAuth {
   async verifySessionCookie(sessionCookie: string, checkRevoked?: boolean): Promise<AdminAuthClaims> {
     try {
-      // For now, return a mock implementation
-      // In production, this would verify the actual session cookie
+      if (!sessionCookie || sessionCookie.length < 3) {
+        throw new Error('Empty or invalid session cookie');
+      }
+
+      // Validate session value against known roles
+      const validSessions: Record<string, { role: string }> = {
+        'admin': { role: 'super_admin' },
+        'employee': { role: 'employee' },
+      };
+      
+      const session = validSessions[sessionCookie];
+      if (!session) {
+        throw new Error('Invalid session cookie value');
+      }
+      
       logger.info('Admin session verified', { sessionCookie: sessionCookie.substring(0, 10) + '...' });
       
       return {
-        uid: 'admin-user-id',
-        email: 'admin@example.com',
-        role: 'super_admin',
+        uid: `${sessionCookie}-user-id`,
+        email: `${sessionCookie}@amerivet.com`,
+        role: session.role,
         companyId: DEFAULT_COMPANY_ID,
       };
     } catch (error) {
@@ -31,15 +44,13 @@ export class AdminAuth {
 
   async verifyIdToken(idToken: string): Promise<AdminAuthClaims> {
     try {
-      // Mock implementation for now
-      logger.info('Admin ID token verified', { idToken: idToken.substring(0, 10) + '...' });
-      
-      return {
-        uid: 'admin-user-id',
-        email: 'admin@example.com',
-        role: 'super_admin',
-        companyId: DEFAULT_COMPANY_ID,
-      };
+      if (!idToken || idToken.length < 3) {
+        throw new Error('Empty or invalid ID token');
+      }
+
+      // For the shared-password auth system, the token is the session cookie value
+      // Delegate to session cookie verification
+      return this.verifySessionCookie(idToken);
     } catch (error) {
       logger.error('Failed to verify admin ID token', { data: error as Error });
       throw new Error('Invalid ID token');

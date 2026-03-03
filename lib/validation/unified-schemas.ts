@@ -150,7 +150,7 @@ export const messageSchema = baseDocumentSchema.extend({
   toolResults: z.any().optional(),
   usage: z.any().optional(),
   finishReason: z.string().optional(),
-  metadata: z.record(z.any()).optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
 });
 
 // ============================================================================
@@ -174,7 +174,7 @@ export const dateRangeSchema = z.object({
 // Search schema
 export const searchSchema = z.object({
   query: z.string().min(1, 'Search query is required'),
-  filters: z.record(z.any()).optional(),
+  filters: z.record(z.string(), z.any()).optional(),
   pagination: paginationSchema.optional(),
 });
 
@@ -239,7 +239,7 @@ export const chatRequestSchema = z.object({
     content: z.string().min(1, 'Message content is required'),
   })).min(1, 'At least one message is required'),
   chatId: z.string().optional(),
-  context: z.record(z.any()).optional(),
+  context: z.record(z.string(), z.any()).optional(),
 });
 
 // ============================================================================

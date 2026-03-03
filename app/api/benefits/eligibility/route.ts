@@ -26,7 +26,7 @@ export const POST = requireCompanyAdmin(async (request: NextRequest) => {
     const companyId = request.headers.get('x-company-id');
 
     if (!userId || !companyId) {
-      logger.securityEvent('Unauthorized eligibility check request', {
+      logger.warn('Unauthorized eligibility check request', {
         userAgent: request.headers.get('user-agent'),
       });
       return new NextResponse('Unauthorized', { status: 401 });

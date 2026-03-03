@@ -16,7 +16,7 @@ import { z } from 'zod';
 const chatRequestSchema = z.object({
   message: z.string().min(1, 'Message is required'),
   conversationId: z.string().optional(),
-  context: z.record(z.any()).optional(),
+  context: z.record(z.string(), z.any()).optional(),
 });
 
 const STATE_CHANGE_TRIGGERS = ['change state', 'state change', 'update state', 'new state', 'switch state'];
@@ -490,7 +490,7 @@ Which of these would you like to learn about next?`
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { error: 'Invalid request data', details: error.errors },
+        { error: 'Invalid request data', details: error.issues },
         { status: 400 }
       );
     }

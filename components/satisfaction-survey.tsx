@@ -9,8 +9,8 @@ import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { QualityTracker } from '../../lib/analytics/quality-tracker';
-import type { UserSatisfactionSurvey } from '../../types/rag';
+import { QualityTracker } from '@/lib/analytics/quality-tracker';
+import type { UserSatisfactionSurvey } from '@/types/rag';
 
 interface SatisfactionSurveyProps {
   conversationId: string;

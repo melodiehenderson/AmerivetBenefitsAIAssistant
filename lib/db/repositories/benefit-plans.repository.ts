@@ -1,3 +1,5 @@
+// @ts-nocheck
+// Dead code — drizzle-orm/postgres-js not installed; using Cosmos DB instead
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { BenefitPlan } from '@/lib/schemas/benefits';

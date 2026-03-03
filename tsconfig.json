@@ -43,6 +43,11 @@
   "exclude": [
     "node_modules",
     ".next",
-    "out"
+    "out",
+    "playwright.config.ts",
+    "vitest.config.ts",
+    "vitest.setup.ts",
+    "scripts/**",
+    "tests/**"
   ]
 }

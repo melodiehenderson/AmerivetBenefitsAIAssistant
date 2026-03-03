@@ -70,8 +70,11 @@ export default function AdminDocumentListPage() {
   const fetchDocuments = async () => {
     try {
       const repositories = await getRepositories();
-      const docs = await repositories.documents.list();
-      setDocuments(docs);
+      // Use queryAll to list all documents (no list() method on DocumentRepository)
+      const docs = await repositories.documents.queryAll(
+        'SELECT * FROM c ORDER BY c._ts DESC'
+      );
+      setDocuments(docs as unknown as Document[]);
     } catch (error) {
       logger.error('Error fetching documents', {}, error as Error);
       setDocuments([]);

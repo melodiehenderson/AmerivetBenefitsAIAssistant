@@ -25,7 +25,7 @@ export const GET = withAdminAuth(async (request: NextRequest) => {
     return NextResponse.json({ companies });
 
   } catch (error) {
-    logError('Error fetching companies', error);
+    logError('Error fetching companies', error as Error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 });
@@ -47,7 +47,7 @@ export const POST = withAdminAuth(async (request: NextRequest) => {
     return NextResponse.json({ company }, { status: 201 });
 
   } catch (error) {
-    logError('Error creating company', error);
+    logError('Error creating company', error as Error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 });

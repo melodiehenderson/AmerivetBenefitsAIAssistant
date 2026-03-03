@@ -1,11 +1,13 @@
-﻿import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import { logger } from '@/lib/logger';
 import { hybridRetrieve } from '@/lib/rag/hybrid-retrieval';
 import { azureOpenAIService } from '@/lib/azure/openai';
 import type { RetrievalContext } from '@/types/rag';
 import { getOrCreateSession, updateSession, type Session } from '@/lib/rag/session-store';
 import { 
   validatePricingFormat, 
-  enforceMonthlyFirstFormat
+  enforceMonthlyFirstFormat,
+  cleanResponseText
 } from '@/lib/rag/response-utils';
 import {
   runValidationPipeline,
@@ -20,8 +22,13 @@ import {
   getAgeBandedResponse,
   type RouterResult
 } from '@/lib/rag/semantic-router';
+import pricingUtils from '@/lib/rag/pricing-utils';
 
 export const dynamic = 'force-dynamic';
+
+// Enrollment portal URL — use env var to avoid hardcoding
+const ENROLLMENT_PORTAL_URL = process.env.ENROLLMENT_PORTAL_URL || 'https://wd5.myworkday.com/amerivet/login.htmld';
+const HR_PHONE = process.env.HR_PHONE_NUMBER || '888-217-4728';
 
 // ============================================================================
 // 1. THE BRAIN: Intent Classification (Enhanced)
@@ -57,7 +64,8 @@ const US_STATES_MAP: Record<string, string> = {
 
 const US_STATE_CODES = new Set(Object.values(US_STATES_MAP));
 
-function extractStateCode(msg: string, hasAge: boolean): { code: string | null; token: string | null } {
+// export for testing
+export function extractStateCode(msg: string, hasAge: boolean): { code: string | null; token: string | null } {
   const original = msg.trim();
   const lower = original.toLowerCase();
 
@@ -74,17 +82,30 @@ function extractStateCode(msg: string, hasAge: boolean): { code: string | null; 
     }
   }
   if (bestName) {
-    return { code: US_STATES_MAP[bestName], token: bestName };
+    // ignore negated mentions, e.g. "not indiana" or "except colorado"
+    const idx = lower.indexOf(bestName);
+      const preceding = lower.slice(Math.max(0, idx - 20), idx);
+      if (/\b(?:not|n't|except|but not|without)\b/i.test(preceding)) {
+      bestName = null; // treat as if not found
+    } else {
+      return { code: US_STATES_MAP[bestName], token: bestName };
+    }
   }
 
   // 2) Two-letter codes (avoid false positives like "me" in "for me")
-  const hasLocationCue = /\b(in|from|live|located|state)\b/i.test(original);
+  // IMPORTANT: Do NOT include bare "in" here. It's too common and caused false positives
+  // for the state code "IN" (Indiana) in normal sentences.
+  const hasLocationCue = /\b(from|live|located|state)\b/i.test(original);
   const agePlusState = original.match(/\b(1[8-9]|[2-9][0-9])\b\s*[,\-\/\s]+\s*([A-Za-z]{2})\b/);
   const statePlusAge = original.match(/\b([A-Za-z]{2})\b\s*[,\-\/\s]+\s*\b(1[8-9]|[2-9][0-9])\b/);
   const adjacentToken = (agePlusState?.[2] || statePlusAge?.[1] || null)?.trim();
 
   const rawTokens = original.split(/[\s,.;:()\[\]{}<>"']+/).filter(Boolean);
   for (const raw of rawTokens) {
+    // if token appears in negated phrase, skip
+    const lowerRaw = raw.toLowerCase();
+    const negPattern = new RegExp(`\\b(?:not|n't|except|but not|without)\\s+${lowerRaw}\\b`, 'i');
+    if (negPattern.test(lower)) continue;
     const cleaned = raw.replace(/[^A-Za-z]/g, '');
     if (cleaned.length !== 2) continue;
 
@@ -102,11 +123,14 @@ function extractStateCode(msg: string, hasAge: boolean): { code: string | null; 
       isUpperInOriginal ||
       isAdjacentToAge ||
       (hasLocationCue && !ambiguousCode) ||
-      (hasLocationCue && ambiguousCode) ||
+      // Allow ambiguous codes only when explicit (except "in")
+      (hasLocationCue && ambiguousCode && lower2 !== 'in') ||
       (hasAge && !ambiguousCode) ||
       (hasAge && isAdjacentToAge);
 
     if (!accept) continue;
+    // Never treat lowercase "in" as Indiana; require explicit uppercase "IN" or adjacency to age.
+    if (lower2 === 'in' && !isUpperInOriginal && !isAdjacentToAge) continue;
     if (ambiguousCode && !isUpperInOriginal && !hasLocationCue && !isAdjacentToAge && !hasAge) continue;
 
     return { code: upper, token: cleaned };
@@ -141,18 +165,26 @@ function classifyInput(msg: string) {
 // 1.5 SMART METADATA EXTRACTION (Topic Classifier)
 // ============================================================================
 // Map user keywords to your specific Document Categories (Metadata)
+// IMPORTANT: Returns category ONLY if explicitly mentioned, not from vague keywords
 function extractCategory(msg: string): string | null {
   const lower = msg.toLowerCase();
   
-  if (lower.includes('medical') || lower.includes('health') || lower.includes('doctor') || lower.includes('rx') || lower.includes('prescription') || lower.includes('ppo') || lower.includes('hmo')) return 'Medical';
-  if (lower.includes('dental') || lower.includes('teeth') || lower.includes('ortho') || lower.includes('cleaning')) return 'Dental';
-  if (lower.includes('vision') || lower.includes('eye') || lower.includes('glasses') || lower.includes('contact') || lower.includes('exam')) return 'Vision';
-  if (lower.includes('life') || lower.includes('beneficiary') || lower.includes('death') || lower.includes('survivor')) return 'Life';
-  if (lower.includes('disability') || lower.includes('std') || lower.includes('ltd') || lower.includes('income') || lower.includes('wages')) return 'Disability';
-  if (lower.includes('hsa') || lower.includes('fsa') || lower.includes('spending') || lower.includes('savings')) return 'Savings';
-  
-  // Specific fix for "Critical Injury" issue - these are Voluntary benefits
-  if (lower.includes('critical') || lower.includes('accident') || lower.includes('injury') || lower.includes('hospital') || lower.includes('supplemental') || lower.includes('voluntary')) return 'Voluntary';
+  // EXPLICIT mentions only (user directly said the category name)
+  // Avoid ambiguous keywords like "healthy" which could be just casual conversation
+  if (lower.match(/\b(medical|health\s+insurance|health\s+plans?|medical\s+plans?|medical\s+coverage|health\s+coverage)\b/)) return 'Medical';
+  if (lower.match(/\b(dental|teeth|orthodont)\b/)) return 'Dental';
+  if (lower.match(/\b(vision|eye|glasses|contact)\b/)) return 'Vision';
+  if (lower.match(/\b(life\s+insurance|life\s+coverage)\b/)) return 'Life';
+  if (lower.match(/\b(disability|std|ltd|income\s+protection)\b/)) return 'Disability';
+  if (lower.match(/\b(hsa|fsa|spending|savings\s+account)\b/)) return 'Savings';
+  if (lower.match(/\b(critical|accident|injury|hospital|supplemental|voluntary|ad&d)\b/)) return 'Voluntary';
+
+  // Heuristic: coverage-tier + per-paycheck questions are almost always about medical plan premiums.
+  // This prevents accidental routing to Voluntary benefits when user didn't specify a category.
+  const hasCoverageTierCue = /(employee\s*\+\s*(?:child|children|spouse|family)|employee\s*only|individual|single)/i.test(lower);
+  const hasPaycheckCue = /(per\s*pay(?:check|period)|per\s*pay\b)/i.test(lower);
+  const hasOtherBenefitCue = /(dental|vision|life|disability|accident|critical illness|hospital indemnity)/i.test(lower);
+  if ((hasCoverageTierCue || hasPaycheckCue) && !hasOtherBenefitCue) return 'Medical';
   
   return null; // Fallback to searching everything
 }
@@ -180,9 +212,118 @@ function extractName(msg: string): string | null {
 }
 
 // ============================================================================
+// 1.6 FULL BENEFITS LIST & DECISION TRACKER
+// ============================================================================
+const ALL_BENEFITS_SHORT = 'Medical, Dental, Vision, Life Insurance, Disability, Critical Illness, Accident/AD&D, and HSA/FSA';
+
+const ALL_BENEFITS_MENU = `Here are all the benefits available to you as an AmeriVet employee:
+- Medical (PPO, HMO, HDHP/HSA, Kaiser where available)
+- Dental (DPPO, DHMO)
+- Vision
+- Life Insurance (Basic, Voluntary, Whole Life)
+- Disability (Short-Term and Long-Term)
+- Critical Illness
+- Accident/AD&D
+- HSA/FSA Accounts`;
+
+function normalizeBenefitCategory(keyword: string): string {
+  const lower = keyword.toLowerCase();
+  if (/medical|health|ppo|hmo|hdhp|kaiser/.test(lower)) return 'Medical';
+  if (/dental/.test(lower)) return 'Dental';
+  if (/vision|eye/.test(lower)) return 'Vision';
+  if (/life/.test(lower)) return 'Life Insurance';
+  if (/disability|std|ltd/.test(lower)) return 'Disability';
+  if (/critical/.test(lower)) return 'Critical Illness';
+  if (/accident|ad&d/.test(lower)) return 'Accident/AD&D';
+  if (/hsa|fsa/.test(lower)) return 'HSA/FSA';
+  return keyword.charAt(0).toUpperCase() + keyword.slice(1);
+}
+
+function detectDecision(query: string): { category: string; decision: string; status: 'selected' | 'declined' } | null {
+  const lower = query.toLowerCase();
+
+  // GUARD: Don't match decision patterns if this is a deduction/calculation request
+  // Pattern: User asking "how much would be deducted", "total deduction", etc.
+  if (/(?:how\s+much|how\s+much\s+would|total\s+deduction|deducted?\s+per|cost\s+per|paycheck|per\s+pay)/i.test(query)) {
+    return null; // Let the totalDeductionRequested intercept handle it
+  }
+
+  // Decline patterns: "no vision needed", "skip dental", "don't need life"
+  const declineMatch = lower.match(/(?:no|don'?t\s*need|skip|pass\s*on|not\s*interested\s*in|don'?t\s*want|no\s*thanks\s*(?:on|for|to))\s+(?:the\s+)?(?:any\s+)?(medical|dental|vision|life|disability|critical|accident|hsa|fsa)/i);
+  if (declineMatch) {
+    const cat = normalizeBenefitCategory(declineMatch[1]);
+    return { category: cat, decision: 'Declined', status: 'declined' };
+  }
+
+  // Explicit decline of current topic: "no thanks", "I'm good", "not for me" (with context)
+  const explicitDecline = /^(no thanks|i'?m good|not for me|pass|skip it|skip this|i'?ll pass|not interested|no need)$/i.test(lower.trim());
+  // This will be handled with session.currentTopic in the route logic
+
+  // Selection patterns: "I'll go with Kaiser", "I want the PPO", "sign me up for HDHP"
+  const selectMatch = lower.match(/(?:i'?ll?\s*(?:go\s*with|take|choose|want|pick)|let'?s?\s*go\s*with|i\s*(?:chose|picked|selected|want)|sign\s*me\s*up\s*for|enroll\s*(?:me\s*)?in|i\s*(?:like|prefer))\s+(?:the\s+)?(.+?)(?:\s*plan)?$/i);
+  if (selectMatch) {
+    const plan = selectMatch[1].trim();
+    const cat = normalizeBenefitCategory(plan);
+    return { category: cat, decision: plan.charAt(0).toUpperCase() + plan.slice(1), status: 'selected' };
+  }
+
+  return null;
+}
+
+function isSummaryRequest(query: string): boolean {
+  const lower = query.toLowerCase();
+  return /\b(summary|recap|review|what\s+(?:have\s+i|did\s+i)\s+(?:decided|chosen|picked|selected)|show\s+(?:me\s+)?my\s+(?:choices|selections|decisions)|wrap\s*up|overview\s+of\s+my)\b/i.test(lower);
+}
+
+function compileSummary(decisions: Record<string, any>, userName: string): string {
+  const entries = Object.entries(decisions);
+  if (entries.length === 0) {
+    return `I don't have any benefit decisions recorded yet, ${userName}. Would you like to start exploring? Available benefits include: ${ALL_BENEFITS_SHORT}`;
+  }
+
+  let summary = `Here's a summary of your benefit decisions so far, ${userName}:\n\n`;
+  for (const [category, value] of entries) {
+    const entry = typeof value === 'string' ? { status: 'selected', value } : value;
+    if (entry.status === 'selected') {
+      summary += `- ${category}: ${entry.value || 'Selected'}\n`;
+    } else if (entry.status === 'declined') {
+      summary += `- ${category}: Declined\n`;
+    } else {
+      summary += `- ${category}: Interested (no final decision yet)\n`;
+    }
+  }
+
+  const allCategories = ['Medical', 'Dental', 'Vision', 'Life Insurance', 'Disability', 'Critical Illness', 'Accident/AD&D', 'HSA/FSA'];
+  const remaining = allCategories.filter(c => !decisions[c]);
+  if (remaining.length > 0) {
+    summary += `\nBenefits you haven't explored yet: ${remaining.join(', ')}\n`;
+    summary += `\nWould you like to look into any of these?`;
+  } else {
+    summary += `\nYou've reviewed all available benefits! When you're ready to enroll, visit the portal at ${ENROLLMENT_PORTAL_URL}`;
+  }
+
+  return summary;
+}
+
+function getRemainingBenefits(decisions: Record<string, any>): string[] {
+  const allCategories = ['Medical', 'Dental', 'Vision', 'Life Insurance', 'Disability', 'Critical Illness', 'Accident/AD&D', 'HSA/FSA'];
+  return allCategories.filter(c => !decisions[c]);
+}
+
+// ============================================================================
 // 2. SYSTEM PROMPT (Senior Engineer - Stateful Guarded Agent)
 // ============================================================================
 function buildSystemPrompt(session: any): string {
+  // Build decisions context for the LLM
+  const decisions = session.decisionsTracker || {};
+  const decisionEntries = Object.entries(decisions);
+  const decisionsText = decisionEntries.length > 0
+    ? decisionEntries.map(([cat, val]: [string, any]) => {
+        const entry = typeof val === 'string' ? { status: 'selected', value: val } : val;
+        return `- ${cat}: ${entry.status === 'selected' ? entry.value || 'Selected' : 'Declined'}`;
+      }).join('\n')
+    : 'None yet';
+
   return `You are the AmeriVet Virtual Benefits Assistant.
 Your goal is 100% accuracy and compliance. You help users navigate benefits, but you DO NOT process enrollments.
 
@@ -190,12 +331,14 @@ Your goal is 100% accuracy and compliance. You help users navigate benefits, but
 User: ${session.userName || "Guest"}
 State: ${session.userState || "Unknown"}
 Age: ${session.userAge || "Unknown"}
+Decisions so far:
+${decisionsText}
 
 ## RULES OF ENGAGEMENT
 
 ### 1. SCOPE ENFORCEMENT
 - ONLY answer based on the provided Context Documents
-- If the answer is not in context, say: "I don't have that specific information. Please check the enrollment portal or contact HR."
+- If the answer is not in context, say: "I don't have that specific information. Please check the enrollment portal at ${ENROLLMENT_PORTAL_URL} or contact HR."
 - NEVER make up plan details, costs, or coverage information
 
 ### 2. COST FORMATTING (Critical)
@@ -206,7 +349,7 @@ Age: ${session.userAge || "Unknown"}
 ### 3. AGE-BANDED PRODUCTS (Refuse Specific Costs)
 - For Voluntary Life, Disability, Critical Illness, AD&D:
 - DO NOT provide specific dollar amounts
-- Instead say: "This is an age-rated product. Please log in to the Enrollment Portal to see your personalized rate based on your age and coverage selection."
+- Instead say: "This is an age-rated product. Please log in to the Enrollment Portal at ${ENROLLMENT_PORTAL_URL} to see your personalized rate based on your age and coverage selection."
 
 ### 4. MEMORY RULES
 - You know the user's Age (${session.userAge}) and State (${session.userState})
@@ -217,6 +360,29 @@ Age: ${session.userAge || "Unknown"}
 - Use plain conversational text
 - Avoid markdown headers unless listing multiple options
 - Be concise and direct
+- When providing URLs, show them as plain text (e.g., https://example.com), NOT as markdown links like [text](url)
+- Use bullet points with dashes (-) not emojis
+
+### 6. LIFE INSURANCE CARRIER RULES (STRICT)
+- UNUM provides: Basic Life ($25k employer-paid) and Voluntary Life (term life)
+- ALLSTATE provides: Whole Life Insurance ONLY (permanent life with cash value)
+- NEVER say Allstate offers term life - that is INCORRECT
+- NEVER say UNUM offers whole/permanent life - that is INCORRECT
+- When discussing life insurance, ALWAYS mention all three types: Basic (UNUM), Voluntary (UNUM), and Whole Life (ALLSTATE)
+- Tip to share: Many advisors recommend splitting coverage approximately 20% into Permanent (Whole) Life and 80% into Voluntary (Term) Life for the best balance of lifetime coverage and affordable protection
+
+### 7. NEVER MENTION THESE
+- NEVER mention "Rightway" or "Rightway app" or "Rightway service" - this is NOT part of AmeriVet's benefits
+- NEVER mention the phone number (305) 851-7310 - this is NOT an AmeriVet number
+- If user asks for live support or to talk to a person, direct them to AmeriVet HR/Benefits at ${HR_PHONE} or the enrollment portal
+
+### 8. CONVERSATION FLOW
+- The FIRST time you help a user, mention: "I'm here to help you understand your benefits - actual enrollment happens at the portal."
+- Do NOT repeat that disclaimer in subsequent messages
+- When user finishes exploring a benefit (makes a decision or says they're done), proactively suggest the remaining benefits they haven't explored
+- ALL available AmeriVet benefits: Medical (PPO, HMO, HDHP/HSA, Kaiser where available), Dental (DPPO, DHMO), Vision, Life Insurance (Basic, Voluntary, Whole Life), Disability (Short-Term, Long-Term), Critical Illness, Accident/AD&D, HSA/FSA
+- Always list ALL remaining benefits when suggesting what to explore next - never give an abbreviated list
+- Only ask one question at a time to keep the conversation flowing naturally
 
 ${session.lastBotMessage ? `## CONTEXT
 Previously you said: "${session.lastBotMessage}"` : ''}
@@ -233,7 +399,9 @@ function buildSessionContext(session: Session) {
     userAge: session.userAge || null,
     userState: session.userState || null,
     hasCollectedName: session.hasCollectedName || false,
-    dataConfirmed: session.dataConfirmed || false
+    dataConfirmed: session.dataConfirmed || false,
+    decisionsTracker: session.decisionsTracker || {},
+    completedTopics: session.completedTopics || []
   };
 }
 
@@ -246,7 +414,7 @@ export async function POST(req: NextRequest) {
     // Accept optional context from frontend as fallback for serverless session loss
     const { query, companyId, sessionId, context: clientContext } = body;
     
-    console.log(`[QA] New request - Query: "${query}", SessionId: ${sessionId?.substring(0, 8)}...`);
+    logger.debug(`[QA] New request - QueryLen: ${query?.length}, SessionId: ${sessionId?.substring(0, 8)}...`);
     
     if (!query || !sessionId) return NextResponse.json({ error: 'Missing inputs' }, { status: 400 });
 
@@ -259,15 +427,15 @@ export async function POST(req: NextRequest) {
       if (clientContext.userName && !session.userName) {
         session.userName = clientContext.userName;
         session.hasCollectedName = true;
-        console.log(`[QA] Restored userName from client: ${session.userName}`);
+        logger.debug(`[QA] Restored userName from client context`);
       }
       if (clientContext.userAge && !session.userAge) {
         session.userAge = clientContext.userAge;
-        console.log(`[QA] Restored userAge from client: ${session.userAge}`);
+        logger.debug(`[QA] Restored userAge from client context`);
       }
       if (clientContext.userState && !session.userState) {
         session.userState = clientContext.userState;
-        console.log(`[QA] Restored userState from client: ${session.userState}`);
+        logger.debug(`[QA] Restored userState from client context`);
       }
       if (session.userName && session.userAge && session.userState) {
         session.dataConfirmed = true;
@@ -275,13 +443,13 @@ export async function POST(req: NextRequest) {
       }
     }
     
-    console.log(`[QA] Session state - Turn: ${session.turn}, HasName: ${session.hasCollectedName}, User: ${session.userName}, Age: ${session.userAge}, State: ${session.userState}`);
+    logger.debug(`[QA] Session state - Turn: ${session.turn}, HasName: ${session.hasCollectedName}, HasAge: ${!!session.userAge}, HasState: ${!!session.userState}`);
     
     // ------------------------------------------------------------------------
     // STEP 1: READ THE USER'S MIND (Intent Analysis)
     // ------------------------------------------------------------------------
     const intent = classifyInput(query);
-    console.log(`[QA] Intent analysis:`, intent);
+    logger.debug(`[QA] Intent analysis:`, intent);
 
     // ------------------------------------------------------------------------
     // STEP 2: SELF-HEALING (The "Win-Win" Fix)
@@ -290,7 +458,7 @@ export async function POST(req: NextRequest) {
     // FIX: If user input looks like "25 in CA" or "Medical", we force a session restore.
     
     if (!session.hasCollectedName && (intent.isContinuation || intent.isTopic || intent.isDemographics)) {
-       console.log(`[Self-Healing] Restoring lost session for input: "${query}"`);
+       logger.debug(`[Self-Healing] Restoring lost session, queryLen: ${query?.length}`);
        session.userName = "Guest"; // Fallback name so we don't loop
        session.hasCollectedName = true;
        session.step = 'active_chat';
@@ -304,18 +472,18 @@ export async function POST(req: NextRequest) {
         const ageMatch = query.match(/\b(1[8-9]|[2-9][0-9])\b/);
         if (ageMatch) {
             session.userAge = parseInt(ageMatch[0]);
-            console.log(`[QA] Extracted age: ${session.userAge}`);
+            logger.debug(`[QA] Extracted age from input`);
         }
     }
     if (intent.hasState && intent.stateCode) {
       session.userState = intent.stateCode;
-      console.log(`[QA] Extracted state: ${session.userState}`);
+      logger.debug(`[QA] Extracted state from input`);
     }
     
     // Ensure session is saved after data extraction
     if ((intent.hasAge && session.userAge) || (intent.hasState && session.userState)) {
       await updateSession(sessionId, session);
-        console.log(`[QA] Session updated - Age: ${session.userAge}, State: ${session.userState}`);
+        logger.debug(`[QA] Session updated - HasAge: ${!!session.userAge}, HasState: ${!!session.userState}`);
     }
     
     // If we have data now, ensure the gate is open and acknowledge
@@ -325,7 +493,7 @@ export async function POST(req: NextRequest) {
         
         // If query was ONLY data ("43 CA"), confirm it
         if (query.length < 40 && !query.includes("?") && intent.isDemographics) {
-            const msg = `Perfect! ${session.userAge} in ${session.userState}. Now I can show you accurate pricing. What would you like to explore? (Medical, Dental, Vision?)`;
+            const msg = `Perfect! ${session.userAge} in ${session.userState}. Now I can show you accurate pricing.\n\n${ALL_BENEFITS_MENU}\n\nWhat would you like to explore first?`;
             session.lastBotMessage = msg;
         await updateSession(sessionId, session);
             return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session) });
@@ -343,14 +511,14 @@ export async function POST(req: NextRequest) {
             session.userName = name;
             session.hasCollectedName = true;
             session.step = 'awaiting_demographics';
-            const msg = `Thanks, ${name}! It's great to meet you. 😊\n\nTo help me find the best plans for *you*, could you please share your **Age** and **State**?`;
+            const msg = `Thanks, ${name}! It's great to meet you.\n\nTo help me find the best plans for *you*, could you please share your **Age** and **State**?`;
             
             session.lastBotMessage = msg;
         await updateSession(sessionId, session);
             return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session) });
         } else {
             // Default Welcome
-            const msg = `Hi there! Welcome! 🎉\n\nI'm your AmeriVet Benefits Assistant. I'm here to help you compare plans and find the right fit.\n\nLet's get started — what's your name?`;
+            const msg = `Hi there! Welcome!\n\nI'm your AmeriVet Benefits Assistant. I'm here to help you compare plans and find the right fit.\n\nLet's get started - what's your name?`;
             session.lastBotMessage = msg;
         await updateSession(sessionId, session);
             return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session) });
@@ -364,7 +532,7 @@ export async function POST(req: NextRequest) {
     }
     // Only nullify age if it's actually invalid, not if it's a valid number
     if (session.userAge !== null && (typeof session.userAge !== 'number' || isNaN(session.userAge))) {
-        console.log(`[QA] Nullifying invalid age: ${session.userAge}`);
+        logger.debug(`[QA] Nullifying invalid age value`);
         session.userAge = null;
     }
 
@@ -372,7 +540,7 @@ export async function POST(req: NextRequest) {
     const hasState = !!session.userState;
     const hasData = hasAge && hasState;
 
-    console.log(`[QA] Gatekeeper check - Age: ${session.userAge}, State: ${session.userState}, HasAge: ${hasAge}, HasState: ${hasState}, HasData: ${hasData}`);
+    logger.debug(`[QA] Gatekeeper check - HasAge: ${hasAge}, HasState: ${hasState}, HasData: ${hasData}`);
 
     // CRITICAL FIX: If we have data, always allow the request through
     if (!hasData && !intent.isContinuation) {
@@ -411,26 +579,159 @@ export async function POST(req: NextRequest) {
 
     // Log when user with complete data proceeds to RAG
     if (hasData) {
-        console.log(`[QA] ✅ User has complete data (${session.userAge} in ${session.userState}), proceeding to RAG`);
+        logger.debug(`[QA] User has complete data, proceeding to RAG`);
+    }
+
+    // INTERCEPT: LIVE SUPPORT / TALK TO A PERSON
+    // ========================================================================
+    const lowerQuery = query.toLowerCase();
+    const isLiveSupportRequest = (
+        /\b(live\s*(support|agent|person|chat|help)|talk\s*to\s*(a\s*)?(human|person|agent|someone|representative|rep)|speak\s*(to|with)\s*(a\s*)?(human|person|agent|someone)|real\s*(person|human|agent)|customer\s*service|call\s*(someone|support)|phone\s*(number|support)|contact\s*(hr|support|someone)|get\s*(me\s*)?(a\s*)?(human|person|agent))\b/i.test(query)
+    );
+    if (isLiveSupportRequest) {
+        const nameRef = session.userName && session.userName !== 'Guest' ? session.userName : 'there';
+        const msg = `I understand you'd like to speak with someone directly, ${nameRef}. You can reach AmeriVet's HR/Benefits team at ${HR_PHONE} for personalized assistance. You can also visit the enrollment portal at ${ENROLLMENT_PORTAL_URL} for self-service options.\n\nIs there anything else I can help you with in the meantime?`;
+        session.lastBotMessage = msg;
+        await updateSession(sessionId, session);
+        return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session) });
+    }
+
+    // INTERCEPT: SUMMARY REQUEST
+    // ========================================================================
+    if (isSummaryRequest(query)) {
+        const nameRef = session.userName && session.userName !== 'Guest' ? session.userName : 'there';
+        const decisions = session.decisionsTracker || {};
+        const msg = compileSummary(decisions, nameRef);
+        session.lastBotMessage = msg;
+        await updateSession(sessionId, session);
+        return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session) });
+    }
+
+    // CUSTOM INTERCEPT: Accident plan name inquiry
+    const planNumbersQuery = /plan\s*1\b.*plan\s*2/i.test(lowerQuery);
+    if (planNumbersQuery && /\baccident\b/i.test(lowerQuery)) {
+        const msg = `There are two accident policy options: **Accident Plan 1** and **Accident Plan 2**. ` +
+                    `Plan 1 typically has a higher premium with more comprehensive benefits, while Plan 2 has a lower premium but lower benefit limits. ` +
+                    `Refer to the Accident Insurance summary for exact details, or contact HR at ${HR_PHONE}.`;
+        session.lastBotMessage = msg;
+        await updateSession(sessionId, session);
+        return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'accident-plan-names' } });
+    }
+
+    // CUSTOM INTERCEPT: Simple recommendation request ("I'm single and healthy, what do you recommend?")
+    // Returns deterministic Employee Only pricing instead of relying on LLM to hallucinate numbers
+    const recommendRequested = /\b(recommend|suggestion|which plan|what plan|what do you recommend|best plan)\b/i.test(lowerQuery);
+    const singleHealthy = /\b(single|healthy|just me|only me|individual|no dependents)\b/i.test(lowerQuery);
+    if (recommendRequested && singleHealthy) {
+      const payPeriods = session.payPeriods || 26;
+      const rows = pricingUtils.buildPerPaycheckBreakdown('Employee Only', payPeriods);
+        let msg = `Great question! For a single, healthy individual, here are your medical plan options (Employee Only):\n\n`;
+        for (const r of rows) {
+        if (/dental|vision/i.test(r.plan) || r.provider === 'VSP') continue; // medical-only list
+        msg += `- ${r.plan}: $${pricingUtils.formatMoney(r.perMonth)}/month ($${pricingUtils.formatMoney(r.annually)}/year, $${pricingUtils.formatMoney(r.perPaycheck)}/paycheck)\n`;
+        }
+        msg += `\nFor a single, healthy employee with low expected usage, **Standard HSA** is often a strong choice because it has the lowest premium and is HSA-eligible. If you expect more usage (or want a lower deductible), **Enhanced HSA** typically provides better cost protection at a higher premium. If you're in an area where it's available, **Kaiser Standard HMO** can be a good fit for people who prefer an integrated network.\n\nWould you like help choosing based on your expected usage (low/moderate/high) or comparing total annual cost?`;
+        session.lastBotMessage = msg;
+        await updateSession(sessionId, session);
+        return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'recommend-single' } });
+    }
+
+    // CUSTOM INTERCEPT: Cost modeling request
+    // User wants projected expenses or advanced cost comparison
+    // Tightened regex: require explicit cost-modeling language, avoid matching generic "low"/"high"
+    const costModelRequested = /(?:calculate|projected?|estimate).*(?:cost|expense)|healthcare costs.*(?:next year|for \d{4})|(?:low|moderate|high)\s+usage/i.test(lowerQuery);
+    if (costModelRequested) {
+        // try to parse usage level
+        const usageMatch = lowerQuery.match(/(low|moderate|high)\s+usage/);
+        const usage: any = usageMatch ? usageMatch[1] as 'low'|'moderate'|'high' : 'moderate';
+        const coverageTier = lowerQuery.includes('family') || /family\s*(?:of)?\s*\d|family\d/i.test(lowerQuery) ? 'Employee + Family' : (lowerQuery.includes('child') ? 'Employee + Child(ren)' : 'Employee Only');
+        const networkMatch = lowerQuery.match(/kaiser|ppo|hsa|hmo/i);
+        const network = networkMatch ? networkMatch[0] : undefined;
+        const msg = pricingUtils.estimateCostProjection({ coverageTier, usage, network, state: session.userState || undefined, age: session.userAge || undefined });
+        session.lastBotMessage = msg;
+        await updateSession(sessionId, session);
+        return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'cost-model' } });
+    }
+
+    // CUSTOM INTERCEPT: Maternity coverage comparison
+    // Default to Employee + Child for maternity (having a baby implies a dependent)
+    const maternityRequested = /maternity|baby|pregnan|birth|deliver/i.test(lowerQuery);
+    if (maternityRequested) {
+        const coverageTier = lowerQuery.includes('family') ? 'Employee + Family'
+            : lowerQuery.includes('employee only') ? 'Employee Only'
+            : 'Employee + Child(ren)'; // sensible default for maternity
+        const msg = pricingUtils.compareMaternityCosts(coverageTier);
+        session.lastBotMessage = msg;
+        await updateSession(sessionId, session);
+        return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'maternity' } });
+    }
+
+    // CUSTOM INTERCEPT: Orthodontics/braces direct answer (deterministic)
+    // Extended to match "braces" as well � users often ask about braces instead of orthodontics
+    const orthoRequested = /orthodont|braces/i.test(lowerQuery);
+    if (orthoRequested) {
+      // Provide a deterministic response rather than relying on the LLM.
+      // Keep it high-confidence and avoid hardcoding limits unless grounded.
+      const msg = `Orthodontia (including braces) coverage is available under the dental plan, but the exact limits, waiting periods, and cost-sharing depend on the plan details in your Dental Summary. If you want, tell me whether this is for a child or adult and I�ll help you find the relevant section.\n\nFor official coverage and pricing during enrollment, verify in Workday: ${ENROLLMENT_PORTAL_URL}`;
+        session.lastBotMessage = msg;
+        await updateSession(sessionId, session);
+        return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'orthodontics' } });
+    }
+
+    // INTERCEPT: DECISION DETECTION (Track user choices for summary)
+    // ========================================================================
+    const decision = detectDecision(query);
+    if (decision) {
+        if (!session.decisionsTracker) session.decisionsTracker = {};
+        session.decisionsTracker[decision.category] = {
+            status: decision.status,
+            value: decision.decision,
+            updatedAt: Date.now(),
+            source: 'user'
+        };
+        if (!session.completedTopics) session.completedTopics = [];
+        if (!session.completedTopics.includes(decision.category)) {
+            session.completedTopics.push(decision.category);
+        }
+        logger.debug(`[DECISION] ${decision.status === 'selected' ? '?' : '?'} ${decision.category}: ${decision.decision}`);
+        
+        // Build response acknowledging the decision + suggest remaining benefits
+        const nameRef = session.userName && session.userName !== 'Guest' ? session.userName : 'there';
+        const remaining = getRemainingBenefits(session.decisionsTracker);
+        let msg: string;
+        if (decision.status === 'selected') {
+            msg = `Great choice, ${nameRef}! I've noted that you'd like to go with ${decision.decision} for ${decision.category}.`;
+        } else {
+            msg = `Got it, ${nameRef}! I've noted that you're skipping ${decision.category} for now.`;
+        }
+        msg += `\n\nWhen you're ready to enroll, visit the portal at ${ENROLLMENT_PORTAL_URL}`;
+        if (remaining.length > 0) {
+            msg += `\n\nWould you like to explore any of your other benefits? You still have: ${remaining.join(', ')}`;
+        } else {
+            msg += `\n\nYou've now reviewed all your available benefits! You can say "summary" anytime to see a recap of your decisions.`;
+        }
+        session.lastBotMessage = msg;
+        await updateSession(sessionId, session);
+        return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session) });
     }
 
     // PHASE 3: STATEFUL GUARDED AGENT ARCHITECTURE
     // ========================================================================
     // Senior Engineer Approach:
-    // 1. Semantic Router → Classify intent BEFORE retrieval
-    // 2. State Gate → Ensure we have required user info
-    // 3. Filtered Retrieval → Only fetch relevant docs
-    // 4. Validation Pipeline → Verify quality
-    // 5. Post-Processing → Apply Brandon Rule, format response
+    // 1. Semantic Router ? Classify intent BEFORE retrieval
+    // 2. State Gate ? Ensure we have required user info
+    // 3. Filtered Retrieval ? Only fetch relevant docs
+    // 4. Validation Pipeline ? Verify quality
+    // 5. Post-Processing ? Apply Brandon Rule, format response
     
     // STEP 1: SEMANTIC ROUTER (Prevents "Medical Loop" bug)
     const routerResult = routeIntent(query);
-    console.log(`[ROUTER] Category: ${routerResult.category}, Confidence: ${(routerResult.confidence * 100).toFixed(0)}%`);
+    logger.debug(`[ROUTER] Category: ${routerResult.category}, Confidence: ${(routerResult.confidence * 100).toFixed(0)}%`);
     
     // STEP 2: AGE-BANDED PRODUCT CHECK (Refuse specific costs)
     const ageBandedResponse = getAgeBandedResponse(routerResult.category, routerResult);
     if (ageBandedResponse) {
-        console.log(`[QA] Age-banded product detected, returning portal redirect`);
+        logger.debug(`[QA] Age-banded product detected, returning portal redirect`);
         session.lastBotMessage = ageBandedResponse;
         await updateSession(sessionId, session);
         return NextResponse.json({ 
@@ -442,7 +743,9 @@ export async function POST(req: NextRequest) {
     }
     
     // STEP 3: BUILD CONTEXT WITH ROUTER FILTERS
-    const category = extractCategory(query) || (routerResult.category !== 'GENERAL' ? routerResult.category : null);
+    const explicitCategory = extractCategory(query);
+    const category = explicitCategory || (routerResult.category !== 'GENERAL' ? routerResult.category : null);
+    const explicitCategoryRequested = !!explicitCategory;
     
     // Enhanced context with user demographics + router filters
     const context: RetrievalContext & { userAge?: number; userState?: string } = {
@@ -451,11 +754,98 @@ export async function POST(req: NextRequest) {
       dept: session.context?.dept,
       category: category || undefined,
       // NEW: Pass user demographics for query enhancement
-      userAge: session.userAge,
-      userState: session.userState
+      userAge: session.userAge === null ? undefined : session.userAge,
+      userState: session.userState === null ? undefined : session.userState
     };
 
-    console.log(`[RAG] Searching with Context - Category: ${category}, Age: ${session.userAge}, State: ${session.userState}`);
+    // QUICK INTERCEPT: per-paycheck deterministic breakdown when user asks explicitly
+    const perPaycheckRequested = /per\s*pay(?:check|\s*period)?\b|per\s*pay\b/i.test(query);
+    const totalDeductionRequested = /\b(enroll\s+in\s+all\s+benefits|all\s+benefits|every\s+benefit|everything|total\s+deduct(?:ion|ed|ions)?|how\s+much\s+would\s+be\s+deducted)\b.*\b(per\s*pay(?:check|period)|per\s*pay)\b/i.test(query);
+
+    function extractCoverageFromQuery(q: string): string {
+      const low = q.toLowerCase();
+      if (low.includes('employee + family') || low.includes('employee + family')) return 'Employee + Family';
+      if (low.includes('employee + spouse')) return 'Employee + Spouse';
+      if (low.includes('employee + child') || low.includes('employee + children')) return 'Employee + Child(ren)';
+      if (low.includes('employee only') || low.includes('individual') || low.includes('single')) return 'Employee Only';
+      return 'Employee Only';
+    }
+
+    // INTERCEPT: Total deduction calculation — checked BEFORE generic per-paycheck
+    // so "enroll in all benefits per paycheck" triggers the total, not the per-plan breakdown.
+    if (totalDeductionRequested) {
+      const coverageTier = extractCoverageFromQuery(query);
+      const payPeriods = session.payPeriods || 26;
+
+      // Try saved selections first
+      const monthlyFromSelections = session.decisionsTracker
+        ? pricingUtils.computeTotalMonthlyFromSelections(session.decisionsTracker, coverageTier)
+        : 0;
+
+      if (monthlyFromSelections > 0) {
+        // User has confirmed plan selections — use them
+        const perPay = Number(((monthlyFromSelections * 12) / payPeriods).toFixed(2));
+        const annual = Number((monthlyFromSelections * 12).toFixed(2));
+        const msg = `Based on your selected benefits, estimated deductions are $${pricingUtils.formatMoney(perPay)} per paycheck ($${pricingUtils.formatMoney(monthlyFromSelections)}/month, $${pricingUtils.formatMoney(annual)}/year).\n\nThis includes only the plan premiums I can calculate from your saved selections. For exact deductions during enrollment (and any age-banded voluntary benefits), confirm in Workday: ${ENROLLMENT_PORTAL_URL}`;
+        session.lastBotMessage = msg;
+        await updateSession(sessionId, session);
+        return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'total-deduction' } });
+      }
+
+      // Fallback: "enroll in ALL benefits" — sum every standard plan for the coverage tier
+      const allRows = pricingUtils.buildPerPaycheckBreakdown(coverageTier, payPeriods);
+      // Filter region-limited plans if we know the user's state
+      const filtered = session.userState && session.userState.toUpperCase() !== 'CA'
+        ? allRows.filter(r => !/kaiser/i.test(r.plan))
+        : allRows;
+
+      const totalMonthly = Number(filtered.reduce((sum, r) => sum + r.perMonth, 0).toFixed(2));
+      const totalPerPay = Number(((totalMonthly * 12) / payPeriods).toFixed(2));
+      const totalAnnual = Number((totalMonthly * 12).toFixed(2));
+
+      let msg = `If you enrolled in **all** available standard benefits at the ${coverageTier} tier, your estimated total deduction would be approximately **$${pricingUtils.formatMoney(totalPerPay)} per paycheck** ($${pricingUtils.formatMoney(totalMonthly)}/month, $${pricingUtils.formatMoney(totalAnnual)}/year).\n\nBreakdown:\n`;
+      for (const r of filtered) {
+        msg += `- ${r.plan}: $${pricingUtils.formatMoney(r.perPaycheck)} per paycheck ($${pricingUtils.formatMoney(r.perMonth)}/month)\n`;
+      }
+      msg += `\n**Important:** This total includes Medical, Dental, and Vision premiums only. Voluntary benefits (Life/Disability/Critical Illness/Accident) are often age-banded and not included in this estimate.\n`;
+      if (!session.userState) {
+        msg += `\nNote: Some plans are region-limited (for example, Kaiser availability depends on your state). If you share your state, I can filter to only the plans available to you.\n`;
+      }
+      msg += `\nFor your exact payroll deductions during enrollment, please verify in Workday: ${ENROLLMENT_PORTAL_URL}`;
+      session.lastBotMessage = msg;
+      await updateSession(sessionId, session);
+      return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'total-deduction', allPlans: true } });
+    }
+
+    if (perPaycheckRequested) {
+      const coverageTier = extractCoverageFromQuery(query);
+      const payPeriods = session.payPeriods || 26;
+      const rows = pricingUtils.buildPerPaycheckBreakdown(coverageTier, payPeriods);
+
+      // Default to medical-only when user didn't explicitly ask about other benefit types.
+      const wantsNonMedical = /\b(dental|vision|life|disability|accident|critical illness|hospital indemnity|voluntary)\b/i.test(query);
+      const medicalOnly = wantsNonMedical ? rows : rows.filter(r => !/dental|vision/i.test(r.plan) && r.provider !== 'VSP');
+
+      // Hide region-limited plans if we know the user's state doesn't support them.
+      const filtered = session.userState && session.userState.toUpperCase() !== 'CA'
+        ? medicalOnly.filter(r => !/kaiser/i.test(r.plan))
+        : medicalOnly;
+
+      let msg = `Here are the estimated premiums for ${coverageTier} (based on ${payPeriods} pay periods/year):\n`;
+      for (const r of filtered) {
+        msg += `- ${r.plan}: $${pricingUtils.formatMoney(r.perPaycheck)} per paycheck ($${pricingUtils.formatMoney(r.perMonth)}/month, $${pricingUtils.formatMoney(r.annually)}/year)\n`;
+      }
+
+      if (!session.userState) {
+        msg += `\nNote: Some plans are region-limited (for example, Kaiser availability depends on your state). If you share your state, I can filter to only the plans available to you.`;
+      }
+      msg += `\nFor your exact payroll deductions during enrollment, please verify in Workday: ${ENROLLMENT_PORTAL_URL}`;
+      session.lastBotMessage = msg;
+      await updateSession(sessionId, session);
+      return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'per-paycheck' } });
+    }
+
+    logger.debug(`[RAG] Searching with Context - Category: ${category}, HasAge: ${!!session.userAge}, HasState: ${!!session.userState}`);
 
     // 2. HYBRID SEARCH (Vector + BM25 with Category Filter + Query Expansion)
     let result = await hybridRetrieve(query, context);
@@ -472,45 +862,56 @@ export async function POST(req: NextRequest) {
       bm25Scores: result.scores?.bm25 || [],
       vectorScores: result.scores?.vector || [],
       query,
-      userState: session.userState,
-      userAge: session.userAge,
+      userState: session.userState ?? null,
+      userAge: session.userAge ?? null,
       requestedCategory: category,
     });
     
-    console.log(`[PIPELINE] Initial: Retrieval=${pipelineResult.retrieval.passed ? '✅' : '❌'}, Reasoning=${pipelineResult.reasoning.passed ? '✅' : '❌'}, Action=${pipelineResult.suggestedAction}`);
+    logger.debug(`[PIPELINE] Initial: Retrieval=${pipelineResult.retrieval.passed ? '?' : '?'}, Reasoning=${pipelineResult.reasoning.passed ? '?' : '?'}, Action=${pipelineResult.suggestedAction}`);
 
     // 4. HANDLE PIPELINE RESULTS
     // ========================================================================
     
     // CASE A: Retrieval failed - try query expansion
     if (!pipelineResult.retrieval.passed || pipelineResult.suggestedAction === 'expand_query') {
-        console.log(`[PIPELINE] Triggering query expansion...`);
+        logger.debug(`[PIPELINE] Triggering query expansion...`);
         
-        // Expand search by removing category filter
-        if (category) {
-            const wideContext = { ...context, category: undefined };
-            result = await hybridRetrieve(query, wideContext);
+      // If the user explicitly asked for a specific category (e.g., "medical"), do NOT drop the category filter.
+      // Dropping the filter can return unrelated voluntary/accident docs and confuse pricing.
+      if (category && explicitCategoryRequested) {
+        logger.debug('[PIPELINE] Explicit category requested; skipping expansion to avoid cross-category leakage');
+        // Offer an alternative message instead of expanding
+        const alt = `I searched our documents for ${category} plans but couldn't find confident pricing for your request. Please try rephrasing (for example: "How much per paycheck for Employee + Child under PPO?") or check the enrollment portal at ${ENROLLMENT_PORTAL_URL} for the exact rate.`;
+        session.lastBotMessage = alt;
+        await updateSession(sessionId, session);
+        return NextResponse.json({ answer: alt, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { expanded: false, explicitCategoryRequested } });
+      }
+
+      // Expand search by removing category filter when the category was NOT explicitly requested
+      if (category) {
+        const wideContext = { ...context, category: undefined };
+        result = await hybridRetrieve(query, wideContext);
             
-            // Re-run validation
-            pipelineResult = runValidationPipeline({
-              chunks: result.chunks || [],
-              rrfScores: result.scores?.rrf || [],
-              bm25Scores: result.scores?.bm25 || [],
-              vectorScores: result.scores?.vector || [],
-              query,
-              userState: session.userState,
-              userAge: session.userAge,
-              requestedCategory: null, // Expanded search
-            });
+        // Re-run validation
+        pipelineResult = runValidationPipeline({
+          chunks: result.chunks || [],
+          rrfScores: result.scores?.rrf || [],
+          bm25Scores: result.scores?.bm25 || [],
+          vectorScores: result.scores?.vector || [],
+          query,
+          userState: session.userState ?? null,
+          userAge: session.userAge ?? null,
+          requestedCategory: null, // Expanded search
+        });
             
-            console.log(`[PIPELINE] After expansion: Retrieval=${pipelineResult.retrieval.passed ? '✅' : '❌'}, Reasoning=${pipelineResult.reasoning.passed ? '✅' : '❌'}`);
-        }
+        logger.debug(`[PIPELINE] After expansion: Retrieval=${pipelineResult.retrieval.passed ? '?' : '?'}, Reasoning=${pipelineResult.reasoning.passed ? '?' : '?'}`);
+      }
     }
     
     // CASE B: No results at all
     if (!result.chunks?.length) {
         const msg = intent.isContinuation 
-            ? "I'm ready! What topic should we cover first? (Medical, Dental, Vision?)"
+            ? `I'm ready! What topic should we cover first? Available benefits include: ${ALL_BENEFITS_SHORT}`
             : "I checked our benefits documents, but I couldn't find any information matching that request. Could you try rephrasing or specify which benefit you're asking about?";
         return NextResponse.json({ 
             answer: msg, 
@@ -525,8 +926,8 @@ export async function POST(req: NextRequest) {
     
     // CASE C: Reasoning failed - offer alternative
     if (!pipelineResult.reasoning.passed && pipelineResult.suggestedAction === 'offer_alternative') {
-        const alternativeMsg = generateAlternativeResponse(pipelineResult, category, session.userState);
-        console.log(`[PIPELINE] Offering alternative: "${alternativeMsg}"`);
+        const alternativeMsg = generateAlternativeResponse(pipelineResult, category, session.userState ?? null);
+        logger.debug(`[PIPELINE] Offering alternative: "${alternativeMsg}"`);
         
         // Don't fail completely - use the alternative as a helpful response
         session.lastBotMessage = alternativeMsg;
@@ -621,7 +1022,7 @@ ${confidenceInstruction}${alternativeHint}
 
 Answer:`;
 
-    console.log(`[RAG] Generating answer with ${result.chunks.length} chunks`);
+    logger.debug(`[RAG] Generating answer with ${result.chunks.length} chunks`);
 
     const completion = await azureOpenAIService.generateChatCompletion([
       { role: 'system', content: promptTemplate }
@@ -630,11 +1031,39 @@ Answer:`;
     let answer = completion.content.trim();
     answer = enforceMonthlyFirstFormat(answer);
     answer = validatePricingFormat(answer);
+
+    // Normalize pricing mentions to monthly-first canonical form and enforce state consistency
+    try {
+      answer = pricingUtils.normalizePricingInText(answer, session.payPeriods || 26);
+      answer = pricingUtils.ensureStateConsistency(answer, session.userState || null);
+      answer = cleanResponseText(answer);  // Remove repeated phrases and duplicate sentences
+    } catch (e) {
+      logger.warn('[QA] Pricing normalization failed:', e);
+    }
     
+    // POST-PROCESSING: Strip banned content (Rightway, wrong phone numbers)
+    if (/rightway/i.test(answer)) {
+        logger.warn('[QA] Stripped Rightway reference from LLM response');
+        answer = answer.replace(/[^.]*[Rr]ightway[^.]*\./g, '').trim();
+        // If stripping left the answer empty or broken, provide fallback
+        if (answer.length < 20) {
+            answer = "For live support or additional assistance, please contact AmeriVet HR/Benefits at ${HR_PHONE}. You can also visit the enrollment portal at ${ENROLLMENT_PORTAL_URL} for self-service options.\n\nIs there anything else I can help you with?";
+        }
+    }
+    // Strip the (305) 851-7310 number if it appears - replace with real HR number
+    answer = answer.replace(/\(?\s*305\s*\)?\s*[-.]?\s*851\s*[-.]?\s*7310/g, 'AmeriVet HR/Benefits at ${HR_PHONE}');
+
     // POST-PROCESSING: Apply Brandon Rule (HSA Cross-Sell)
+    
+    // POST-PROCESSING: Orthodontics grounding check
+    if (/orthodont/i.test(answer) && !result.chunks.some(c => /orthodont/i.test(c.content))) {
+        logger.warn('[QA] Removed ungrounded orthodontics claim from answer');
+        answer = answer.replace(/[^.]*orthodont[^.]*\./gi, '').trim();
+    }
+
     answer = applyBrandonRule(answer, routerResult);
 
-    console.log(`[RAG] Final answer generated (${answer.length} chars) with ${result.chunks?.length || 0} citations`);
+    logger.debug(`[RAG] Final answer generated (${answer.length} chars) with ${result.chunks?.length || 0} citations`);
 
     session.lastBotMessage = answer;
     
@@ -685,8 +1114,8 @@ Answer:`;
     // Enhanced error logging for debugging
     const errorMessage = error instanceof Error ? error.message : String(error);
     const errorStack = error instanceof Error ? error.stack : 'No stack trace';
-    console.error('[QA] Error:', errorMessage);
-    console.error('[QA] Stack:', errorStack);
+    logger.error('[QA] Error:', errorMessage);
+    logger.error('[QA] Stack:', errorStack);
     
     return NextResponse.json({ 
       answer: "I apologize for the technical difficulty. Let me help you get back on track. What would you like to know about your benefits?",

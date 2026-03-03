@@ -30,7 +30,7 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
-import { AMERIVET_BENEFIT_PLANS, AMERIVET_OPEN_ENROLLMENT } from '@/lib/data/amerivet-benefits';
+import { AMERIVET_BENEFIT_PLANS } from '@/lib/data/amerivet-benefits';
 import {
   Heart,
   Shield,
@@ -101,22 +101,22 @@ export function BenefitsManagement({
       coverage: plan.features.join(', '),
       monthlyCost: plan.premiums.employee.monthly,
       employerContribution: plan.premiums.employer?.monthly || 0,
-      deductible: plan.coverage.deductibles.individual,
-      outOfPocketMax: plan.coverage.outOfPocketMax.individual,
+      deductible: plan.coverage?.deductibles?.individual ?? 0,
+      outOfPocketMax: typeof plan.coverage?.outOfPocketMax === 'number' ? plan.coverage.outOfPocketMax : (plan.coverage?.outOfPocketMax as any)?.individual ?? 0,
       coverageDetails: {
-        deductibles: plan.coverage.deductibles,
-        coinsurance: plan.coverage.coinsurance,
-        copays: plan.coverage.copays,
-        outOfPocketMax: plan.coverage.outOfPocketMax,
+        deductibles: plan.coverage?.deductibles,
+        coinsurance: plan.coverage?.coinsurance,
+        copays: plan.coverage?.copays,
+        outOfPocketMax: plan.coverage?.outOfPocketMax,
       },
       eligibilityRules: {
-        waitingPeriod: plan.eligibility.waitingPeriod,
-        hoursRequired: plan.eligibility.hoursRequired,
+        waitingPeriod: (plan.eligibility as any).waitingPeriod ?? '30 days',
+        hoursRequired: (plan.eligibility as any).hoursRequired ?? plan.eligibility.minHours,
         employeeType: plan.eligibility.employeeType,
       },
       isActive: true,
       enrollmentCount: Math.floor(Math.random() * 50) + 10, // Mock enrollment data
-      createdAt: new Date(plan.coverageYear.start),
+      createdAt: new Date((plan as any).coverageYear?.start ?? Date.now()),
       updatedAt: new Date(),
     }));
 

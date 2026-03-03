@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { marked } from 'marked';
+import { WelcomeVideoModal } from '@/components/welcome-video-modal';
 
 interface Message {
   id: string;
@@ -107,6 +108,9 @@ export default function ChatClient() {
 
   return (
     <div className="flex flex-col h-full">
+      {/* Welcome Video Modal */}
+      <WelcomeVideoModal />
+      
       {/* Chat Header */}
       <div className="border-b p-4">
         <h1 className="text-xl font-semibold">Benefits AI Assistant</h1>

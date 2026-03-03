@@ -141,7 +141,7 @@ ${candidates}`;
       const rerankedChunks = topIndices.map((idx: number) => docs[idx]);
       
       // Add rerank scores based on position
-      return rerankedChunks.map((chunk, index) => ({
+      return rerankedChunks.map((chunk: any, index: number) => ({
         ...chunk,
         score: Math.max(chunk.score || 0, 0.9 - (index * 0.1)), // Boost reranked items
         metadata: {

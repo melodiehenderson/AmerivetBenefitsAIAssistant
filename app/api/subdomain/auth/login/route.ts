@@ -10,13 +10,21 @@ function json(status: number, body: unknown, extra?: HeadersInit) {
   });
 }
 
-export async function OPTIONS() {
+export async function OPTIONS(req: Request) {
+  // Restrict CORS to the app's own origin; never use wildcard on auth endpoints
+  const origin = req.headers.get('origin') || '';
+  const allowedOrigin = process.env.NEXT_PUBLIC_APP_URL || process.env.DOMAIN_ROOT || '';
+  const corsOrigin = origin && allowedOrigin && origin.endsWith(new URL(allowedOrigin).hostname)
+    ? origin
+    : allowedOrigin || origin; // fallback for dev
+
   return new Response(null, {
     status: 204,
     headers: {
-      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Origin': corsOrigin,
       'Access-Control-Allow-Methods': 'POST,OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Allow-Credentials': 'true',
       'Access-Control-Max-Age': '600',
     },
   });

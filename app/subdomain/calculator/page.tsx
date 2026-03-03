@@ -11,18 +11,54 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, Calculator, DollarSign, Activity, Pill, Hospital, HeartPulse } from 'lucide-react';
+import { ArrowLeft, Calculator, DollarSign, Activity, Pill, Hospital, HeartPulse, AlertCircle } from 'lucide-react';
 import { Slider } from '@/components/ui/slider';
+import Image from 'next/image';
+
+// Kaiser is only available in these states
+const KAISER_STATES = ['CA', 'CO', 'DC', 'GA', 'HI', 'MD', 'OR', 'VA', 'WA'];
+
+// US States for dropdown
+const US_STATES = [
+  { code: 'AL', name: 'Alabama' }, { code: 'AK', name: 'Alaska' }, { code: 'AZ', name: 'Arizona' },
+  { code: 'AR', name: 'Arkansas' }, { code: 'CA', name: 'California' }, { code: 'CO', name: 'Colorado' },
+  { code: 'CT', name: 'Connecticut' }, { code: 'DE', name: 'Delaware' }, { code: 'DC', name: 'District of Columbia' },
+  { code: 'FL', name: 'Florida' }, { code: 'GA', name: 'Georgia' }, { code: 'HI', name: 'Hawaii' },
+  { code: 'ID', name: 'Idaho' }, { code: 'IL', name: 'Illinois' }, { code: 'IN', name: 'Indiana' },
+  { code: 'IA', name: 'Iowa' }, { code: 'KS', name: 'Kansas' }, { code: 'KY', name: 'Kentucky' },
+  { code: 'LA', name: 'Louisiana' }, { code: 'ME', name: 'Maine' }, { code: 'MD', name: 'Maryland' },
+  { code: 'MA', name: 'Massachusetts' }, { code: 'MI', name: 'Michigan' }, { code: 'MN', name: 'Minnesota' },
+  { code: 'MS', name: 'Mississippi' }, { code: 'MO', name: 'Missouri' }, { code: 'MT', name: 'Montana' },
+  { code: 'NE', name: 'Nebraska' }, { code: 'NV', name: 'Nevada' }, { code: 'NH', name: 'New Hampshire' },
+  { code: 'NJ', name: 'New Jersey' }, { code: 'NM', name: 'New Mexico' }, { code: 'NY', name: 'New York' },
+  { code: 'NC', name: 'North Carolina' }, { code: 'ND', name: 'North Dakota' }, { code: 'OH', name: 'Ohio' },
+  { code: 'OK', name: 'Oklahoma' }, { code: 'OR', name: 'Oregon' }, { code: 'PA', name: 'Pennsylvania' },
+  { code: 'RI', name: 'Rhode Island' }, { code: 'SC', name: 'South Carolina' }, { code: 'SD', name: 'South Dakota' },
+  { code: 'TN', name: 'Tennessee' }, { code: 'TX', name: 'Texas' }, { code: 'UT', name: 'Utah' },
+  { code: 'VT', name: 'Vermont' }, { code: 'VA', name: 'Virginia' }, { code: 'WA', name: 'Washington' },
+  { code: 'WV', name: 'West Virginia' }, { code: 'WI', name: 'Wisconsin' }, { code: 'WY', name: 'Wyoming' },
+];
+
+// Coverage tier multipliers
+const COVERAGE_MULTIPLIERS: Record<string, number> = {
+  'employee-only': 1,
+  'employee-spouse': 1.8,
+  'employee-children': 1.5,
+  'employee-family': 2.5,
+};
 
 export default function CalculatorPage() {
   const router = useRouter();
   const [planType, setPlanType] = useState('hsa-high');
-  const [coverage, setCoverage] = useState('individual');
+  const [coverage, setCoverage] = useState('employee-only');
+  const [userState, setUserState] = useState('');
   const [salary, setSalary] = useState('60000');
   const [visits, setVisits] = useState([10]);
   const [hospitalDays, setHospitalDays] = useState([0]);
   const [rxPerMonth, setRxPerMonth] = useState([7]);
   const [surgeries, setSurgeries] = useState([0]);
+
+  const isKaiserAvailable = userState && KAISER_STATES.includes(userState);
 
   useEffect(() => {
     // Check auth
@@ -31,15 +67,24 @@ export default function CalculatorPage() {
       .catch(() => router.push('/subdomain/login'));
   }, [router]);
 
+  // Reset plan if Kaiser selected but not available in new state
+  useEffect(() => {
+    if (planType === 'kaiser-hmo' && !isKaiserAvailable) {
+      setPlanType('hsa-high');
+    }
+  }, [userState, isKaiserAvailable, planType]);
+
   const pricing = {
     'hsa-high': { label: 'HSA High Deductible', monthly: 250, copayVisit: 20, hospDay: 200, rx: 10, surgery: 500 },
     'ppo-standard': { label: 'PPO Standard', monthly: 380, copayVisit: 25, hospDay: 150, rx: 12, surgery: 400 },
     'ppo-premium': { label: 'PPO Premium', monthly: 520, copayVisit: 15, hospDay: 120, rx: 8, surgery: 300 },
+    'kaiser-hmo': { label: 'Kaiser HMO', monthly: 300, copayVisit: 15, hospDay: 100, rx: 8, surgery: 250 },
   } as const;
 
   const calc = useMemo(() => {
     const conf = pricing[planType as keyof typeof pricing];
-    const premiumMonthly = conf.monthly * (coverage === 'family' ? 2.5 : 1);
+    const multiplier = COVERAGE_MULTIPLIERS[coverage] || 1;
+    const premiumMonthly = conf.monthly * multiplier;
     const premiumAnnual = premiumMonthly * 12;
     const usage = {
       visits: visits[0] * conf.copayVisit,
@@ -52,11 +97,20 @@ export default function CalculatorPage() {
     return { conf, premiumMonthly, premiumAnnual, usage, outOfPocket, total };
   }, [planType, coverage, visits, hospitalDays, rxPerMonth, surgeries]);
 
+  const multiplier = COVERAGE_MULTIPLIERS[coverage] || 1;
+
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="sticky top-0 z-10 bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center">
+            <Image
+              src="/brand/amerivet-logo.png"
+              alt="AmeriVet"
+              width={40}
+              height={40}
+              className="mr-3"
+            />
             <Button variant="outline" onClick={() => router.push('/subdomain/dashboard')} className="mr-4">
               <ArrowLeft className="w-4 h-4 mr-2" />
               Back to Dashboard
@@ -78,7 +132,23 @@ export default function CalculatorPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* State selector */}
+              <div className="space-y-2">
+                <Label htmlFor="userState">Your State</Label>
+                <Select value={userState} onValueChange={setUserState}>
+                  <SelectTrigger id="userState">
+                    <SelectValue placeholder="Select your state..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {US_STATES.map(s => (
+                      <SelectItem key={s.code} value={s.code}>{s.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Plan Type selector */}
               <div className="space-y-2">
                 <Label htmlFor="planType">Plan Type</Label>
                 <Select value={planType} onValueChange={setPlanType}>
@@ -86,13 +156,23 @@ export default function CalculatorPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="hsa-high">HSA High Deductible - ${pricing['hsa-high'].monthly}/month</SelectItem>
-                    <SelectItem value="ppo-standard">PPO Standard - ${pricing['ppo-standard'].monthly}/month</SelectItem>
-                    <SelectItem value="ppo-premium">PPO Premium - ${pricing['ppo-premium'].monthly}/month</SelectItem>
+                    <SelectItem value="hsa-high">HSA High Deductible - ${Math.round(pricing['hsa-high'].monthly * multiplier)}/month</SelectItem>
+                    <SelectItem value="ppo-standard">PPO Standard - ${Math.round(pricing['ppo-standard'].monthly * multiplier)}/month</SelectItem>
+                    <SelectItem value="ppo-premium">PPO Premium - ${Math.round(pricing['ppo-premium'].monthly * multiplier)}/month</SelectItem>
+                    {isKaiserAvailable && (
+                      <SelectItem value="kaiser-hmo">Kaiser HMO - ${Math.round(pricing['kaiser-hmo'].monthly * multiplier)}/month</SelectItem>
+                    )}
                   </SelectContent>
                 </Select>
+                {userState && !isKaiserAvailable && (
+                  <div className="flex items-center gap-1 text-xs text-amber-600">
+                    <AlertCircle className="w-3 h-3" />
+                    Kaiser HMO not available in {US_STATES.find(s => s.code === userState)?.name}
+                  </div>
+                )}
               </div>
 
+              {/* Coverage Level selector - now with 4 tiers */}
               <div className="space-y-2">
                 <Label htmlFor="coverage">Coverage Level</Label>
                 <Select value={coverage} onValueChange={setCoverage}>
@@ -100,8 +180,10 @@ export default function CalculatorPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="individual">Individual</SelectItem>
-                    <SelectItem value="family">Family</SelectItem>
+                    <SelectItem value="employee-only">Employee Only</SelectItem>
+                    <SelectItem value="employee-spouse">Employee + Spouse</SelectItem>
+                    <SelectItem value="employee-children">Employee + Child(ren)</SelectItem>
+                    <SelectItem value="employee-family">Employee + Family</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

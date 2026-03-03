@@ -18,9 +18,9 @@ const ALLOWED_ORIGINS = new Set([
 ]);
 
 // Helper to validate origin securely
-function getCorsHeaders(origin: string | null) {
+function getCorsHeaders(origin: string | null): Record<string, string> {
   // If the incoming origin is in our whitelist, we allow it specifically.
-  // Otherwise, we return null (block it).
+  // Otherwise, we return an empty object (block it).
   const isAllowed = origin && Array.from(ALLOWED_ORIGINS).some(allowed => 
     origin === allowed || origin.endsWith('.workday.com') || origin.endsWith('.myworkday.com')
   );

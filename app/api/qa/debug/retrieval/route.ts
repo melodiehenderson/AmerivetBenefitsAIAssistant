@@ -19,7 +19,6 @@ export async function POST(req: NextRequest) {
     // Execute hybrid retrieval
     const retrievalResult = await hybridRetrieve(query, {
       companyId,
-      conversationId: 'debug-retrieval',
     });
 
     // Extract doc_id and scores from chunks
@@ -50,7 +49,7 @@ export async function POST(req: NextRequest) {
       uniqueDocIds: uniqueDocIds.size,
       docIdList: Array.from(uniqueDocIds),
       retrievedChunks: chunkDetails,
-      method: retrievalResult.metadata.method,
+      method: (retrievalResult as any).metadata?.method ?? 'hybrid',
     });
   } catch (error) {
     console.error('[DEBUG][RETRIEVAL] Error:', error);

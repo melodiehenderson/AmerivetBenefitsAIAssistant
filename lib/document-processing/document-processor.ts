@@ -429,7 +429,7 @@ export class DocumentProcessor {
         version: 1
       };
 
-      await repositories.documents.create(document);
+      await repositories.documents.create(document as any);
       
       logger.info('Document stored successfully', {
         documentId: document.id,

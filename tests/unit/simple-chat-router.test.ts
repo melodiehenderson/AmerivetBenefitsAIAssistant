@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { SimpleChatRouter } from '../lib/services/simple-chat-router';
+import { SimpleChatRouter } from '../../lib/services/simple-chat-router';
 
 describe('SimpleChatRouter - Enhanced Handlers', () => {
   let router: SimpleChatRouter;
@@ -173,7 +173,7 @@ describe('SimpleChatRouter - Enhanced Handlers', () => {
 
       it('should detect moderate usage as default', () => {
         (router as any).conversationHistory = [
-          { role: 'user', content: 'Just regular checkups' }
+          { role: 'user', content: "I'm not sure what my usage will be" }
         ];
         expect((router as any).extractUsageLevel()).toBe('moderate');
       });

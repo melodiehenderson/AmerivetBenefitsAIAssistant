@@ -51,7 +51,7 @@ export class AdvancedRateLimiter {
       const isAllowed = await this.checkRule(rule, key, req);
       
       if (!isAllowed) {
-        logger.securityEvent('Rate limit exceeded', {
+        logger.warn('Rate limit exceeded', {
           rule: rule.name,
           ip,
           userId,

@@ -1,4 +1,4 @@
-﻿// lib/logger.ts - Build-safe console logger (no pino dependencies)
+// lib/logger.ts - Build-safe console logger (no pino dependencies)
 
 const isBuildPhase = process.env.NEXT_PHASE === 'phase-production-build';
 
@@ -43,6 +43,6 @@ export const log = {
 export default logger;
 
 // Legacy compatibility
-export const logError = (msg: string, err?: Error, context?: any) => {
-  log.error(msg, err, context || {});
+export const logError = (msg: string, err?: unknown, context?: any) => {
+  log.error(msg, err instanceof Error ? err : new Error(String(err)), context || {});
 };

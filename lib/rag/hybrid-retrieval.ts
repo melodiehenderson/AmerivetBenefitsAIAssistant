@@ -12,6 +12,7 @@
 import { SearchClient, AzureKeyCredential } from "@azure/search-documents";
 import type { Chunk, RetrievalContext, RetrievalResult, HybridSearchConfig } from "../../types/rag";
 import { isVitest } from '@/lib/ai/runtime';
+import { logger } from '@/lib/logger';
 
 // ============================================================================
 // Query Expansion Maps (Keyword → Related Terms)
@@ -78,7 +79,7 @@ export function filterChunksByCategory(chunks: Chunk[], category: string): Chunk
   
   const keywords = CATEGORY_KEYWORDS[category] || [];
   if (keywords.length === 0) {
-    console.warn(`[CATEGORY_FILTER] Unknown category: ${category}`);
+    logger.warn(`[CATEGORY_FILTER] Unknown category: ${category}`);
     return chunks;
   }
   
@@ -93,11 +94,11 @@ export function filterChunksByCategory(chunks: Chunk[], category: string): Chunk
     return hasKeyword;
   });
   
-  console.log(`[CATEGORY_FILTER] ${category}: ${chunks.length} → ${filtered.length} chunks`);
+  logger.debug(`[CATEGORY_FILTER] ${category}: ${chunks.length} → ${filtered.length} chunks`);
   
   // If filtering removes too many results, return original to avoid empty responses
   if (filtered.length < Math.max(3, chunks.length * 0.3)) {
-    console.warn(`[CATEGORY_FILTER] Too aggressive! Only ${filtered.length}/${chunks.length} kept. Returning original.`);
+    logger.warn(`[CATEGORY_FILTER] Too aggressive! Only ${filtered.length}/${chunks.length} kept. Returning original.`);
     return chunks;
   }
   
@@ -133,7 +134,7 @@ export function detectIntentCategory(query: string): string | null {
   // Check multi-word phrases first
   for (const [keyword, category] of Object.entries(INTENT_CATEGORY_MAP)) {
     if (keyword.includes(' ') && lower.includes(keyword)) {
-      console.log(`[INTENT] Short-circuit: "${keyword}" → ${category}`);
+      logger.debug(`[INTENT] Short-circuit: "${keyword}" → ${category}`);
       return category;
     }
   }
@@ -142,7 +143,7 @@ export function detectIntentCategory(query: string): string | null {
   const words = lower.split(/\s+/);
   for (const word of words) {
     if (INTENT_CATEGORY_MAP[word]) {
-      console.log(`[INTENT] Short-circuit: "${word}" → ${INTENT_CATEGORY_MAP[word]}`);
+      logger.debug(`[INTENT] Short-circuit: "${word}" → ${INTENT_CATEGORY_MAP[word]}`);
       return INTENT_CATEGORY_MAP[word];
     }
   }
@@ -167,7 +168,7 @@ export function expandQuery(query: string): string {
   
   if (expansions.length > 0) {
     const expanded = `${query} ${expansions.join(' ')}`;
-    console.log(`[QUERY_EXPAND] "${query}" → "${expanded}"`);
+    logger.debug(`[QUERY_EXPAND] "${query}" → "${expanded}"`);
     return expanded;
   }
   
@@ -193,7 +194,7 @@ export function injectUserContext(
   
   if (parts.length > 0) {
     const contextPrefix = parts.join(' ');
-    console.log(`[CONTEXT_INJECT] Prepending: "${contextPrefix}"`);
+    logger.debug(`[CONTEXT_INJECT] Prepending demographics context`);
     return `${contextPrefix} ${query}`;
   }
   
@@ -227,8 +228,8 @@ function ensureSearchClient(): any | null {
   const indexName = (process.env.AZURE_SEARCH_INDEX || process.env.AZURE_SEARCH_INDEX_NAME || "chunks_prod_v1").trim();
 
   // DIAGNOSTIC: Log which index we're actually using
-  console.log(`[SEARCH] Initializing client with index: ${indexName} (env: ${process.env.AZURE_SEARCH_INDEX || 'NOT_SET'})`);
-  console.log(`[SEARCH] Endpoint: ${endpoint?.substring(0, 40)}..., API Key: ${apiKey ? 'SET' : 'MISSING'}`);
+  logger.debug(`[SEARCH] Initializing client with index: ${indexName}`);
+  logger.debug(`[SEARCH] Endpoint configured: ${!!endpoint}, API Key: ${apiKey ? 'SET' : 'MISSING'}`);
 
   if ((!endpoint || !apiKey) && !isVitest) {
     throw new Error("Azure Search credentials not configured");
@@ -312,7 +313,7 @@ async function searchWithFilterFallback(
 ): Promise<any> {
   // Category filtering: Try with category first, fall back if index doesn't support it
   // This prevents returning wrong benefit types (e.g., Accident Insurance when user asks for Medical)
-  let fullFilter = buildODataFilter(context, { includeCategory: true });
+  const fullFilter = buildODataFilter(context, { includeCategory: true });
   try {
     return await client.search(query, { ...baseOptions, filter: fullFilter });
   } catch (error) {
@@ -323,7 +324,7 @@ async function searchWithFilterFallback(
     const missingField = tryExtractMissingFilterField(error);
     // If category field doesn't exist, try without it
     const hasCategory = missingField?.toLowerCase().includes('category') || error?.toString().includes('category');
-    console.warn(
+    logger.warn(
       `${logPrefix} Filter error${missingField ? ` (missing: ${missingField})` : ""}; retrying${hasCategory ? ' without category filter' : ' with minimal filter'}. Original: "${fullFilter}"`
     );
     
@@ -333,7 +334,7 @@ async function searchWithFilterFallback(
       includeCategory: !hasCategory  // Only include category if error wasn't about missing category field
     });
 
-    console.warn(
+    logger.warn(
       `${logPrefix} Filter schema mismatch${missingField ? ` (missing: ${missingField})` : ""}; retrying with minimal filter. Original filter: "${fullFilter}"`
     );
 
@@ -365,9 +366,9 @@ async function generateEmbedding(text: string): Promise<number[]> {
     if (service && typeof service.generateEmbedding === 'function') {
       return await service.generateEmbedding(text);
     }
-    console.warn('[Embedding] azureOpenAIService.generateEmbedding not available; using fallback embedding');
+    logger.warn('[Embedding] azureOpenAIService.generateEmbedding not available; using fallback embedding');
   } catch (e) {
-    console.warn('[Embedding] Azure OpenAI import failed; using fallback embedding', e);
+    logger.warn('[Embedding] Azure OpenAI import failed; using fallback embedding', e);
   }
 
   // Fallback: deterministic 128-dim embedding
@@ -451,7 +452,7 @@ export async function retrieveVectorTopK(
       queryType: "simple",
     };
 
-    console.log(`[SEARCH][VECTOR] Query: "${query.substring(0, 50)}...", K: ${k}`);
+    logger.debug(`[SEARCH][VECTOR] QueryLen: ${query.length}, K: ${k}`);
 
     const results = await searchWithFilterFallback(
       client,
@@ -487,15 +488,15 @@ export async function retrieveVectorTopK(
     }
 
     const latencyMs = Date.now() - startTime;
-    console.log(`[SEARCH][VECTOR] ✅ ${chunks.length} results in ${latencyMs}ms`);
+    logger.debug(`[SEARCH][VECTOR] ✅ ${chunks.length} results in ${latencyMs}ms`);
     
     if (chunks.length === 0) {
-      console.warn(`[SEARCH][VECTOR] ⚠️ Zero results! companyId: "${context.companyId}", Query: "${query.substring(0, 80)}"`);
+      logger.warn(`[SEARCH][VECTOR] ⚠️ Zero results! companyId: "${context.companyId}", QueryLen: ${query.length}`);
     }
 
     return chunks;
   } catch (error) {
-    console.error("Vector search failed:", error);
+    logger.error("Vector search failed:", error);
     throw new Error(`Vector retrieval error: ${error}`);
   }
 }
@@ -599,18 +600,18 @@ export async function retrieveBM25TopK(
     }
 
     // Hard filtering is done in Azure Search via filterString; we keep a guard slice here
-    let filtered = chunks.slice(0, k);
+    const filtered = chunks.slice(0, k);
 
     const latencyMs = Date.now() - startTime;
-    console.log(`[SEARCH][BM25] ✅ ${filtered.length} results (${chunks.length} total before filter) in ${latencyMs}ms`);
+    logger.debug(`[SEARCH][BM25] ✅ ${filtered.length} results (${chunks.length} total before filter) in ${latencyMs}ms`);
     
     if (filtered.length === 0) {
-      console.warn(`[SEARCH][BM25] ⚠️ Zero results! companyId: "${context.companyId}", Query: "${query.substring(0, 80)}"`);
+      logger.warn(`[SEARCH][BM25] ⚠️ Zero results! companyId: "${context.companyId}", QueryLen: ${query.length}`);
     }
 
     return filtered;
   } catch (error) {
-    console.error("[SEARCH][BM25] ❌ Search failed:", error);
+    logger.error("[SEARCH][BM25] ❌ Search failed:", error);
     throw new Error(`BM25 retrieval error: ${error}`);
   }
 }
@@ -672,7 +673,7 @@ export function rrfMerge(
     }))
     .slice(0, topN);  // ONLY slice here, after merge and dedupe
 
-  console.log(`[RRF] Merged ${Array.from(scores.values()).length} unique chunks → top ${merged.length}`);
+  logger.debug(`[RRF] Merged ${Array.from(scores.values()).length} unique chunks → top ${merged.length}`);
   return merged;
 }
 
@@ -690,7 +691,7 @@ export async function rerankChunks(
   topN: number = 8
 ): Promise<Chunk[]> {
   // Improved stub: sort by relevance/rrf score before slicing so LLM sees highest-ranked chunks.
-  console.warn("Using simple reranking - integrate cross-encoder or semantic ranker in production");
+  logger.warn("Using simple reranking - integrate cross-encoder or semantic ranker in production");
   const score = (c: Chunk) =>
     (c.metadata.rrfScore ?? 0) +
     (c.metadata.relevanceScore ?? 0) +
@@ -758,7 +759,7 @@ export async function hybridRetrieve(
   const detectedCategory = detectIntentCategory(query);
   if (detectedCategory && !context.category) {
     (context as any).category = detectedCategory;
-    console.log(`[RAG] Intent short-circuit: forcing category="${detectedCategory}"`);
+    logger.debug(`[RAG] Intent short-circuit: forcing category="${detectedCategory}"`);
   }
   
   // B. Expand the query with related terms
@@ -768,7 +769,7 @@ export async function hybridRetrieve(
   const enhancedQuery = injectUserContext(expandedQuery, context);
   
   // D. DEBUG: Log the final search parameters
-  console.log(`DEBUG_SEARCH: Query="${enhancedQuery.substring(0, 100)}" | Category="${context.category || 'ALL'}" | State="${context.userState || 'ANY'}" | Age=${context.userAge || 'ANY'}`);
+  logger.debug(`[SEARCH] QueryLen=${enhancedQuery.length} | Category="${context.category || 'ALL'}" | HasState=${!!context.userState} | HasAge=${!!context.userAge}`);
 
   // Default configuration - HYBRID SEARCH with both Vector + BM25
   const cfg: HybridSearchConfig = {
@@ -793,8 +794,8 @@ export async function hybridRetrieve(
       ? await retrieveBM25TopK(enhancedQuery, context, cfg.bm25K)
       : [];
 
-    console.log(`[RAG] v=${vectorResults.length} b=${bm25Results.length} (hybrid: vector + BM25)`);
-    console.log(`DEBUG_SEARCH: ResultsFound=${vectorResults.length + bm25Results.length} (vector=${vectorResults.length}, bm25=${bm25Results.length})`);
+    logger.debug(`[RAG] v=${vectorResults.length} b=${bm25Results.length} (hybrid: vector + BM25)`);
+    logger.debug(`[SEARCH] ResultsFound=${vectorResults.length + bm25Results.length} (vector=${vectorResults.length}, bm25=${bm25Results.length})`);
 
     // Merge using RRF (both vector and BM25 results)
     const merged = rrfMerge(
@@ -803,14 +804,14 @@ export async function hybridRetrieve(
       cfg.finalTopK
     );
 
-    console.log(`[RAG] merged=${merged.length} (after RRF dedupe)`);
+    logger.debug(`[RAG] merged=${merged.length} (after RRF dedupe)`);
 
     // Re-rank if enabled
     const final = cfg.enableReranking
       ? await rerankChunks(query, merged, cfg.rerankedTopK)
       : merged.slice(0, cfg.rerankedTopK);
 
-    console.log(`[RAG] final=${final.length} (reranking=${cfg.enableReranking})`);
+    logger.debug(`[RAG] final=${final.length} (reranking=${cfg.enableReranking})`);
 
     const countDistinctDocs = (chunks: Chunk[]) => new Set(chunks.map((chunk) => chunk.docId)).size;
     const needsMoreCoverage = (chunks: Chunk[]) => {
@@ -819,7 +820,7 @@ export async function hybridRetrieve(
     };
 
     const logCoverage = (label: string, chunks: Chunk[]) => {
-      console.log(`[RAG][GUARD] ${label}: chunks=${chunks.length} docs=${countDistinctDocs(chunks)}`);
+      logger.debug(`[RAG][GUARD] ${label}: chunks=${chunks.length} docs=${countDistinctDocs(chunks)}`);
     };
 
   let guardedFinal = final;
@@ -829,7 +830,7 @@ export async function hybridRetrieve(
   let droppedPlanYearFilter = false;
   let bm25WideSweep = false;
     if (needsMoreCoverage(guardedFinal)) {
-      console.warn('[RAG][GUARD] Low coverage detected, expanding search…');
+      logger.warn('[RAG][GUARD] Low coverage detected, expanding search…');
       logCoverage('initial coverage', guardedFinal);
 
       const expandK = Math.max(cfg.vectorK, 80);
@@ -848,7 +849,7 @@ export async function hybridRetrieve(
       logCoverage('expanded coverage', guardedFinal);
 
       if (needsMoreCoverage(guardedFinal) && typeof context.planYear !== 'undefined') {
-        console.warn('[RAG][GUARD] Still low; retrying without planYear filter');
+        logger.warn('[RAG][GUARD] Still low; retrying without planYear filter');
         const contextNoYear: RetrievalContext = { ...context };
         delete (contextNoYear as any).planYear;
         guardedFinal = await expandResults(contextNoYear, expandK);
@@ -858,7 +859,7 @@ export async function hybridRetrieve(
       }
 
       if (needsMoreCoverage(guardedFinal)) {
-        console.warn('[RAG][GUARD] Final fallback: Vector-only wide sweep');
+        logger.warn('[RAG][GUARD] Final fallback: Vector-only wide sweep');
         const contextNoYear: RetrievalContext = { ...context };
         delete (contextNoYear as any).planYear;
         const vWide = await retrieveVectorTopK(query, contextNoYear, 150);
@@ -896,7 +897,7 @@ export async function hybridRetrieve(
       expansionPhases,
     };
   } catch (error) {
-    console.error("Hybrid retrieval failed:", error);
+    logger.error("Hybrid retrieval failed:", error);
     throw error;
   }
 }
@@ -939,7 +940,7 @@ export function buildContext(
     seenDocs.add(chunk.docId);
   }
 
-  console.log(`Context built: ${tokenCount} tokens from ${seenDocs.size} docs`);
+  logger.debug(`Context built: ${tokenCount} tokens from ${seenDocs.size} docs`);
   return context.trim();
 }
 

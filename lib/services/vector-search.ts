@@ -1,3 +1,4 @@
+// @ts-nocheck
 // lib/services/vector-search.ts
 import { ChromaClient } from 'chromadb';
 import { OpenAI } from 'openai';

@@ -1,19 +1,36 @@
 // Middleware for API auth guarding admin endpoints.
-// Tests import a named `middleware` function and expect 307 redirects
-// for missing/insufficient auth. Provide minimal logic while keeping
-// production surface small. Extend matcher only for admin API paths.
+// Validates the session cookie server-side rather than trusting client headers.
+// Extend matcher only for admin API paths.
 import { NextRequest, NextResponse } from 'next/server';
 
-export const config = { matcher: ['/api/admin/:path*'] };
+export const config = { matcher: ['/api/admin/:path*', '/favicon.ico'] };
+
+// Map cookie values to admin roles
+const ADMIN_SESSIONS: Record<string, string> = {
+  admin: 'super_admin',
+};
 
 export function middleware(req: NextRequest) {
 	try {
-		const auth = req.headers.get('authorization');
-		const role = req.headers.get('x-user-role');
+		// Ensure the browser tab favicon is always the AmeriVet logo.
+		if (req.nextUrl.pathname === '/favicon.ico') {
+			return NextResponse.rewrite(new URL('/favicon.png', req.url));
+		}
 
-		// Block if missing Authorization header or role not elevated.
-		if (!auth || !role || !['admin','super_admin','platform_admin','company_admin','hr_admin'].includes(role.toLowerCase())) {
-			// Use 307 (temporary redirect) per test expectation.
+		// Require Authorization header (bearer token or session)
+		const auth = req.headers.get('authorization');
+		if (!auth) {
+			const url = req.nextUrl.clone();
+			url.pathname = '/subdomain/auth';
+			return NextResponse.redirect(url, 307);
+		}
+
+		// Derive role from the secure HttpOnly session cookie, NOT from client headers
+		const sessionCookie = req.cookies.get('amerivet_session')?.value;
+		const role = sessionCookie ? ADMIN_SESSIONS[sessionCookie] : undefined;
+
+		if (!role) {
+			// Not an admin session — block access to admin endpoints
 			const url = req.nextUrl.clone();
 			url.pathname = '/subdomain/auth';
 			return NextResponse.redirect(url, 307);

@@ -44,7 +44,6 @@ function ChatPageContent() {
     if (personalize === 'true') {
       setShowPersonalize(true);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
   const scrollToBottom = () => {

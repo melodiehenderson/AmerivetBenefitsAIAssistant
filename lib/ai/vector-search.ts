@@ -1,6 +1,5 @@
 // lib/ai/vector-search.ts
 
-import type { SearchClient } from '@azure/search-documents';
 import { isBuild } from '@/lib/runtime/is-build';
 import { DISABLE_AZURE } from '@/lib/runtime/feature-flags';
 import { getContainer } from '@/lib/azure/cosmos-db';
@@ -12,11 +11,12 @@ const COMPANY_FIELD = process.env.AZURE_SEARCH_COMPANY_FIELD || 'company_id';
 const DOCUMENT_FIELD = process.env.AZURE_SEARCH_DOCUMENT_FIELD || 'document_id';
 const CONTENT_FIELD = process.env.AZURE_SEARCH_CONTENT_FIELD || 'content';
 
-let searchClient: SearchClient | null = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let searchClient: any = null;
 
 const sanitizeFilterValue = (value: string) => value.replace(/'/g, "''");
 
-async function ensureInitialized(): Promise<SearchClient | null> {
+async function ensureInitialized(): Promise<any> {
   if (isBuild || DISABLE_AZURE) return null;
   if (searchClient) return searchClient;
   if (!isNodeRuntime && !isVitest) throw new Error('Server-only module');

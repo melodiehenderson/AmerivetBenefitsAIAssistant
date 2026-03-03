@@ -77,7 +77,7 @@ export class ComplianceManager {
 
     try {
       // In a real implementation, this would be stored in a secure audit log
-      logger.securityEvent('Compliance audit event', auditEvent);
+      logger.warn('Compliance audit event', auditEvent);
       
       // Store in compliance database
       await this.storeAuditEvent(auditEvent);

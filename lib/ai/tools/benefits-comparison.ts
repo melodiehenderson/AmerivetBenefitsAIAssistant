@@ -56,13 +56,13 @@ export const benefitsComparisonTools = {
           type: plan.type,
           provider: plan.provider,
           monthlyCost: calculateEmployeeCost(plan.id, coverageTier as any),
-          deductibles: plan.coverage.deductibles,
-          coinsurance: plan.coverage.coinsurance,
-          copays: plan.coverage.copays,
-          outOfPocketMax: plan.coverage.outOfPocketMax,
+          deductibles: plan.coverage?.deductibles,
+          coinsurance: plan.coverage?.coinsurance,
+          copays: plan.coverage?.copays,
+          outOfPocketMax: plan.coverage?.outOfPocketMax,
           features: plan.features,
-          exclusions: plan.exclusions,
-          regionalRestrictions: plan.regionalRestrictions,
+          exclusions: (plan as any).exclusions,
+          regionalRestrictions: (plan as any).regionalRestrictions,
         };
       }).filter(Boolean) as Array<{
         id: string; name: string; type: string; provider: string;
@@ -101,8 +101,8 @@ export const benefitsComparisonTools = {
       
       if (region) {
         plans = plans.filter((plan) => 
-          !plan.regionalRestrictions || 
-          plan.regionalRestrictions.some((r: string) => r.toLowerCase().includes(region.toLowerCase()))
+          !(plan as any).regionalRestrictions || 
+          (plan as any).regionalRestrictions.some((r: string) => r.toLowerCase().includes(region.toLowerCase()))
         );
       }
 

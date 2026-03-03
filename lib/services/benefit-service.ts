@@ -23,7 +23,7 @@ class BenefitService {
     await this.ensureInitialized();
     try {
       const query = 'SELECT * FROM c WHERE c.companyId = @companyId AND c.isActive = true';
-      const { resources } = await this.plansContainer.items.query<BenefitPlan>({
+      const { resources } = await this.plansContainer.items.query({
         query,
         parameters: [{ name: '@companyId', value: companyId }]
       }).fetchAll();
@@ -54,7 +54,7 @@ class BenefitService {
   async getBenefitPlan(planId: string): Promise<BenefitPlan | null> {
     await this.ensureInitialized();
     try {
-      const { resource } = await this.plansContainer.item(planId).read<BenefitPlan>();
+      const { resource } = await this.plansContainer.item(planId).read();
       return resource || null;
     } catch (error) {
       if ((error as any).code === 404) {
@@ -315,7 +315,7 @@ class BenefitService {
     // Score plans based on criteria
     const scoredPlans = plans.map(plan => {
       let score = 0;
-      let factors = [];
+      const factors = [];
 
       if (criteria.includes('cost') || criteria.length === 0) {
         // Lower cost = higher score

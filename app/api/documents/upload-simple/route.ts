@@ -78,11 +78,15 @@ export const POST = requireCompanyAdmin(async (request: NextRequest) => {
       storageUrl: uploadResult.url,
       companyId,
       documentType: documentType as 'benefits_guide' | 'policy' | 'form' | 'other',
+      type: (documentType === 'benefits_guide' ? 'guide' : documentType === 'form' || documentType === 'other' ? 'policy' : documentType) as 'policy' | 'benefit_plan' | 'faq' | 'guide',
+      content: '',
       status: 'pending' as 'pending' | 'processing' | 'processed' | 'error',
+      processingStatus: 'pending' as 'pending' | 'processing' | 'ready' | 'failed',
       uploadedBy: userId,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      metadata: {}
+      metadata: { author: userId, tags: [], category: documentType },
+      version: { current: 1, history: [{ version: 1, timestamp: new Date().toISOString(), userId, changes: 'Initial upload' }] }
     };
 
     await repositories.documents.create(document);
@@ -110,10 +114,9 @@ export const POST = requireCompanyAdmin(async (request: NextRequest) => {
       
       // Update document status to error
       await repositories.documents.update(documentId, {
-        status: 'error',
-        error: error instanceof Error ? error.message : 'Processing failed',
+        processingStatus: 'failed',
         updatedAt: new Date().toISOString()
-      });
+      } as any);
     }
 
     return NextResponse.json({

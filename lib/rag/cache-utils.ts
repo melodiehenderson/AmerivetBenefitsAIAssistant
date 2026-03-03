@@ -273,7 +273,7 @@ export function findMostSimilar(
 
   for (const entry of recentQueries) {
     // Calculate dynamic threshold based on answer quality (grounding score)
-    const groundingScore = entry.metadata?.groundingScore ?? 0.70;
+    const groundingScore = (entry as any).metadata?.groundingScore ?? 0.70;
     let entryThreshold = 0.92; // Default conservative
 
     if (groundingScore >= 0.85) {

@@ -7,6 +7,7 @@ import { logger } from '@/lib/logger';
 import { simpleRAGSystem } from '@/lib/ai/simple-rag';
 import type { BenefitPlan } from '@/lib/data/amerivet';
 import { getPlansByRegion } from '@/lib/data/amerivet-benefits';
+import { compareMaternityCosts, estimateCostProjection } from '@/lib/rag/pricing-utils';
 
 type ChatContext = {
   state?: string;
@@ -21,7 +22,7 @@ interface ChatResponse {
   timestamp: Date;
 }
 
-const ENROLLMENT_URL = 'https://wd5.myworkday.com/amerivet/login.htmld';
+const ENROLLMENT_URL = process.env.ENROLLMENT_PORTAL_URL || 'https://wd5.myworkday.com/amerivet/login.htmld';
 
 export class SimpleChatRouter {
   private static readonly MEDICAL_TRANSITION =
@@ -127,7 +128,7 @@ export class SimpleChatRouter {
 
   private isAllBenefitsQuestion(message: string): boolean {
     const patterns = [
-      /all benefits/i,
+      /all(\s+the)?\s+benefits/i,
       /everything/i,
       /total.*deduct/i,
       /per paycheck.*all/i,
@@ -358,12 +359,10 @@ export class SimpleChatRouter {
     const coverageTier = this.extractCoverageTier();
     const network = this.extractNetworkPreference();
 
-    // Use the pricing-utils estimateCostProjection function
-    const { estimateCostProjection } = require('@/lib/rag/pricing-utils');
     const projection = estimateCostProjection({
       coverageTier: coverageTier || 'Employee Only',
       usage: usageLevel,
-      network,
+      network: network ?? undefined,
       state: context?.state,
       age: undefined // Would need to extract from conversation metadata
     });
@@ -424,14 +423,14 @@ export class SimpleChatRouter {
       /family[0-9]*\+?/i,
       /employee\s*[\+&]\s*family/i,
       /spouse\s*[\+&]\s*children/i,
-      /kids?/i,
-      /children/i,
-      /dependents/i
+      /spouse\s*[\+&]\s*kids?/i,
     ];
     
     const spousePatterns = [
       /employee\s*[\+&]\s*spouse/i,
       /just\s*me\s*and\s*(my\s*)?spouse/i,
+      /me\s*and\s*(my\s*)?spouse/i,
+      /spouse\s*plan/i,
       /couple/i
     ];
     
@@ -441,6 +440,14 @@ export class SimpleChatRouter {
       /just\s*me\s*and\s*(my\s*)?kids?/i,
       /just\s*me\s*and\s*(my\s*)?children/i
     ];
+
+    // Most specific first (spouse/children), then broader family.
+    if (spousePatterns.some(p => p.test(message))) {
+      return 'Employee + Spouse';
+    }
+    if (childPatterns.some(p => p.test(message)) || messageLower.includes('dependents')) {
+      return 'Employee + Child(ren)';
+    }
     
     if (familyPatterns.some(p => p.test(message))) {
       // Try to extract number
@@ -451,14 +458,6 @@ export class SimpleChatRouter {
         if (num >= 2) return 'Employee + Child(ren)';
       }
       return 'Employee + Family';
-    }
-    
-    if (spousePatterns.some(p => p.test(message))) {
-      return 'Employee + Spouse';
-    }
-    
-    if (childPatterns.some(p => p.test(message))) {
-      return 'Employee + Child(ren)';
     }
     
     // Check for single/employee only
@@ -506,8 +505,6 @@ export class SimpleChatRouter {
     const contextIntro = this.buildContextIntro(context);
     const coverageTier = context?.division ? 'Employee + Family' : 'Employee Only';
     
-    // Use the enhanced compareMaternityCosts function from pricing-utils
-    const { compareMaternityCosts } = require('@/lib/rag/pricing-utils');
     const maternityComparison = compareMaternityCosts(coverageTier);
 
     let response = `${contextIntro}**Maternity Coverage Comparison**\n\n`;

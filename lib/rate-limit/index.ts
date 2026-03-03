@@ -2,6 +2,22 @@ import { type NextRequest, NextResponse } from 'next/server';
 import { RATE_LIMITS } from '@/lib/config/index';
 import { MemoryRateLimiter } from './memory';
 
+// Lazy-load Redis rate limiter to avoid Azure SDK issues at build time
+let _redisLimiter: RateLimiter | null = null;
+async function getRedisRateLimiter(): Promise<RateLimiter> {
+  if (!_redisLimiter) {
+    try {
+      const { redisRateLimiter } = await import('./redis-limiter');
+      // The redis-limiter exposes a different interface shape; wrap it
+      _redisLimiter = redisRateLimiter as unknown as RateLimiter;
+    } catch {
+      // If Redis import fails, fall back to memory
+      _redisLimiter = new MemoryRateLimiter();
+    }
+  }
+  return _redisLimiter;
+}
+
 /**
  * Rate limiter interface
  */
@@ -34,13 +50,24 @@ export interface RateLimitError {
  * Get the appropriate rate limiter based on environment
  */
 function getRateLimiter(): RateLimiter {
-  // Use Firestore for production, in-memory for development
-  if (process.env.NODE_ENV === 'production') {
-    // return new FirestoreRateLimiter();
-    return new MemoryRateLimiter();
+  // In production with Redis configured, use Redis for distributed rate limiting.
+  // For Vercel serverless, in-memory rate limiting is per-invocation and thus
+  // ineffective. Redis persists across invocations.
+  if (process.env.NODE_ENV === 'production' && process.env.RATE_LIMIT_REDIS_URL) {
+    // Return a proxy that lazily initializes Redis
+    return {
+      async check(key: string, limit: number, window: number) {
+        const limiter = await getRedisRateLimiter();
+        return limiter.check(key, limit, window);
+      },
+      async reset(key: string) {
+        const limiter = await getRedisRateLimiter();
+        return limiter.reset(key);
+      },
+    };
   }
 
-  // Use in-memory rate limiter for development
+  // Use in-memory rate limiter for development / when Redis is not configured
   return new MemoryRateLimiter();
 }
 
@@ -173,11 +200,15 @@ export function withRateLimit(
 
     if (idToken) {
       try {
-        // const decodedToken = await adminAuth.verifyIdToken(idToken);
-        const decodedToken = { uid: 'mock-user-id' };
-        userId = decodedToken.uid;
+        // Decode the JWT payload to extract the user ID (without full verification,
+        // which is handled by the auth middleware). This is best-effort for rate-limit keying.
+        const payloadPart = idToken.split('.')[1];
+        if (payloadPart) {
+          const decoded = JSON.parse(Buffer.from(payloadPart, 'base64url').toString());
+          userId = decoded.userId || decoded.uid || decoded.sub;
+        }
       } catch {
-        // Auth not available
+        // Auth not available — will fall back to IP-based rate limiting
       }
     }
 

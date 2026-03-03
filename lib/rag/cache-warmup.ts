@@ -56,7 +56,7 @@ export async function warmupCache(
     timestamp: new Date(),
   };
 
-  if (isBuild() || !config.enabled) {
+  if (isBuild || !config.enabled) {
     console.log("[Cache Warmup] Skipped (build or disabled)");
     return stats;
   }
@@ -170,7 +170,7 @@ async function warmupSingleQuery(
 ): Promise<void> {
   try {
     // Build cache key
-    const { buildCacheKey, normalizeQueryWithSynonyms, hashQuery } = await import(
+    const { buildCacheKey } = await import(
       "./cache-utils"
     );
 
@@ -212,15 +212,9 @@ async function getCachedAnswer(
 ): Promise<QAResponse | null> {
   try {
     // Import at function level to avoid build-time dependency issues
-    const { cosmosClient } = await import("@/lib/azure/cosmos-db");
+    const { getContainer } = await import("@/lib/azure/cosmos-db");
 
-    if (!cosmosClient) {
-      return null;
-    }
-
-    const container = cosmosClient
-      .database("BenefitsChat")
-      .container("Conversations");
+    const container = await getContainer("Conversations");
 
     // Query for most recent answer to this query
     const { resources } = await container.items
@@ -279,16 +273,16 @@ function logWarmupEvent(stats: WarmupStats): void {
  * Call this in app/api/qa/route.ts or similar
  */
 export async function initializeWarmupOnStartup(): Promise<void> {
-  if (isBuild()) {
+  if (isBuild) {
     return; // Skip during build
   }
 
   try {
     // Import clients with runtime checks
     const { redisService } = await import("@/lib/azure/redis");
-    const { cosmosClient } = await import("@/lib/azure/cosmos-db");
+    const { getContainer } = await import("@/lib/azure/cosmos-db");
 
-    if (!redisService || !cosmosClient) {
+    if (!redisService || !getContainer) {
       console.log("[Cache Warmup] Clients not available, skipping");
       return;
     }

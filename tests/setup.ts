@@ -17,6 +17,10 @@ process.env.OPENAI_API_KEY = process.env.OPENAI_API_KEY || 'test-openai-key';
 process.env.AZURE_OPENAI_API_KEY = process.env.AZURE_OPENAI_API_KEY || 'test-azure-key';
 process.env.AZURE_OPENAI_ENDPOINT = process.env.AZURE_OPENAI_ENDPOINT || 'https://test.openai.azure.com';
 
+// In tests we intentionally avoid real Azure clients (Search/Cosmos/etc.)
+// to keep the suite hermetic and prevent background initialization errors.
+process.env.DISABLE_AZURE = process.env.DISABLE_AZURE || '1';
+
 // Mock for window.crypto needed by Playwright in a Node environment
 // Set up global window object if it doesn't exist
 if (typeof globalThis.window === 'undefined') {

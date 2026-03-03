@@ -25,7 +25,11 @@ export const metadata = {
   title: 'AmeriVet Benefits AI Assistant',
   description: 'Your personal AmeriVet benefits advisor powered by AI',
   icons: {
-    icon: '/brand/amerivet-logo.png',
+    icon: [
+      { url: '/favicon.png', type: 'image/png' },
+    ],
+    shortcut: '/favicon.png',
+    apple: '/favicon.png',
   },
 };
 
@@ -89,6 +93,8 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
+        <link rel="icon" href="/favicon.png" type="image/png" />
+        <link rel="shortcut icon" href="/favicon.png" type="image/png" />
         <script
           suppressHydrationWarning
           dangerouslySetInnerHTML={{

@@ -5,7 +5,7 @@
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { createHash, timingSafeEqual } from 'crypto';
+import { createHash, createHmac, timingSafeEqual } from 'crypto';
 import { logger } from '@/lib/logger';
 
 export interface SharedPasswordUser {
@@ -76,9 +76,21 @@ export class SharedPasswordAuth {
         };
       }
 
-      // Dual password system: Employee vs Admin
-      const EMPLOYEE_PASSWORD = 'amerivet2024!';
-      const ADMIN_PASSWORD = 'admin2024!';
+      // Dual password system: Employee vs Admin — read from env, never hardcoded
+      const EMPLOYEE_PASSWORD = (process.env.EMPLOYEE_PASSWORD ?? '').trim();
+      const ADMIN_PASSWORD = (process.env.ADMIN_PASSWORD ?? '').trim();
+
+      if (!EMPLOYEE_PASSWORD || !ADMIN_PASSWORD) {
+        logger.error('EMPLOYEE_PASSWORD or ADMIN_PASSWORD environment variable not set');
+        return {
+          user: null,
+          error: NextResponse.json(
+            { error: 'Server configuration error' },
+            { status: 500 }
+          ),
+          isAuthenticated: false,
+        };
+      }
       
       let userRole: 'employee' | 'admin' | null = null;
       let userPermissions: string[] = [];
@@ -238,12 +250,15 @@ export class SharedPasswordAuth {
       iat: Date.now(),
     };
 
-    // Simple JWT-like token (in production, use proper JWT library)
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret) {
+      throw new Error('JWT_SECRET environment variable is required');
+    }
+
     const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
     const payloadB64 = Buffer.from(JSON.stringify(payload)).toString('base64url');
-    const signature = createHash('sha256')
+    const signature = createHmac('sha256', jwtSecret)
       .update(`${header}.${payloadB64}`)
-      .update(process.env.JWT_SECRET || 'shared-password-secret')
       .digest('base64url');
 
     return `${header}.${payloadB64}.${signature}`;
@@ -261,9 +276,12 @@ export class SharedPasswordAuth {
       }
 
       // Verify signature
-      const expectedSignature = createHash('sha256')
+      const jwtSecret = process.env.JWT_SECRET;
+      if (!jwtSecret) {
+        return null;
+      }
+      const expectedSignature = createHmac('sha256', jwtSecret)
         .update(`${header}.${payload}`)
-        .update(process.env.JWT_SECRET || 'shared-password-secret')
         .digest('base64url');
 
       if (!timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))) {

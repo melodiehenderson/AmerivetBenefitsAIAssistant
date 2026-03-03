@@ -75,8 +75,8 @@ const SUGGESTED_SCENARIOS: Scenario[] = [
   },
   {
     id: 'cost-calculator',
-    title: 'Personalized Medical Plan Cost Comparison Tool',
-    description: 'Calculate total costs based on your situation',
+    title: 'Medical Plan Cost Tool',
+    description: 'Calculate costs for your situation',
     icon: <Calculator className="h-5 w-5" />,
     message: "Help me calculate total healthcare costs for next year.",
     action: 'calculator'
@@ -94,23 +94,21 @@ export default function SubdomainChatPage() {
   const [calcPrefs, setCalcPrefs] = useState({ household: 'individual', usage: 'moderate', provider: 'any' });
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
-  // CRITICAL: Stable session ID - created once per browser session
+  // FRESH SESSION: Generate new ID every page load for clean onboarding
   const [sessionId] = useState(() => {
-    if (typeof window !== 'undefined') {
-      let id = sessionStorage.getItem('chat-session-id');
-      if (!id) {
-        id = 'subdomain-chat-' + Date.now() + '-' + Math.random().toString(36).substring(2, 9);
-        sessionStorage.setItem('chat-session-id', id);
-      }
-      return id;
-    }
-    return 'subdomain-chat-' + Date.now();
+    // Generate unique ID on each page load (not persisted)
+    return 'chat-' + Date.now() + '-' + Math.random().toString(36).substring(2, 11);
   });
   // SERVERLESS RESILIENCE: Cache session context from API responses
   const [cachedContext, setCachedContext] = useState<{
     userName?: string;
     userAge?: number;
     userState?: string;
+    hasCollectedName?: boolean;
+    disclaimerShown?: boolean;
+    currentTopic?: string;
+    askedForDemographics?: boolean;
+    selectedPlan?: string;
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const quickPrompts = [
@@ -131,6 +129,56 @@ export default function SubdomainChatPage() {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // AUTO-WELCOME: Trigger welcome message on page load (before user types)
+  useEffect(() => {
+    const triggerWelcome = async () => {
+      // Only trigger if no messages yet and authenticated
+      if (messages.length > 0 || !isAuthenticated) return;
+      
+      setIsLoading(true);
+      try {
+        const response = await fetch('/api/qa', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            query: '__WELCOME__',  // Special trigger for welcome message
+            sessionId: sessionId,
+            companyId: 'amerivet',
+            userId: 'user-' + sessionId.split('-').pop(),
+            context: cachedContext,
+          }),
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          if (data.sessionContext) {
+            setCachedContext({
+              userName: data.sessionContext.userName,
+              userAge: data.sessionContext.userAge,
+              userState: data.sessionContext.userState,
+            });
+          }
+          const welcomeMessage: Message = {
+            id: 'welcome-' + Date.now(),
+            role: 'assistant',
+            content: data.answer || "Hi there! I'm your AmeriVet Benefits Assistant. What's your name?",
+            timestamp: new Date(),
+          };
+          setMessages([welcomeMessage]);
+        }
+      } catch (err) {
+        console.error('Welcome trigger failed:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    // Small delay to ensure auth check completes
+    const timer = setTimeout(triggerWelcome, 500);
+    return () => clearTimeout(timer);
+  }, [isAuthenticated]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -262,6 +310,11 @@ export default function SubdomainChatPage() {
           userName: data.sessionContext.userName,
           userAge: data.sessionContext.userAge,
           userState: data.sessionContext.userState,
+          hasCollectedName: data.sessionContext.hasCollectedName,
+          disclaimerShown: data.sessionContext.disclaimerShown,
+          currentTopic: data.sessionContext.currentTopic,
+          askedForDemographics: data.sessionContext.askedForDemographics,
+          selectedPlan: data.sessionContext.selectedPlan,
         });
       }
       
@@ -297,10 +350,9 @@ export default function SubdomainChatPage() {
       return;
     }
     
-    // Regular chat scenario
+    // Just pre-fill the input - don't auto-submit
+    // User must click Send or press Enter to submit
     setInput(scenario.message);
-    const fakeEvent = { preventDefault: () => {} } as unknown as React.FormEvent;
-    setTimeout(() => handleSendMessage(fakeEvent), 0);
   };
 
   const submitCalculatorPrefs = () => {
@@ -327,6 +379,11 @@ export default function SubdomainChatPage() {
       <header className="sticky top-0 z-10 bg-white dark:bg-gray-900 dark:border-gray-800 shadow-sm border-b">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center h-16">
+            <img 
+              src="/brand/amerivet-logo.png" 
+              alt="AmeriVet" 
+              className="w-10 h-10 mr-3 object-contain"
+            />
             <Button
               variant="outline"
               size="sm"
@@ -339,7 +396,7 @@ export default function SubdomainChatPage() {
             <div className="flex items-center">
               <MessageSquare className="w-6 h-6 text-blue-600 mr-3" />
               <h1 className="text-lg font-semibold text-gray-900">
-                Benefits Assistant Chat
+                AmeriVet Benefits Assistant
               </h1>
             </div>
           </div>

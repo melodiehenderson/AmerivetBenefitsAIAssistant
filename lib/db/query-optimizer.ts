@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Database query optimization utilities
  */

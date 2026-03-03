@@ -35,7 +35,7 @@ const settingsSchema = z.object({
       rateLimitPerMinute: z.number(),
     })
     .optional(),
-  featureFlags: z.record(z.boolean()).optional(),
+  featureFlags: z.record(z.string(), z.boolean()).optional(),
 });
 
 const superAdminService = new SuperAdminService();
@@ -69,7 +69,7 @@ export const PATCH = requireSuperAdmin(async (request: NextRequest) => {
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { error: 'Invalid settings data', details: error.errors },
+        { error: 'Invalid settings data', details: error.issues },
         { status: 400 },
       );
     }

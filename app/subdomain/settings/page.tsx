@@ -43,6 +43,11 @@ export default function SettingsPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
+              <img 
+                src="/brand/amerivet-logo.png" 
+                alt="AmeriVet" 
+                className="w-10 h-10 object-contain"
+              />
               <Button 
                 variant="outline" 
                 size="sm"
@@ -51,7 +56,7 @@ export default function SettingsPage() {
                 <ArrowLeft className="w-4 h-4 mr-2" />
                 Back to Dashboard
               </Button>
-              <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
+              <h1 className="text-2xl font-bold text-gray-900">AmeriVet Settings</h1>
             </div>
           </div>
         </div>

@@ -10,7 +10,11 @@ import { alertingSystem } from '@/lib/monitoring/advanced-alerting';
 
 export async function GET(request: NextRequest) {
   try {
-    const alerts = alertingSystem.getActiveAlerts();
+    const system = alertingSystem.current;
+    if (!system) {
+      return NextResponse.json([], { status: 200 });
+    }
+    const alerts = system.getActiveAlerts();
     return NextResponse.json(alerts);
   } catch (error) {
     console.error('Failed to get alerts:', error);
@@ -35,7 +39,11 @@ export async function POST(request: NextRequest) {
           );
         }
         
-        const acknowledged = alertingSystem.acknowledgeAlert(alertId, acknowledgedBy);
+        const system = alertingSystem.current;
+        if (!system) {
+          return NextResponse.json({ error: 'Alerting system unavailable' }, { status: 503 });
+        }
+        const acknowledged = system.acknowledgeAlert(alertId, acknowledgedBy);
         if (!acknowledged) {
           return NextResponse.json(
             { error: 'Alert not found' },
@@ -54,7 +62,11 @@ export async function POST(request: NextRequest) {
           );
         }
         
-        const resolved = alertingSystem.resolveAlert(alertId);
+        const sys = alertingSystem.current;
+        if (!sys) {
+          return NextResponse.json({ error: 'Alerting system unavailable' }, { status: 503 });
+        }
+        const resolved = sys.resolveAlert(alertId);
         if (!resolved) {
           return NextResponse.json(
             { error: 'Alert not found' },

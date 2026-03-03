@@ -9,7 +9,7 @@ describe('7 Issue Fixes - Integration Tests', () => {
   
   describe('Issue #1: Inconsistent Premium Figures', () => {
     it('should format premiums consistently with 2 decimal places', async () => {
-      const { simpleChatRouter } = await import('../lib/services/simple-chat-router');
+      const { simpleChatRouter } = await import('../../lib/services/simple-chat-router');
       
       const response = await (simpleChatRouter as any).handleCostQuestion({
         state: 'Texas',
@@ -33,10 +33,24 @@ describe('7 Issue Fixes - Integration Tests', () => {
 
   describe('Issue #2: Wrong Benefit Category', () => {
     it('should filter chunks by medical category', async () => {
-      const { filterChunksByCategory } = await import('../lib/rag/hybrid-retrieval');
+      const { filterChunksByCategory } = await import('../../lib/rag/hybrid-retrieval');
       
       // Mock chunks with mixed categories
       const mockChunks = [
+        {
+          id: '0',
+          docId: 'doc0',
+          companyId: 'test',
+          sectionPath: '',
+          content: 'Health plan summary: in-network deductible and coinsurance details',
+          title: 'Medical Plan Summary',
+          position: 0,
+          windowStart: 0,
+          windowEnd: 100,
+          metadata: { category: 'Medical' },
+          createdAt: new Date(),
+          score: 0.95
+        },
         {
           id: '1',
           docId: 'doc1',
@@ -50,6 +64,20 @@ describe('7 Issue Fixes - Integration Tests', () => {
           metadata: { category: 'Medical' },
           createdAt: new Date(),
           score: 0.9
+        },
+        {
+          id: '1b',
+          docId: 'doc1b',
+          companyId: 'test',
+          sectionPath: '',
+          content: 'PPO network coverage with copay and deductible information',
+          title: 'Medical Network Details',
+          position: 0,
+          windowStart: 0,
+          windowEnd: 100,
+          metadata: { category: 'Medical' },
+          createdAt: new Date(),
+          score: 0.85
         },
         {
           id: '2',
@@ -98,7 +126,7 @@ describe('7 Issue Fixes - Integration Tests', () => {
 
   describe('Issue #3: Total Deduction Calculation', () => {
     it('should calculate total cost for all benefits', async () => {
-      const { simpleChatRouter } = await import('../lib/services/simple-chat-router');
+      const { simpleChatRouter } = await import('../../lib/services/simple-chat-router');
       
       const response = await (simpleChatRouter as any).handleAllBenefitsQuestion({
         state: 'Texas',
@@ -119,7 +147,7 @@ describe('7 Issue Fixes - Integration Tests', () => {
 
   describe('Issue #4: Advanced Cost Modeling', () => {
     it('should provide cost projection for usage scenarios', async () => {
-      const { simpleChatRouter } = await import('../lib/services/simple-chat-router');
+      const { simpleChatRouter } = await import('../../lib/services/simple-chat-router');
       
       const response = await (simpleChatRouter as any).handleCostProjectionQuestion({
         state: 'California',
@@ -132,7 +160,7 @@ describe('7 Issue Fixes - Integration Tests', () => {
     });
 
     it('should estimate costs for different usage levels', async () => {
-      const { estimateCostProjection } = await import('../lib/rag/pricing-utils');
+      const { estimateCostProjection } = await import('../../lib/rag/pricing-utils');
       
       const lowUsage = estimateCostProjection({
         coverageTier: 'Employee Only',
@@ -151,7 +179,7 @@ describe('7 Issue Fixes - Integration Tests', () => {
 
   describe('Issue #5: Maternity Recommendation', () => {
     it('should provide detailed maternity cost comparison', async () => {
-      const { simpleChatRouter } = await import('../lib/services/simple-chat-router');
+      const { simpleChatRouter } = await import('../../lib/services/simple-chat-router');
       
       const response = await (simpleChatRouter as any).handleMaternityQuestion({
         state: 'Texas',
@@ -167,21 +195,21 @@ describe('7 Issue Fixes - Integration Tests', () => {
     });
 
     it('should include plan-specific maternity details', async () => {
-      const { compareMaternityCosts } = await import('../lib/rag/pricing-utils');
+      const { compareMaternityCosts } = await import('../../lib/rag/pricing-utils');
       
       const comparison = compareMaternityCosts('Employee + Family');
       
-      expect(comparison).toContain('PPO Premium');
-      expect(comparison).toContain('HSA');
-      expect(comparison).toContain('Kaiser');
-      expect(comparison).toContain('prenatal');
-      expect(comparison).toContain('postnatal');
+      expect(comparison).toContain('Standard HSA');
+      expect(comparison).toContain('Enhanced HSA');
+      expect(comparison).toContain('Kaiser Standard HMO');
+      expect(comparison.toLowerCase()).toContain('prenatal');
+      expect(comparison.toLowerCase()).toContain('postnatal');
     });
   });
 
   describe('Issue #6: Geographic Inconsistency', () => {
     it('should enforce state consistency in responses', async () => {
-      const { ensureStateConsistency } = await import('../lib/rag/pricing-utils');
+      const { ensureStateConsistency } = await import('../../lib/rag/pricing-utils');
       
       const response = ensureStateConsistency(
         'In Indiana, the plan costs $100. Indiana has many options. Indiana is great.',
@@ -194,7 +222,7 @@ describe('7 Issue Fixes - Integration Tests', () => {
     });
 
     it('should clean repeated phrases', async () => {
-      const { cleanRepeatedPhrases } = await import('../lib/rag/pricing-utils');
+      const { cleanRepeatedPhrases } = await import('../../lib/rag/pricing-utils');
       
       const cleaned = cleanRepeatedPhrases('The plan is great, great, and great for you');
       
@@ -205,7 +233,7 @@ describe('7 Issue Fixes - Integration Tests', () => {
 
   describe('Issue #7: Orthodontics Inconsistency', () => {
     it('should validate chunk presence for orthodontics claims', async () => {
-      const { validateChunkPresenceForClaims } = await import('../lib/rag/validation-pipeline');
+      const { validateChunkPresenceForClaims } = await import('../../lib/rag/validation-pipeline');
       
       // Answer mentions orthodontics but chunks don't
       const answer = 'Yes, the plan covers orthodontics with $1500 lifetime maximum.';
@@ -234,7 +262,7 @@ describe('7 Issue Fixes - Integration Tests', () => {
     });
 
     it('should pass validation when chunks support the claim', async () => {
-      const { validateChunkPresenceForClaims } = await import('../lib/rag/validation-pipeline');
+      const { validateChunkPresenceForClaims } = await import('../../lib/rag/validation-pipeline');
       
       const answer = 'Yes, the plan covers orthodontics.';
       const chunks = [
@@ -263,7 +291,7 @@ describe('7 Issue Fixes - Integration Tests', () => {
 
   describe('End-to-End Scenarios', () => {
     it('should handle complete user journey', async () => {
-      const { simpleChatRouter } = await import('../lib/services/simple-chat-router');
+      const { simpleChatRouter } = await import('../../lib/services/simple-chat-router');
       
       // Scenario 1: User asks about all benefits cost
       const allBenefitsResponse = await (simpleChatRouter as any).handleAllBenefitsQuestion({

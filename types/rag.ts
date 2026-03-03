@@ -170,6 +170,8 @@ export interface ChunkMetadata {
   bm25Score?: number;
   vectorScore?: number;
   rrfScore?: number;
+  fileName?: string;
+  category?: string;
 }
 
 // ============================================================================

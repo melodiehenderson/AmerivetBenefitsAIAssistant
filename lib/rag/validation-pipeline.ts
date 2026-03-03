@@ -189,7 +189,7 @@ export function validateReasoning(input: ReasoningValidationInput): ValidationRe
   };
   
   let categoryCheck = true;
-  let foundCategories: string[] = [];
+  const foundCategories: string[] = [];
   
   if (requestedCategory && categoryKeywords[requestedCategory]) {
     const keywords = categoryKeywords[requestedCategory];

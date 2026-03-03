@@ -61,10 +61,25 @@ export async function GET(request: NextRequest) {
       ].filter(p => p.value !== undefined && p.value !== '')
     };
 
+    // Build a parallel count query
+    const countQuerySpec = {
+      query: `
+        SELECT VALUE COUNT(1) FROM c 
+        WHERE c.companyId = @companyId
+        ${status ? 'AND c.status = @status' : ''}
+        ${search ? 'AND (CONTAINS(c.displayName, @search, true) OR CONTAINS(c.email, @search, true))' : ''}
+      `,
+      parameters: [
+        { name: '@companyId', value: targetCompanyId },
+        { name: '@status', value: status },
+        { name: '@search', value: search },
+      ].filter(p => p.value !== undefined && p.value !== '')
+    };
+
     // Parallelize "Get Data" and "Get Total Count" for UI pagination
     const [users, countResult] = await Promise.all([
       repositories.users.query(querySpec),
-      repositories.users.count(targetCompanyId, { search, status }) // Optimized count query
+      repositories.users.query(countQuerySpec).then((res: any[]) => res[0] ?? 0)
     ]);
 
     // 6. Safe Mapping

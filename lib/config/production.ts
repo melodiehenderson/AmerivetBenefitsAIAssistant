@@ -98,7 +98,7 @@ export function validateProductionConfig(): ProductionConfig {
     return productionConfigSchema.parse(config);
   } catch (error) {
     if (error instanceof z.ZodError) {
-      const missingVars = error.errors.map(err => err.path.join('.')).join(', ');
+      const missingVars = error.issues.map(err => err.path.join('.')).join(', ');
       throw new Error(`Production configuration validation failed. Missing or invalid: ${missingVars}`);
     }
     throw error;
