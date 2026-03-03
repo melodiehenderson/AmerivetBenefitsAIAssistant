@@ -224,11 +224,10 @@ export function ensureStateConsistency(answer: string, userStateCode: string | n
   let result = answer;
   for (const s of STATES) {
     if (userStateName && s.toLowerCase() === userStateName.toLowerCase()) continue;
+    // Do NOT use re.test() before re.replace() with 'g' flag — .test() advances
+    // lastIndex causing .replace() to miss the first occurrence (Issue 6 fix)
     const re = new RegExp(`\\b${s}\\b`, 'gi');
-    if (re.test(result)) {
-      // Replace other state mentions with a neutral phrase to avoid wrong geo guidance.
-      result = result.replace(re, userStateName ? userStateName : 'your state');
-    }
+    result = result.replace(re, userStateName ? userStateName : 'your state');
   }
   return result;
 }
@@ -254,31 +253,44 @@ export function estimateCostProjection(params: CostProjectionParams): string {
   const { coverageTier, usage, network, state } = params;
   const tier = normalizeCoverageTierToBenefitTier(coverageTier);
 
-  let msg = `Projected costs for ${coverageTier} coverage`;
-  if (network) msg += ` (network preference: ${network})`;
-  if (state) msg += ` (state: ${state})`;
-  msg += ` with ${usage} usage:\n`;
+  const stateName = state ? (STATE_CODE_TO_NAME[state.toUpperCase()] || state) : null;
+  let msg = `**Projected Healthcare Costs** for **${coverageTier}** coverage`;
+  if (stateName) msg += ` in ${stateName}`;
+  msg += ` (${usage} usage):\n\n`;
 
-  // Rough usage factors correspond to % of deductible and some portion beyond.
   const usageFactor = usage === 'low' ? 0.25 : usage === 'high' ? 0.75 : 0.5;
 
-  const plans = amerivetBenefits2024_2025.medicalPlans.filter((p) => {
-    if (!network) return true;
-    const n = network.toLowerCase();
-    if (n.includes('kaiser')) return p.provider.toLowerCase().includes('kaiser');
-    if (n.includes('bcbs') || n.includes('bcbstx')) return p.provider.toLowerCase().includes('bcbstx');
+  // Step 1: Filter by state availability (Kaiser only in CA)
+  let plans = amerivetBenefits2024_2025.medicalPlans.filter((p) => {
+    if (stateName && p.provider.toLowerCase().includes('kaiser')) {
+      const allowed = p.regionalAvailability.some((r) => {
+        const rLow = r.toLowerCase();
+        return rLow === 'nationwide' || rLow === stateName.toLowerCase();
+      });
+      if (!allowed) return false;
+    }
     return true;
   });
 
-  for (const p of plans) {
-    // Regional availability gate (only show Kaiser if user is in a supported region)
-    if (state && p.provider.toLowerCase().includes('kaiser')) {
-      const allowed = p.regionalAvailability.some((r) => r.toLowerCase() === 'california' || r.toLowerCase() === state.toLowerCase());
-      if (!allowed && !p.regionalAvailability.includes('nationwide')) {
-        continue;
-      }
+  // Step 2: Filter by network preference
+  let networkNote = '';
+  if (network) {
+    const n = network.toLowerCase();
+    const networkFiltered = plans.filter((p) => {
+      if (n.includes('kaiser')) return p.provider.toLowerCase().includes('kaiser');
+      if (n.includes('bcbs') || n.includes('bcbstx')) return p.provider.toLowerCase().includes('bcbstx');
+      if (n.includes('ppo') || n.includes('hsa')) return p.provider.toLowerCase().includes('bcbstx');
+      return true;
+    });
+    if (networkFiltered.length === 0) {
+      networkNote = `**Note:** ${network} network is not available in ${stateName || 'your area'}. Showing all available plans instead.\n\n`;
+    } else {
+      plans = networkFiltered;
     }
+  }
+  if (networkNote) msg += networkNote;
 
+  for (const p of plans) {
     const monthlyPremium = typeof p.tiers[tier] === 'number' ? Number(p.tiers[tier].toFixed(2)) : 0;
     const annualPremium = annualFromMonthly(monthlyPremium);
 
@@ -288,22 +300,41 @@ export function estimateCostProjection(params: CostProjectionParams): string {
 
     const expectedOOPRaw = deductible * usageFactor + Math.max(0, oopMax - deductible) * usageFactor * coinsurance * 0.5;
     const expectedOOP = Number(Math.min(expectedOOPRaw, oopMax || expectedOOPRaw).toFixed(0));
+    const totalProjected = annualPremium + expectedOOP;
 
-    msg += `- ${p.name}: $${formatMoney(monthlyPremium)}/month ($${formatMoney(annualPremium)}/year) + expected out-of-pocket ~$${expectedOOP.toLocaleString()}\n`;
+    msg += `**${p.name}** (${p.provider}):\n`;
+    msg += `- Premium: $${formatMoney(monthlyPremium)}/month ($${formatMoney(annualPremium)}/year)\n`;
+    msg += `- Deductible: $${deductible.toLocaleString()} | Out-of-pocket max: $${oopMax.toLocaleString()}\n`;
+    msg += `- Estimated out-of-pocket expenses: ~$${expectedOOP.toLocaleString()}\n`;
+    msg += `- **Projected total annual cost: ~$${formatMoney(totalProjected)}**\n\n`;
   }
 
-  msg += `\nThese are rough estimates. Actual costs depend on claims, copays, network use, and covered services.`;
+  msg += `These are rough estimates based on ${usage} healthcare utilization. Actual costs depend on claims, copays, services used, and network.\n`;
+  msg += `For exact plan details and enrollment, visit Workday.`;
   return msg;
 }
 
 // Compare maternity exposure across plans (assumes typical $10k maternity cost)
-export function compareMaternityCosts(coverageTier: string): string {
+export function compareMaternityCosts(coverageTier: string, userState?: string | null): string {
   const typical = 10000;
   const tier = normalizeCoverageTierToBenefitTier(coverageTier);
-  let msg = `Maternity cost comparison (${coverageTier}):\n\n`;
+  let msg = `**Maternity Cost Comparison** (${coverageTier}):\n\n`;
   msg += `**Assumptions:** Typical maternity care costs ~$10,000 (prenatal visits, delivery, postnatal care).\n\n`;
 
-  for (const p of amerivetBenefits2024_2025.medicalPlans) {
+  // Filter Kaiser for non-California users (Issue 5 fix)
+  const stateName = userState ? (STATE_CODE_TO_NAME[userState.toUpperCase()] || userState) : null;
+  const plans = amerivetBenefits2024_2025.medicalPlans.filter((p) => {
+    if (stateName && p.provider.toLowerCase().includes('kaiser')) {
+      const allowed = p.regionalAvailability.some((r) => {
+        const rLow = r.toLowerCase();
+        return rLow === 'nationwide' || rLow === stateName.toLowerCase();
+      });
+      if (!allowed) return false;
+    }
+    return true;
+  });
+
+  for (const p of plans) {
     const deductible = p.benefits?.deductible ?? 0;
     const oopMax = p.benefits?.outOfPocketMax ?? 0;
     const coins = p.benefits?.coinsurance ?? 0.2;

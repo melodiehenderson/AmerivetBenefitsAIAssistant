@@ -91,12 +91,12 @@ describe('Validation Tests (converted from validation-tests.ts)', () => {
   it('cost projection returns a descriptive string', () => {
     const proj = estimateCostProjection({ coverageTier: 'Employee + Child', usage: 'moderate', network: 'Kaiser', state: 'DE', age: 45 });
     expect(typeof proj).toBe('string');
-    expect(proj).toContain('Projected costs');
+    expect(proj).toContain('Projected Healthcare Costs');
   });
 
   it('maternity comparison returns summary text', () => {
     const out = compareMaternityCosts('Employee Only');
-    expect(out).toContain('Maternity cost comparison');
+    expect(out).toContain('Maternity Cost Comparison');
   });
 
   it('intercept regex quick checks', () => {

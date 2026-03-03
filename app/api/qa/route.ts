@@ -342,9 +342,16 @@ ${decisionsText}
 - NEVER make up plan details, costs, or coverage information
 
 ### 2. COST FORMATTING (Critical)
-- Medical premiums: ALWAYS format as "$X per month ($Y annually)"
-- Show Employee Only rates first, then mention "Family coverage also available"
-- Round to nearest dollar for clarity
+- ALWAYS format costs as: "$X.XX/month ($Y.YY/year)" — monthly first, then annual
+- NEVER show an annual-only or paycheck-only amount without the monthly figure
+- Canonical Employee Only premiums (use these exact numbers):
+  - Standard HSA: $86.84/month ($1,042.08/year)
+  - Enhanced HSA: $160.36/month ($1,924.32/year)
+  - Kaiser Standard HMO: $142.17/month ($1,706.04/year) — California only
+  - BCBSTX Dental PPO: $28.90/month ($346.80/year)
+  - VSP Vision Plus: $12.40/month ($148.80/year)
+- If you cite a dollar amount, it MUST include "/month" or "/year" label — never a bare number
+- Round to 2 decimal places
 
 ### 3. AGE-BANDED PRODUCTS (Refuse Specific Costs)
 - For Voluntary Life, Disability, Critical Illness, AD&D:
@@ -645,6 +652,67 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'recommend-single' } });
     }
 
+    // CUSTOM INTERCEPT: Direct plan pricing lookup (deterministic)
+    // Catches "how much is Standard HSA?", "Enhanced HSA cost", "what does Kaiser cost"
+    // Prevents LLM from hallucinating plan prices by returning canonical data (Issue 1 fix)
+    const planNamesRegex = /\b(standard\s*hsa|enhanced\s*hsa|kaiser\s*(?:standard\s*)?(?:hmo)?|dental\s*ppo|vision\s*plus|bcbstx\s*dental|vsp)\b/i;
+    const pricingQuestion = /\b(how much|cost|price|premium|rate|what does|pricing|what is|how expensive)\b/i;
+    const isCostModelingQuery = /(?:calculate|projected?|estimate|next year|for \d{4}|usage)/i.test(lowerQuery);
+    const planNameMatch = lowerQuery.match(planNamesRegex);
+    if (planNameMatch && pricingQuestion.test(lowerQuery) && !/per[\s-]*pay/i.test(lowerQuery) && !isCostModelingQuery) {
+      const coverageTier = extractCoverageFromQuery(query);
+      const payPeriods = session.payPeriods || 26;
+      const rows = pricingUtils.buildPerPaycheckBreakdown(coverageTier, payPeriods);
+      const targetPlan = planNameMatch[1].toLowerCase().replace(/\s+/g, ' ').trim();
+      const matchedRow = rows.find(r => {
+        const rLow = r.plan.toLowerCase();
+        return rLow.includes(targetPlan) || targetPlan.split(' ').every((w: string) => rLow.includes(w));
+      });
+      if (matchedRow) {
+        // Filter Kaiser for non-CA users
+        if (/kaiser/i.test(matchedRow.plan) && session.userState && session.userState.toUpperCase() !== 'CA') {
+          const msg = `Kaiser Standard HMO is only available in California. Since you're in ${session.userState}, your medical plan options are **Standard HSA** and **Enhanced HSA**. Would you like pricing for those?`;
+          session.lastBotMessage = msg;
+          await updateSession(sessionId, session);
+          return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'plan-pricing-kaiser-unavailable' } });
+        }
+        let msg = `Here's the pricing for **${matchedRow.plan}** (${coverageTier}):\n\n`;
+        msg += `- **$${pricingUtils.formatMoney(matchedRow.perMonth)}/month** ($${pricingUtils.formatMoney(matchedRow.annually)}/year)\n`;
+        msg += `- Per paycheck (${payPeriods} pay periods): $${pricingUtils.formatMoney(matchedRow.perPaycheck)}\n`;
+        msg += `\nWould you like to compare this with other plans, or see pricing for a different coverage tier?`;
+        session.lastBotMessage = msg;
+        await updateSession(sessionId, session);
+        return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'plan-pricing' } });
+      }
+    }
+
+    // CUSTOM INTERCEPT: Medical plan comparison / overview (deterministic)
+    // Catches "compare medical plans", "show me medical options", "medical plan costs" (Issue 1 fix)
+    const hasMedicalKeyword = /\b(medical|health)\b/i.test(lowerQuery);
+    const hasPlanKeyword = /\b(plan|option|coverage)s?\b/i.test(lowerQuery);
+    const hasCompareKeyword = /\b(compare|comparison|option|show|list|available|costs?|prices?|premiums?)\b/i.test(lowerQuery);
+    const medicalComparisonRequested = hasMedicalKeyword && hasPlanKeyword && hasCompareKeyword && !/per[\s-]*pay/i.test(lowerQuery) && !isCostModelingQuery;
+    if (medicalComparisonRequested && !(recommendRequested && singleHealthy)) {
+      const coverageTier = extractCoverageFromQuery(query);
+      const payPeriods = session.payPeriods || 26;
+      const rows = pricingUtils.buildPerPaycheckBreakdown(coverageTier, payPeriods);
+      const medRows = rows.filter(r => !/dental|vision/i.test(r.plan) && r.provider !== 'VSP');
+      const filtered = session.userState && session.userState.toUpperCase() !== 'CA'
+        ? medRows.filter(r => !/kaiser/i.test(r.plan))
+        : medRows;
+      let msg = `Here are the available medical plans for the **${coverageTier}** tier:\n\n`;
+      for (const r of filtered) {
+        msg += `- **${r.plan}** (${r.provider}): **$${pricingUtils.formatMoney(r.perMonth)}/month** ($${pricingUtils.formatMoney(r.annually)}/year)\n`;
+      }
+      if (filtered.length < medRows.length) {
+        msg += `\n_Note: Kaiser Standard HMO is available only in California._\n`;
+      }
+      msg += `\nWould you like more detail on any plan, a different coverage tier, or to move on to Dental/Vision?`;
+      session.lastBotMessage = msg;
+      await updateSession(sessionId, session);
+      return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'medical-comparison' } });
+    }
+
     // CUSTOM INTERCEPT: HSA / Savings recommendation (deterministic)
     // Catches "savings recommendation", "HSA advice", "tax savings" etc. that otherwise fall to RAG and hallucinate
     const savingsRequested = /\b(savings?\s*(recommend|advice|scenario|strategy|tip)|hsa\s*(recommend|advice|benefit|advantage|savings)|tax\s*(savings?|advantage|benefit)\s*(plan|account|option)?|pre-?tax\s*(dollar|saving|benefit))\b/i.test(lowerQuery);
@@ -695,7 +763,7 @@ export async function POST(req: NextRequest) {
         const coverageTier = lowerQuery.includes('family') ? 'Employee + Family'
             : lowerQuery.includes('employee only') ? 'Employee Only'
             : 'Employee + Child(ren)'; // sensible default for maternity
-        const msg = pricingUtils.compareMaternityCosts(coverageTier);
+        const msg = pricingUtils.compareMaternityCosts(coverageTier, session.userState || null);
         session.lastBotMessage = msg;
         await updateSession(sessionId, session);
         return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'maternity' } });
@@ -703,7 +771,7 @@ export async function POST(req: NextRequest) {
 
     // CUSTOM INTERCEPT: Orthodontics/braces direct answer (deterministic)
     // Uses canonical dental plan data — no LLM hallucination possible
-    const orthoRequested = /orthodont|braces/i.test(lowerQuery);
+    const orthoRequested = /orthodont|braces|\bortho\b|dental\s*(?:cover|include).*(?:ortho|brace)/i.test(lowerQuery);
     if (orthoRequested) {
       const dental = pricingUtils.getDentalPlanDetails();
       let msg = `Yes! The **${dental.name}** (${dental.provider}) includes orthodontia coverage. Here are the key details:\n\n`;
@@ -804,8 +872,12 @@ export async function POST(req: NextRequest) {
     };
 
     // QUICK INTERCEPT: per-paycheck deterministic breakdown when user asks explicitly
-    const perPaycheckRequested = /per\s*pay(?:check|\s*period)?\b|per\s*pay\b/i.test(query);
-    const totalDeductionRequested = /\b(enroll\s+in\s+all\s+benefits|all\s+benefits|every\s+benefit|everything|total\s+deduct(?:ion|ed|ions)?|how\s+much\s+would\s+be\s+deducted)\b.*\b(per\s*pay(?:check|period)|per\s*pay)\b/i.test(query);
+    const perPaycheckRequested = /per[\s-]*pay(?:check|\s*period)?\b|per[\s-]*pay\b|\bbiweekly\b|\bbi-weekly\b/i.test(query);
+    // Separate signals for total deduction detection (handles multiline and varied phrasings)
+    const enrollAllSignal = /\b(enroll\s+in\s+all(?:\s+benefits)?|sign\s+(?:me\s+)?up\s+for\s+(?:all|everything)|all\s+benefits|every\s+benefit|everything)\b/i.test(query);
+    const deductionQuestionSignal = /\b(deduct(?:ion|ed|ions)?|per[\s-]*pay(?:check|period)?|how\s+much|total|cost|what\s+would)\b/i.test(query);
+    const explicitTotalDeduction = /\b(total\s+deduct(?:ion|ed|ions)?|total\s+(?:monthly|annual)\s+(?:cost|premium)|how\s+much\s+(?:would\s+)?(?:be\s+)?deducted)\b/i.test(query);
+    const totalDeductionRequested = (enrollAllSignal && deductionQuestionSignal) || explicitTotalDeduction;
 
     function extractCoverageFromQuery(q: string): string {
       const low = q.toLowerCase();
@@ -896,7 +968,8 @@ export async function POST(req: NextRequest) {
         ? medicalOnly.filter(r => !/kaiser/i.test(r.plan))
         : medicalOnly;
 
-      let msg = `Here are the estimated premiums for ${coverageTier} (based on ${payPeriods} pay periods/year):\n`;
+      const benefitLabel = wantsNonMedical ? 'benefit' : 'medical plan';
+      let msg = `Here are the estimated **${benefitLabel}** premiums for **${coverageTier}** (based on ${payPeriods} pay periods/year):\n`;
       for (const r of filtered) {
         msg += `- ${r.plan}: $${pricingUtils.formatMoney(r.perPaycheck)} per paycheck ($${pricingUtils.formatMoney(r.perMonth)}/month, $${pricingUtils.formatMoney(r.annually)}/year)\n`;
       }
