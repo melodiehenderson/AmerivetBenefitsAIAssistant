@@ -129,8 +129,10 @@ export function extractStateCode(msg: string, hasAge: boolean): { code: string |
       (hasAge && isAdjacentToAge);
 
     if (!accept) continue;
-    // Never treat lowercase "in" as Indiana; require explicit uppercase "IN" or adjacency to age.
-    if (lower2 === 'in' && !isUpperInOriginal && !isAdjacentToAge) continue;
+    // "in" is almost always the English preposition ("45 in Ranchi", "I'm in sales").
+    // Only treat it as Indiana when written in UPPERCASE "IN" in the original text.
+    // Users who mean Indiana can type "IN", "Indiana", or "indiana".
+    if (lower2 === 'in' && !isUpperInOriginal) continue;
     if (ambiguousCode && !isUpperInOriginal && !hasLocationCue && !isAdjacentToAge && !hasAge) continue;
 
     return { code: upper, token: cleaned };
