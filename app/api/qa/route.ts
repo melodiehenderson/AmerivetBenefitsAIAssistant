@@ -437,6 +437,51 @@ function buildCategoryExplorationResponse(
 
   const catalog = amerivetBenefits2024_2025;
 
+  // GENERAL OVERVIEW — "what are my options?", "what benefits do I have?", "what's available?"
+  // Fires when NO specific category is mentioned but user is asking broadly
+  const isGeneralOverview = /\b(what\s+(?:are|is)\s+(?:my|the|our)\s+(?:option|benefit|plan|coverage|package)|what(?:'s| is)\s+available|what\s+(?:do\s+)?(?:i|we)\s+(?:have|get)|(?:show|tell|give)\s+me\s+(?:my|the|all)\s+(?:option|benefit|plan)|overview\s+of\s+(?:my|the|all)|all\s+(?:my\s+)?(?:benefit|option|plan)|what\s+(?:can|should)\s+i\s+(?:get|choose|enroll|sign\s+up)|benefits?\s+(?:overview|summary|lineup|offerings?))\b/i.test(queryLower)
+    && !/\b(medical|dental|vision|life|disability|hsa|fsa|critical|accident|supplemental)\b/i.test(queryLower);
+
+  if (isGeneralOverview) {
+    const userName = session.userName || '';
+    const greeting = userName ? `Great question, ${userName}! ` : '';
+    const stateNote = isCA
+      ? ' (including Kaiser HMO, which is available in your state!)'
+      : userState
+        ? ` (plan availability may vary — for example, Kaiser HMO is only for California)`
+        : '';
+
+    let response = `${greeting}Here's everything available to you as an AmeriVet employee${stateNote}:\n\n`;
+
+    // Medical plans summary
+    const medPlans = catalog.medicalPlans.filter(p => isCA || !p.regionalAvailability.includes('California'));
+    const medNames = medPlans.map(p => `${p.name} (${p.provider})`).join(', ');
+    response += `**Medical** — ${medNames}\n`;
+
+    // Dental
+    response += `**Dental** — ${catalog.dentalPlan.name} (${catalog.dentalPlan.provider})\n`;
+
+    // Vision
+    response += `**Vision** — ${catalog.visionPlan.name} (${catalog.visionPlan.provider})\n`;
+
+    // Life Insurance
+    response += `**Life Insurance** — UNUM Basic Life (employer-paid), UNUM Voluntary Term Life, Allstate Whole Life\n`;
+
+    // Disability
+    response += `**Disability** — Short-Term (UNUM) and Long-Term (UNUM)\n`;
+
+    // Supplemental
+    response += `**Critical Illness** — Allstate\n`;
+    response += `**Accident/AD&D** — Allstate\n`;
+
+    // Tax-advantaged
+    response += `**HSA/FSA** — Health Savings Account, Flexible Spending Account, Commuter Benefits\n\n`;
+
+    response += `Which benefit would you like to explore first? I can give you plan details, pricing, and help you decide what's right for your situation.`;
+
+    return response;
+  }
+
   // MEDICAL exploration
   if (/\b(medical|health\s*(?:care|insurance|plan|coverage)?)\b/i.test(queryLower)) {
     const plans = catalog.medicalPlans.filter(p =>
