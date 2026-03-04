@@ -8,6 +8,12 @@ import { validateChunkPresenceForClaims } from '@/lib/rag/validation-pipeline';
 import { buildRAGContext } from '@/lib/rag/context-builder';
 import { hybridLLMRouter } from './hybrid-llm-router';
 import { logger } from '@/lib/logger';
+import { verifyResponse, buildPortalFallback } from '@/lib/rag/response-verifier';
+import {
+  buildChainOfVerificationPrompt,
+  buildCorrectiveRetryPrompt,
+} from '@/lib/rag/chain-of-verification';
+import type { IntentType } from '@/lib/rag/query-understanding';
 
 type ChatContext = {
   state?: string;
@@ -15,6 +21,9 @@ type ChatContext = {
   companyId: string;
   history?: Array<{ role: 'user' | 'assistant'; content: string }>;
   validationGate?: string;
+  userAge?: number;
+  category?: string;
+  intent?: IntentType;
 };
 
 export interface RAGChatResponse {
@@ -49,8 +58,11 @@ export class RAGChatRouter {
       // Step 1: Retrieve relevant chunks using hybrid search
       const retrievalResult = await hybridRetrieve(message, {
         companyId: context.companyId,
-        state: context.state,
-        dept: context.division,
+        state:     context.state,
+        dept:      context.division,
+        userState: context.state,
+        userAge:   context.userAge,
+        ...(context.category ? { category: context.category } : {}),
       });
 
       if (!retrievalResult.chunks || retrievalResult.chunks.length === 0) {
@@ -62,50 +74,117 @@ export class RAGChatRouter {
       const ragContext = buildRAGContext(retrievalResult.chunks);
 
       // Step 3: Generate response using LLM with RAG context
+      // DEVELOPER MESSAGE: hard-lock user context so the LLM never re-asks for age/state.
+      const developerHeader = context.validationGate
+        ? context.validationGate
+        : [
+            `USER CONTEXT (LOCKED — DO NOT ask for these again):`,
+            context.userAge  ? `Age: ${context.userAge}` : null,
+            context.state    ? `State: ${context.state}` : null,
+            context.division ? `Division: ${context.division}` : null,
+            context.category ? `Benefit Category in scope: ${context.category}` : null,
+          ].filter(Boolean).join(' | ');
+
+      // Use Chain-of-Verification prompt to force the LLM to self-validate
+      // before emitting a response.
+      const covSystemPrompt = buildChainOfVerificationPrompt(
+        message,
+        ragContext,
+        developerHeader + '\n\n' + RAG_SYSTEM_PROMPT
+      );
+
       const messages = [
-        { role: 'system', content: RAG_SYSTEM_PROMPT },
-        { role: 'system', content: `Context:\n${ragContext}` },
-        { role: 'user', content: message }
+        { role: 'system', content: covSystemPrompt },
+        { role: 'user',   content: message }
       ];
 
       if (context.history) {
         context.history.forEach((h) => messages.splice(2, 0, h));
       }
 
-      const llmResponse = await hybridLLMRouter.createChatCompletion({
+      let llmResponse = await hybridLLMRouter.createChatCompletion({
         messages,
         model: process.env.SMART_ROUTER_MODEL || 'gpt-4o-mini',
         temperature: 0.3
       });
 
+      // -----------------------------------------------------------------------
+      // POST-GENERATION VERIFICATION GATE
+      // -----------------------------------------------------------------------
+      const verifierCtx = { intent: context.intent, category: context.category, state: context.state };
+      let verification = verifyResponse(llmResponse.content, verifierCtx);
+
+      if (verification.action === 'refuse') {
+        // Hard refuse — send portal fallback; do not show LLM content.
+        const fallback = buildPortalFallback();
+        return {
+          content: fallback,
+          responseType: 'fallback',
+          confidence: 0.0,
+          timestamp: new Date(),
+          metadata: { chunksUsed: retrievalResult.chunks.length, validationPassed: false,
+            ungroundedClaims: verification.reasons },
+        };
+      }
+
+      if (verification.action === 'retry' && verification.correctiveInstruction) {
+        // Single corrective re-try — append correction to messages and call LLM once more.
+        logger.warn('[RAG] Verifier triggered retry', { reasons: verification.reasons });
+        const retryMessages = [
+          ...messages,
+          { role: 'assistant', content: llmResponse.content },
+          { role: 'system',    content: buildCorrectiveRetryPrompt(llmResponse.content, verification.correctiveInstruction) },
+        ];
+        const retryResponse = await hybridLLMRouter.createChatCompletion({
+          messages: retryMessages,
+          model: process.env.SMART_ROUTER_MODEL || 'gpt-4o-mini',
+          temperature: 0.15, // lower temp → more conservative on the correction
+        });
+        // Re-verify once; if still failing, pass through with a warning rather than looping.
+        const retryVerification = verifyResponse(retryResponse.content, verifierCtx);
+        if (retryVerification.action === 'refuse') {
+          return {
+            content: buildPortalFallback(),
+            responseType: 'fallback',
+            confidence: 0.0,
+            timestamp: new Date(),
+            metadata: { chunksUsed: retrievalResult.chunks.length, validationPassed: false,
+              ungroundedClaims: retryVerification.reasons },
+          };
+        }
+        llmResponse = retryResponse;
+        verification = retryVerification;
+      }
+
       // Step 4: Validate chunk presence for specific benefit claims (Issue #7 fix)
-      const validation = validateChunkPresenceForClaims(
+      const chunkValidation = validateChunkPresenceForClaims(
         llmResponse.content,
         retrievalResult.chunks
       );
 
-      const finalContent = validation.valid
+      const finalContent = chunkValidation.valid
         ? llmResponse.content
-        : validation.sanitizedAnswer;
+        : chunkValidation.sanitizedAnswer;
 
       const latencyMs = Date.now() - started;
 
       logger.info('RAG chat response generated', {
         latencyMs,
         chunksUsed: retrievalResult.chunks.length,
-        validationPassed: validation.valid,
-        ungroundedClaims: validation.ungroundedClaims
+        validationPassed: chunkValidation.valid,
+        verifierAction: verification.action,
+        ungroundedClaims: chunkValidation.ungroundedClaims
       });
 
       return {
         content: finalContent,
         responseType: 'rag',
-        confidence: 0.9,
+        confidence: verification.action === 'pass' ? 0.95 : 0.75,
         timestamp: new Date(),
         metadata: {
           chunksUsed: retrievalResult.chunks.length,
-          validationPassed: validation.valid,
-          ungroundedClaims: validation.ungroundedClaims
+          validationPassed: chunkValidation.valid,
+          ungroundedClaims: chunkValidation.ungroundedClaims
         }
       };
 
@@ -125,6 +204,10 @@ export class RAGChatRouter {
         { role: 'system', content: RAG_SYSTEM_PROMPT },
         { role: 'user', content: message }
       ];
+
+      if (context.validationGate) {
+        messages.unshift({ role: 'system', content: context.validationGate });
+      }
 
       const llmResponse = await hybridLLMRouter.createChatCompletion({
         messages,

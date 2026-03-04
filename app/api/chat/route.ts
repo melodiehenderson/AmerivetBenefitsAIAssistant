@@ -14,6 +14,7 @@ import { z } from 'zod';
 import { extractUserSlots, extractAndMapEntities } from '@/lib/rag/query-understanding';
 import { cityToStateMap } from '@/lib/schemas/onboarding';
 import { getCatalogForPrompt } from '@/lib/data/amerivet';
+import { normalizeRatesInText } from '@/lib/utils/formatRates';
 
 // Validation schema for chat request
 const chatRequestSchema = z.object({
@@ -433,15 +434,32 @@ Which of these would you like to learn about next?`
       ? constructAnalystPrompt(gateMeta)
       : constructCollectorPrompt(gateMeta);
 
-    // Priority: RAG > Smart > Simple
+    // Derive primary benefit category from entity extraction (used for Azure Search filtering).
+    // Maps benefitTypes like ['dental'] → 'Dental' to match INTENT_CATEGORY_MAP values.
+    const BENEFIT_CATEGORY_MAP: Record<string, string> = {
+      medical: 'Medical', health: 'Medical', dental: 'Dental', vision: 'Vision',
+      life: 'Life', disability: 'Disability', hsa: 'Savings', fsa: 'Savings',
+      voluntary: 'Voluntary', accident: 'Voluntary', critical: 'Voluntary',
+    };
+    const primaryCategory = mapped.benefitTypes.length > 0
+      ? (BENEFIT_CATEGORY_MAP[mapped.benefitTypes[0]] ?? undefined)
+      : undefined;
+
+    // Shared router context — injected into every LLM call as the "developer message".
+    const routerContext = {
+      userAge:  gateMeta.userAge as number | undefined,
+      state:    gateMeta.state  as string | undefined,
+      division: gateMeta.division as string | undefined,
+      category: primaryCategory,
+      intent:   mapped.intent,
+      validationGate,
+    };
     if (useRAG) {
       try {
         routed = await ragChatRouter.routeMessage(userMessage.content, {
-          state:           conversation.metadata?.state,
-          division:        conversation.metadata?.division,
           companyId,
-          history:         [],
-          validationGate,
+          history:  [],
+          ...routerContext,
         });
         modelUsed = 'rag';
       } catch (err) {
@@ -452,9 +470,7 @@ Which of these would you like to learn about next?`
     if (!routed && useSmart) {
       try {
         routed = await smartChatRouter.routeMessage(userMessage.content, {
-          state:          conversation.metadata?.state,
-          division:       conversation.metadata?.division,
-          validationGate,
+          ...routerContext,
         });
         modelUsed = 'smart';
       } catch (err) {
@@ -464,9 +480,7 @@ Which of these would you like to learn about next?`
 
     if (!routed) {
       routed = await simpleChatRouter.routeMessage(userMessage.content, {
-        state:          conversation.metadata?.state,
-        division:       conversation.metadata?.division,
-        validationGate,
+        ...routerContext,
       });
       modelUsed = 'simple';
     }
@@ -474,7 +488,7 @@ Which of these would you like to learn about next?`
     const latencyMs = Date.now() - started;
 
     // Issue #6 Fix: Enforce state consistency in responses
-    let enhancedContent = routed.content;
+    let enhancedContent = normalizeRatesInText(routed.content); // Fix #3: normalize all rates before they reach the user
     const userState = conversation.metadata?.state;
     if (userState) {
       const { ensureStateConsistency, cleanRepeatedPhrases } = require('@/lib/rag/pricing-utils');

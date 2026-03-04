@@ -1,11 +1,15 @@
 import { hybridLLMRouter } from '@/lib/services/hybrid-llm-router';
 import { logger } from '@/lib/logger';
+import type { IntentType } from '@/lib/rag/query-understanding';
 
 type ChatContext = {
   state?: string;
   division?: string;
   history?: Array<{ role: 'user' | 'assistant'; content: string }>;
   validationGate?: string;
+  userAge?: number;
+  category?: string;
+  intent?: IntentType;
 };
 
 export type SmartChatResponse = {
@@ -61,7 +65,20 @@ export class SmartChatRouter {
   async routeMessage(message: string, context?: ChatContext): Promise<SmartChatResponse> {
     const started = Date.now();
     try {
+      // DEVELOPER MESSAGE: hard-lock user context as the first system message so
+      // the LLM never re-asks for age/state regardless of what the user types.
+      const developerHeader = context?.validationGate
+        ? context.validationGate
+        : [
+            `USER CONTEXT (LOCKED — DO NOT ask for these again):`,
+            context?.userAge  ? `Age: ${context.userAge}` : null,
+            context?.state    ? `State: ${context.state}` : null,
+            context?.division ? `Division: ${context.division}` : null,
+            context?.category ? `Benefit Category in scope: ${context.category}` : null,
+          ].filter(Boolean).join(' | ');
+
       const messages = [
+        { role: 'system', content: developerHeader },
         { role: 'system', content: REASONING_SYSTEM_PROMPT },
         { role: 'system', content: this.buildContextNote(context) },
         { role: 'user', content: message }
@@ -113,8 +130,10 @@ export class SmartChatRouter {
   private buildContextNote(context?: ChatContext): string {
     if (!context) return 'Context: none provided.';
     const parts: string[] = [];
-    if (context.state) parts.push(`state: ${context.state}`);
+    if (context.userAge)  parts.push(`age: ${context.userAge}`);
+    if (context.state)    parts.push(`state: ${context.state}`);
     if (context.division) parts.push(`division: ${context.division}`);
+    if (context.category) parts.push(`benefit category: ${context.category}`);
     return parts.length ? `Context: ${parts.join(', ')}.` : 'Context: none provided.';
   }
 }

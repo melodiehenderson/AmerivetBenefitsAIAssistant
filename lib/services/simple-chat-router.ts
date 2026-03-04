@@ -8,12 +8,16 @@ import { simpleRAGSystem } from '@/lib/ai/simple-rag';
 import type { BenefitPlan } from '@/lib/data/amerivet';
 import { getPlansByRegion } from '@/lib/data/amerivet-benefits';
 import { compareMaternityCosts, estimateCostProjection } from '@/lib/rag/pricing-utils';
+import type { IntentType } from '@/lib/rag/query-understanding';
 
 type ChatContext = {
   state?: string;
   division?: string;
   history?: Array<{ role: 'user' | 'assistant'; content: string }>;
   validationGate?: string;
+  userAge?: number;
+  category?: string;
+  intent?: IntentType;
 };
 
 interface ChatResponse {
