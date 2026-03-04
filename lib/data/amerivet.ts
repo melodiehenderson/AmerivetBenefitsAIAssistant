@@ -487,3 +487,89 @@ export function calculateTierMonthly(planId: string, tier: BenefitTier): number 
   }
   return plan.tiers[tier];
 }
+
+// =============================================================================
+// PROMPT SERIALISER — Immutable Truth Table for LLM grounding
+// =============================================================================
+
+/**
+ * Serialises the AmeriVet benefit catalog into a compact, LLM-readable string
+ * that acts as an immutable lookup table inside the system prompt.
+ *
+ * - Only plans available in `stateCode` (or nationwide) are included.
+ * - A "NOT IN CATALOG" block lists common benefits AmeriVet does NOT offer,
+ *   giving the LLM an explicit decline list instead of hallucinating.
+ *
+ * @param stateCode  2-letter US state code (e.g. "IL"). Pass null for nationwide only.
+ */
+export function getCatalogForPrompt(stateCode?: string | null): string {
+  const catalog = amerivetBenefits2024_2025;
+  const availablePlans = getPlansByRegion(stateCode ?? 'nationwide');
+  const biw = (m: number) => `$${((m * 12) / 26).toFixed(2)}`;
+
+  const lines: string[] = [
+    `=== AMERIVET BENEFITS CATALOG (${catalog.openEnrollment.year}) — IMMUTABLE LOOKUP TABLE ===`,
+    `Respond ONLY with plans listed here. Plans not listed DO NOT EXIST for AmeriVet employees.`,
+    `NOT IN CATALOG (decline politely if asked): pet insurance, legal insurance, ID theft protection,`,
+    `  gym membership, wellness reimbursement, student loan repayment, long-term care, cancer-only plans.`,
+    '',
+  ];
+
+  // ── Medical ────────────────────────────────────────────────────────────────
+  const medPlans = availablePlans.filter(p => p.type === 'medical');
+  if (medPlans.length) {
+    lines.push('── MEDICAL PLANS ──────────────────────────────────────────────────────────');
+    for (const p of medPlans) {
+      lines.push(`[${p.id}] ${p.name} | Provider: ${p.provider}`);
+      lines.push(`  Premiums: Employee $${p.tiers.employeeOnly}/mo (${biw(p.tiers.employeeOnly)}/bi-wk) | +Spouse $${p.tiers.employeeSpouse}/mo | +Child $${p.tiers.employeeChildren}/mo | Family $${p.tiers.employeeFamily}/mo`);
+      lines.push(`  Deductible: $${p.benefits.deductible} | OOP Max: $${p.benefits.outOfPocketMax} | Coinsurance: ${p.benefits.coinsurance * 100}%`);
+      lines.push(`  Key features: ${p.features.slice(0, 3).join(' | ')}`);
+      if (p.limitations.length) lines.push(`  Limitations: ${p.limitations[0]}`);
+      lines.push('');
+    }
+  }
+
+  // ── Dental ─────────────────────────────────────────────────────────────────
+  const d = catalog.dentalPlan;
+  lines.push('── DENTAL PLAN ─────────────────────────────────────────────────────────────');
+  lines.push(`[${d.id}] ${d.name} | Provider: ${d.provider}`);
+  lines.push(`  Premiums: Employee $${d.tiers.employeeOnly}/mo | +Spouse $${d.tiers.employeeSpouse}/mo | +Child $${d.tiers.employeeChildren}/mo | Family $${d.tiers.employeeFamily}/mo`);
+  lines.push(`  Deductible: $${d.benefits.deductible}/individual | Annual Max: $${d.benefits.outOfPocketMax}`);
+  lines.push(`  Key features: ${d.features.join(' | ')}`);
+  lines.push('');
+
+  // ── Vision ─────────────────────────────────────────────────────────────────
+  const v = catalog.visionPlan;
+  lines.push('── VISION PLAN ─────────────────────────────────────────────────────────────');
+  lines.push(`[${v.id}] ${v.name} | Provider: ${v.provider}`);
+  lines.push(`  Premiums: Employee $${v.tiers.employeeOnly}/mo | +Spouse $${v.tiers.employeeSpouse}/mo | +Child $${v.tiers.employeeChildren}/mo | Family $${v.tiers.employeeFamily}/mo`);
+  lines.push(`  Key features: ${v.features.join(' | ')}`);
+  lines.push('');
+
+  // ── Voluntary / Life ───────────────────────────────────────────────────────
+  const volPlans = availablePlans.filter(p => p.type === 'voluntary');
+  if (volPlans.length) {
+    lines.push('── VOLUNTARY / LIFE & DISABILITY ───────────────────────────────────────────');
+    for (const p of volPlans) {
+      lines.push(`[${p.id}] ${p.name} | Provider: ${p.provider}`);
+      lines.push(`  Premiums: Employee $${p.tiers.employeeOnly}/mo | +Spouse $${p.tiers.employeeSpouse}/mo | Family $${p.tiers.employeeFamily}/mo`);
+      lines.push(`  Key features: ${p.features.join(' | ')}`);
+      lines.push('');
+    }
+  }
+
+  // ── Special Accounts ───────────────────────────────────────────────────────
+  lines.push('── SPECIAL ACCOUNTS ────────────────────────────────────────────────────────');
+  lines.push(`HSA: Employer contributes $${catalog.specialCoverage.hsa.employerContribution}/yr`);
+  lines.push(`FSA: Employee max $${catalog.specialCoverage.fsa.maximumContribution}/yr`);
+  lines.push(`Commuter: $${catalog.specialCoverage.commuter.monthlyBenefit}/mo benefit`);
+  lines.push('');
+
+  // ── Enrollment Window ──────────────────────────────────────────────────────
+  lines.push('── ENROLLMENT WINDOW ───────────────────────────────────────────────────────');
+  lines.push(`Open: ${catalog.openEnrollment.startDate} – ${catalog.openEnrollment.endDate} | Effective: ${catalog.openEnrollment.effectiveDate}`);
+  lines.push(`Eligibility: Full-time ≥${catalog.eligibility.fullTimeHours}h/wk. Coverage ${catalog.eligibility.coverageEffective}`);
+  lines.push(`Dependents: Spouse=${catalog.eligibility.dependents.spouse} | Children: ${catalog.eligibility.dependents.children}`);
+
+  return lines.join('\n');
+}

@@ -11,7 +11,7 @@ export function shouldAppendRecommendation(content: string, session: Session): b
   if (!content.trim()) return false;
   if (hasPrompt(content, FINAL_RECOMMENDATION_PROMPT)) return false;
 
-  const last = session.context.lastRecommendationPromptAt ?? 0;
+  const last = session.context?.lastRecommendationPromptAt ?? 0;
   return Date.now() - last > 45_000;
 }
 
@@ -29,7 +29,7 @@ export function shouldAppendTransition(content: string, session: Session): boole
   const currentTurn = session.turn ?? 0;
   if (Number.isFinite(lastTurn) && currentTurn - lastTurn < 2) return false;
 
-  const lastTimestamp = session.context.lastTransitionPromptAt ?? 0;
+  const lastTimestamp = session.context?.lastTransitionPromptAt ?? 0;
   return Date.now() - lastTimestamp > 45_000;
 }
 

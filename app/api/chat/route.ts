@@ -11,6 +11,9 @@ import { trackEnhancedChatResponse } from '@/lib/analytics/tracking';
 import { conversationService } from '@/lib/services/conversation-service';
 import { logger } from '@/lib/logger';
 import { z } from 'zod';
+import { extractUserSlots, extractAndMapEntities } from '@/lib/rag/query-understanding';
+import { cityToStateMap } from '@/lib/schemas/onboarding';
+import { getCatalogForPrompt } from '@/lib/data/amerivet';
 
 // Validation schema for chat request
 const chatRequestSchema = z.object({
@@ -114,33 +117,65 @@ export const POST = withAuth(undefined, [PERMISSIONS.CHAT_WITH_AI])(async (reque
       });
     };
 
-    // Free-text onboarding extractor: parse name, age, state, division in one shot
-    const extractOnboarding = (text: string) => {
+    // -------------------------------------------------------------------------
+    // SLOT EXTRACTION — Deterministic (no LLM). Resolves e.g. "Chicago" → "IL".
+    // -------------------------------------------------------------------------
+    const extractAndResolveSlots = (text: string) => {
+      const slots = extractUserSlots(text);
+      // extractUserSlots already resolves city → state via cityToStateMap.
+      // Additionally extract division from the raw text.
+      const deptAliases: Record<string, string> = {
+        hr: 'hr', human: 'hr', resources: 'hr',
+        finance: 'finance', accounting: 'finance',
+        it: 'it', engineering: 'engineering',
+        ops: 'operations', operations: 'operations',
+      };
       const t = text.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
       const tokens = t.split(' ');
-      const states = ['california','oregon','washington','texas','arizona','nevada','new york','florida','ca','or','wa','tx','az','nv','ny','fl'];
-      const deptAliases: Record<string,string> = { 'hr':'hr', 'human':'hr', 'resources':'hr', 'finance':'finance', 'accounting':'finance', 'it':'it', 'engineering':'engineering', 'ops':'operations', 'operations':'operations' };
-      let name: string | undefined;
-      let age: number | undefined;
-      let state: string | undefined;
       let division: string | undefined;
       for (let i = 0; i < tokens.length; i++) {
         const tok = tokens[i];
-        if (!age && /^(1[6-9]|[2-6][0-9])$/.test(tok)) age = Number(tok);
-        if (!state && states.includes(tok)) state = tok.length === 2 ? ({ ca: 'california', or: 'oregon', wa: 'washington', tx: 'texas', az: 'arizona', nv: 'nevada', ny: 'new york', fl: 'florida' } as any)[tok] : tok;
         if (!division && (deptAliases[tok] || tok === 'dept' || tok === 'department')) {
-          division = deptAliases[tok] || tokens[i+1] || 'general';
+          division = deptAliases[tok] || tokens[i + 1] || 'general';
           if (deptAliases[division]) division = deptAliases[division];
         }
       }
-      // naive name: first token that is not number/state/dept keyword
-      for (const tok of tokens) {
-        if (/^(1[6-9]|[2-6][0-9])$/.test(tok)) continue;
-        if (states.includes(tok)) continue;
-        if (deptAliases[tok] || tok === 'dept' || tok === 'department') continue;
-        if (!name) { name = tok; break; }
-      }
-      return { name, age, state, division };
+      return { name: slots.name, age: slots.age, state: slots.state, city: slots.city, division };
+    };
+
+    // -------------------------------------------------------------------------
+    // PROMPT CONSTRUCTORS — deterministic; never call the LLM.
+    // -------------------------------------------------------------------------
+
+    /** COLLECTOR MODE: one or more demographic slots are still missing. */
+    const constructCollectorPrompt = (meta: Record<string, any>): string => {
+      const missing: string[] = [];
+      if (!meta.userAge) missing.push('age');
+      if (!meta.state)   missing.push('state or city');
+      return (
+        `COLLECTOR MODE: Gather missing user context. Missing: ${missing.join(', ')}. ` +
+        `Ask ONLY for the missing information in a friendly, conversational way. ` +
+        `Do NOT discuss benefit plans, quote any premiums, or make plan comparisons until all slots are filled. ` +
+        `If the user provides a city (e.g. "Chicago"), acknowledge it and confirm their state ` +
+        `(e.g. "Got it—Illinois!") without asking again.`
+      );
+    };
+
+    /** ANALYST MODE: all slots confirmed → inject full catalog + strict grounding rules. */
+    const constructAnalystPrompt = (meta: Record<string, any>): string => {
+      const catalogText = getCatalogForPrompt(meta.state as string | null);
+      return [
+        `ANALYST MODE — STRICT GROUNDING RULES (non-negotiable):`,
+        `User confirmed: Name=${meta.userName ?? 'unknown'} | Age=${meta.userAge} | State=${meta.state}${meta.userCity ? ` (city: ${meta.userCity})` : ''} | Division=${meta.division ?? 'unknown'}`,
+        ``,
+        `1. You are STRICTLY FORBIDDEN from asking for age or state — they are already confirmed.`,
+        `2. Answer ONLY from the catalog below. Never invent plans, premiums, or benefit types not listed.`,
+        `3. If the user asks about a benefit NOT in the catalog, respond: "That benefit isn't part of AmeriVet's package." then list what IS available.`,
+        `4. Always show premiums as "$X.XX/month ($Y.YY bi-weekly)".`,
+        `5. You are now in Plan Comparison mode — help the user evaluate the options below.`,
+        ``,
+        catalogText,
+      ].join('\n');
     };
 
     const ensureEligibility = async (): Promise<NextResponse | null> => {
@@ -231,12 +266,18 @@ export const POST = withAuth(undefined, [PERMISSIONS.CHAT_WITH_AI])(async (reque
 
         const trimmedState = message.trim();
         if (!trimmedState) {
-          return sendEligibilityMessage("I didn't catch that. What state are you in?");
+          return sendEligibilityMessage("I didn't catch that. What state are you in? (You can also say a city, like 'Chicago')");
         }
+
+        // Deterministic city-to-state resolution — never asks the LLM.
+        const locationSlots = extractUserSlots(trimmedState);
+        const resolvedState = locationSlots.state ?? trimmedState;
+        const resolvedCity  = locationSlots.city  ?? undefined;
 
         const needsDivision = !metadata.division;
         const statePatch: Record<string, any> = {
-          state: trimmedState,
+          state: resolvedState,
+          ...(resolvedCity ? { userCity: resolvedCity } : {}),
           awaiting: needsDivision ? 'division' : null
         };
         if (!needsDivision) {
@@ -299,17 +340,19 @@ export const POST = withAuth(undefined, [PERMISSIONS.CHAT_WITH_AI])(async (reque
         );
       }
 
-      // If user provided free-text onboarding details, parse and patch without re-asking
-      const parsed = extractOnboarding(message);
+      // If user provided free-text onboarding details, parse and patch without re-asking.
+      // extractAndResolveSlots uses the full city-to-state truth table.
+      const parsed = extractAndResolveSlots(message);
       const patch: Record<string, any> = {};
-      if (parsed.name && !metadata.userName) patch.userName = parsed.name;
-      if (parsed.age && !metadata.userAge) patch.userAge = parsed.age;
-      if (parsed.state && !metadata.state) patch.state = parsed.state;
+      if (parsed.name     && !metadata.userName) patch.userName = parsed.name;
+      if (parsed.age      && !metadata.userAge)  patch.userAge  = parsed.age;
+      if (parsed.state    && !metadata.state)    patch.state    = parsed.state;
+      if (parsed.city     && !metadata.userCity) patch.userCity = parsed.city;
       if (parsed.division && !metadata.division) patch.division = parsed.division;
       if (Object.keys(patch).length) {
         patch.awaiting = null;
         const updated = await conversationService.patchMetadata(conversation.id, patch);
-        conversation.metadata = { ...(conversation.metadata||{}), ...(updated.metadata||{}) };
+        conversation.metadata = { ...(conversation.metadata || {}), ...(updated.metadata || {}) };
       }
       return null;
     };
@@ -357,14 +400,48 @@ Which of these would you like to learn about next?`
     let routed;
     let modelUsed: 'simple' | 'smart' | 'rag' = 'simple';
 
+    // =========================================================================
+    // STATE MACHINE: EXTRACT → PERSIST → GUARD → GATE → ROUTE
+    // =========================================================================
+
+    // 1. EXTRACT & PERSIST — deterministic; no LLM; resolves "Chicago" → "IL".
+    const mapped = extractAndMapEntities(message);
+    const slotPatch: Record<string, any> = {};
+    if (mapped.slots.age   && !conversation.metadata?.userAge)  slotPatch.userAge  = mapped.slots.age;
+    if (mapped.slots.state && !conversation.metadata?.state)    slotPatch.state    = mapped.slots.state;
+    if (mapped.slots.city  && !conversation.metadata?.userCity) slotPatch.userCity = mapped.slots.city;
+    if (Object.keys(slotPatch).length) {
+      const patchResult = await conversationService.patchMetadata(conversation.id, slotPatch);
+      conversation.metadata = { ...(conversation.metadata ?? {}), ...(patchResult.metadata ?? {}) };
+    }
+
+    // 2. OUT-OF-CATALOG GUARD — intercept before any LLM call.
+    if (mapped.isAboutBenefitNotInCatalog) {
+      return sendAssistantMessage(
+        `I'm sorry, but that benefit isn't part of the AmeriVet benefits package. ` +
+        `AmeriVet offers: Medical (BCBSTX HSA plans + Kaiser HMO in CA/OR/WA), ` +
+        `Dental (BCBSTX PPO), Vision (VSP Plus), Life & Disability (Unum), ` +
+        `and special accounts (HSA / FSA / Commuter). ` +
+        `Which of these would you like to explore?`
+      );
+    }
+
+    // 3. VALIDATION GATE — Collector prompt if slots incomplete, Analyst if full.
+    const gateMeta = conversation.metadata ?? {};
+    const slotsComplete = !!(gateMeta.userAge && gateMeta.state);
+    const validationGate = slotsComplete
+      ? constructAnalystPrompt(gateMeta)
+      : constructCollectorPrompt(gateMeta);
+
     // Priority: RAG > Smart > Simple
     if (useRAG) {
       try {
         routed = await ragChatRouter.routeMessage(userMessage.content, {
-          state: conversation.metadata?.state,
-          division: conversation.metadata?.division,
+          state:           conversation.metadata?.state,
+          division:        conversation.metadata?.division,
           companyId,
-          history: [] // Could add conversation history here
+          history:         [],
+          validationGate,
         });
         modelUsed = 'rag';
       } catch (err) {
@@ -375,8 +452,9 @@ Which of these would you like to learn about next?`
     if (!routed && useSmart) {
       try {
         routed = await smartChatRouter.routeMessage(userMessage.content, {
-          state: conversation.metadata?.state,
-          division: conversation.metadata?.division
+          state:          conversation.metadata?.state,
+          division:       conversation.metadata?.division,
+          validationGate,
         });
         modelUsed = 'smart';
       } catch (err) {
@@ -386,8 +464,9 @@ Which of these would you like to learn about next?`
 
     if (!routed) {
       routed = await simpleChatRouter.routeMessage(userMessage.content, {
-        state: conversation.metadata?.state,
-        division: conversation.metadata?.division
+        state:          conversation.metadata?.state,
+        division:       conversation.metadata?.division,
+        validationGate,
       });
       modelUsed = 'simple';
     }

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { hybridRetrieve } from '@/lib/rag/hybrid-retrieval';
 import { azureOpenAIService } from '@/lib/azure/openai';
 import type { RetrievalContext } from '@/types/rag';
@@ -7,108 +8,85 @@ import {
   validatePricingFormat, 
   enforceMonthlyFirstFormat
 } from '@/lib/rag/response-utils';
+import {
+  userProfileSchema,
+  sessionStateSchema,
+  cityToStateMap,
+  UserProfile,
+  SessionState_Legacy,
+} from '@/lib/schemas/onboarding';
 
 export const dynamic = 'force-dynamic';
 
 // ============================================================================
-// 1. THE BRAIN: Intent Classification
+// 1. THE BRAIN: Entity Extraction & Intent Classification
 // ============================================================================
-const ONBOARDING_STATE_NAME_TO_CODE: Record<string, string> = {
-  'washington': 'WA',
-  'oregon': 'OR',
-  'california': 'CA',
-  'texas': 'TX',
-  'florida': 'FL',
-  'new york': 'NY',
-  'ohio': 'OH',
-};
 
 const ONBOARDING_STATE_CODES = new Set([
   'WA', 'OR', 'CA', 'TX', 'FL', 'NY', 'OH', 'IL', 'PA', 'GA', 'NC', 'MI', 'NJ', 'VA',
+  'AZ', 'IN', 'TN', 'MD', 'MA', 'MO', 'CO', 'WI', 'MN', 'OK', 'SC', 'KS', 'NV', 'KY',
+  'AL', 'LA', 'CT', 'UT', 'IA', 'MS', 'AR', 'NE', 'NM'
 ]);
 
-function extractStateCode(msg: string, hasAge: boolean): { code: string | null; token: string | null } {
-  const original = msg.trim();
-  const lower = original.toLowerCase();
+function extractEntities(query: string): Partial<UserProfile> {
+  const lowerQuery = query.toLowerCase();
+  const entities: Partial<UserProfile> = {};
 
-  // Prefer full names first
-  let bestName: string | null = null;
-  for (const name of Object.keys(ONBOARDING_STATE_NAME_TO_CODE)) {
-    if (!lower.includes(name)) continue;
-    const re = new RegExp(`\\b${name.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}\\b`, 'i');
-    if (re.test(original)) {
-      if (!bestName || name.length > bestName.length) bestName = name;
-    }
+  // 1. Extract Age
+  const ageMatch = lowerQuery.match(/\b(age\s+)?(1[8-9]|[2-9][0-9])\b/);
+  if (ageMatch) {
+    entities.age = parseInt(ageMatch[2], 10);
   }
-  if (bestName) return { code: ONBOARDING_STATE_NAME_TO_CODE[bestName], token: bestName };
 
-  const hasLocationCue = /\b(in|from|live|located|state)\b/i.test(original);
-  const agePlusState = original.match(/\b(1[8-9]|[2-9][0-9])\b\s*[,\-\/\s]+\s*([A-Za-z]{2})\b/);
-  const adjacent = (agePlusState?.[2] || null)?.trim();
-
-  const rawTokens = original.split(/[\s,.;:()\[\]{}<>"']+/).filter(Boolean);
-  for (const raw of rawTokens) {
-    const cleaned = raw.replace(/[^A-Za-z]/g, '');
-    if (cleaned.length !== 2) continue;
-
-    const upper = cleaned.toUpperCase();
-    if (!ONBOARDING_STATE_CODES.has(upper)) continue;
-
-    const lower2 = cleaned.toLowerCase();
-    const ambiguousCode = lower2 === 'or' || lower2 === 'in';
-    const isUpperInOriginal = cleaned === upper;
-    const isAdjacentToAge = adjacent ? adjacent.toLowerCase() === lower2 : false;
-
-    // Avoid treating conjunctions/prepositions as states unless the user is clearly providing location.
-    if (ambiguousCode && !isUpperInOriginal && !hasLocationCue && !hasAge && !isAdjacentToAge) continue;
-
-    if (isUpperInOriginal || isAdjacentToAge || hasLocationCue || hasAge) {
-      return { code: upper, token: cleaned };
+  // 2. Extract State (via City or Code)
+  // Check for city first
+  for (const city in cityToStateMap) {
+    if (lowerQuery.includes(city)) {
+      entities.state = cityToStateMap[city];
+      break; // Found a city, no need to check for state codes
     }
   }
 
-  return { code: null, token: null };
+  // If no city was found, check for state codes
+  if (!entities.state) {
+    const words = lowerQuery.split(/[\s,.;:()\[\]{}<>"']+/);
+    for (const word of words) {
+      const upperWord = word.toUpperCase();
+      if (upperWord.length === 2 && ONBOARDING_STATE_CODES.has(upperWord)) {
+        entities.state = upperWord;
+        break;
+      }
+    }
+  }
+  
+  // 3. Extract Name
+  const nameMatch = query.match(/(?:my name is|i'm|i am|call me)\s+([a-zA-Z]{2,15})/i);
+  if (nameMatch && !['medical', 'dental', 'vision'].includes(nameMatch[1].toLowerCase())) {
+      entities.name = nameMatch[1];
+  } else {
+      const words = query.trim().split(/\s+/);
+      if (words.length === 1 && /^[a-zA-Z]{2,15}$/.test(words[0])) {
+          if (!['hi', 'hello', 'help'].includes(words[0].toLowerCase())) {
+              entities.name = words[0].charAt(0).toUpperCase() + words[0].slice(1).toLowerCase();
+          }
+      }
+  }
+
+  return entities;
 }
 
-function classifyInput(msg: string) {
-  const clean = msg.toLowerCase().trim();
-  
-  // A. Continuation ("Go ahead", "Sure", "Okay")
+
+function classifyIntent(query: string) {
+  const clean = query.toLowerCase().trim();
   const isContinuation = /^(ok|okay|go ahead|sure|yes|yep|yeah|please|continue|next|right|correct|proceed|got it)$/i.test(clean);
-  
-  // B. Topic Jump ("Medical", "Dental", "Enroll")
   const isTopic = /medical|dental|vision|life|disability|hsa|ppo|hmo|coverage|plan|benefits|enroll|cost|price/i.test(clean);
-  
-  // C. Demographics ("25 in WA", "California", "Age 40")
-  // Broader regex to catch "25 and in california"
-  const hasAge = /\b(1[8-9]|[2-9][0-9])\b/.test(clean); 
-  const extractedState = extractStateCode(msg, hasAge);
-  const hasState = !!extractedState.code;
-  const isDemographics = hasAge || hasState;
-
-  return { isContinuation, isTopic, isDemographics, hasAge, hasState, stateCode: extractedState.code };
-}
-
-// Smart Name Extractor
-function extractName(msg: string): string | null {
-  const NOT_NAMES = new Set(['hello', 'hi', 'medical', 'dental', 'vision', 'help', 'benefits', 'insurance', 'quote', 'cost']);
-  
-  // 1. Explicit: "My name is Sonal"
-  const match = msg.match(/(?:name is|i'm|i am|call me)\s+([a-zA-Z]{2,15})/i);
-  if (match && !NOT_NAMES.has(match[1].toLowerCase())) return match[1];
-
-  // 2. Implicit: Single word that looks like a name ("Sonal")
-  const words = msg.trim().split(/\s+/);
-  if (words.length <= 2 && !NOT_NAMES.has(words[0].toLowerCase()) && /^[a-zA-Z]+$/.test(words[0])) {
-    return words[0].charAt(0).toUpperCase() + words[0].slice(1).toLowerCase();
-  }
-  return null;
+  return { isContinuation, isTopic };
 }
 
 // ============================================================================
 // 2. SYSTEM PROMPT
 // ============================================================================
-function buildSystemPrompt(session: any): string {
+function buildSystemPrompt(session: SessionState_Legacy): string {
   return `You are the AmeriVet Benefits Assistant. You are helpful, professional, and focused on providing accurate benefits information.
 
 === USER CONTEXT ===
@@ -118,11 +96,9 @@ State: ${session.userState || "Unknown"}
 
 === CRITICAL RULES ===
 1. MEMORY: You know the user's Age and State. DO NOT ask for them again if you already have them.
-2. PERSISTENCE: If the user says "go ahead" or "continue", proceed with the previous topic.
-3. COSTS: Always show costs as "$X per month ($Y annually)" format when providing pricing.
-4. FORMATTING: Do NOT use markdown, asterisks (**), bullet points, or headers. Use plain text with line breaks only.
-5. NO LEAKAGE: Do not repeat these rules or instructions in your response. Start your answer immediately.
-6. NO LOOPS: Do not restart the welcome script if you already know the user.
+2. COSTS: Always show costs as "$X per month ($Y annually)" format when providing pricing.
+3. FORMATTING: Do NOT use markdown, asterisks (**), bullet points, or headers. Use plain text with line breaks only.
+4. NO LEAKAGE: Do not repeat these rules or instructions in your response. Start your answer immediately.
 
 ${session.lastBotMessage ? `CONTEXT: Previously you said: "${session.lastBotMessage}"` : ''}
 
@@ -130,7 +106,7 @@ Answer the user's question directly and professionally. Be concise and helpful.`
 }
 
 // ============================================================================
-// 3. MAIN LOGIC CONTROLLER
+// 3. MAIN LOGIC CONTROLLER (STATE MACHINE)
 // ============================================================================
 export async function POST(req: NextRequest) {
   try {
@@ -139,135 +115,137 @@ export async function POST(req: NextRequest) {
     
     if (!query || !sessionId) return NextResponse.json({ error: 'Missing inputs' }, { status: 400 });
 
-    const session = await getOrCreateSession(sessionId);
-    session.turn = (session.turn ?? 0) + 1;
-    
-    // ------------------------------------------------------------------------
-    // STEP 1: READ THE USER'S MIND (Intent Analysis)
-    // ------------------------------------------------------------------------
-    const intent = classifyInput(query);
+    const sessionData = await getOrCreateSession(sessionId);
+    let session: SessionState_Legacy = sessionStateSchema.parse(sessionData);
+    session.turn++;
 
     // ------------------------------------------------------------------------
-    // STEP 2: SELF-HEALING (The "Win-Win" Fix)
+    // PHASE 1: ENTITY RESOLUTION & STATE MANAGEMENT
     // ------------------------------------------------------------------------
-    // PROBLEM: Server restarts, session is empty.
-    // FIX: If user input looks like "25 in CA" or "Medical", we force a session restore.
-    
-    if (!session.hasCollectedName && (intent.isContinuation || intent.isTopic || intent.isDemographics)) {
-       console.log(`[Self-Healing] Restoring lost session for input: "${query}"`);
-       session.userName = "Guest"; // Fallback name so we don't loop
-       session.hasCollectedName = true;
-       session.step = 'active_chat';
+    const entities = extractEntities(query);
+    const intent = classifyIntent(query);
+    let entitiesFound = false;
+
+    if (entities.name && !session.hasCollectedName) {
+      session.userName = entities.name;
+      session.hasCollectedName = true;
+      entitiesFound = true;
+    }
+    if (entities.age) {
+      session.userAge = entities.age;
+      entitiesFound = true;
+    }
+    if (entities.state) {
+      session.userState = entities.state;
+      entitiesFound = true;
+    }
+
+    // Transition state if all data is collected
+    if (session.userAge && session.userState && session.step !== 'active_chat') {
+      session.step = 'active_chat';
     }
 
     // ------------------------------------------------------------------------
-    // STEP 3: FLASHBULB MEMORY (Data Extraction)
+    // PHASE 2: ZERO-REDUNDANCY VALIDATION (State Machine Logic)
     // ------------------------------------------------------------------------
-    // Extract Age/State regardless of where we are in the flow
-    if (intent.hasAge) {
-        session.userAge = parseInt(query.match(/\b(1[8-9]|[2-9][0-9])\b/)![0]);
+
+    // STATE: START (No name collected yet)
+    if (session.step === 'start') {
+      if (session.hasCollectedName) {
+        session.step = 'awaiting_demographics';
+        // Fall through to next state
+      } else {
+        const msg = `Hi there! Welcome! 🎉\n\nI'm your AmeriVet Benefits Assistant. I'm here to help you compare plans and find the right fit.\n\nLet's get started — what's your name?`;
+        session.lastBotMessage = msg;
+        await updateSession(sessionId, session);
+        return NextResponse.json({ answer: msg, tier: 'L0' });
+      }
     }
-    if (intent.hasState && intent.stateCode) {
-      session.userState = intent.stateCode;
-    }
-    
-    // If we have data now, ensure the gate is open
-    if (session.userAge && session.userState) {
+
+    // STATE: AWAITING_DEMOGRAPHICS
+    if (session.step === 'awaiting_demographics') {
+      if (session.userAge && session.userState) {
         session.step = 'active_chat';
-    }
-
-    // ------------------------------------------------------------------------
-    // STEP 4: CONVERSATION FLOW (State Machine)
-    // ------------------------------------------------------------------------
-
-    // PHASE 1: GET NAME (Only if session is empty AND input is NOT data/topic)
-    if (!session.hasCollectedName) {
-        const name = extractName(query);
-        if (name) {
-            session.userName = name;
-            session.hasCollectedName = true;
-            session.step = 'awaiting_demographics';
-            const msg = `Thanks, ${name}! It's great to meet you. 😊\n\nTo help me find the best plans for *you*, could you please share your **Age** and **State**?`;
-            
-            session.lastBotMessage = msg;
-            await updateSession(sessionId, session);
-            return NextResponse.json({ answer: msg, tier: 'L1' });
-        } else {
-            // Default Welcome
-            const msg = `Hi there! Welcome! 🎉\n\nI'm your AmeriVet Benefits Assistant. I'm here to help you compare plans and find the right fit.\n\nLet's get started — what's your name?`;
-            session.lastBotMessage = msg;
-            await updateSession(sessionId, session);
-            return NextResponse.json({ answer: msg, tier: 'L1' });
-        }
-    }
-
-    // PHASE 2: THE GATE (Demographics Check)
-    // We only block if we are missing data AND the user isn't just saying "Go ahead"
-    if ((!session.userAge || !session.userState) && !intent.isContinuation && !intent.isTopic) {
-        if (intent.isDemographics) {
-             // We caught data this turn. Acknowledge it.
-             session.step = 'active_chat'; 
-             // If query was ONLY data ("25 in CA"), we confirm it.
-             if (query.length < 40 && !query.includes("?")) {
-                 const msg = `Got it! ${session.userAge} in ${session.userState}. Thanks!\n\nI can now show you accurate pricing. What would you like to explore? (Medical, Dental, Vision?)`;
-                 session.lastBotMessage = msg;
-                 await updateSession(sessionId, session);
-                 return NextResponse.json({ answer: msg, tier: 'L1' });
-             }
-        } else {
-             // Still missing data. Ask nicely.
-             const nameRef = session.userName !== "Guest" ? session.userName : "there";
-             const msg = `Thanks ${nameRef}. To show you the correct plans, I need to know your **Age** and **State** (e.g., "I'm 25 in CA").`;
+        const msg = `Thanks, ${session.userName}! Got it: age ${session.userAge} in ${session.userState}.\n\nI can now show you accurate pricing. What would you like to explore? (e.g., Medical, Dental, or Vision)`;
+        session.lastBotMessage = msg;
+        await updateSession(sessionId, session);
+        return NextResponse.json({ answer: msg, tier: 'L0' });
+      } else {
+        // If we just got the name, thank them and ask for more info.
+        if (entities.name && !entities.age && !entities.state) {
+             const msg = `Thanks, ${session.userName}! It's great to meet you. 😊\n\nTo help me find the best plans for *you*, could you please share your **Age** and **State**? (e.g., "I'm 34 in Chicago")`;
              session.lastBotMessage = msg;
              await updateSession(sessionId, session);
-             return NextResponse.json({ answer: msg, tier: 'L1' });
+             return NextResponse.json({ answer: msg, tier: 'L0' });
         }
+        // If user provides some data but not all
+        if(entitiesFound) {
+            const missing = [];
+            if (!session.userAge) missing.push('Age');
+            if (!session.userState) missing.push('State');
+            const msg = `Thanks! Just need your ${missing.join(' and ')} to find the right plans.`;
+            session.lastBotMessage = msg;
+            await updateSession(sessionId, session);
+            return NextResponse.json({ answer: msg, tier: 'L0' });
+        }
+      }
     }
 
-    // PHASE 3: THE RESPONSE (RAG)
-    const context: RetrievalContext = {
-      companyId,
-      state: session.userState ?? undefined, 
-      dept: session.context?.dept,
-    };
+    // STATE: ACTIVE_CHAT (All data collected, proceed to RAG)
+    if (session.step === 'active_chat') {
+      // If the user is just confirming or continuing, prompt them for a topic.
+      if (intent.isContinuation && !intent.isTopic) {
+        const msg = `I'm ready! What topic should we cover first? (Medical, Dental, Vision?)`;
+        return NextResponse.json({ answer: msg, tier: 'L0' });
+      }
 
-    const result = await hybridRetrieve(query, context);
-    
-    // Fallback if RAG finds nothing
-    if (!result.chunks?.length) {
-        if (intent.isContinuation) {
-            const msg = `I'm ready! What topic should we cover first? (Medical, Dental, Vision?)`;
-            return NextResponse.json({ answer: msg });
-        }
+      const context: RetrievalContext = {
+        companyId,
+        state: session.userState,
+        dept: undefined,
+      };
+
+      const result = await hybridRetrieve(query, context);
+      
+      if (!result.chunks?.length) {
         return NextResponse.json({ answer: "I couldn't find specific details on that. Could you clarify which benefit you're asking about?" });
+      }
+
+      const contextText = result.chunks.map((c, i) => `[${i+1}] ${c.content}`).join('\n\n');
+      const systemPrompt = buildSystemPrompt(session);
+      const userPrompt = `Context: ${contextText}\n\nQuestion: ${query}`;
+
+      const completion = await azureOpenAIService.generateChatCompletion(
+        [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }],
+        { temperature: 0.1 }
+      );
+
+      let answer = completion.content.trim();
+      answer = enforceMonthlyFirstFormat(answer);
+      answer = validatePricingFormat(answer);
+
+      session.lastBotMessage = answer;
+      await updateSession(sessionId, session);
+
+      return NextResponse.json({
+        answer,
+        tier: 'L1',
+        citations: result.chunks
+      });
     }
-
-    const contextText = result.chunks.map((c, i) => `[${i+1}] ${c.content}`).join('\n\n');
-    const systemPrompt = buildSystemPrompt(session);
     
-    // Clean user prompt - no exposed instructions
-    const userPrompt = `Context: ${contextText}\n\nQuestion: ${query}`;
-
-    const completion = await azureOpenAIService.generateChatCompletion([
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userPrompt }
-    ], { temperature: 0.1 });
-
-    let answer = completion.content.trim();
-    answer = enforceMonthlyFirstFormat(answer);
-    answer = validatePricingFormat(answer);
-
-    session.lastBotMessage = answer;
+    // Fallback for any unhandled state
+    const defaultMsg = `To give you the most accurate information, I need your Age and State. For example, you can say "I'm 34 in Chicago".`;
+    session.lastBotMessage = defaultMsg;
     await updateSession(sessionId, session);
+    return NextResponse.json({ answer: defaultMsg, tier: 'L0' });
 
-    return NextResponse.json({
-      answer,
-      tier: 'L1',
-      citations: result.chunks
-    });
 
   } catch (error) {
-    console.error('[QA] Error:', error);
+    console.error('[Onboarding] Error:', error);
+    if (error instanceof z.ZodError) {
+      return NextResponse.json({ error: 'Invalid session state.', details: error.issues }, { status: 500 });
+    }
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }

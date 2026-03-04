@@ -13,6 +13,7 @@ type ChatContext = {
   state?: string;
   division?: string;
   history?: Array<{ role: 'user' | 'assistant'; content: string }>;
+  validationGate?: string;
 };
 
 interface ChatResponse {

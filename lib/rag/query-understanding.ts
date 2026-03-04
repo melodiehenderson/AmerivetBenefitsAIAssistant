@@ -502,6 +502,176 @@ export function analyzeQuery(query: string): QueryProfile {
 }
 
 // ============================================================================
+// Slot-Filling Entity Extraction (Deterministic)
+// ============================================================================
+
+import { cityToStateMap } from '@/lib/schemas/onboarding';
+
+/**
+ * Represents the extractable onboarding slots from a user message.
+ * All fields are optional — only populated when found in the query.
+ */
+export interface UserSlots {
+  name?:  string;
+  age?:   number;
+  city?:  string;  // Raw city string provided by user
+  state?: string;  // Resolved 2-letter state code
+}
+
+const KNOWN_STATE_CODES = new Set([
+  'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA',
+  'KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ',
+  'NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT',
+  'VA','WA','WV','WI','WY','DC',
+]);
+
+const NOT_NAMES = new Set([
+  'hello','hi','hey','medical','dental','vision','help','benefits','insurance',
+  'quote','cost','plan','price','enroll','coverage','okay','ok','yes','no',
+]);
+
+/**
+ * Deterministically extracts user onboarding slots (Name, Age, City/State)
+ * from a natural-language query WITHOUT calling the LLM.
+ *
+ * - City → State: resolved via `cityToStateMap` truth table (e.g. "Chicago" → "IL").
+ * - State codes: matched against the full list of US postal codes.
+ * - Age: extracted from patterns like "I'm 34", "age 42", or bare numbers 18–99.
+ * - Name: extracted from "my name is X" / "I'm X" patterns, or a lone word.
+ *
+ * @param query  Raw user input string.
+ * @returns      Populated `UserSlots` — only fields that were found are set.
+ */
+export function extractUserSlots(query: string): UserSlots {
+  const slots: UserSlots = {};
+  const lower = query.toLowerCase().trim();
+
+  // ── 1. Age ─────────────────────────────────────────────────────────────────
+  const ageMatch =
+    lower.match(/\bage\s+(1[8-9]|[2-9]\d)\b/) ||
+    lower.match(/\bi(?:'m| am)\s+(1[8-9]|[2-9]\d)\b/) ||
+    lower.match(/\b(1[8-9]|[2-9]\d)\s*(?:years? old|yr\.?s?\s*old)\b/) ||
+    lower.match(/\b(1[8-9]|[2-9]\d)\b/);
+  if (ageMatch) {
+    const n = parseInt(ageMatch[1] ?? ageMatch[0], 10);
+    if (n >= 18 && n <= 99) slots.age = n;
+  }
+
+  // ── 2. Location: check city names first (longest match wins) ───────────────
+  let resolvedCity: string | undefined;
+  let resolvedState: string | undefined;
+
+  // Sort by length descending so "new york" beats "york"
+  const sortedCities = Object.keys(cityToStateMap).sort((a, b) => b.length - a.length);
+  for (const city of sortedCities) {
+    const re = new RegExp(`\\b${city.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+    if (re.test(lower)) {
+      resolvedCity  = city.charAt(0).toUpperCase() + city.slice(1);
+      resolvedState = cityToStateMap[city];
+      break;
+    }
+  }
+  // Fallback: look for a bare 2-letter state code (e.g. "WA", "IL")
+  if (!resolvedState) {
+    const words = lower.split(/[\s,.;:()\[\]{}<>"']+/);
+    for (const word of words) {
+      const upper = word.toUpperCase();
+      if (KNOWN_STATE_CODES.has(upper)) {
+        // Avoid flagging "OR" / "IN" unless it looks like a deliberate state mention
+        const ambiguous = ['OR', 'IN', 'ME', 'HI', 'OK', 'AS', 'DE', 'ND', 'SD', 'MT', 'ID'];
+        const isUppercaseInOriginal = query.includes(upper);
+        if (ambiguous.includes(upper) && !isUppercaseInOriginal) continue;
+
+        resolvedState = upper;
+        break;
+      }
+    }
+  }
+
+  if (resolvedCity)  slots.city  = resolvedCity;
+  if (resolvedState) slots.state = resolvedState;
+
+  // ── 3. Name (last resort — extracted only when no other slot was found) ────
+  const explicitName = query.match(
+    /(?:(?:my name is|i'm called|call me)\s+)([A-Z][a-z]{1,14})/i,
+  );
+  if (explicitName) {
+    const candidate = explicitName[1];
+    if (!NOT_NAMES.has(candidate.toLowerCase())) slots.name = candidate;
+  } else if (!slots.age && !slots.state && !slots.city) {
+    // Treat a single bare word as a name only if nothing else was found
+    const words = query.trim().split(/\s+/);
+    if (words.length === 1 && /^[A-Za-z]{2,15}$/.test(words[0])) {
+      const w = words[0].toLowerCase();
+      if (!NOT_NAMES.has(w)) {
+        slots.name = words[0].charAt(0).toUpperCase() + words[0].slice(1).toLowerCase();
+      }
+    }
+  }
+
+  return slots;
+}
+
+// ============================================================================
+// Mapped Entity Controller (Entity Extraction + Out-of-Catalog Detection)
+// ============================================================================
+
+/**
+ * Combines slot extraction with intent analysis and a catalog membership check.
+ * This is the single entry point the chat route calls — it must never invoke
+ * the LLM; all logic here is deterministic regex / lookup.
+ */
+export interface MappedEntities {
+  /** Demographic / location slots extracted from the user's message. */
+  slots: UserSlots;
+  /** High-level intent classification. */
+  intent: IntentType;
+  /** Benefit type keywords found in the message (e.g. ['dental', 'vision']). */
+  benefitTypes: string[];
+  /**
+   * True when the message mentions a benefit that is explicitly NOT offered
+   * by AmeriVet. The route layer should intercept and return a polite decline
+   * before calling any LLM or router.
+   */
+  isAboutBenefitNotInCatalog: boolean;
+}
+/** Benefits AmeriVet does NOT offer — used for the out-of-catalog guard. */
+const OUT_OF_CATALOG_PATTERNS = [
+  /\bpet\s+insurance\b/i,
+  /\blegal\s+(insurance|plan|coverage)\b/i,
+  /\bid\s+(theft|protection)\b/i,
+  /\bidentity\s+(theft|protection)\b/i,
+  /\bgym\s+(membership|reimbursement|benefit)\b/i,
+  /\bwellness\s+reimbursement\b/i,
+  /\bstudent\s+loan\s+repayment\b/i,
+  /\blong.?term\s+care\b/i,
+  /\bcancer.?only\s+plan\b/i,
+];
+
+/**
+ * Deterministically extracts all relevant entities from a single user message:
+ * demographic slots (for the state machine), intent, benefit keywords, and a
+ * catalog-membership flag — all without calling the LLM.
+ */
+export function extractAndMapEntities(query: string): MappedEntities {
+  const slots   = extractUserSlots(query);
+  const profile = analyzeQuery(query);
+
+  const benefitTypes = profile.entities
+    .filter(e => e.type === 'benefit_type')
+    .map(e => e.value.toLowerCase());
+
+  const isAboutBenefitNotInCatalog = OUT_OF_CATALOG_PATTERNS.some(re => re.test(query));
+
+  return {
+    slots,
+    intent: profile.intent,
+    benefitTypes,
+    isAboutBenefitNotInCatalog,
+  };
+}
+
+// ============================================================================
 // Utility Functions
 // ============================================================================
 

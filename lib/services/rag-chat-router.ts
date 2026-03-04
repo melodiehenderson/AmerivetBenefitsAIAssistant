@@ -14,6 +14,7 @@ type ChatContext = {
   division?: string;
   companyId: string;
   history?: Array<{ role: 'user' | 'assistant'; content: string }>;
+  validationGate?: string;
 };
 
 export interface RAGChatResponse {

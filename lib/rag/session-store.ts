@@ -24,7 +24,7 @@ export type DecisionValue = string | DecisionEntry;
 
 export type Session = {
   step: SessionStep;
-  context: {
+  context?: {
     state?: string;
     dept?: string;
     lastTransitionPromptAt?: number;
