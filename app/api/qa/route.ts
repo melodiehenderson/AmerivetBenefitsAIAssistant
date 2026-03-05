@@ -490,7 +490,7 @@ export function stripThoughtBlock(text: string, debugLog = false): string {
  * Annual amounts are converted to monthly (÷ 12, rounded).
  * Returns null if no salary found or value is outside a plausible employee range.
  */
-function extractSalaryFromMessage(msg: string): number | null {
+export function extractSalaryFromMessage(msg: string): number | null {
   // Monthly: $5,000/month | $5k/month | 5000 per month | earn $5000 monthly
   const MONTHLY_RE = /(?:earn|make|paid|salary\s+is?)?\s*\$?\s*([0-9]{1,3}(?:,[0-9]{3})*|[1-9][0-9]{3,5})\s*(k)?\s*(?:\/\s*month|per\s+month|a\s+month|\bmonthly\b)/i;
   const monthlyM = MONTHLY_RE.exec(msg);
@@ -577,7 +577,7 @@ function buildGroundedContext(chunks: Chunk[], rrfScores: number[]): { context: 
  * Extract all dollar amounts from the serialized catalog string into a normalised Set.
  * Used by auditDollarGrounding for O(1) lookup.
  */
-function buildCatalogNumberSet(catalogText: string): Set<string> {
+export function buildCatalogNumberSet(catalogText: string): Set<string> {
   const raw = catalogText.match(/\$[\d,]+\.?\d*/g) || [];
   return new Set(raw.map(v => v.replace(/[$,]/g, '').replace(/\.0{1,2}$/, '')));
 }
@@ -590,7 +590,7 @@ function buildCatalogNumberSet(catalogText: string): Set<string> {
  * - Ungrounded amounts are replaced with "(see enrollment portal for exact rate)".
  * Returns { answer (possibly revised), warnings (list of flagged amounts for logging) }.
  */
-function auditDollarGrounding(
+export function auditDollarGrounding(
   answer: string,
   catalogNumbers: Set<string>,
   chunks: Chunk[]
@@ -609,11 +609,14 @@ function auditDollarGrounding(
     for (const dm of dollarMatches) {
       const normalized = dm.replace(/[$,]/g, '').replace(/\.0{1,2}$/, '');
       const inCatalog = catalogNumbers.has(normalized);
-      const inChunks  = chunkText.includes(normalized);
+      // Check both the normalised form ('1200') and the raw form ('$1,200') so
+      // comma-separated amounts authored in chunk text are correctly matched.
+      const inChunks  = chunkText.includes(normalized) || chunkText.includes(dm);
       if (!inCatalog && !inChunks) {
         warnings.push(dm);
-        // Escape the dollar sign for use in RegExp
-        s = s.replace(new RegExp('\\' + dm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '(see enrollment portal for exact rate)');
+        // Build a safe regex from the raw match (e.g. '$9,999')
+        const escapedDm = dm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        s = s.replace(new RegExp(escapedDm, 'g'), '(see enrollment portal for exact rate)');
       }
     }
     return s;
