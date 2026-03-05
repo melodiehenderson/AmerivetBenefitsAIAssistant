@@ -797,11 +797,11 @@ export async function hybridRetrieve(
 
   // Default configuration - HYBRID SEARCH with both Vector + BM25
   const cfg: HybridSearchConfig = {
-    vectorK: config?.vectorK ?? 96,          // Dense vector search (semantic understanding)
+    vectorK: config?.vectorK ?? 48,          // Dense vector search — reduced from 96; avoids over-retrieval on 499-doc index
     bm25K: config?.bm25K ?? 24,              // ENABLED: Keyword search (exact matching) - 24 is standard
     rrfK: config?.rrfK ?? 60,
-    finalTopK: config?.finalTopK ?? 16,      // Increased from 12 to 16 for more context
-    rerankedTopK: config?.rerankedTopK ?? 12, // Increased from 8 to 12 for more grounding
+    finalTopK: config?.finalTopK ?? 12,      // Reduced from 16 — tighter RRF merge window
+    rerankedTopK: config?.rerankedTopK ?? 8,  // Reduced from 12 — 8 high-quality chunks > 12 noisy ones
     enableReranking: config?.enableReranking ?? false,
   };
 

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { logger } from '@/lib/logger';
 import { hybridRetrieve } from '@/lib/rag/hybrid-retrieval';
 import { azureOpenAIService } from '@/lib/azure/openai';
-import type { RetrievalContext } from '@/types/rag';
+import type { RetrievalContext, Chunk } from '@/types/rag';
 import { getOrCreateSession, updateSession, type Session } from '@/lib/rag/session-store';
 import { 
   validatePricingFormat, 
@@ -484,6 +484,58 @@ export function stripThoughtBlock(text: string, debugLog = false): string {
     .trim();
 }
 
+/**
+ * Build grounded context from retrieved chunks for LLM consumption.
+ *
+ * Improvements over a raw `chunks.map((c,i) => \`[Doc ${i}] ${c.content}\`).join`:  
+ *  - Score-filters chunks below 25% of the top RRF score (eliminates tail noise)
+ *  - Deduplicates by 120-char content fingerprint (prevents repeated paragraphs)
+ *  - Truncates each chunk to 900 chars (avoids per-chunk token bloat)
+ *  - Caps total context at 9 600 chars (~2 400 tokens) so the IMMUTABLE CATALOG  
+ *    remains the dominant signal in the system prompt
+ *  - Uses `BENEFIT DOCUMENT:` headers instead of `[Doc N]` to avoid citation  
+ *    artifacts leaking into model output
+ */
+function buildGroundedContext(chunks: Chunk[], rrfScores: number[]): string {
+  if (!chunks.length) return 'No retrieval context available.';
+
+  const topScore = Math.max(...rrfScores, 0.001);
+  const scoreThreshold = topScore * 0.25; // drop bottom-quartile chunks
+  const MAX_CHARS_PER_CHUNK = 900;
+  const MAX_TOTAL_CHARS = 9_600;
+
+  const seen = new Set<string>();
+  const parts: string[] = [];
+  let totalChars = 0;
+
+  for (let i = 0; i < chunks.length; i++) {
+    const score = rrfScores[i] ?? 0;
+    if (score < scoreThreshold) continue; // low-relevance tail — skip
+
+    const chunk = chunks[i];
+    const fingerprint = chunk.content.slice(0, 120).trim();
+    if (seen.has(fingerprint)) continue; // duplicate content block
+    seen.add(fingerprint);
+
+    const category = (chunk.metadata as any)?.category || '';
+    const title    = chunk.title      || 'Benefit Document';
+    const section  = chunk.sectionPath ? ` — ${chunk.sectionPath}` : '';
+    const header   = `BENEFIT DOCUMENT${category ? ` (${category})` : ''}: ${title}${section}`;
+    const body     = chunk.content.length > MAX_CHARS_PER_CHUNK
+      ? chunk.content.slice(0, MAX_CHARS_PER_CHUNK) + ' ...'
+      : chunk.content;
+
+    const entry = `${header}\n${body}`;
+    if (totalChars + entry.length > MAX_TOTAL_CHARS) break;
+    parts.push(entry);
+    totalChars += entry.length;
+  }
+
+  if (parts.length === 0) return 'No relevant benefit documents retrieved.';
+  logger.debug(`[CONTEXT] Built grounded context: ${parts.length} chunks, ${totalChars} chars`);
+  return parts.join('\n\n---\n\n');
+}
+
 type IntentDomain = 'pricing' | 'policy' | 'general';
 
 export function detectIntentDomain(lowerQuery: string): IntentDomain {
@@ -626,45 +678,7 @@ You MUST structure every response exactly as shown below:
   <Rule id="MISSING-DATA">If the catalog does not contain an exact answer, say: "I don't have that specific information for AmeriVet. Please check ${ENROLLMENT_PORTAL_URL} or call HR at ${HR_PHONE}."</Rule>
 </Constraints>
 
-<Reasoning_Process>
-  — Execute ALL steps inside a <thought>…</thought> block BEFORE writing the final answer. —
 
-  STEP 1 — IDENTIFY ENTITIES:
-    Extract from Session_Metadata and the user's message:
-    • User salary (monthly or annual) if stated
-    • Location / State (apply STATE-LOCK immediately)
-    • Family size / dependents
-    • Specific life events (marriage, pregnancy, job-change, disability, etc.)
-    • Any previously stated context (e.g., spouse has FSA → HSA conflict risk)
-
-  STEP 2 — APPLY POLICY LOGIC:
-    Cross-reference extracted entities against the IMMUTABLE CATALOG and IRS rules:
-    • If spouse has a General FSA → employee CANNOT open an HSA (IRS §125/§223). Flag this FIRST.
-    • If state is NOT CA/WA/OR → Kaiser is FORBIDDEN. Offer ONLY Standard HSA or Enhanced HSA.
-    • Apply QLE windows, FMLA timelines, STD elimination periods as relevant.
-    • Identify the correct carrier for every benefit claimed (enforce CARRIER-LOCK).
-
-  STEP 3 — PERFORM MATH (show work inside <thought>, emit exact result in answer):
-    Use exact formulas — never approximate:
-    • STD weekly benefit  = (monthly_salary / 4.33) × 0.60
-    • STD monthly benefit = monthly_salary × 0.60
-    • Per-paycheck cost   = (monthly_premium × 12) / pay_periods
-    If salary is NOT known: state "I'll need your monthly salary to calculate your exact benefit."
-
-  STEP 4 — IDENTIFY RISKS (flag in priority order):
-    1. IRS compliance issues (HSA/FSA conflict, contribution limits)
-    2. Regional plan unavailability (Kaiser in non-eligible state)
-    3. Enrollment window deadlines (QLE 30-day windows)
-    4. STD pre-existing condition lookback periods
-    5. Carrier/plan mismatches → prepend "CORRECTION:" to that sentence
-
-  STEP 5 — CONTEXT-CHECK:
-    If catalog lacks the specific fact → apply MISSING-DATA rule. Do NOT guess.
-
-  STEP 6 — FORMAT:
-    Prose paragraphs for explanations and life-event answers.
-    Bullets ONLY for ordered steps, tier breakdowns, side-by-side feature lists.
-</Reasoning_Process>
 
 <Negative_Constraints>
   - NEVER guess prices. If a price is not in the catalog, say "check Workday for your personalized rate".
@@ -2292,7 +2306,8 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
         pipelineResult.retrieval.score < 0.7;
 
     // 5. GENERATE ANSWER — Data-Sovereign prompt with immutable catalog
-    const contextText = result.chunks.map((c, i) => `[Doc ${i+1}] ${c.content}`).join('\n\n');
+    // Score-filtered, deduplicated, token-budgeted context — see buildGroundedContext() for rationale
+    const contextText = buildGroundedContext(result.chunks, result.scores?.rrf || []);
     
     const systemPrompt = buildSystemPrompt(session);
     
