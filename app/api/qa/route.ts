@@ -442,6 +442,48 @@ export function stripPricingDetails(text: string): string {
     .trim();
 }
 
+/**
+ * Extract the [RESPONSE] section from a [REASONING]/[RESPONSE] tagged LLM output.
+ * Logs the [REASONING] block as a debug trace (Principal Architect protocol).
+ * Falls back to full text if the model omits the tags.
+ * Exported so unit tests can verify extraction behaviour.
+ */
+export function extractReasonedResponse(rawText: string, debugLog = false): string {
+  const responseIdx = rawText.search(/\[RESPONSE\]\s*:?/i);
+  if (responseIdx !== -1) {
+    if (debugLog) {
+      const reasoningIdx = rawText.search(/\[REASONING\]\s*:?/i);
+      if (reasoningIdx !== -1) {
+        const reasoningRaw = rawText.slice(reasoningIdx, responseIdx).replace(/\[REASONING\]\s*:?\s*/i, '');
+        logger.debug(`[ReAct-TRACE] Principal Architect reasoning:\n${reasoningRaw.slice(0, 1400)}`);
+      }
+    }
+    // Everything after the first newline following [RESPONSE] tag is the final answer.
+    const afterTag = rawText.slice(responseIdx).replace(/\[RESPONSE\]\s*:?\s*/i, '');
+    return afterTag.trim();
+  }
+  return rawText; // model omitted tags — return untouched
+}
+
+/**
+ * Strip <thought>…</thought> Chain-of-Thought blocks from LLM output.
+ * The thought content is logged for debugging but NEVER shown to the user.
+ * Exported so unit tests can verify stripping behaviour.
+ */
+export function stripThoughtBlock(text: string, debugLog = false): string {
+  if (!/<thought>/i.test(text)) return text;
+  if (debugLog) {
+    const thoughtMatch = text.match(/<thought>([\s\S]*?)<\/thought>/i);
+    if (thoughtMatch) {
+      logger.debug(`[CoT-TRACE] Internal reasoning: ${thoughtMatch[1].slice(0, 800)}`);
+    }
+  }
+  return text
+    .replace(/<thought>[\s\S]*?<\/thought>/gi, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 type IntentDomain = 'pricing' | 'policy' | 'general';
 
 export function detectIntentDomain(lowerQuery: string): IntentDomain {
@@ -531,6 +573,48 @@ COST FORMATTING
 
 <Role>AmeriVet Principal Benefits Consultant — DETERMINISTIC information engine</Role>
 
+<Reasoning_Protocol>
+### TECHNIQUE 1 — SELF-ASK (Decomposition)
+Before answering, identify ALL hidden sub-questions inside the user's message:
+- What type of FSA does the spouse have? (general-purpose BLOCKS HSA; limited-purpose does not)
+- Is the user asking about IRS eligibility, plan pricing, OR leave/STD pay? Each is a SEPARATE answer.
+- Does the query include salary data that requires STD math? (Monthly ÷ 4.33 × 0.60 = weekly pay)
+- What is the confirmed state? Kaiser is ONLY CA/WA/OR — never mention it otherwise.
+
+### TECHNIQUE 2 — CHAIN OF THOUGHT (Policy + Math)
+Work step-by-step before writing your answer:
+- Step 1: Read Session_Metadata → confirmed Name, Age, State. NEVER re-ask these.
+- Step 2: List ALL benefit categories the query touches (may be more than one).
+- Step 3: For each category, extract the EXACT rule or figure from the IMMUTABLE CATALOG.
+- Step 4: Math formula: Monthly salary ÷ 4.33 = Weekly; Weekly × 0.60 = UNUM STD weekly pay.
+- Step 5: Check eligibility blockers: spouse FSA type, state restrictions, pre-existing clauses.
+
+### TECHNIQUE 3 — ReAct (Reasoning + Acting)
+Iterate until all sub-questions are answered:
+- Thought: "I need the UNUM STD elimination period to answer the week-6 pay question."
+- Action: Search IMMUTABLE CATALOG for "Short-Term Disability elimination period".
+- Observation: Found "7-day (2-week) elimination; 60% of pre-disability earnings; benefit begins Week 3."
+- Thought: "Week 6 is inside the STD benefit window → I can calculate exact pay."
+
+### OPERATIONAL CONSTRAINTS
+- Zero Hallucination: If a benefit is not in the IMMUTABLE CATALOG, trigger REFUSAL_MANDATE.
+- Immutable Context: Name, Age, State are CONFIRMED in Session_Metadata. Never re-ask.
+- Normalization: Premiums must be monthly. Never mix bi-weekly/annual unless explicitly requested.
+- Compound Queries: If the message asks TWO separate questions (e.g. IRS conflict AND STD pay),
+  answer BOTH sequentially — do NOT silently drop one.
+
+### MANDATORY OUTPUT FORMAT
+You MUST structure every response exactly as shown below:
+
+[REASONING]:
+• Sub-questions: <list hidden variables you must resolve>
+→ CoT: <step-by-step logic for policy rules and math>
+→ ReAct: <any retrieval action and observation if data point needed>
+
+[RESPONSE]:
+<final conversational answer — plain prose, no [Source N] citations, no <thought> tags>
+</Reasoning_Protocol>
+
 <Constraints>
   <Rule id="STATE-LOCK" priority="CRITICAL">${strictStateRule}</Rule>
   <Rule id="DATA-SOVEREIGNTY">Every dollar amount, plan name, carrier name, and feature MUST appear verbatim in the IMMUTABLE CATALOG. Never fabricate, extrapolate, or approximate.</Rule>
@@ -543,12 +627,43 @@ COST FORMATTING
 </Constraints>
 
 <Reasoning_Process>
-  Step 1: Check the user's State from the USER PROFILE section below. Apply the STATE-LOCK rule immediately.
-  Step 2: Identify the benefit category (Medical, Life, Disability, Dental, Vision, Savings, Voluntary, Support).
-  Step 3: If category is Support or query mentions a care navigation service → search ONLY Support/Navigation documents. Do NOT pull Medical plan chunks.
-  Step 4: Compare retrieved facts ONLY against the IMMUTABLE CATALOG. Discard any retrieval chunk that contradicts catalog data.
-  Step 5: If the catalog lacks the specific fact → apply the MISSING-DATA rule. Do NOT guess.
-  Step 6: Format the answer in plain text. No markdown headers, no dollar amounts without /month or /year units.
+  — Execute ALL steps inside a <thought>…</thought> block BEFORE writing the final answer. —
+
+  STEP 1 — IDENTIFY ENTITIES:
+    Extract from Session_Metadata and the user's message:
+    • User salary (monthly or annual) if stated
+    • Location / State (apply STATE-LOCK immediately)
+    • Family size / dependents
+    • Specific life events (marriage, pregnancy, job-change, disability, etc.)
+    • Any previously stated context (e.g., spouse has FSA → HSA conflict risk)
+
+  STEP 2 — APPLY POLICY LOGIC:
+    Cross-reference extracted entities against the IMMUTABLE CATALOG and IRS rules:
+    • If spouse has a General FSA → employee CANNOT open an HSA (IRS §125/§223). Flag this FIRST.
+    • If state is NOT CA/WA/OR → Kaiser is FORBIDDEN. Offer ONLY Standard HSA or Enhanced HSA.
+    • Apply QLE windows, FMLA timelines, STD elimination periods as relevant.
+    • Identify the correct carrier for every benefit claimed (enforce CARRIER-LOCK).
+
+  STEP 3 — PERFORM MATH (show work inside <thought>, emit exact result in answer):
+    Use exact formulas — never approximate:
+    • STD weekly benefit  = (monthly_salary / 4.33) × 0.60
+    • STD monthly benefit = monthly_salary × 0.60
+    • Per-paycheck cost   = (monthly_premium × 12) / pay_periods
+    If salary is NOT known: state "I'll need your monthly salary to calculate your exact benefit."
+
+  STEP 4 — IDENTIFY RISKS (flag in priority order):
+    1. IRS compliance issues (HSA/FSA conflict, contribution limits)
+    2. Regional plan unavailability (Kaiser in non-eligible state)
+    3. Enrollment window deadlines (QLE 30-day windows)
+    4. STD pre-existing condition lookback periods
+    5. Carrier/plan mismatches → prepend "CORRECTION:" to that sentence
+
+  STEP 5 — CONTEXT-CHECK:
+    If catalog lacks the specific fact → apply MISSING-DATA rule. Do NOT guess.
+
+  STEP 6 — FORMAT:
+    Prose paragraphs for explanations and life-event answers.
+    Bullets ONLY for ordered steps, tier breakdowns, side-by-side feature lists.
 </Reasoning_Process>
 
 <Negative_Constraints>
@@ -661,6 +776,32 @@ CONVERSATION STYLE
 - Ask ONE question at a time.
 - First message only: "I'm here to help you explore your benefits — actual enrollment happens at the portal."
 - After a decision or decline, show remaining categories: ${remainingText}
+
+═══════════════════════════════════════════════════════════════════════════
+RESPONSE STYLE — L3 ADVISOR MODE
+═══════════════════════════════════════════════════════════════════════════
+You are a senior human benefits advisor, not a search engine. Match tone to context:
+
+NARRATIVE (life events, math, comparisons):
+- Write professional conversational paragraphs. "Because you are in ${userState || 'your state'}, your medical options are Standard HSA and Enhanced HSA. Since your salary is $X/month, your STD benefit during weeks 3–8 would be exactly $Y/week via UNUM."
+- Explain the WHY. "This matters because the IRS treats a general-purpose FSA as incompatible with an HSA — so your spouse's FSA must be addressed before you open one."
+- Lead with the highest-priority risk before showing any costs.
+
+EMPATHY (use when a life event is detected — one sentence only, then pivot):
+- Pregnancy / new baby: "Planning for a new baby is a big deal — let's make sure your coverage is exactly right."
+- Marriage QLE: "Congratulations — you have a 30-day window to update your coverage, so let's move quickly."
+- Disability / leave: "I know this timing is stressful. Here is exactly what your income protection looks like..."
+- DO NOT dwell on empathy; pivot immediately to the actionable answer.
+
+NEXT-BEST-ACTION (end EVERY substantive answer with exactly one follow-up suggestion):
+- Make it specific, not generic. NOT "Is there anything else?" BUT:
+  "Should we calculate your total out-of-pocket cost for the hospital stay next?"
+  "Would you like to compare the Enhanced HSA deductible vs. Standard HSA for your family size?"
+  "Want me to walk through the QLE filing order for marriage and pregnancy together?"
+
+BULLET CONSTRAINT:
+- Bullets ONLY for: ordered steps, side-by-side tier tables, feature-by-feature lists.
+- NEVER open a life-event or calculation response with bullets — use a paragraph first.
 
 ${session.lastBotMessage ? `═══════════════════════════════════════════════════════════════════════════
 PREVIOUS BOT MESSAGE (for continuity):
@@ -1315,7 +1456,8 @@ export async function POST(req: NextRequest) {
     }
 
     if (preprocessSignals.spouseGeneralFsaConflictIntent) {
-      const msg = `IRS COMPLIANCE RULE (IRS Publication 969): If your spouse is enrolled in a general-purpose Healthcare FSA, you are NOT eligible to contribute to an HSA for those same months. This is a hard IRS rule with no exceptions.
+      // ── Block 1: IRS compliance (always fires) ───────────────────────────
+      let msg = `IRS COMPLIANCE RULE (IRS Publication 969): If your spouse is enrolled in a general-purpose Healthcare FSA, you are NOT eligible to contribute to an HSA for those same months. This is a hard IRS rule with no exceptions.
 
 The only workaround: your spouse switches to a Limited Purpose FSA (LPFSA) that covers ONLY dental and vision — then your HSA eligibility is restored.
 
@@ -1326,10 +1468,34 @@ Action order:
 4. Make this determination BEFORE finalizing plan elections in Workday. You cannot retroactively correct excess HSA contributions without IRS penalty.
 
 For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
+
+      // ── Block 2: Compound-query extension (ReAct — if query ALSO asks about maternity/STD pay) ──
+      // Principal Architect Rule: compound queries must receive BOTH answers — never silently drop one.
+      const hasCompoundStdPay = (
+        /\b(maternity(?:\s+leave)?|parental\s+leave|fmla|leave\s+of\s+absence)\b/i.test(lowerQuery) &&
+        /\b(pay(?:check)?|paid|income|salary|money|how\s+much|week\s*\d*|6th\s+week|sixth\s+week|std|60%)\b/i.test(lowerQuery)
+      ) || (
+        /\b(std|short\s*[- ]?term\s+disability)\b/i.test(lowerQuery) &&
+        /\b(maternity|leave|pay(?:check)?|paid|salary|60%|sixty\s*percent|week\s*\d+|6th\s+week|sixth\s+week|get\s+paid|income)\b/i.test(lowerQuery)
+      );
+
+      if (hasCompoundStdPay) {
+        // ReAct: Action → extract salary from message; Observation → compute STD weekly pay
+        const salaryMatch = lowerQuery.match(/\$?\s*([0-9]{1,3}(?:,[0-9]{3})*|[0-9]{4,6})\s*\/\s*month/);
+        const salary = salaryMatch ? Number(salaryMatch[1].replace(/,/g, '')) : null;
+        const weeklyBase = salary ? salary / 4.33 : null;
+        const stdWeekly  = weeklyBase ? (weeklyBase * 0.6).toFixed(2) : null;
+        const mathLine   = stdWeekly
+          ? `With a salary of $${(salary as number).toLocaleString()}/month: $${(salary as number).toLocaleString()} ÷ 4.33 = $${(weeklyBase as number).toFixed(2)}/week × 60% = $${stdWeekly}/week via UNUM STD.`
+          : `Share your monthly salary and I can calculate the exact weekly payment.`;
+
+        msg += `\n\n────────────────────────────────────────\nMaternity Leave Pay — UNUM STD Timeline:\n\n- Weeks 1–2 (Elimination Period): STD is not yet active. Use PTO or this period may be unpaid.\n- Weeks 3–6 (STD Active — UNUM): UNUM pays 60% of your pre-disability base earnings. FMLA runs concurrently and provides job protection.\n- Weeks 7–8 (if physician-certified): STD may extend through week 8 (vaginal delivery) or week 10 (C-section), subject to UNUM claim approval.\n- FMLA (all 12 weeks): Job-protected leave only — income comes from UNUM STD, not FMLA.\n\nWeek 6 specifically: You are inside the UNUM STD benefit window. ${mathLine}\n\nNote: The spouse FSA conflict above must be resolved BEFORE electing HSA contributions in Workday — your maternity leave coverage under the chosen medical plan is not affected by the FSA ruling.`;
+      }
+
       const plainMsg = toPlainAssistantText(msg);
       session.lastBotMessage = plainMsg;
       await updateSession(sessionId, session);
-      return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'hsa-spouse-fsa-conflict' } });
+      return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: hasCompoundStdPay ? 'hsa-spouse-fsa-conflict+std-pay' : 'hsa-spouse-fsa-conflict' } });
     }
 
     // ── MULTI-QLE STATE MACHINE INTERCEPTOR ─────────────────────────────────
@@ -2181,16 +2347,18 @@ ${recentHistory}
 QUESTION: ${query}
 
 ═══════════════════════════════════════════════════════════════════════════
-CHAIN-OF-THOUGHT REASONING (MANDATORY — follow this BEFORE answering)
+PRINCIPAL ARCHITECT REASONING PROTOCOL (MANDATORY)
 ═══════════════════════════════════════════════════════════════════════════
-Before writing your answer, silently work through these steps:
-1. IDENTIFY: What specific benefit category/plan is the user asking about?
-2. CLASSIFY: Is this a policy/rules question, a pricing question, or a coverage comparison?
-3. LOCATE: Find the EXACT data in the IMMUTABLE CATALOG that answers this question.
-4. VERIFY: Does the catalog contain this information? If not, say so honestly.
-5. COMPOSE: Write a clear, direct answer using ONLY catalog data.
+Execute the full Self-Ask → CoT → ReAct pipeline from the system prompt.
+Output your answer in EXACTLY this two-section format — both sections required:
 
-Do NOT output your reasoning steps — only output the final answer.
+[REASONING]:
+• Self-Ask: list the hidden sub-questions you must resolve (FSA type, salary math, state, week-N)
+→ CoT: step-by-step logic + any math (Monthly ÷ 4.33 × 0.60 for STD weekly pay)
+→ ReAct: if any catalog lookup is needed, state "Action: look up X" then "Observation: Found Y"
+
+[RESPONSE]:
+<your final conversational answer — plain prose, no [Source N] citations, no <thought> tags>
 ${confidenceHint}${alternativeHint}${noPricingHint}${policyRoutingHint}${tierLockHint}
 Remember: answer ONLY from the IMMUTABLE CATALOG. Do NOT ask for name, age, or state. Do NOT mention Rightway. Do NOT attribute Whole Life to Unum or Term Life to Allstate. Do NOT invent a "PPO" medical plan. Do NOT show [Source N] or [Doc N] citations in your response. AmeriVet does NOT offer a DHMO dental plan — only the BCBSTX Dental PPO.`;
 
@@ -2202,6 +2370,8 @@ Remember: answer ONLY from the IMMUTABLE CATALOG. Do NOT ask for name, age, or s
     ], { temperature: 0.1 });
 
     let answer = completion.content.trim();
+    answer = extractReasonedResponse(answer, true); // extract [RESPONSE], log [REASONING] debug trace
+    answer = stripThoughtBlock(answer, true);        // strip any residual <thought> blocks
     answer = enforceMonthlyFirstFormat(answer);
     answer = validatePricingFormat(answer);
 
@@ -2237,6 +2407,9 @@ Remember: answer ONLY from the IMMUTABLE CATALOG. Do NOT ask for name, age, or s
 
     // POST-PROCESSING: Strip [Source N] / [Doc N] citation artifacts from LLM output
     answer = answer.replace(/\[(?:Source|Doc(?:ument)?|Ref(?:erence)?)\s*\d+\]/gi, '').replace(/\s{2,}/g, ' ').trim();
+
+    // POST-PROCESSING: Strip <thought>…</thought> CoT blocks (log to debug, never show user)
+    answer = stripThoughtBlock(answer, true);
 
     // POST-PROCESSING: Apply Brandon Rule (HSA Cross-Sell)
     
