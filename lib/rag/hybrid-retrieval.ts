@@ -50,6 +50,10 @@ const INTENT_CATEGORY_MAP: Record<string, string> = {
   // Voluntary/Supplemental
   voluntary: "Voluntary", critical: "Voluntary", accident: "Voluntary",
   supplemental: "Voluntary", injury: "Voluntary", "hospital indemnity": "Voluntary",
+  // Support/Navigation — intercept before LLM to avoid hallucinated answers
+  contact: "Support", support: "Support", "help line": "Support", "help desk": "Support",
+  navigation: "Support", rightway: "Support", "customer service": "Support",
+  phone: "Support", "who do i call": "Support",
 };
 
 // ============================================================================
@@ -75,6 +79,7 @@ export function filterChunksByCategory(chunks: Chunk[], category: string): Chunk
     Disability: ['disability', 'std', 'ltd', 'short term', 'long term', 'income protection', 'wages'],
     Savings: ['hsa', 'fsa', 'health savings', 'flexible spending', 'tax-free', 'contribution'],
     Voluntary: ['critical illness', 'accident', 'hospital indemnity', 'supplemental', 'injury', 'cancer', 'stroke', 'heart attack'],
+    Support: ['contact', 'support', 'phone', 'help', 'navigation', 'hr', 'human resources', 'enrollment portal', 'assistance'],
   };
   
   const keywords = CATEGORY_KEYWORDS[category] || [];
@@ -311,9 +316,17 @@ async function searchWithFilterFallback(
   baseOptions: Record<string, any>,
   logPrefix: string
 ): Promise<any> {
-  // Category filtering: Try with category first, fall back if index doesn't support it
-  // This prevents returning wrong benefit types (e.g., Accident Insurance when user asks for Medical)
-  const fullFilter = buildODataFilter(context, { includeCategory: true });
+  // L2 HARD METADATA FILTER:
+  // Always inject state filter when user state is known so the vector index
+  // physically cannot return documents tagged for other states.
+  // e.g., User in MI → filter: (state eq 'MI' or state eq 'National')
+  // This prevents "Mississippi vs Michigan" cross-state leakage at the retrieval layer.
+  const hasStateFilter = !!(context as any).state && (context as any).state !== 'National';
+  const fullFilter = buildODataFilter(context, {
+    includeCategory: true,
+    includeState: hasStateFilter,
+  });
+  logger.debug(`[L2-FILTER] ${logPrefix} filter="${fullFilter}" hasState=${hasStateFilter}`);
   try {
     return await client.search(query, { ...baseOptions, filter: fullFilter });
   } catch (error) {
@@ -322,16 +335,18 @@ async function searchWithFilterFallback(
     }
 
     const missingField = tryExtractMissingFilterField(error);
-    // If category field doesn't exist, try without it
     const hasCategory = missingField?.toLowerCase().includes('category') || error?.toString().includes('category');
+    const hasStateFieldMissing = missingField?.toLowerCase().includes('state') || error?.toString().toLowerCase().includes("'state'");
     logger.warn(
-      `${logPrefix} Filter error${missingField ? ` (missing: ${missingField})` : ""}; retrying${hasCategory ? ' without category filter' : ' with minimal filter'}. Original: "${fullFilter}"`
+      `${logPrefix} Filter error${missingField ? ` (missing: ${missingField})` : ""}; retrying with reduced filter. Original: "${fullFilter}"`
     );
-    
-    const minimalFilter = buildODataFilter(context, { 
-      includePlanYear: false, 
-      includeDept: false, 
-      includeCategory: !hasCategory  // Only include category if error wasn't about missing category field
+
+    // Progressive fallback: first try without category, then without state, then minimal
+    const minimalFilter = buildODataFilter(context, {
+      includePlanYear: false,
+      includeDept: false,
+      includeCategory: !hasCategory,
+      includeState: hasStateFilter && !hasStateFieldMissing,
     });
 
     logger.warn(
@@ -760,6 +775,15 @@ export async function hybridRetrieve(
   if (detectedCategory && !context.category) {
     (context as any).category = detectedCategory;
     logger.debug(`[RAG] Intent short-circuit: forcing category="${detectedCategory}"`);
+  }
+
+  // A2. CARRIER ROUTING: If query mentions a specific navigation/support service
+  // (e.g., "Rightway", "telehealth", "care navigator"), route to Support/Navigation
+  // document category. This prevents carrier hallucination from medical plan chunks.
+  const SUPPORT_SERVICE_PATTERN = /\b(rightway|right\s*way|care\s*navigator|telehealth|telemedicine|health\s*advocacy|nurse\s*line|second\s*opinion|patient\s*advocate|darwin|health\s*navigator)\b/i;
+  if (SUPPORT_SERVICE_PATTERN.test(query) && !context.category) {
+    (context as any).category = 'Support';
+    logger.debug(`[RAG] Carrier routing: support service query detected → category='Support'`);
   }
   
   // B. Expand the query with related terms

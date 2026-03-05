@@ -59,6 +59,12 @@ CARRIER LOCK (immutable — never re-assign a carrier to a different product):
   KAISER   = Medical HMO — California, Oregon, Washington ONLY. NEVER mention in any other state.
   RIGHTWAY = NOT an AmeriVet carrier. NEVER mention Rightway in any response under any circumstances.
 
+BANNED ENTITIES — NEVER include in responses:
+- "Rightway" or "Right Way" — NOT an AmeriVet resource or carrier.
+- "DHMO" — AmeriVet does NOT offer a DHMO dental plan. Only BCBSTX Dental PPO.
+- "PPO" as a medical plan name — AmeriVet medical plans are "Standard HSA" and "Enhanced HSA" (they use BCBSTX PPO network, but the plans are NOT called "PPO").
+- Phone number (305) 851-7310 — this is NOT an AmeriVet number.
+
 DATA SCRUB RULES:
 - Never attribute a Unum product to Allstate or vice versa.
 - Never mention Rightway — it is not part of AmeriVet's network.
@@ -103,7 +109,7 @@ export class RAGChatRouter {
 
       // Step 3: Generate response using LLM with RAG context
       // DEVELOPER MESSAGE: hard-lock user context so the LLM never re-asks for age/state.
-      const developerHeader = context.validationGate
+      const lockedHeader = context.validationGate
         ? context.validationGate
         : [
             `USER CONTEXT (LOCKED — DO NOT ask for these again):`,
@@ -118,10 +124,11 @@ export class RAGChatRouter {
       const covSystemPrompt = buildChainOfVerificationPrompt(
         message,
         ragContext,
-        developerHeader + '\n\n' + RAG_SYSTEM_PROMPT
+        RAG_SYSTEM_PROMPT
       );
 
       const messages = [
+        { role: 'system', content: lockedHeader },
         { role: 'system', content: covSystemPrompt },
         { role: 'user',   content: message }
       ];
@@ -229,13 +236,10 @@ export class RAGChatRouter {
     // Fallback to LLM-only response without RAG
     try {
       const messages = [
+        { role: 'system', content: context.validationGate || 'USER CONTEXT (LOCKED): none provided.' },
         { role: 'system', content: RAG_SYSTEM_PROMPT },
         { role: 'user', content: message }
       ];
-
-      if (context.validationGate) {
-        messages.unshift({ role: 'system', content: context.validationGate });
-      }
 
       const llmResponse = await hybridLLMRouter.createChatCompletion({
         messages,

@@ -55,6 +55,7 @@ export type Session = {
   coverageTier?: string;              // 'employee-only', 'employee-spouse', 'employee-children', 'employee-family'
   coverageTierLock?: string;          // Locked tier from family detection (e.g., 'Employee + Family')
   noPricingMode?: boolean;            // When true, suppress all $ and cost tables in responses
+  policyReasoningMode?: boolean;       // When true (multi-life-event detected), skip pricing on first response
   payPeriods?: number;                // Paycheck frequency (24=biweekly, 26=weekly, 12=monthly)
   familyDetails?: {                   // Detailed family info for personalized recommendations
     hasSpouse?: boolean;
