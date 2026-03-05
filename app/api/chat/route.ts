@@ -18,6 +18,7 @@ import { extractUserSlots, extractAndMapEntities } from '@/lib/rag/query-underst
 import { cityToStateMap } from '@/lib/schemas/onboarding';
 import { getCatalogForPrompt } from '@/lib/data/amerivet';
 import { normalizeRatesInText } from '@/lib/utils/formatRates';
+import { tryCache, writeCache } from '@/lib/services/cache-router';
 
 // Validation schema for chat request
 const chatRequestSchema = z.object({
@@ -39,6 +40,17 @@ function isStateChangeRequest(message: string): boolean {
 
 function isDivisionChangeRequest(message: string): boolean {
   return containsTrigger(message, DIVISION_CHANGE_TRIGGERS);
+}
+
+function toPlainAssistantText(text: string): string {
+  return text
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/\*(.*?)\*/g, '$1')
+    .replace(/\[(.*?)\]\((https?:\/\/[^)]+)\)/g, '$2')
+    .replace(/^\s*---\s*$/gm, '')
+    .replace(/[✨💡📋📝🎉ℹ️👋😊]/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 export const POST = withAuth(undefined, [PERMISSIONS.CHAT_WITH_AI])(async (request: NextRequest) => {
@@ -84,10 +96,11 @@ export const POST = withAuth(undefined, [PERMISSIONS.CHAT_WITH_AI])(async (reque
 
     // Helper to send a normal assistant message (non-eligibility)
     const sendAssistantMessage = async (content: string): Promise<NextResponse> => {
+      const plainContent = toPlainAssistantText(content);
       const aiMessage = {
         id: crypto.randomUUID(),
         role: 'assistant' as const,
-        content,
+        content: plainContent,
         timestamp: new Date()
       };
 
@@ -103,10 +116,11 @@ export const POST = withAuth(undefined, [PERMISSIONS.CHAT_WITH_AI])(async (reque
     };
 
     const sendEligibilityMessage = async (content: string): Promise<NextResponse> => {
+      const plainContent = toPlainAssistantText(content);
       const aiMessage = {
         id: crypto.randomUUID(),
         role: 'assistant' as const,
-        content,
+        content: plainContent,
         timestamp: new Date()
       };
 
@@ -423,16 +437,12 @@ Which of these would you like to learn about next?`
       );
     }
 
-    // Route via SimpleChatRouter or RAG-enhanced router
+    // ==========================================================================
+    // STATE MACHINE: EXTRACT → PERSIST → GUARD → GATE → CACHE → ROUTE
+    // ==========================================================================
     const started = Date.now();
     const useSmart = process.env.USE_SMART_ROUTER === 'true';
-    const useRAG = process.env.USE_RAG_ROUTER === 'true';
-    let routed;
-    let modelUsed: 'simple' | 'smart' | 'rag' = 'simple';
-
-    // =========================================================================
-    // STATE MACHINE: EXTRACT → PERSIST → GUARD → GATE → ROUTE
-    // =========================================================================
+    const useRAG   = process.env.USE_RAG_ROUTER   === 'true';
 
     // 1. EXTRACT & PERSIST — deterministic; no LLM; resolves "Chicago" → "IL".
     const mapped = extractAndMapEntities(message);
@@ -483,7 +493,44 @@ Which of these would you like to learn about next?`
       intent:   mapped.intent,
       validationGate,
     };
-    if (useRAG) {
+
+    // 4. CACHE CHECK — L0 exact + L1 semantic before any LLM call.
+    let routeSource: 'cache-exact' | 'cache-semantic' | 'rag-doc' | 'rag-fallback' | 'smart' | 'simple' = 'simple';
+    if (slotsComplete) {
+      const cacheResult = await tryCache(message, companyId, gateMeta.state as string | undefined);
+      if (cacheResult.hit) {
+        routeSource = cacheResult.source; // 'cache-exact' | 'cache-semantic'
+        const cachedAiMessage = {
+          id: crypto.randomUUID(),
+          role: 'assistant' as const,
+          content: cacheResult.content,
+          timestamp: new Date(),
+        };
+        await conversationService.addMessage(conversation.id, cachedAiMessage);
+        return NextResponse.json({
+          message: cachedAiMessage,
+          conversationId: conversation.id,
+          route: 'cached',
+          model: 'cache',
+          latencyMs: Date.now() - started,
+          source: routeSource,
+          chunksUsed: 0,
+        });
+      }
+    }
+
+    // 5. ROUTE — safe to reference mapped + slotsComplete (both declared above).
+    const COMPLEX_INTENTS = new Set(['compare', 'cost', 'recommend', 'coverage', 'details', 'enroll']);
+    const isComplexBenefitQuery = (
+      mapped.benefitTypes.length > 0 ||
+      COMPLEX_INTENTS.has(mapped.intent ?? '')
+    ) && slotsComplete;
+    const shouldUseRAG = useRAG || isComplexBenefitQuery;
+    let routed;
+    let modelUsed: 'simple' | 'smart' | 'rag' = 'simple';
+    let ragChunksUsed = 0;
+
+    if (shouldUseRAG) {
       try {
         routed = await ragChatRouter.routeMessage(userMessage.content, {
           companyId,
@@ -491,6 +538,12 @@ Which of these would you like to learn about next?`
           ...routerContext,
         });
         modelUsed = 'rag';
+        ragChunksUsed = (routed as any).metadata?.chunksUsed ?? 0;
+        // Distinguish: did we retrieve real docs, or was it a fallback LLM-only call?
+        routeSource = (routed as any).responseType === 'rag' && ragChunksUsed > 0
+          ? 'rag-doc'      // ✅ retrieved chunks from Azure Search
+          : 'rag-fallback'; // ⚠️  RAG tried but no matching docs — LLM answered alone
+        logger.info('[Router] RAG path', { isComplexBenefitQuery, ragChunksUsed, routeSource });
       } catch (err) {
         logger.warn('RAG router failed, falling back to smart/simple', { err });
       }
@@ -502,6 +555,7 @@ Which of these would you like to learn about next?`
           ...routerContext,
         });
         modelUsed = 'smart';
+        routeSource = 'smart';
       } catch (err) {
         logger.warn('SmartChatRouter failed, falling back to simple', { err });
       }
@@ -512,10 +566,12 @@ Which of these would you like to learn about next?`
         ...routerContext,
       });
       modelUsed = 'simple';
+      routeSource = 'simple';
     }
 
     const latencyMs = Date.now() - started;
 
+    // 6. POST-PROCESS — normalize rates, state consistency, cross-sell hints.
     // Issue #6 Fix: Enforce state consistency in responses
     let enhancedContent = normalizeRatesInText(routed.content); // Fix #3: normalize all rates before they reach the user
     const userState = conversation.metadata?.state;
@@ -524,6 +580,19 @@ Which of these would you like to learn about next?`
       enhancedContent = ensureStateConsistency(enhancedContent, userState);
       enhancedContent = cleanRepeatedPhrases(enhancedContent);
     }
+
+    // 7. WRITE CACHE — persist this fresh answer so next identical/similar query is free.
+    if (slotsComplete && enhancedContent.length > 80) {
+      const groundingScore = (routed as any).confidence ?? 0.75;
+      writeCache(
+        message,
+        enhancedContent,
+        companyId,
+        gateMeta.state as string | undefined,
+        groundingScore,
+      ).catch(err => logger.warn('[Router] writeCache failed (non-fatal)', { err }));
+    }
+
     const hsaTriggers = ['hsa', 'high deductible', 'health savings', 'hdhp', 'high-deductible'];
     const mentionsHSA = hsaTriggers.some(trigger => normalizedMessage.includes(trigger));
     
@@ -570,6 +639,8 @@ Which of these would you like to learn about next?`
       } catch {}
     }
 
+    enhancedContent = toPlainAssistantText(enhancedContent);
+
     // Save AI response
     const aiMessage = {
       id: crypto.randomUUID(),
@@ -606,7 +677,9 @@ Which of these would you like to learn about next?`
       conversationId: conversation.id,
       route: routed.responseType,
       model: modelUsed,
-      latencyMs
+      latencyMs,
+      source: routeSource,      // 'cache-exact' | 'cache-semantic' | 'rag-doc' | 'rag-fallback' | 'smart' | 'simple'
+      chunksUsed: ragChunksUsed, // > 0 means Azure Search docs were retrieved
     });
 
   } catch (error) {
