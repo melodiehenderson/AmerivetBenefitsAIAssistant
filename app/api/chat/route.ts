@@ -1,5 +1,8 @@
 export const dynamic = 'force-dynamic';
 
+// Hard-coded enrollment portal — source of truth for all CTA links.
+const WORKDAY_ENROLLMENT_URL = 'https://wd5.myworkday.com/amerivet/login.htmld';
+
 import { NextRequest, NextResponse } from 'next/server';
 import { withAuth, PERMISSIONS } from '@/lib/auth/unified-auth';
 
@@ -165,15 +168,44 @@ export const POST = withAuth(undefined, [PERMISSIONS.CHAT_WITH_AI])(async (reque
     /** ANALYST MODE: all slots confirmed → inject full catalog + strict grounding rules. */
     const constructAnalystPrompt = (meta: Record<string, any>): string => {
       const catalogText = getCatalogForPrompt(meta.state as string | null);
+      const stateCode = (meta.state as string | null) ?? 'UNKNOWN';
+      const kaiserRule = stateCode === 'CA'
+        ? 'Kaiser HMO is AVAILABLE in California — include it in medical comparisons.'
+        : `Kaiser HMO is NOT available in ${stateCode} — NEVER mention Kaiser as an option.`;
       return [
         `ANALYST MODE — STRICT GROUNDING RULES (non-negotiable):`,
-        `User confirmed: Name=${meta.userName ?? 'unknown'} | Age=${meta.userAge} | State=${meta.state}${meta.userCity ? ` (city: ${meta.userCity})` : ''} | Division=${meta.division ?? 'unknown'}`,
         ``,
-        `1. You are STRICTLY FORBIDDEN from asking for age or state — they are already confirmed.`,
+        `━━━ USER_PROFILE (LOCKED — NEVER re-ask any of these fields) ━━━`,
+        `Name    : ${meta.userName ?? 'unknown'}`,
+        `Age     : ${meta.userAge ?? 'unknown'}`,
+        `State   : ${stateCode}${meta.userCity ? ` (city: ${meta.userCity})` : ''}`,
+        `Division: ${meta.division ?? 'unknown'}`,
+        ``,
+        `━━━ GEOGRAPHIC RULES ━━━`,
+        kaiserRule,
+        ``,
+        `━━━ INTENT SENSITIVITY ━━━`,
+        `If the user says any variant of "not asking for rates", "skip costs", "no prices", or "just features":`,
+        `  → Suppress ALL dollar signs and premium tables. Switch to Features & Coverage comparison only.`,
+        ``,
+        `━━━ CARRIER LOCK (immutable — do NOT re-assign any carrier to a different product) ━━━`,
+        `  UNUM     = Basic Life & AD&D, Voluntary Term Life, Short-Term Disability, Long-Term Disability ONLY.`,
+        `  ALLSTATE = Group Whole Life (Permanent), Accident, Critical Illness ONLY.`,
+        `  BCBSTX   = Medical (Standard HSA, Enhanced HSA) and Dental PPO ONLY.`,
+        `  VSP      = Vision ONLY.`,
+        `  KAISER   = Medical HMO — CA/OR/WA ONLY. ` + kaiserRule,
+        `  RIGHTWAY = NOT an AmeriVet carrier — NEVER mention Rightway.`,
+        ``,
+        `━━━ CATALOG GROUNDING RULES ━━━`,
+        `1. STRICTLY FORBIDDEN: Do not ask for age or state — they are confirmed above.`,
         `2. Answer ONLY from the catalog below. Never invent plans, premiums, or benefit types not listed.`,
-        `3. If the user asks about a benefit NOT in the catalog, respond: "That benefit isn't part of AmeriVet's package." then list what IS available.`,
+        `3. If the user asks about a benefit NOT in the catalog, say: "That benefit isn't part of AmeriVet's package." then list what IS available.`,
         `4. Always show premiums as "$X.XX/month ($Y.YY bi-weekly)".`,
-        `5. You are now in Plan Comparison mode — help the user evaluate the options below.`,
+        `5. Rate frequency: quote ONLY as monthly or per-paycheck (bi-weekly). Never mix frequencies in the same reply.`,
+        `6. WHY → prose paragraphs. WHAT → markdown tables. Never mix.`,
+        `7. After each benefit topic, proactively transition: e.g. after medical → offer Dental/Vision.`,
+        `8. Enrollment link to append to every substantive reply: ${WORKDAY_ENROLLMENT_URL}`,
+        `9. Direct Refusal: If user asks "Which is best?" without providing usage level (Low/Moderate/High), ask for it before answering.`,
         ``,
         catalogText,
       ].join('\n');
@@ -320,10 +352,8 @@ export const POST = withAuth(undefined, [PERMISSIONS.CHAT_WITH_AI])(async (reque
         const userName = metadata.userName || 'there';
         const userAge = metadata.userAge;
         const ageContext = userAge ? ` At ${userAge}, you` : ' You';
-        const enrollmentUrl = process.env.ENROLLMENT_PORTAL_URL || process.env.NEXT_PUBLIC_ENROLLMENT_URL;
-        const enrollmentCta = enrollmentUrl 
-          ? `\n\n📋 **When you're ready to enroll**: finalize your selections in your [benefits enrollment portal](${enrollmentUrl}).`
-          : '';
+        const enrollmentUrl = process.env.ENROLLMENT_PORTAL_URL || process.env.NEXT_PUBLIC_ENROLLMENT_URL || WORKDAY_ENROLLMENT_URL;
+        const enrollmentCta = `\n\n📋 **When you're ready to enroll**: [${enrollmentUrl}](${enrollmentUrl})`;
         
         return sendEligibilityMessage(
             `Awesome, ${userName}! 🎉\n\nGreat, I have what I need:
@@ -381,16 +411,15 @@ Which of these would you like to learn about next?`
       );
     }
 
-    // Age-Banded Cost Safe Path (Sprint 3.1): CI / Life / Disability costs
+    // Age-Banded Cost Safe Path (Sprint 3.1): CI / Life / Disability costs.
+    // Only intercept when we DON'T have the user's age confirmed — once age is locked,
+    // the Analyst prompt + Senior Strategist persona calculate Unum age-band rates directly.
     const costKeywords = /(how much|cost|price|quote|rate|premium|per month|per paycheck)/i;
-    const ageBandedProducts = /(critical illness|ci|life(\s|$)|disability|short term disability|long term disability|std|ltd)/i;
-    if (costKeywords.test(normalizedMessage) && ageBandedProducts.test(normalizedMessage)) {
-      const enrollmentUrl = process.env.ENROLLMENT_PORTAL_URL || process.env.NEXT_PUBLIC_ENROLLMENT_URL;
-      const portalLine = enrollmentUrl
-        ? ` You can see your exact pricing any time in your [benefits enrollment portal](${enrollmentUrl}).`
-        : '';
+    const ageBandedProducts = /(critical illness|ci|disability|short term disability|long term disability|std|ltd)/i;
+    const ageConfirmed = !!(conversation.metadata?.userAge);
+    if (!ageConfirmed && costKeywords.test(normalizedMessage) && ageBandedProducts.test(normalizedMessage)) {
       return sendAssistantMessage(
-        `Thanks for asking! This is an age-rated product, and pricing can vary based on factors like age, coverage amount, and pay frequency. To ensure accuracy, I don't quote exact amounts here.${portalLine}\n\nIf you'd like, I can explain how the coverage works and when it pays out—would that be helpful?`
+        `Thanks for asking! I just need your age to look up the exact premium for this age-rated product. How old are you?`
       );
     }
 
@@ -521,12 +550,12 @@ Which of these would you like to learn about next?`
 
     // Enrollment Portal CTA (Sprint 2.5) - Add to end of substantive responses
     const isSubstantiveResponse = enhancedContent.length > 200;
-    const enrollmentUrl = process.env.ENROLLMENT_PORTAL_URL || process.env.NEXT_PUBLIC_ENROLLMENT_URL;
     // Transition guard: don't append transitions during onboarding
     const onboardingActive = !!conversation.metadata?.awaiting;
     if (!onboardingActive) {
-      if (isSubstantiveResponse && enrollmentUrl && !conversation.metadata?.enrollmentLinkShown && normalizedMessage.match(/(enroll|sign up|how do i|where do i|ready to)/i)) {
-      enhancedContent += `\n\n---\n\n📝 **Ready to make it official?** You can finalize your benefit selections at your [benefits enrollment portal](${enrollmentUrl}).`;
+      const resolvedEnrollmentUrl = process.env.ENROLLMENT_PORTAL_URL || process.env.NEXT_PUBLIC_ENROLLMENT_URL || WORKDAY_ENROLLMENT_URL;
+    if (isSubstantiveResponse && !conversation.metadata?.enrollmentLinkShown && normalizedMessage.match(/(enroll|sign up|how do i|where do i|ready to)/i)) {
+      enhancedContent += `\n\n---\n\n📝 **Ready to make it official?** Finalize your selections at: [${WORKDAY_ENROLLMENT_URL}](${resolvedEnrollmentUrl})`;
       await conversationService.patchMetadata(conversation.id, { enrollmentLinkShown: true });
       }
     }

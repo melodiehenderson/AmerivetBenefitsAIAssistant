@@ -336,35 +336,115 @@ export const amerivetBenefits2024_2025: AmerivetBenefitsCatalog = {
     },
   }),
   voluntaryPlans: [
+    // ── UNUM: Basic Life & AD&D (Employer-Paid) ─────────────────────────────
     createPlan({
       id: 'unum-basic-life',
-      name: 'Unum Basic Life',
+      name: 'Unum Basic Life & AD&D',
       provider: 'Unum',
       type: 'voluntary',
-      description: 'Employer-paid basic life insurance with optional buy-up.',
+      description: 'Employer-paid basic life and AD&D coverage — $25,000 flat benefit.',
       regionalAvailability: ['nationwide'],
       premiums: {
-        employee: { monthly: 15.75, biweekly: biweekly(15.75) },
+        employee: { monthly: 0, biweekly: 0 },          // Employer-paid
+        employer: { monthly: 15.75, biweekly: biweekly(15.75) },
       },
       tiers: {
-        employeeOnly: 15.75,
-        employeeSpouse: 24.11,
-        employeeChildren: 18.33,
-        employeeFamily: 32.48,
+        employeeOnly: 0,
+        employeeSpouse: 0,
+        employeeChildren: 0,
+        employeeFamily: 0,
       },
       benefits: {
         deductible: 0,
         outOfPocketMax: 0,
         coinsurance: 0,
-        description: 'Life and AD&D coverage with additional voluntary options.',
+        description: '$25,000 employer-paid basic life and accidental death & dismemberment.',
       },
       features: [
-        '1x salary basic life coverage',
-        'Optional supplemental coverage',
-        'Includes AD&D benefits',
+        '$25,000 flat life benefit — employer-paid',
+        'Includes Accidental Death & Dismemberment (AD&D)',
+        'All benefits-eligible employees automatically enrolled',
       ],
       limitations: [
-        'Evidence of insurability required above guaranteed issue',
+        'Coverage amount is a flat $25,000 — not salary-based',
+      ],
+      eligibility: {
+        employeeType: 'all',
+        minHours: 20,
+      },
+      voluntaryType: 'life',
+    }),
+    // ── UNUM: Voluntary Term Life ────────────────────────────────────────────
+    createPlan({
+      id: 'unum-voluntary-life',
+      name: 'Unum Voluntary Term Life',
+      provider: 'Unum',
+      type: 'voluntary',
+      description: 'Employee-paid voluntary term life insurance — age-banded rates.',
+      regionalAvailability: ['nationwide'],
+      premiums: {
+        employee: { monthly: 0, biweekly: 0 },          // Age-banded; placeholder
+      },
+      tiers: {
+        employeeOnly: 0,
+        employeeSpouse: 0,
+        employeeChildren: 0,
+        employeeFamily: 0,
+      },
+      benefits: {
+        deductible: 0,
+        outOfPocketMax: 0,
+        coinsurance: 0,
+        description: 'Voluntary term life: 1x–5x salary up to $500,000. Spouse and child coverage available.',
+      },
+      features: [
+        'Coverage: 1x to 5x annual salary (up to $500,000)',
+        'Guaranteed Issue: up to $150,000 during open enrollment',
+        'Spouse and dependent child coverage available',
+        'Portable — can continue coverage after leaving AmeriVet',
+      ],
+      limitations: [
+        'Age-banded pricing — rates increase with age',
+        'Evidence of insurability required above guaranteed issue amount',
+      ],
+      eligibility: {
+        employeeType: 'all',
+        minHours: 20,
+      },
+      voluntaryType: 'life',
+    }),
+    // ── ALLSTATE: Whole Life (Permanent) ─────────────────────────────────────
+    createPlan({
+      id: 'allstate-whole-life',
+      name: 'Allstate Whole Life',
+      provider: 'Allstate',
+      type: 'voluntary',
+      description: 'Permanent whole life insurance with cash value — rates locked at enrollment age.',
+      regionalAvailability: ['nationwide'],
+      premiums: {
+        employee: { monthly: 0, biweekly: 0 },          // Age-banded; placeholder
+      },
+      tiers: {
+        employeeOnly: 0,
+        employeeSpouse: 0,
+        employeeChildren: 0,
+        employeeFamily: 0,
+      },
+      benefits: {
+        deductible: 0,
+        outOfPocketMax: 0,
+        coinsurance: 0,
+        description: 'Permanent whole life insurance that builds cash value over time.',
+      },
+      features: [
+        'Permanent coverage — does not expire as long as premiums are paid',
+        'Builds cash value over time (tax-deferred growth)',
+        'Rates locked at your enrollment age',
+        'Portable — you keep the policy if you leave AmeriVet',
+      ],
+      limitations: [
+        'Age-banded pricing — locked at enrollment age',
+        'Higher premium than term life for equivalent face value',
       ],
       eligibility: {
         employeeType: 'all',
@@ -377,7 +457,7 @@ export const amerivetBenefits2024_2025: AmerivetBenefitsCatalog = {
     California: ['kaiser-standard-hmo'],
     Oregon: ['kaiser-standard-hmo'],
     Washington: ['kaiser-standard-hmo'],
-    nationwide: ['bcbstx-standard-hsa', 'bcbstx-enhanced-hsa', 'bcbstx-dental', 'vsp-vision-plus', 'unum-basic-life'],
+    nationwide: ['bcbstx-standard-hsa', 'bcbstx-enhanced-hsa', 'bcbstx-dental', 'vsp-vision-plus', 'unum-basic-life', 'unum-voluntary-life', 'allstate-whole-life'],
   },
   openEnrollment: {
     year: '2024-2025',
@@ -512,6 +592,14 @@ export function getCatalogForPrompt(stateCode?: string | null): string {
     `Respond ONLY with plans listed here. Plans not listed DO NOT EXIST for AmeriVet employees.`,
     `NOT IN CATALOG (decline politely if asked): pet insurance, legal insurance, ID theft protection,`,
     `  gym membership, wellness reimbursement, student loan repayment, long-term care, cancer-only plans.`,
+    '',
+    '── CARRIER LOCK (immutable — never re-assign a carrier to a different plan type) ──',
+    '  UNUM       = Basic Life & AD&D, Voluntary Term Life, Short-Term Disability, Long-Term Disability ONLY.',
+    '  ALLSTATE   = Group Whole Life (Permanent), Accident Insurance, Critical Illness ONLY.',
+    '  BCBSTX     = Medical plans (Standard HSA, Enhanced HSA) and Dental PPO ONLY.',
+    '  VSP        = Vision plan ONLY.',
+    '  KAISER     = Medical HMO — California, Oregon, Washington ONLY. NEVER mention in any other state.',
+    '  RIGHTWAY   — NOT an AmeriVet carrier. NEVER mention Rightway in any response.',
     '',
   ];
 
