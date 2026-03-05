@@ -1467,9 +1467,14 @@ export async function POST(req: NextRequest) {
         session.step = 'active_chat';
         session.dataConfirmed = true; // Prevent repeated confirmations
         
-        // If query was ONLY data ("43 CA"), confirm it
-        if (query.length < 40 && !query.includes("?") && intent.isDemographics) {
-            const msg = `Perfect! ${session.userAge} in ${session.userState}. Now I can show you accurate pricing.\n\n${ALL_BENEFITS_MENU}\n\nWhat would you like to explore first?`;
+        // ALWAYS show the ALL_BENEFITS_MENU when demographics are provided for the first time.
+        // Previous bug: query.length < 40 check would skip this when user combined
+        // demographics with other intents like "no pricing" (e.g. "I'm 30 in Houston. No pricing please.")
+        if (intent.isDemographics) {
+            const pricingIntro = session.noPricingMode
+              ? `Got it! ${session.userAge} in ${session.userState}. I'll focus on coverage details without pricing.`
+              : `Perfect! ${session.userAge} in ${session.userState}. Now I can show you accurate pricing.`;
+            const msg = `${pricingIntro}\n\n${ALL_BENEFITS_MENU}\n\nWhat would you like to explore first?`;
             session.lastBotMessage = msg;
         await updateSession(sessionId, session);
             return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session) });
