@@ -173,7 +173,7 @@ export async function POST(req: NextRequest) {
       } else {
         // If we just got the name, thank them and ask for more info.
         if (entities.name && !entities.age && !entities.state) {
-             const msg = `Thanks, ${session.userName}! It's great to meet you. 😊\n\nTo help me find the best plans for *you*, could you please share your **Age** and **State**? (e.g., "I'm 34 in Chicago")`;
+             const msg = `Thanks, ${session.userName}! It's great to meet you. 😊\n\nTo help me find the best plans for you, could you please share your age and state? (e.g., "I'm 34 in Chicago")`;
              session.lastBotMessage = msg;
              await updateSession(sessionId, session);
              return NextResponse.json({ answer: msg, tier: 'L0' });

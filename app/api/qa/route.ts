@@ -370,6 +370,9 @@ function toPlainAssistantText(text: string): string {
   return text
     .replace(/\*\*(.*?)\*\*/g, '$1')
     .replace(/\*(.*?)\*/g, '$1')
+    .replace(/^\s*---\s*$/gm, '')
+    .replace(/[✨💡📋📝🎉ℹ️👋😊⚠️]/g, '')
+    .replace(/^\s*•\s+/gm, '- ')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }

@@ -32,14 +32,12 @@ export type IntentType =
   | "procedure"       // How-to/process question
   | "definition"      // Term definition
   | "unknown";        // Cannot determine
-
 export interface Entity {
   type: EntityType;
   value: string;
   confidence: number;
   span: [number, number];
 }
-
 export type EntityType =
   | "benefit_type"    // "dental", "vision", "401k"
   | "plan_name"       // "PPO", "HMO", "HDHP"
@@ -70,11 +68,9 @@ export function normalizeQuery(query: string): string {
     .normalize("NFKC")
     .replace(/[^\w\s\-?.,()%$]/g, "");
 }
-
 // ============================================================================
 // Intent Detection
 // ============================================================================
-
 /**
  * Detect user intent from query patterns
  * Uses heuristic rules based on keywords and structure
@@ -141,7 +137,6 @@ export function detectIntent(query: string): IntentType {
   ) {
     return "eligibility";
   }
-  
   // Procedure intent: how-to, process
   if (
     /^how (do|can|to)\b/.test(normalized) ||
@@ -154,7 +149,6 @@ export function detectIntent(query: string): IntentType {
   ) {
     return "procedure";
   }
-  
   // Lookup intent: simple info retrieval
   if (
     /^what\b/.test(normalized) ||
@@ -164,7 +158,6 @@ export function detectIntent(query: string): IntentType {
   ) {
     return "lookup";
   }
-
   // Calculation intent: "how much", "cost", "calculate", numbers + operators
   if (
     /\bhow much\b/.test(normalized) ||
@@ -175,7 +168,6 @@ export function detectIntent(query: string): IntentType {
   ) {
     return "calculate";
   }
-
   // Eligibility intent: "eligible", "qualify", "enroll", "can I"
   if (
     /\beligible\b/.test(normalized) ||
@@ -285,11 +277,9 @@ export function detectEntities(query: string): Entity[] {
 
   return entities;
 }
-
 // ============================================================================
 // Complexity Scoring
 // ============================================================================
-
 /**
  * Compute query complexity score (0-1)
  * Based on multiple signals:
@@ -302,28 +292,24 @@ export function detectEntities(query: string): Entity[] {
 export function computeComplexity(query: string, entities: Entity[]): number {
   let score = 0;
   const normalized = query.toLowerCase();
-
   // Length factor (0-0.2)
   const charCount = query.length;
   if (charCount > 200) score += 0.2;
   else if (charCount > 100) score += 0.15;
   else if (charCount > 50) score += 0.1;
   else score += 0.05;
-
   // Entity count (0-0.2)
   const entityCount = entities.length;
   if (entityCount > 5) score += 0.2;
   else if (entityCount > 3) score += 0.15;
   else if (entityCount > 1) score += 0.1;
   else score += 0.05;
-
   // Logical operators (0-0.2)
   const hasAnd = /\band\b/.test(normalized);
   const hasOr = /\bor\b/.test(normalized);
   const hasNot = /\bnot\b/.test(normalized);
   const operatorCount = [hasAnd, hasOr, hasNot].filter(Boolean).length;
   score += operatorCount * 0.07;
-
   // Multi-hop reasoning (0-0.2)
   const multiHopIndicators = [
     /\bthen\b/,
@@ -335,11 +321,9 @@ export function computeComplexity(query: string, entities: Entity[]): number {
   ];
   const multiHopCount = multiHopIndicators.filter((re) => re.test(normalized)).length;
   score += Math.min(multiHopCount * 0.05, 0.2);
-
   // Comparison complexity (0-0.1)
   if (/\bcompare\b/.test(normalized)) score += 0.1;
   if (/\bdifference\b/.test(normalized)) score += 0.1;
-
   // Ambiguity markers (0-0.1)
   const ambiguityMarkers = [
     /\bmaybe\b/,
@@ -350,15 +334,12 @@ export function computeComplexity(query: string, entities: Entity[]): number {
   ];
   const ambiguityCount = ambiguityMarkers.filter((re) => re.test(normalized)).length;
   score += Math.min(ambiguityCount * 0.03, 0.1);
-
   // Cap at 1.0
   return Math.min(score, 1.0);
 }
-
 // ============================================================================
 // Tool Detection
 // ============================================================================
-
 /**
  * Detect if query requires external tools
  * - Math calculations
@@ -500,13 +481,10 @@ export function analyzeQuery(query: string): QueryProfile {
     signals,
   };
 }
-
 // ============================================================================
 // Slot-Filling Entity Extraction (Deterministic)
 // ============================================================================
-
 import { cityToStateMap } from '@/lib/schemas/onboarding';
-
 /**
  * Represents the extractable onboarding slots from a user message.
  * All fields are optional — only populated when found in the query.
@@ -517,35 +495,29 @@ export interface UserSlots {
   city?:  string;  // Raw city string provided by user
   state?: string;  // Resolved 2-letter state code
 }
-
 const KNOWN_STATE_CODES = new Set([
   'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA',
   'KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ',
   'NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT',
   'VA','WA','WV','WI','WY','DC',
 ]);
-
 const NOT_NAMES = new Set([
   'hello','hi','hey','medical','dental','vision','help','benefits','insurance',
   'quote','cost','plan','price','enroll','coverage','okay','ok','yes','no',
 ]);
-
 /**
  * Deterministically extracts user onboarding slots (Name, Age, City/State)
  * from a natural-language query WITHOUT calling the LLM.
- *
  * - City → State: resolved via `cityToStateMap` truth table (e.g. "Chicago" → "IL").
  * - State codes: matched against the full list of US postal codes.
  * - Age: extracted from patterns like "I'm 34", "age 42", or bare numbers 18–99.
  * - Name: extracted from "my name is X" / "I'm X" patterns, or a lone word.
- *
  * @param query  Raw user input string.
  * @returns      Populated `UserSlots` — only fields that were found are set.
  */
 export function extractUserSlots(query: string): UserSlots {
   const slots: UserSlots = {};
   const lower = query.toLowerCase().trim();
-
   // ── 1. Age ─────────────────────────────────────────────────────────────────
   const ageMatch =
     lower.match(/\bage\s+(1[8-9]|[2-9]\d)\b/) ||
@@ -556,7 +528,6 @@ export function extractUserSlots(query: string): UserSlots {
     const n = parseInt(ageMatch[1] ?? ageMatch[0], 10);
     if (n >= 18 && n <= 99) slots.age = n;
   }
-
   // ── 2. Location: check city names first (longest match wins) ───────────────
   let resolvedCity: string | undefined;
   let resolvedState: string | undefined;
@@ -587,10 +558,8 @@ export function extractUserSlots(query: string): UserSlots {
       }
     }
   }
-
   if (resolvedCity)  slots.city  = resolvedCity;
   if (resolvedState) slots.state = resolvedState;
-
   // ── 3. Name (last resort — extracted only when no other slot was found) ────
   const explicitName = query.match(
     /(?:(?:my name is|i'm called|call me)\s+)([A-Z][a-z]{1,14})/i,
@@ -608,14 +577,11 @@ export function extractUserSlots(query: string): UserSlots {
       }
     }
   }
-
   return slots;
 }
-
 // ============================================================================
 // Mapped Entity Controller (Entity Extraction + Out-of-Catalog Detection)
 // ============================================================================
-
 /**
  * Combines slot extraction with intent analysis and a catalog membership check.
  * This is the single entry point the chat route calls — it must never invoke
@@ -647,7 +613,6 @@ const OUT_OF_CATALOG_PATTERNS = [
   /\blong.?term\s+care\b/i,
   /\bcancer.?only\s+plan\b/i,
 ];
-
 /**
  * Deterministically extracts all relevant entities from a single user message:
  * demographic slots (for the state machine), intent, benefit keywords, and a

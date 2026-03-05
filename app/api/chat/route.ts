@@ -49,6 +49,7 @@ function toPlainAssistantText(text: string): string {
     .replace(/\[(.*?)\]\((https?:\/\/[^)]+)\)/g, '$2')
     .replace(/^\s*---\s*$/gm, '')
     .replace(/[✨💡📋📝🎉ℹ️👋😊]/g, '')
+    .replace(/^\s*•\s+/gm, '- ')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
