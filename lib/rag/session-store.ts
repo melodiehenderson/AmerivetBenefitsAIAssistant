@@ -52,6 +52,8 @@ export type Session = {
   
   // NEW: Family & Coverage Information (Smart Memory)
   coverageTier?: string;              // 'employee-only', 'employee-spouse', 'employee-children', 'employee-family'
+  coverageTierLock?: string;          // Locked tier from family detection (e.g., 'Employee + Family')
+  noPricingMode?: boolean;            // When true, suppress all $ and cost tables in responses
   payPeriods?: number;                // Paycheck frequency (24=biweekly, 26=weekly, 12=monthly)
   familyDetails?: {                   // Detailed family info for personalized recommendations
     hasSpouse?: boolean;
