@@ -29,6 +29,7 @@ export type Session = {
     dept?: string;
     lastTransitionPromptAt?: number;
     lastRecommendationPromptAt?: number;
+    stateUpdatedAt?: number;
   };
   // Conversational UX state
   turn?: number;
@@ -77,6 +78,14 @@ export type Session = {
   }>;
   lastAskedQuestion?: string;         // Loop detection
   loopCount?: number;                 // How many times we've asked same thing
+
+  // NEW: Lightweight memory for lifecycle/event reasoning
+  lifeEvents?: string[];              // e.g., ['marriage', 'job-change', 'pregnancy']
+  lastDetectedLocationChange?: {
+    from: string;
+    to: string;
+    updatedAt: number;
+  };
 };
 
 // In-memory cache as a fast fallback; Redis provides true persistence across lambdas/region hops

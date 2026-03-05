@@ -254,7 +254,7 @@ export function estimateCostProjection(params: CostProjectionParams): string {
   const tier = normalizeCoverageTierToBenefitTier(coverageTier);
 
   const stateName = state ? (STATE_CODE_TO_NAME[state.toUpperCase()] || state) : null;
-  let msg = `**Projected Healthcare Costs** for **${coverageTier}** coverage`;
+  let msg = `Projected Healthcare Costs for ${coverageTier} coverage`;
   if (stateName) msg += ` in ${stateName}`;
   msg += ` (${usage} usage):\n\n`;
 
@@ -283,7 +283,7 @@ export function estimateCostProjection(params: CostProjectionParams): string {
       return true;
     });
     if (networkFiltered.length === 0) {
-      networkNote = `**Note:** ${network} network is not available in ${stateName || 'your area'}. Showing all available plans instead.\n\n`;
+      networkNote = `Note: ${network} network is not available in ${stateName || 'your area'}. Showing all available plans instead.\n\n`;
     } else {
       plans = networkFiltered;
     }
@@ -302,11 +302,11 @@ export function estimateCostProjection(params: CostProjectionParams): string {
     const expectedOOP = Number(Math.min(expectedOOPRaw, oopMax || expectedOOPRaw).toFixed(0));
     const totalProjected = annualPremium + expectedOOP;
 
-    msg += `**${p.name}** (${p.provider}):\n`;
+    msg += `${p.name} (${p.provider}):\n`;
     msg += `- Premium: $${formatMoney(monthlyPremium)}/month ($${formatMoney(annualPremium)}/year)\n`;
     msg += `- Deductible: $${deductible.toLocaleString()} | Out-of-pocket max: $${oopMax.toLocaleString()}\n`;
     msg += `- Estimated out-of-pocket expenses: ~$${expectedOOP.toLocaleString()}\n`;
-    msg += `- **Projected total annual cost: ~$${formatMoney(totalProjected)}**\n\n`;
+    msg += `- Projected total annual cost: ~$${formatMoney(totalProjected)}\n\n`;
   }
 
   msg += `These are rough estimates based on ${usage} healthcare utilization. Actual costs depend on claims, copays, services used, and network.\n`;
@@ -318,8 +318,8 @@ export function estimateCostProjection(params: CostProjectionParams): string {
 export function compareMaternityCosts(coverageTier: string, userState?: string | null): string {
   const typical = 10000;
   const tier = normalizeCoverageTierToBenefitTier(coverageTier);
-  let msg = `**Maternity Cost Comparison** (${coverageTier}):\n\n`;
-  msg += `**Assumptions:** Typical maternity care costs ~$10,000 (prenatal visits, delivery, postnatal care).\n\n`;
+  let msg = `Maternity Cost Comparison (${coverageTier}):\n\n`;
+  msg += `Assumptions: Typical maternity care costs ~$10,000 (prenatal visits, delivery, postnatal care).\n\n`;
 
   // Filter Kaiser for non-California users (Issue 5 fix)
   const stateName = userState ? (STATE_CODE_TO_NAME[userState.toUpperCase()] || userState) : null;
@@ -348,24 +348,24 @@ export function compareMaternityCosts(coverageTier: string, userState?: string |
     const annualPremium = annualFromMonthly(monthlyPremium);
     const total = cappedOOP + annualPremium;
 
-    msg += `**${p.name}:**\n`;
-    msg += `• Estimated out-of-pocket: **$${cappedOOP.toLocaleString()}** (deductible $${deductible.toLocaleString()}, coinsurance ${(coins * 100).toFixed(0)}%)\n`;
+    msg += `${p.name}:\n`;
+    msg += `- Estimated out-of-pocket: $${cappedOOP.toLocaleString()} (deductible $${deductible.toLocaleString()}, coinsurance ${(coins * 100).toFixed(0)}%)\n`;
     if (oopMax) msg += `  - Out-of-pocket max: $${oopMax.toLocaleString()}\n`;
-    msg += `• Annual premium: **$${formatMoney(annualPremium)}** ($${formatMoney(monthlyPremium)}/month)\n`;
-    msg += `• **Total estimated annual cost:** $${formatMoney(total)}\n\n`;
+    msg += `- Annual premium: $${formatMoney(annualPremium)} ($${formatMoney(monthlyPremium)}/month)\n`;
+    msg += `- Total estimated annual cost: $${formatMoney(total)}\n\n`;
   }
-  
-  msg += `**Key Considerations for Maternity:**\n`;
-  msg += `• Lower deductibles and out-of-pocket maximums generally reduce exposure for delivery\n`;
-  msg += `• HSA-eligible plans can be attractive if you want to pay expenses with pre-tax dollars\n`;
-  msg += `• Network availability matters (e.g., Kaiser only in certain regions)\n`;
-  msg += `• Prenatal visits, delivery, and postnatal care all count toward your deductible and OOP max\n\n`;
-  
-  msg += `**Recommendation:** If you're planning a pregnancy, consider plans with lower deductibles and out-of-pocket maximums, even if premiums are higher.\n\n`;
+
+  msg += `Key considerations for maternity:\n`;
+  msg += `- Lower deductibles and out-of-pocket maximums generally reduce exposure for delivery\n`;
+  msg += `- HSA-eligible plans can be attractive if you want to pay expenses with pre-tax dollars\n`;
+  msg += `- Network availability matters (e.g., Kaiser only in certain regions)\n`;
+  msg += `- Prenatal visits, delivery, and postnatal care all count toward your deductible and OOP max\n\n`;
+
+  msg += `Recommendation: If you are planning a pregnancy, consider plans with lower deductibles and out-of-pocket maximums, even if premiums are higher.\n\n`;
   msg += `Lower OOP numbers indicate better maternity cost protection. Remember premiums vary by coverage tier.\n\n`;
   
   const enrollmentUrl = process.env.ENROLLMENT_PORTAL_URL || 'https://wd5.myworkday.com/amerivet/login.htmld';
-  msg += `**Next Steps:** You can review detailed maternity coverage in your [benefits enrollment portal](${enrollmentUrl}).`;
+  msg += `Next steps: Review detailed maternity coverage in your benefits enrollment portal: ${enrollmentUrl}`;
   
   return msg;
 }
