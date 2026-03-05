@@ -496,8 +496,8 @@ export function stripThoughtBlock(text: string, debugLog = false): string {
  *  - Uses `BENEFIT DOCUMENT:` headers instead of `[Doc N]` to avoid citation  
  *    artifacts leaking into model output
  */
-function buildGroundedContext(chunks: Chunk[], rrfScores: number[]): string {
-  if (!chunks.length) return 'No retrieval context available.';
+function buildGroundedContext(chunks: Chunk[], rrfScores: number[]): { context: string; stats: { chunksRaw: number; chunksPassedFilter: number; totalChars: number } } {
+  if (!chunks.length) return { context: 'No retrieval context available.', stats: { chunksRaw: 0, chunksPassedFilter: 0, totalChars: 0 } };
 
   const topScore = Math.max(...rrfScores, 0.001);
   const scoreThreshold = topScore * 0.25; // drop bottom-quartile chunks
@@ -531,9 +531,49 @@ function buildGroundedContext(chunks: Chunk[], rrfScores: number[]): string {
     totalChars += entry.length;
   }
 
-  if (parts.length === 0) return 'No relevant benefit documents retrieved.';
-  logger.debug(`[CONTEXT] Built grounded context: ${parts.length} chunks, ${totalChars} chars`);
-  return parts.join('\n\n---\n\n');
+  const stats = { chunksRaw: chunks.length, chunksPassedFilter: parts.length, totalChars };
+  if (parts.length === 0) {
+    logger.debug(`[CONTEXT] No chunks passed score filter (raw=${chunks.length}, threshold=${scoreThreshold.toFixed(4)})`);
+    return { context: 'No relevant benefit documents retrieved.', stats: { ...stats, chunksPassedFilter: 0 } };
+  }
+  logger.debug(`[CONTEXT] Grounded context: ${parts.length}/${chunks.length} chunks passed filter, ${totalChars} chars (threshold=${scoreThreshold.toFixed(4)})`);
+  return { context: parts.join('\n\n---\n\n'), stats };
+}
+
+/**
+ * Score how well the generated answer addresses the original query.
+ * Returns a 0–1 composite from three signals:  
+ *  - coverage: fraction of meaningful query tokens found in the answer
+ *  - specificity: presence of plan names, dollar amounts, or carrier names
+ *  - length: proportional penalty if answer is too short or too long
+ */
+function scoreGenerationQuality(
+  query: string,
+  answer: string
+): { score: number; coverage: number; specificity: number; lengthOk: boolean } {
+  const STOPWORDS = new Set(['i','the','a','an','is','are','was','were','in','on','at','to','of','and','or','for','with','my','me','do','does','what','how','which','can','be','have','has','that','it','this','not','no','help','about','much']);
+  const queryTokens = query.toLowerCase().split(/\W+/).filter(t => t.length > 2 && !STOPWORDS.has(t));
+  const answerLower = answer.toLowerCase();
+
+  // 1. Keyword coverage: how many query terms appear in the answer?
+  const matched = queryTokens.filter(t => answerLower.includes(t));
+  const coverage = queryTokens.length > 0 ? matched.length / queryTokens.length : 0;
+
+  // 2. Specificity: does the answer contain concrete data (numbers, plan names, carriers)?
+  const specificitySignals = [
+    /\$[\d,]+/.test(answer),           // dollar amounts
+    /\b(standard hsa|enhanced hsa|kaiser|bcbstx?|unum|allstate|vsp)\b/i.test(answer), // plan/carrier names
+    /\b\d{1,3}(?:[.,]\d+)?\s*%/.test(answer),  // percentages
+    /\b(week|month|year|day)\b/i.test(answer),  // time references
+  ];
+  const specificity = specificitySignals.filter(Boolean).length / specificitySignals.length;
+
+  // 3. Length penalty: too short (<120 chars) or too long (>3 600 chars)
+  const lengthOk = answer.length >= 120 && answer.length <= 3_600;
+  const lengthMultiplier = lengthOk ? 1 : (answer.length < 120 ? 0.6 : 0.85);
+
+  const score = Math.min(1, (coverage * 0.55 + specificity * 0.45) * lengthMultiplier);
+  return { score: parseFloat(score.toFixed(3)), coverage: parseFloat(coverage.toFixed(3)), specificity: parseFloat(specificity.toFixed(3)), lengthOk };
 }
 
 type IntentDomain = 'pricing' | 'policy' | 'general';
@@ -2307,7 +2347,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
 
     // 5. GENERATE ANSWER — Data-Sovereign prompt with immutable catalog
     // Score-filtered, deduplicated, token-budgeted context — see buildGroundedContext() for rationale
-    const contextText = buildGroundedContext(result.chunks, result.scores?.rrf || []);
+    const { context: contextText, stats: ctxStats } = buildGroundedContext(result.chunks, result.scores?.rrf || []);
     
     const systemPrompt = buildSystemPrompt(session);
     
@@ -2373,16 +2413,20 @@ Output your answer in EXACTLY this two-section format — both sections required
 → ReAct: if any catalog lookup is needed, state "Action: look up X" then "Observation: Found Y"
 
 [RESPONSE]:
-<your final conversational answer — plain prose, no [Source N] citations, no <thought> tags>
+<your final conversational answer — use the voice of a senior benefits specialist speaking directly
+to the employee. Write in flowing, well-constructed prose. Vary sentence structure. Lead with the
+most important finding. No [Source N] citations, no <thought> tags, no robotic bullet dumps.>
 ${confidenceHint}${alternativeHint}${noPricingHint}${policyRoutingHint}${tierLockHint}
 Remember: answer ONLY from the IMMUTABLE CATALOG. Do NOT ask for name, age, or state. Do NOT mention Rightway. Do NOT attribute Whole Life to Unum or Term Life to Allstate. Do NOT invent a "PPO" medical plan. Do NOT show [Source N] or [Doc N] citations in your response. AmeriVet does NOT offer a DHMO dental plan — only the BCBSTX Dental PPO.`;
 
     logger.debug(`[RAG] Generating answer with ${result.chunks.length} chunks`);
 
+    // temperature=0.15: slightly above 0.1 to allow natural, sophisticated prose while
+    // keeping factual grounding tight. 0.1 was causing formulaic/robotic phrasing.
     const completion = await azureOpenAIService.generateChatCompletion([
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userMessage }
-    ], { temperature: 0.1 });
+    ], { temperature: 0.15 });
 
     let answer = completion.content.trim();
     answer = extractReasonedResponse(answer, true); // extract [RESPONSE], log [REASONING] debug trace
@@ -2480,7 +2524,29 @@ Remember: answer ONLY from the IMMUTABLE CATALOG. Do NOT ask for name, age, or s
 
     answer = toPlainAssistantText(answer);
 
-    logger.debug(`[RAG] Final answer generated (${answer.length} chars) with ${result.chunks?.length || 0} citations`);
+    const genQuality = scoreGenerationQuality(query, answer);
+
+    logger.info('[QA-SCORECARD]', {
+      sessionId,
+      query: query.slice(0, 80),
+      retrieval: {
+        chunksRaw:          ctxStats.chunksRaw,
+        chunksPassedFilter: ctxStats.chunksPassedFilter,
+        totalContextChars:  ctxStats.totalChars,
+        retrievalScore:     pipelineResult.retrieval.score.toFixed(3),
+        confidenceTier,
+        topRrfScore:        topScore.toFixed(4),
+      },
+      generation: {
+        score:       genQuality.score,
+        coverage:    genQuality.coverage,
+        specificity: genQuality.specificity,
+        lengthOk:    genQuality.lengthOk,
+        answerChars: answer.length,
+      },
+      temperature: 0.15,
+    });
+    logger.debug(`[RAG] Final answer generated (${answer.length} chars) — generation quality ${(genQuality.score * 100).toFixed(0)}% (coverage ${(genQuality.coverage * 100).toFixed(0)}%, specificity ${(genQuality.specificity * 100).toFixed(0)}%)`);
 
     session.lastBotMessage = answer;
     
@@ -2504,11 +2570,16 @@ Remember: answer ONLY from the IMMUTABLE CATALOG. Do NOT ask for name, age, or s
       sessionContext: buildSessionContext(session),
       metadata: {
         category: category,
-        chunksUsed: result.chunks?.length || 0,
+        chunksUsed:         result.chunks?.length || 0,
+        chunksRaw:          ctxStats.chunksRaw,
+        chunksPassedFilter: ctxStats.chunksPassedFilter,
         sessionId,
         confidenceTier,
         usedDisclaimer: useDisclaimer,
         topScore: topScore.toFixed(3),
+        generationScore: genQuality.score,
+        generationCoverage: genQuality.coverage,
+        generationSpecificity: genQuality.specificity,
         userAge: session.userAge,
         userState: session.userState,
         // Router result (Senior Engineer approach)
