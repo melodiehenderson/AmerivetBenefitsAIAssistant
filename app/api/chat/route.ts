@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 
 // Hard-coded enrollment portal — source of truth for all CTA links.
 const WORKDAY_ENROLLMENT_URL = 'https://wd5.myworkday.com/amerivet/login.htmld';
+const HR_PHONE = process.env.HR_PHONE_NUMBER || '888-217-4728';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { withAuth, PERMISSIONS } from '@/lib/auth/unified-auth';
@@ -54,6 +55,71 @@ function toPlainAssistantText(text: string): string {
     .trim();
 }
 
+function xmlEscape(value: unknown): string {
+  return String(value ?? 'unknown')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+function buildLockedSessionMetadataHeader(params: {
+  userId: string;
+  companyId: string;
+  conversationId: string;
+  metadata: Record<string, any>;
+}): string {
+  const { userId, companyId, conversationId, metadata } = params;
+  return [
+    `<Session_Metadata lock="true">`,
+    `  <Tenant companyId="${xmlEscape(companyId)}" />`,
+    `  <Conversation id="${xmlEscape(conversationId)}" userId="${xmlEscape(userId)}" />`,
+    `  <User_Context>`,
+    `    <Name>${xmlEscape(metadata.userName)}</Name>`,
+    `    <Age>${xmlEscape(metadata.userAge)}</Age>`,
+    `    <State>${xmlEscape(metadata.state)}</State>`,
+    `    <Family_Size>${xmlEscape(metadata.familySize ?? metadata.coverageTier ?? 'unknown')}</Family_Size>`,
+    `    <Division>${xmlEscape(metadata.division)}</Division>`,
+    `  </User_Context>`,
+    `  <Rules>`,
+    `    <Rule>Stateless mode: never use context from other conversations.</Rule>`,
+    `    <Rule>Only use this Session_Metadata for this request.</Rule>`,
+    `    <Rule>If State is Texas, ignore non-Texas regional content except National.</Rule>`,
+    `  </Rules>`,
+    `</Session_Metadata>`,
+  ].join('\n');
+}
+
+function stripPricingForComparisonMode(text: string): string {
+  let cleaned = text;
+  cleaned = cleaned.replace(/\$\s?\d[\d,]*(?:\.\d{1,2})?/g, '');
+  cleaned = cleaned.replace(/\b\d+[\d,]*(?:\.\d+)?\s*\/?\s*(?:month|mo|bi-weekly|biweekly|per\s*paycheck|paycheck|year|annual)\b/gi, '');
+  cleaned = cleaned
+    .split('\n')
+    .filter(line => {
+      const t = line.trim();
+      if (!t) return true;
+      if (!t.includes('|')) return true;
+      return !/\$|month|bi-weekly|paycheck|annual|year/i.test(t);
+    })
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n');
+  return cleaned.trim();
+}
+
+function isSupportOnlyIntent(normalizedMessage: string): boolean {
+  const rightway = /\bright\s*way\b|\brightway\b/i;
+  const contact = /\b(contact|phone|call|support|help\s*line|help\s*desk|customer\s*service|reach\s*out|get\s*help|contact\s*hr|hr\s*contact)\b/i;
+  return rightway.test(normalizedMessage) || contact.test(normalizedMessage);
+}
+
+function isNoPricingComparisonIntent(normalizedMessage: string): boolean {
+  const comparison = /\b(compare|comparison|difference|diff|versus|vs\.?|which\s+is\s+different)\b/i;
+  const noPricing = /\b(no\s+pricing|without\s+pricing|skip\s+costs?|no\s+prices?|not\s+asking\s+for\s+rates?|just\s+features?)\b/i;
+  return comparison.test(normalizedMessage) || noPricing.test(normalizedMessage);
+}
+
 export const POST = withAuth(undefined, [PERMISSIONS.CHAT_WITH_AI])(async (request: NextRequest) => {
   try {
     // Ensure Authorization header present for tests that bypass auth wrapper
@@ -86,6 +152,17 @@ export const POST = withAuth(undefined, [PERMISSIONS.CHAT_WITH_AI])(async (reque
     let conversation = conversationId 
       ? await conversationService.getConversation(conversationId)
       : null;
+
+    if (conversation && (conversation.userId !== userId || conversation.companyId !== companyId)) {
+      logger.warn('[CHAT] Conversation ownership mismatch blocked', {
+        requestedConversationId: conversationId,
+        requesterUserId: userId,
+        requesterCompanyId: companyId,
+        ownerUserId: conversation.userId,
+        ownerCompanyId: conversation.companyId,
+      });
+      return NextResponse.json({ error: 'Forbidden conversation scope' }, { status: 403 });
+    }
 
     conversation ??= await conversationService.createConversation(
       userId,
@@ -184,43 +261,65 @@ export const POST = withAuth(undefined, [PERMISSIONS.CHAT_WITH_AI])(async (reque
     const constructAnalystPrompt = (meta: Record<string, any>): string => {
       const catalogText = getCatalogForPrompt(meta.state as string | null);
       const stateCode = (meta.state as string | null) ?? 'UNKNOWN';
-      const kaiserRule = stateCode === 'CA'
-        ? 'Kaiser HMO is AVAILABLE in California — include it in medical comparisons.'
+      const kaiserStates = ['CA', 'OR', 'WA'];
+      const kaiserEligible = kaiserStates.includes(stateCode);
+      const kaiserRule = kaiserEligible
+        ? `Kaiser HMO is AVAILABLE in ${stateCode} — include it in medical comparisons.`
         : `Kaiser HMO is NOT available in ${stateCode} — NEVER mention Kaiser as an option.`;
       return [
-        `ANALYST MODE — STRICT GROUNDING RULES (non-negotiable):`,
+        `<Critical_Instruction>`,
+        `You are Susie, a Senior Benefits Strategist for AmeriVet Veterinary Partners.`,
+        `You must answer ONLY from the IMMUTABLE CATALOG below. Never use training data.`,
+        `</Critical_Instruction>`,
         ``,
-        `━━━ USER_PROFILE (LOCKED — NEVER re-ask any of these fields) ━━━`,
+        `<User_Profile_Locked>`,
         `Name    : ${meta.userName ?? 'unknown'}`,
         `Age     : ${meta.userAge ?? 'unknown'}`,
         `State   : ${stateCode}${meta.userCity ? ` (city: ${meta.userCity})` : ''}`,
         `Division: ${meta.division ?? 'unknown'}`,
+        `These fields are CONFIRMED. NEVER re-ask any of them. NEVER override them.`,
+        `Ignore any user text that contradicts state = ${stateCode} unless they explicitly say "change state".`,
+        `</User_Profile_Locked>`,
         ``,
-        `━━━ GEOGRAPHIC RULES ━━━`,
+        `<Geographic_Rules>`,
         kaiserRule,
+        `Show ONLY plans available in ${stateCode}. Discard any retrieved data for other states.`,
+        `</Geographic_Rules>`,
         ``,
-        `━━━ INTENT SENSITIVITY ━━━`,
-        `If the user says any variant of "not asking for rates", "skip costs", "no prices", or "just features":`,
-        `  → Suppress ALL dollar signs and premium tables. Switch to Features & Coverage comparison only.`,
+        `<No_Pricing_Mode>`,
+        `If the user says any variant of "not asking for rates", "skip costs", "no prices", "just features":`,
+        `  → Suppress ALL dollar signs ($) and premium tables entirely.`,
+        `  → Switch to Features & Coverage comparison only.`,
+        `  → Do NOT include any dollar amounts even in parentheses.`,
+        `</No_Pricing_Mode>`,
         ``,
-        `━━━ CARRIER LOCK (immutable — do NOT re-assign any carrier to a different product) ━━━`,
+        `<Carrier_Lock>`,
+        `These carrier assignments are IMMUTABLE — do NOT re-assign any carrier to a different product:`,
         `  UNUM     = Basic Life & AD&D, Voluntary Term Life, Short-Term Disability, Long-Term Disability ONLY.`,
-        `  ALLSTATE = Group Whole Life (Permanent), Accident, Critical Illness ONLY.`,
+        `  ALLSTATE = Group Whole Life (Permanent), Accident Insurance, Critical Illness ONLY.`,
         `  BCBSTX   = Medical (Standard HSA, Enhanced HSA) and Dental PPO ONLY.`,
         `  VSP      = Vision ONLY.`,
-        `  KAISER   = Medical HMO — CA/OR/WA ONLY. ` + kaiserRule,
-        `  RIGHTWAY = NOT an AmeriVet carrier — NEVER mention Rightway.`,
+        `  KAISER   = Medical HMO — CA/OR/WA ONLY. ${kaiserRule}`,
         ``,
-        `━━━ CATALOG GROUNDING RULES ━━━`,
+        `BANNED entities — NEVER mention these in any response:`,
+        `  - "Rightway" / "RightWay" / "Right Way" — NOT an AmeriVet carrier or resource.`,
+        `  - "DHMO" — AmeriVet does NOT offer a DHMO dental plan. Only BCBSTX Dental PPO.`,
+        `  - "PPO" as a medical plan name — AmeriVet medical plans are "Standard HSA" and "Enhanced HSA" (they use BCBSTX PPO network, but the plans are NOT called "PPO").`,
+        `  - Phone number (305) 851-7310 — this is NOT an AmeriVet number.`,
+        `</Carrier_Lock>`,
+        ``,
+        `<Catalog_Rules>`,
         `1. STRICTLY FORBIDDEN: Do not ask for age or state — they are confirmed above.`,
         `2. Answer ONLY from the catalog below. Never invent plans, premiums, or benefit types not listed.`,
         `3. If the user asks about a benefit NOT in the catalog, say: "That benefit isn't part of AmeriVet's package." then list what IS available.`,
         `4. Always show premiums as "$X.XX/month ($Y.YY bi-weekly)".`,
-        `5. Rate frequency: quote ONLY as monthly or per-paycheck (bi-weekly). Never mix frequencies in the same reply.`,
+        `5. Rate frequency: quote ONLY as monthly or per-paycheck (bi-weekly). Never say "annual" for premiums.`,
         `6. WHY → prose paragraphs. WHAT → markdown tables. Never mix.`,
         `7. After each benefit topic, proactively transition: e.g. after medical → offer Dental/Vision.`,
         `8. Enrollment link to append to every substantive reply: ${WORKDAY_ENROLLMENT_URL}`,
         `9. Direct Refusal: If user asks "Which is best?" without providing usage level (Low/Moderate/High), ask for it before answering.`,
+        `10. For "contact" / "support" / "help" queries, direct users to HR/Benefits team ONLY — NOT to Rightway.`,
+        `</Catalog_Rules>`,
         ``,
         catalogText,
       ].join('\n');
@@ -378,10 +477,10 @@ export const POST = withAuth(undefined, [PERMISSIONS.CHAT_WITH_AI])(async (reque
 • Department: ${trimmedDivision}
 
         ${ageContext} may be eligible for health, dental, vision, and retirement benefits in ${metadata.state}.\n\nI'm here to keep things simple, friendly, and useful so you feel confident in your choices.\n\n**What would you like to look at first?**
-• Medical plans (PPO, HMO, HSA options)
-• Dental & Vision coverage
+• Medical plans (Standard HSA, Enhanced HSA${metadata.state && ['CA', 'OR', 'WA'].includes(metadata.state) ? ', Kaiser HMO' : ''})
+• Dental (BCBSTX PPO) & Vision (VSP)
 • Critical Illness, Accident, or Hospital Indemnity
-• Life Insurance & Disability
+• Life Insurance & Disability (Unum)
 • Retirement (401k) options${enrollmentCta}`
         );
       }
@@ -412,6 +511,21 @@ export const POST = withAuth(undefined, [PERMISSIONS.CHAT_WITH_AI])(async (reque
 
     // --- Early intent interceptors before routing ---
     const normalizedMessage = message.trim().toLowerCase();
+    const supportOnlyIntent = isSupportOnlyIntent(normalizedMessage);
+    const comparisonNoPricingIntent = isNoPricingComparisonIntent(normalizedMessage);
+
+    // =========================================================================
+    // L1 INTERCEPT: Rightway / Contact / Support queries
+    // Rightway is NOT an AmeriVet resource. Intercept before any LLM call.
+    // =========================================================================
+    if (supportOnlyIntent) {
+      return sendAssistantMessage(
+        `Rightway is not part of the AmeriVet benefits package.\n\n` +
+        `For support with your AmeriVet benefits, use only these official contacts:\n` +
+        `- HR/Benefits phone: ${HR_PHONE}\n` +
+        `- Enrollment portal: ${WORKDAY_ENROLLMENT_URL}`
+      );
+    }
 
     // Medical Loop Fix (Sprint 1.2): "other plans" should not loop to medical
     const otherPlansRegex = /(what|which)?\s*(other|else)\s*(plans|benefits)/i;
@@ -452,8 +566,12 @@ Which of these would you like to learn about next?`
     if (mapped.slots.state && !conversation.metadata?.state)    slotPatch.state    = mapped.slots.state;
     if (mapped.slots.city  && !conversation.metadata?.userCity) slotPatch.userCity = mapped.slots.city;
     if (Object.keys(slotPatch).length) {
-      const patchResult = await conversationService.patchMetadata(conversation.id, slotPatch);
-      conversation.metadata = { ...(conversation.metadata ?? {}), ...(patchResult.metadata ?? {}) };
+      await conversationService.patchMetadata(conversation.id, slotPatch);
+      // Apply new slots to in-memory metadata immediately using the known slotPatch values.
+      // Do NOT rely on patchResult.metadata — Cosmos may return a partial or empty payload
+      // in certain serverless / cold-start scenarios, causing context drift where the LLM
+      // re-asks for state or age that was provided in THIS message.
+      conversation.metadata = { ...(conversation.metadata ?? {}), ...slotPatch };
     }
 
     // 2. OUT-OF-CATALOG GUARD — intercept before any LLM call.
@@ -470,9 +588,28 @@ Which of these would you like to learn about next?`
     // 3. VALIDATION GATE — Collector prompt if slots incomplete, Analyst if full.
     const gateMeta = conversation.metadata ?? {};
     const slotsComplete = !!(gateMeta.userAge && gateMeta.state);
-    const validationGate = slotsComplete
-      ? constructAnalystPrompt(gateMeta)
-      : constructCollectorPrompt(gateMeta);
+    const sessionHeader = buildLockedSessionMetadataHeader({
+      userId,
+      companyId,
+      conversationId: conversation.id,
+      metadata: gateMeta,
+    });
+
+    const intentGate = comparisonNoPricingIntent
+      ? [
+          '<Dynamic_Intent_Gate>',
+          'Comparison intent detected.',
+          'Provide structural features/coverage comparison only.',
+          'Do not include dollar signs, premiums, or cost tables in this response.',
+          '</Dynamic_Intent_Gate>',
+        ].join('\n')
+      : '';
+
+    const validationGate = [
+      sessionHeader,
+      intentGate,
+      slotsComplete ? constructAnalystPrompt(gateMeta) : constructCollectorPrompt(gateMeta),
+    ].filter(Boolean).join('\n\n');
 
     // Derive primary benefit category from entity extraction (used for Azure Search filtering).
     // Maps benefitTypes like ['dental'] → 'Dental' to match INTENT_CATEGORY_MAP values.
@@ -504,7 +641,9 @@ Which of these would you like to learn about next?`
         const cachedAiMessage = {
           id: crypto.randomUUID(),
           role: 'assistant' as const,
-          content: cacheResult.content,
+          content: comparisonNoPricingIntent
+            ? stripPricingForComparisonMode(cacheResult.content)
+            : cacheResult.content,
           timestamp: new Date(),
         };
         await conversationService.addMessage(conversation.id, cachedAiMessage);
@@ -581,6 +720,96 @@ Which of these would you like to learn about next?`
       enhancedContent = ensureStateConsistency(enhancedContent, userState);
       enhancedContent = cleanRepeatedPhrases(enhancedContent);
     }
+
+    if (comparisonNoPricingIntent) {
+      enhancedContent = stripPricingForComparisonMode(enhancedContent);
+    }
+
+    // =========================================================================
+    // L3 CARRIER LOCK VALIDATION — deterministic post-processing gates
+    // These run AFTER every LLM response, regardless of route (RAG/smart/simple).
+    // =========================================================================
+
+    // L3.1: RIGHTWAY STRIP — sentence-level removal of banned terms
+    const L3_BANNED_TERMS_RE = /rightway|right\s*way/i;
+    const L3_BANNED_PHONE_RE = /\(?\s*305\s*\)?\s*[-.]?\s*851\s*[-.]?\s*7310/g;
+    if (L3_BANNED_TERMS_RE.test(enhancedContent)) {
+      logger.warn('[L3] Stripped Rightway reference from response');
+      enhancedContent = enhancedContent
+        .split(/(?<=[.!?\n])/)
+        .filter(sentence => !L3_BANNED_TERMS_RE.test(sentence))
+        .join('')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+      if (enhancedContent.length < 20) {
+        enhancedContent = `For benefits support, please contact your HR/Benefits team or visit the enrollment portal: ${WORKDAY_ENROLLMENT_URL}\n\nIs there anything else I can help with?`;
+      }
+    }
+    enhancedContent = enhancedContent.replace(L3_BANNED_PHONE_RE, 'your HR/Benefits team');
+
+    // L3.2: CARRIER MISATTRIBUTION GUARD — fix wrong carrier assignments
+    const L3_CARRIER_RULES: Array<{ pattern: RegExp; fix: string }> = [
+      { pattern: /allstate\s+(?:voluntary\s+)?term\s+life/gi, fix: 'Unum Voluntary Term Life' },
+      { pattern: /unum\s+whole\s+life/gi, fix: 'Allstate Whole Life' },
+      { pattern: /bcbstx?\s+(?:life|disability|accident|critical)/gi, fix: '' }, // strip entirely
+    ];
+    for (const rule of L3_CARRIER_RULES) {
+      if (rule.fix) {
+        enhancedContent = enhancedContent.replace(rule.pattern, rule.fix);
+      } else {
+        rule.pattern.lastIndex = 0;
+        if (rule.pattern.test(enhancedContent)) {
+          logger.warn('[L3] Stripped misattributed carrier sentence');
+          enhancedContent = enhancedContent.split(/(?<=[.!?\n])/).filter(s => !rule.pattern.test(s)).join('').trim();
+        }
+      }
+    }
+
+    // L3.3: PPO HALLUCINATION GUARD — no "PPO" medical plan exists
+    const L3_PPO_MEDICAL = /\b(?:BCBSTX?\s+PPO|PPO\s+(?:Standard|plan|medical)|medical\s+PPO)\b/gi;
+    if (L3_PPO_MEDICAL.test(enhancedContent) && !/dental\s+ppo/i.test(enhancedContent.match(L3_PPO_MEDICAL)?.[0] || '')) {
+      logger.warn('[L3] Corrected hallucinated PPO medical plan reference');
+      enhancedContent = enhancedContent.replace(L3_PPO_MEDICAL, 'Standard HSA/Enhanced HSA (PPO network)');
+    }
+
+    // L3.4: DHMO GUARD — AmeriVet does NOT offer a DHMO dental plan
+    const L3_DHMO_RE = /\bDHMO\b/gi;
+    if (L3_DHMO_RE.test(enhancedContent)) {
+      logger.warn('[L3] Stripped hallucinated DHMO reference');
+      enhancedContent = enhancedContent.replace(L3_DHMO_RE, 'BCBSTX Dental PPO');
+    }
+
+    // L3.5: KAISER GEOGRAPHIC GUARD — Kaiser only in CA/OR/WA
+    const kaiserApplicable = userState && ['CA', 'OR', 'WA'].includes(userState);
+    if (!kaiserApplicable && /\bkaiser\b/i.test(enhancedContent)) {
+      logger.warn(`[L3] Stripped Kaiser reference for non-eligible state: ${userState}`);
+      enhancedContent = enhancedContent
+        .split(/(?<=[.!?\n])/)
+        .filter(sentence => !/\bkaiser\b/i.test(sentence))
+        .join('')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+    }
+
+    // L3.6: NO-PRICING ENFORCEMENT — deterministic $ strip when user asked no prices
+    const noPricingSignals = /(not asking for (?:rates|prices|costs|pricing)|skip (?:costs|prices|pricing)|no pric(?:es|ing)|just features|don'?t (?:need|want) (?:prices|rates|costs))/i;
+    const noPricingMode = conversation.metadata?.noPricingMode === true ||
+      noPricingSignals.test(normalizedMessage);
+    if (noPricingMode) {
+      // Persist noPricingMode for future messages in this conversation
+      if (!conversation.metadata?.noPricingMode) {
+        conversationService.patchMetadata(conversation.id, { noPricingMode: true }).catch(() => {});
+      }
+      // Remove lines containing dollar amounts
+      enhancedContent = enhancedContent.split('\n').filter(line => !/\$\d/.test(line)).join('\n');
+      // Remove inline dollar mentions
+      enhancedContent = enhancedContent.replace(/\$[\d,]+\.?\d{0,2}(?:\/(?:month|year|mo|yr|paycheck|pay period|bi-?weekly?))?/gi, '[see portal for pricing]');
+      enhancedContent = enhancedContent.replace(/\[see portal for pricing\](?:\s*\([^)]*\))?/g, '[see portal for pricing]');
+      logger.debug('[L3] Stripped pricing from response (noPricingMode)');
+    }
+
+    // L3.7: SOURCE CITATION STRIP — remove [Source N] / [Doc N] artifacts
+    enhancedContent = enhancedContent.replace(/\[(?:Source|Doc(?:ument)?|Ref(?:erence)?)\s*\d+\]/gi, '').replace(/\s{2,}/g, ' ').trim();
 
     // 7. WRITE CACHE — persist this fresh answer so next identical/similar query is free.
     if (slotsComplete && enhancedContent.length > 80) {
