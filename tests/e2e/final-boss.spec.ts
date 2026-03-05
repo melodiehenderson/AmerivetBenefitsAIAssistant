@@ -1,5 +1,8 @@
 import { test, expect } from '@playwright/test';
 
+test.use({ userAgent: 'BenefitsAI-TestRunner/1.0' });
+test.setTimeout(180_000);
+
 // ─── The "Final Boss" prompt ─────────────────────────────────────────────────
 // Combines FIVE simultaneous constraints the Principal Architect must handle:
 //  1. State resolution:  Delaware → DE, non-Kaiser state

@@ -66,6 +66,51 @@ export function normaliseToMonthly(
   return formatMonthly(paycheckToMonthly(source.perPaycheck, payPeriods));
 }
 
+// ─── STD / Short-Term Disability Benefit Calculator ──────────────────────────
+// IRS + UNUM STD rules: benefit = base salary × coverage percentage.
+// This is deterministic math — NEVER let the LLM calculate this.
+
+export interface STDBenefitResult {
+  monthlySalary: number;
+  weeklySalary: number;
+  weeklyBenefit: number;
+  monthlyBenefit: number;
+  percentage: number;
+}
+
+/**
+ * Calculate Short-Term Disability benefit amounts.
+ *
+ * @param monthlySalary  Gross monthly salary in dollars
+ * @param percentage     STD coverage percentage (default 0.60 = 60%)
+ * @returns Breakdown of weekly/monthly salary and benefit amounts
+ *
+ * @example calculateSTDBenefit(5000)
+ *   → { monthlySalary: 5000, weeklySalary: 1154.73, weeklyBenefit: 692.84,
+ *       monthlyBenefit: 3000, percentage: 0.60 }
+ */
+export function calculateSTDBenefit(
+  monthlySalary: number,
+  percentage: number = 0.60,
+): STDBenefitResult {
+  const weeklySalary   = Math.round((monthlySalary / 4.33) * 100) / 100;
+  const weeklyBenefit  = Math.round((weeklySalary * percentage) * 100) / 100;
+  const monthlyBenefit = Math.round((monthlySalary * percentage) * 100) / 100;
+  return { monthlySalary, weeklySalary, weeklyBenefit, monthlyBenefit, percentage };
+}
+
+/**
+ * Format an STDBenefitResult into a human-readable string for deterministic responses.
+ */
+export function formatSTDBenefit(result: STDBenefitResult): string {
+  const pct = Math.round(result.percentage * 100);
+  return [
+    `Monthly salary: $${result.monthlySalary.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+    `Weekly salary: $${result.weeklySalary.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ($${result.monthlySalary.toLocaleString()} ÷ 4.33)`,
+    `UNUM STD at ${pct}%: $${result.weeklyBenefit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/week — $${result.monthlyBenefit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/month`,
+  ].join('\n');
+}
+
 // ─── City → State resolver (No-Loop Rule support) ────────────────────────────
 
 const CITY_STATE_MAP: Record<string, string> = {

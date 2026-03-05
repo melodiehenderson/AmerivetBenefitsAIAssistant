@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { detectIntentDomain, stripPricingDetails } from '../../app/api/qa/route';
+import { detectIntentDomain, stripPricingDetails, stripThoughtBlock } from '../../app/api/qa/route';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers: replicate the exact intercept trigger conditions from route.ts
@@ -472,5 +472,53 @@ describe('Intercept trigger: kaiser-redirect-non-eligible-state', () => {
 
   it('does NOT fire: no user state set yet', () => {
     expect(triggersKaiserRedirect('Tell me about Kaiser', '')).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// stripThoughtBlock — Chain-of-Thought stripping
+// ─────────────────────────────────────────────────────────────────────────────
+describe('stripThoughtBlock', () => {
+  it('strips a single <thought> block and returns only the final answer', () => {
+    const raw = '<thought>\nSTEP 1 — ENTITIES: salary $5000/mo, state DE\nSTEP 3 — MATH: 5000/4.33*0.6 = 693.77\n</thought>\nYour STD benefit would be $693.77/week.';
+    expect(stripThoughtBlock(raw)).toBe('Your STD benefit would be $693.77/week.');
+  });
+
+  it('strips thought block regardless of internal whitespace and newlines', () => {
+    const raw = '<thought>  lots   \n\n of\n reasoning  </thought>\n\nFinal answer here.';
+    expect(stripThoughtBlock(raw)).toBe('Final answer here.');
+  });
+
+  it('is case-insensitive on the thought tag', () => {
+    const raw = '<THOUGHT>internal</THOUGHT>The answer.';
+    expect(stripThoughtBlock(raw)).toBe('The answer.');
+  });
+
+  it('returns text unchanged when no <thought> tag is present', () => {
+    const text = 'Your Standard HSA deductible is $1,600/year.';
+    expect(stripThoughtBlock(text)).toBe(text);
+  });
+
+  it('collapses excess blank lines left after stripping', () => {
+    const raw = '<thought>reasoning</thought>\n\n\n\n\nFinal answer.';
+    const result = stripThoughtBlock(raw);
+    expect(result).not.toMatch(/\n{3,}/);
+    expect(result).toContain('Final answer.');
+  });
+
+  it('strips multiple <thought> blocks if LLM emits more than one', () => {
+    const raw = '<thought>first</thought>Mid text.<thought>second</thought>End.';
+    const result = stripThoughtBlock(raw);
+    expect(result).not.toContain('<thought>');
+    expect(result).toContain('Mid text.');
+    expect(result).toContain('End.');
+  });
+
+  it('preserves pricing and policy content outside the thought block', () => {
+    const raw = '<thought>math here: 5000/4.33*0.6=693.77</thought>Your STD weekly benefit is $693.77. Because you are in Delaware, Kaiser is not available.';
+    const result = stripThoughtBlock(raw);
+    expect(result).toContain('$693.77');
+    expect(result).toContain('Delaware');
+    expect(result).not.toContain('<thought>');
   });
 });

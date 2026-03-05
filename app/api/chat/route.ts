@@ -20,6 +20,7 @@ import { cityToStateMap } from '@/lib/schemas/onboarding';
 import { getCatalogForPrompt } from '@/lib/data/amerivet';
 import { normalizeRatesInText } from '@/lib/utils/formatRates';
 import { tryCache, writeCache } from '@/lib/services/cache-router';
+import { calculateSTDBenefit, formatSTDBenefit } from '@/lib/utils/pricing';
 
 // Validation schema for chat request
 const chatRequestSchema = z.object({
@@ -319,6 +320,8 @@ export const POST = withAuth(undefined, [PERMISSIONS.CHAT_WITH_AI])(async (reque
         `8. Enrollment link to append to every substantive reply: ${WORKDAY_ENROLLMENT_URL}`,
         `9. Direct Refusal: If user asks "Which is best?" without providing usage level (Low/Moderate/High), ask for it before answering.`,
         `10. For "contact" / "support" / "help" queries, direct users to HR/Benefits team ONLY — NOT to Rightway.`,
+        `11. IRS COMPLIANCE (Pub 969): If user mentions spouse + FSA + HSA in any context, you MUST warn that a general-purpose Healthcare FSA disqualifies HSA contributions. The ONLY workaround is a Limited Purpose FSA (LPFSA) covering dental/vision only. NEVER show HSA contribution details without this warning when spouse FSA is mentioned.`,
+        `12. STD ≠ Medical Cost: "How much will I get paid on leave?" is an STD/income question (UNUM, 60% salary). "What are maternity costs?" is a medical plan question (deductible, OOP). NEVER conflate these two intents.`,
         `</Catalog_Rules>`,
         ``,
         catalogText,
@@ -552,6 +555,72 @@ Which of these would you like to learn about next?`
       );
     }
 
+    // =========================================================================
+    // L1 INTERCEPT: HSA / Spouse FSA — IRS Publication 969 Compliance
+    // If a spouse has a general-purpose Healthcare FSA, the employee is
+    // INELIGIBLE to contribute to an HSA. This is a hard IRS rule — intercept
+    // BEFORE any LLM call to prevent incorrect HSA detail generation.
+    // =========================================================================
+    const hsaFsaSpouseConflict =
+      /\bhsa\b/i.test(normalizedMessage) &&
+      /\bspouse\b/i.test(normalizedMessage) &&
+      /\b(general\s*[- ]?purpose\s*fsa|health\s*(?:care)?\s*fsa|medical\s*fsa|fsa)\b/i.test(normalizedMessage);
+
+    if (hsaFsaSpouseConflict) {
+      return sendAssistantMessage(
+        `**IRS COMPLIANCE RULE (IRS Publication 969):** If your spouse is enrolled in a general-purpose Healthcare FSA, ` +
+        `you are **NOT eligible** to contribute to an HSA for those same months. This is a hard IRS rule with no exceptions.\n\n` +
+        `**The only workaround:** your spouse switches to a Limited Purpose FSA (LPFSA) that covers ONLY dental and vision — ` +
+        `then your HSA eligibility is restored.\n\n` +
+        `**Action order:**\n` +
+        `1. Confirm your spouse's FSA type with their employer (general-purpose vs limited-purpose).\n` +
+        `2. If general-purpose FSA: do NOT elect HSA contributions — you are ineligible.\n` +
+        `3. If limited-purpose FSA: you may elect HSA contributions normally.\n` +
+        `4. Make this determination BEFORE finalizing plan elections in Workday. You cannot retroactively correct excess HSA contributions without IRS penalty.\n\n` +
+        `For enrollment: ${WORKDAY_ENROLLMENT_URL} | HR: ${HR_PHONE}`
+      );
+    }
+
+    // =========================================================================
+    // L1 INTERCEPT: Maternity / STD Leave Pay Timeline
+    // Separates "leave pay" intent (STD at 60% salary) from "medical cost"
+    // intent (deductible / OOP). Fires BEFORE any LLM call to prevent the
+    // model from confusing STD income replacement with medical plan costs.
+    // Uses deterministic calculateSTDBenefit() — no LLM math.
+    // =========================================================================
+    const stdLeavePayIntent = (
+      /\b(maternity(?:\s+leave)?|parental\s+leave|fmla|leave\s+of\s+absence)\b/i.test(normalizedMessage) &&
+      /\b(pay(?:check)?|paid|income|salary|money|how\s+much|week\s*\d*|6th\s+week|sixth\s+week|std|short\s*[- ]?term\s+disability|60%)\b/i.test(normalizedMessage)
+    ) || (
+      /\b(std|short\s*[- ]?term\s+disability)\b/i.test(normalizedMessage) &&
+      /\b(maternity|leave|pay(?:check)?|paid|salary|60%|sixty\s*percent|week\s*\d+|6th\s+week|sixth\s+week|get\s+paid|income)\b/i.test(normalizedMessage)
+    );
+
+    if (stdLeavePayIntent) {
+      const salaryMatch = normalizedMessage.match(/\$?\s*([0-9]{1,3}(?:,[0-9]{3})*|[0-9]{4,6})\s*\/?\s*(?:month|mo)/);
+      const salary = salaryMatch ? Number(salaryMatch[1].replace(/,/g, '')) : null;
+      let mathLine: string;
+      if (salary) {
+        const std = calculateSTDBenefit(salary);
+        mathLine = `With a salary of $${salary.toLocaleString()}/month:\n${formatSTDBenefit(std)}`;
+      } else {
+        mathLine = 'Share your monthly salary if you want a precise dollar calculation.';
+      }
+      return sendAssistantMessage(
+        `**Leave Pay Timeline — Maternity / FMLA + UNUM STD:**\n\n` +
+        `- **Weeks 1–2 (Elimination Period):** STD benefit is not yet active. Use PTO or this period may be unpaid, depending on your employer leave policy.\n` +
+        `- **Weeks 3–6 (STD Active — UNUM):** UNUM pays 60% of your pre-disability base earnings. FMLA runs concurrently, providing job protection.\n` +
+        `- **Weeks 7–8 (if physician-certified):** STD may continue through week 8 for vaginal delivery or week 10 for C-section, subject to claim approval.\n` +
+        `- **FMLA (all 12 weeks):** Job-protected leave — FMLA does NOT supply pay on its own; income comes from STD and any PTO coordination.\n\n` +
+        `**Key distinctions:**\n` +
+        `- STD = income replacement (60% of base pay via UNUM).\n` +
+        `- FMLA = job protection (federal law, concurrent with STD, unpaid on its own).\n` +
+        `- Medical out-of-pocket costs (deductible, OOP max) are a **separate question** from leave pay.\n\n` +
+        `${mathLine}\n\n` +
+        `Verify elimination period, claim approval timeline, and PTO coordination in your UNUM STD certificate/SPD and Workday.`
+      );
+    }
+
     // ==========================================================================
     // STATE MACHINE: EXTRACT → PERSIST → GUARD → GATE → CACHE → ROUTE
     // ==========================================================================
@@ -618,9 +687,18 @@ Which of these would you like to learn about next?`
       life: 'Life', disability: 'Disability', hsa: 'Savings', fsa: 'Savings',
       voluntary: 'Voluntary', accident: 'Voluntary', critical: 'Voluntary',
     };
-    const primaryCategory = mapped.benefitTypes.length > 0
+    let primaryCategory = mapped.benefitTypes.length > 0
       ? (BENEFIT_CATEGORY_MAP[mapped.benefitTypes[0]] ?? undefined)
       : undefined;
+
+    // INTENT SWITCHER: STD / Leave-pay queries must search Disability docs, not Medical.
+    // Without this, "how much will I get paid on maternity leave" searches Medical and
+    // returns deductible/OOP data instead of the UNUM STD policy.
+    const isSTDIntent =
+      /\b(std|short\s*[- ]?term\s+disability|leave\s+pay|maternity\s+pay|fmla\s+pay|disability\s+pay)\b/i.test(normalizedMessage);
+    if (isSTDIntent && (!primaryCategory || primaryCategory === 'Medical')) {
+      primaryCategory = 'Disability';
+    }
 
     // Shared router context — injected into every LLM call as the "developer message".
     const routerContext = {
