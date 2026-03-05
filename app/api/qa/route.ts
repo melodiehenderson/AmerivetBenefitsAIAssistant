@@ -485,6 +485,32 @@ export function stripThoughtBlock(text: string, debugLog = false): string {
 }
 
 /**
+ * Extract monthly salary (in dollars) from a free-text user message.
+ * Handles: "$5,000/month" | "$5k/month" | "$60k/year" | "earn 5000 monthly" | "$60,000 annually"
+ * Annual amounts are converted to monthly (÷ 12, rounded).
+ * Returns null if no salary found or value is outside a plausible employee range.
+ */
+function extractSalaryFromMessage(msg: string): number | null {
+  // Monthly: $5,000/month | $5k/month | 5000 per month | earn $5000 monthly
+  const MONTHLY_RE = /(?:earn|make|paid|salary\s+is?)?\s*\$?\s*([0-9]{1,3}(?:,[0-9]{3})*|[1-9][0-9]{3,5})\s*(k)?\s*(?:\/\s*month|per\s+month|a\s+month|\bmonthly\b)/i;
+  const monthlyM = MONTHLY_RE.exec(msg);
+  if (monthlyM) {
+    let v = Number(monthlyM[1].replace(/,/g, ''));
+    if (monthlyM[2]) v *= 1000;
+    if (v >= 1_000 && v <= 50_000) return v;
+  }
+  // Annual: $60,000/year | $60k/year | $60k annually
+  const ANNUAL_RE = /(?:earn|make|paid|salary\s+is?)?\s*\$?\s*([0-9]{1,3}(?:,[0-9]{3})*|[1-9][0-9]{4,6})\s*(k)?\s*(?:\/\s*year|per\s+year|annually|\ba\s+year\b)/i;
+  const annualM = ANNUAL_RE.exec(msg);
+  if (annualM) {
+    let v = Number(annualM[1].replace(/,/g, ''));
+    if (annualM[2]) v *= 1000;
+    if (v >= 12_000 && v <= 600_000) return Math.round(v / 12);
+  }
+  return null;
+}
+
+/**
  * Build grounded context from retrieved chunks for LLM consumption.
  *
  * Improvements over a raw `chunks.map((c,i) => \`[Doc ${i}] ${c.content}\`).join`:  
@@ -547,6 +573,54 @@ function buildGroundedContext(chunks: Chunk[], rrfScores: number[]): { context: 
  *  - specificity: presence of plan names, dollar amounts, or carrier names
  *  - length: proportional penalty if answer is too short or too long
  */
+/**
+ * Extract all dollar amounts from the serialized catalog string into a normalised Set.
+ * Used by auditDollarGrounding for O(1) lookup.
+ */
+function buildCatalogNumberSet(catalogText: string): Set<string> {
+  const raw = catalogText.match(/\$[\d,]+\.?\d*/g) || [];
+  return new Set(raw.map(v => v.replace(/[$,]/g, '').replace(/\.0{1,2}$/, '')));
+}
+
+/**
+ * Soft dollar-grounding audit.
+ * - Sentences containing math markers (÷, ×, 4.33, weekly pay, STD) are EXEMPT.
+ * - For every other sentence: extract $X amounts, normalise and check against catalog
+ *   numbers AND the raw retrieved chunk text.
+ * - Ungrounded amounts are replaced with "(see enrollment portal for exact rate)".
+ * Returns { answer (possibly revised), warnings (list of flagged amounts for logging) }.
+ */
+function auditDollarGrounding(
+  answer: string,
+  catalogNumbers: Set<string>,
+  chunks: Chunk[]
+): { answer: string; warnings: string[] } {
+  const warnings: string[] = [];
+  const chunkText = chunks.map(c => c.content).join(' ');
+  // Sentences with computation language are exempt from the grounding check
+  const mathSentenceRe = /÷|×|4\.33|weekly\s+(?:pay|benefit|base)|std\s+(?:pay|benefit|weekly)|60%\s+of|salary.*(?:÷|×|\/\s*4)/i;
+
+  // Split on sentence-ending punctuation, preserving the delimiter
+  const sentences = answer.split(/(?<=[.!?\n])\s+/);
+  const audited = sentences.map(sentence => {
+    if (mathSentenceRe.test(sentence)) return sentence; // exempt calculation context
+    const dollarMatches = [...new Set(sentence.match(/\$[\d,]+\.?\d*/g) || [])];
+    let s = sentence;
+    for (const dm of dollarMatches) {
+      const normalized = dm.replace(/[$,]/g, '').replace(/\.0{1,2}$/, '');
+      const inCatalog = catalogNumbers.has(normalized);
+      const inChunks  = chunkText.includes(normalized);
+      if (!inCatalog && !inChunks) {
+        warnings.push(dm);
+        // Escape the dollar sign for use in RegExp
+        s = s.replace(new RegExp('\\' + dm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '(see enrollment portal for exact rate)');
+      }
+    }
+    return s;
+  });
+  return { answer: audited.join(' ').trim(), warnings };
+}
+
 function scoreGenerationQuality(
   query: string,
   answer: string
@@ -659,6 +733,7 @@ COST FORMATTING
 
   return `<Session_Metadata>
   User: ${session.userName || 'Guest'}, State: ${stateStatus || 'Unknown'}, Age: ${session.userAge || 'Unknown'}
+  Salary: ${session.userSalary ? '$' + session.userSalary.toLocaleString() + '/month (confirmed — use for all STD math)' : 'Not yet collected'}
   Topic: ${session.currentTopic || 'General Benefits'}, Turn: ${session.turn || 1}
   NoPricingMode: ${session.noPricingMode ? 'YES' : 'NO'}, PolicyReasoningMode: ${session.policyReasoningMode ? 'YES' : 'NO'}
 </Session_Metadata>
@@ -1260,7 +1335,15 @@ export async function POST(req: NextRequest) {
       }
     }
     
-    logger.debug(`[QA] Session state - Turn: ${session.turn}, HasName: ${session.hasCollectedName}, HasAge: ${!!session.userAge}, HasState: ${!!session.userState}`);
+    // STEP 0: Persist salary from current message so STD math works across turns
+    // (session.userSalary is injected into Session_Metadata on every request)
+    const extractedSalary = extractSalaryFromMessage(query);
+    if (extractedSalary) {
+      session.userSalary = extractedSalary;
+      logger.debug(`[QA] Salary extracted and persisted: $${extractedSalary}/month`);
+    }
+
+    logger.debug(`[QA] Session state - Turn: ${session.turn}, HasName: ${session.hasCollectedName}, HasAge: ${!!session.userAge}, HasState: ${!!session.userState}, Salary: ${session.userSalary ?? 'none'}`);
     
     // ------------------------------------------------------------------------
     // STEP 1: READ THE USER'S MIND (Intent Analysis)
@@ -1535,8 +1618,8 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
 
       if (hasCompoundStdPay) {
         // ReAct: Action → extract salary from message; Observation → compute STD weekly pay
-        const salaryMatch = lowerQuery.match(/\$?\s*([0-9]{1,3}(?:,[0-9]{3})*|[0-9]{4,6})\s*\/\s*month/);
-        const salary = salaryMatch ? Number(salaryMatch[1].replace(/,/g, '')) : null;
+        // Fallback chain: current message → persisted session salary → null (ask user)
+        const salary = extractSalaryFromMessage(lowerQuery) ?? session.userSalary ?? null;
         const weeklyBase = salary ? salary / 4.33 : null;
         const stdWeekly  = weeklyBase ? (weeklyBase * 0.6).toFixed(2) : null;
         const mathLine   = stdWeekly
@@ -2524,7 +2607,65 @@ Remember: answer ONLY from the IMMUTABLE CATALOG. Do NOT ask for name, age, or s
 
     answer = toPlainAssistantText(answer);
 
-    const genQuality = scoreGenerationQuality(query, answer);
+    // ── GROUNDING AUDIT: verify every $X in the answer exists in the catalog ──────────
+    // Sentences with STD math (÷ 4.33, weekly pay) are exempt — those are derived values.
+    const catalogNumbers = buildCatalogNumberSet(getCatalogForPrompt(session.userState || null));
+    const { answer: auditedAnswer, warnings: groundingWarnings } = auditDollarGrounding(answer, catalogNumbers, result.chunks);
+    if (groundingWarnings.length) {
+      logger.warn(`[GROUNDING-AUDIT] ${groundingWarnings.length} ungrounded amount(s) corrected: ${groundingWarnings.join(', ')}`);
+      answer = auditedAnswer;
+    }
+
+    let finalGenQuality = scoreGenerationQuality(query, answer);
+
+    // ── LOW-SCORE RETRY GATE ───────────────────────────────────────────────────────────
+    // If generation quality < 0.42, retry once with a directive prompt (temp=0.05).
+    // Uses the better-scoring answer.  Does NOT re-run full post-processing chain —
+    // just the light cleanup needed to produce a clean final answer.
+    if (finalGenQuality.score < 0.42) {
+      logger.warn(`[QA] Low generation score ${finalGenQuality.score} — retrying with directive prompt (temp=0.05)`);
+      try {
+        const retryMsg = `${stateEnforcement}
+
+RETRIEVAL CONTEXT:
+${contextText}
+
+QUESTION: ${query}
+
+[RESPONSE]:
+Answer directly from the IMMUTABLE CATALOG. Name the plan. State the exact figure. Explain the rule in one clear paragraph. Do not ask clarifying questions.`;
+        const retryCompletion = await azureOpenAIService.generateChatCompletion([
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: retryMsg }
+        ], { temperature: 0.05 });
+        let retryAnswer = retryCompletion.content.trim();
+        retryAnswer = extractReasonedResponse(retryAnswer, false);
+        retryAnswer = stripThoughtBlock(retryAnswer, false);
+        retryAnswer = enforceMonthlyFirstFormat(retryAnswer);
+        retryAnswer = validatePricingFormat(retryAnswer);
+        try {
+          retryAnswer = pricingUtils.normalizePricingInText(retryAnswer, session.payPeriods || 26);
+          retryAnswer = cleanResponseText(retryAnswer);
+        } catch { /* non-fatal */ }
+        if (session.noPricingMode) {
+          retryAnswer = retryAnswer.split('\n').filter(line => !/\$\d/.test(line)).join('\n');
+        }
+        retryAnswer = toPlainAssistantText(retryAnswer);
+        // Apply grounding audit to retry too
+        const { answer: auditedRetry, warnings: retryWarnings } = auditDollarGrounding(retryAnswer, catalogNumbers, result.chunks);
+        if (retryWarnings.length) retryAnswer = auditedRetry;
+        const retryQuality = scoreGenerationQuality(query, retryAnswer);
+        if (retryQuality.score > finalGenQuality.score) {
+          logger.info(`[QA] Retry improved generation score: ${finalGenQuality.score} → ${retryQuality.score}`);
+          answer = retryAnswer;
+          finalGenQuality = retryQuality;
+        } else {
+          logger.debug(`[QA] Retry score ${retryQuality.score} did not improve on ${finalGenQuality.score} — keeping original`);
+        }
+      } catch (retryErr) {
+        logger.warn('[QA] Retry attempt failed (non-fatal):', retryErr);
+      }
+    }
 
     logger.info('[QA-SCORECARD]', {
       sessionId,
@@ -2538,15 +2679,16 @@ Remember: answer ONLY from the IMMUTABLE CATALOG. Do NOT ask for name, age, or s
         topRrfScore:        topScore.toFixed(4),
       },
       generation: {
-        score:       genQuality.score,
-        coverage:    genQuality.coverage,
-        specificity: genQuality.specificity,
-        lengthOk:    genQuality.lengthOk,
+        score:       finalGenQuality.score,
+        coverage:    finalGenQuality.coverage,
+        specificity: finalGenQuality.specificity,
+        lengthOk:    finalGenQuality.lengthOk,
         answerChars: answer.length,
+        groundingWarnings: groundingWarnings.length,
       },
       temperature: 0.15,
     });
-    logger.debug(`[RAG] Final answer generated (${answer.length} chars) — generation quality ${(genQuality.score * 100).toFixed(0)}% (coverage ${(genQuality.coverage * 100).toFixed(0)}%, specificity ${(genQuality.specificity * 100).toFixed(0)}%)`);
+    logger.debug(`[RAG] Final answer (${answer.length} chars) — generation quality ${(finalGenQuality.score * 100).toFixed(0)}% | coverage ${(finalGenQuality.coverage * 100).toFixed(0)}% | specificity ${(finalGenQuality.specificity * 100).toFixed(0)}% | grounding warnings: ${groundingWarnings.length}`);
 
     session.lastBotMessage = answer;
     
@@ -2577,9 +2719,10 @@ Remember: answer ONLY from the IMMUTABLE CATALOG. Do NOT ask for name, age, or s
         confidenceTier,
         usedDisclaimer: useDisclaimer,
         topScore: topScore.toFixed(3),
-        generationScore: genQuality.score,
-        generationCoverage: genQuality.coverage,
-        generationSpecificity: genQuality.specificity,
+        generationScore:       finalGenQuality.score,
+        generationCoverage:    finalGenQuality.coverage,
+        generationSpecificity: finalGenQuality.specificity,
+        groundingWarnings:     groundingWarnings.length,
         userAge: session.userAge,
         userState: session.userState,
         // Router result (Senior Engineer approach)

@@ -79,6 +79,7 @@ export type Session = {
   }>;
   lastAskedQuestion?: string;         // Loop detection
   loopCount?: number;                 // How many times we've asked same thing
+  userSalary?: number;                // Monthly salary — persisted so STD math works across session turns
 
   // NEW: Lightweight memory for lifecycle/event reasoning
   lifeEvents?: string[];              // e.g., ['marriage', 'job-change', 'pregnancy']
