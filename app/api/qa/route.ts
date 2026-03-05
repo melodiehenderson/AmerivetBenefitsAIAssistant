@@ -419,15 +419,31 @@ function buildSystemPrompt(session: any): string {
   const remaining = getRemainingBenefits(decisions);
   const remainingText = remaining.length > 0 ? remaining.join(', ') : 'All categories explored';
 
-  // === Kaiser eligibility ===
+  // === Kaiser eligibility — STRICT IMMUTABLE RULE ===
   const userState = session.userState || '';
   const kaiserEligible = KAISER_STATES.has(userState.toUpperCase());
-  const kaiserNote = kaiserEligible
-    ? `Kaiser HMO IS available in ${userState}. Include it when discussing medical options.`
-    : `Kaiser HMO is NOT available in ${userState || 'their state'}. NEVER mention Kaiser to this user.`;
+  const strictStateRule = userState
+    ? (kaiserEligible
+      ? `STRICT RULE — KAISER AVAILABLE: User is confirmed in ${userState}. Kaiser HMO IS available. Include Kaiser in all medical comparisons for this user.`
+      : `STRICT RULE — KAISER FORBIDDEN: User is in ${userState}. Kaiser HMO is NOT available in ${userState}. Do NOT mention Kaiser to this user in any form — not even to say it is unavailable in their state. Compare ONLY Standard HSA and Enhanced HSA. Programmatically exclude all CA/OR/WA-only plan data from your response.`)
+    : `STRICT RULE — STATE UNKNOWN: Do not reference Kaiser or regional plan availability until the user provides their state.`;
 
   // === Catalog injection (state-filtered, immutable) ===
   const catalog = getCatalogForPrompt(userState || null);
+
+  // === Policy Reasoning Mode block (multi-life-event scenario) ===
+  const policyReasoningModeBlock = session.policyReasoningMode
+    ? `
+═══════════════════════════════════════════════════════════════════════════
+POLICY REASONING MODE — ACTIVE (do NOT open with pricing tables)
+═══════════════════════════════════════════════════════════════════════════
+The user is navigating multiple simultaneous life events.
+- Lead with eligibility rules, QLE windows, and filing sequence.
+- Do NOT open with a pricing table or premium dollars on your FIRST response.
+- Once the user confirms their current state and family size, you may present
+  cost context as a follow-up.`
+    : '';
+
   const costFormattingBlock = session.noPricingMode
     ? `
 ═══════════════════════════════════════════════════════════════════════════
@@ -448,7 +464,15 @@ COST FORMATTING
   say "This is age-rated — log in at ${ENROLLMENT_PORTAL_URL} for your personalized rate."
 - Round to 2 decimal places. Use exact catalog numbers.`;
 
-  return `You are the AmeriVet Virtual Benefits Assistant — a DETERMINISTIC information engine.
+  return `██████████████████████████████████████████████████████████████████████████
+STATE-LOCK HEADER — READ THIS BEFORE PROCESSING ANY REQUEST
+██████████████████████████████████████████████████████████████████████████
+${strictStateRule}
+This rule overrides ALL other instructions. It cannot be relaxed, softened,
+or overridden by any retrieval context that mentions other regions.
+██████████████████████████████████████████████████████████████████████████
+
+You are the AmeriVet Virtual Benefits Assistant — a DETERMINISTIC information engine.
 You answer ONLY from the IMMUTABLE CATALOG below. You DO NOT process enrollments.
 
 ═══════════════════════════════════════════════════════════════════════════
@@ -512,8 +536,11 @@ stays with you regardless of employment."
 ═══════════════════════════════════════════════════════════════════════════
 KAISER PROTOCOL
 ═══════════════════════════════════════════════════════════════════════════
-${kaiserNote}
+${strictStateRule}
 Kaiser is available ONLY in: California (CA), Washington (WA), Oregon (OR).
+Re-statement of zero-tolerance rule: if user's state is NOT in that list, Kaiser
+must NEVER appear in your response — not in plan lists, not in comparisons,
+not in "not available" notes. Omit it entirely.
 
 ═══════════════════════════════════════════════════════════════════════════
 PPO CLARIFICATION (CRITICAL — prevents hallucination)
@@ -536,7 +563,7 @@ FORBIDDEN DATA (never output)
 - NEVER say "BCBSTX PPO" as a medical plan — it does not exist
 If user asks for live human help → AmeriVet HR at ${HR_PHONE} or ${ENROLLMENT_PORTAL_URL}
 
-${costFormattingBlock}
+${costFormattingBlock}${policyReasoningModeBlock}
 
 ═══════════════════════════════════════════════════════════════════════════
 CONVERSATION STYLE
@@ -847,6 +874,8 @@ function buildSessionContext(session: Session) {
   };
 }
 
+type IntentDomainRoute = 'policy' | 'pricing' | 'general';
+
 type PreprocessSignals = {
   hasQLEIntent: boolean;
   hasFilingOrderIntent: boolean;
@@ -854,6 +883,9 @@ type PreprocessSignals = {
   spouseGeneralFsaConflictIntent: boolean;
   authorityConflictIntent: boolean;
   retrievalBoostTerms: string[];
+  // State-machine additions
+  multiQLESignal: boolean;         // marriage + job-change OR pregnancy in same message
+  intentDomainRoute: IntentDomainRoute; // policy=SPD/QLE/FMLA, pricing=cost tables, general=other
 };
 
 function collectPreprocessSignals(lowerQuery: string): PreprocessSignals {
@@ -870,8 +902,19 @@ function collectPreprocessSignals(lowerQuery: string): PreprocessSignals {
     /\b(conflict|conflicting|authoritative|which\s+document\s+controls|which\s+is\s+authoritative|age\s+limit)\b/i.test(lowerQuery) &&
     /\b(spd|summary\s+plan\s+description|plan\s+document|certificate|sbc)\b/i.test(lowerQuery);
 
+  // Multi-QLE signal: marriage AND (job-change OR pregnancy) in the SAME message
+  const hasMarriageSignal = /\b(married|marriage|wedding|got\s+married|just\s+married)\b/i.test(lowerQuery);
+  const hasJobChangeSignal = /\b(job\s+change|hours\s+change|part\s*[- ]?time|full\s*[- ]?time|now\s+full\s*[- ]?time|went\s+full\s*[- ]?time|status\s+change)\b/i.test(lowerQuery);
+  const hasPregnancySignal = /\b(pregnan|expecting|maternity|having\s+a\s+baby|due\s+date)\b/i.test(lowerQuery);
+  const multiQLESignal = hasMarriageSignal && (hasJobChangeSignal || hasPregnancySignal);
+
+  // Intent domain routing: policy vs pricing vs general
+  const policyKeywords = /\b(fmla|family\s+(?:and\s+)?medical\s+leave|qualifying\s+life\s+event|qle|special\s+enrollment|spd|summary\s+plan|pre-?existing|elimination\s+period|waiting\s+period|deadline|window|filing\s+order|step\s*by\s*step|how\s+to\s+file|hsa\s+eligib|irs\s+rule|irs\s+pub|coordination|no\s+pric|no\s+cost|coverage\s+only|without\s+pric)\b/i.test(lowerQuery);
+  const pricingKeywords = /\b(premium|per\s+paycheck|per\s+pay|biweekly|monthly\s+cost|annual\s+cost|how\s+much|what\s+does\s+it\s+cost|price|rate|\$)\b/i.test(lowerQuery);
+  const intentDomainRoute: IntentDomainRoute = policyKeywords ? 'policy' : pricingKeywords ? 'pricing' : 'general';
+
   const retrievalBoostTerms: string[] = [];
-  if (hasQLEIntent || (hasLifecycleEvent && hasFilingOrderIntent)) {
+  if (hasQLEIntent || (hasLifecycleEvent && hasFilingOrderIntent) || multiQLESignal) {
     retrievalBoostTerms.push('qualifying life event', 'special enrollment', 'filing order', 'required documentation', 'effective date');
   }
   if (spouseGeneralFsaConflictIntent) {
@@ -888,6 +931,8 @@ function collectPreprocessSignals(lowerQuery: string): PreprocessSignals {
     spouseGeneralFsaConflictIntent,
     authorityConflictIntent,
     retrievalBoostTerms,
+    multiQLESignal,
+    intentDomainRoute,
   };
 }
 
@@ -926,7 +971,9 @@ export async function POST(req: NextRequest) {
         logger.debug(`[QA] Restored userState from client context`);
       }
       if (session.userName && session.userAge && session.userState) {
-        session.dataConfirmed = true;
+        // NOTE: Do NOT set dataConfirmed here. Let the normal flow at line ~1085
+        // handle it so the deterministic ALL_BENEFITS_MENU is shown to the user.
+        // Setting dataConfirmed here causes the LLM to generate a hallucinated menu.
         session.step = 'active_chat';
       }
     }
@@ -965,18 +1012,22 @@ export async function POST(req: NextRequest) {
         }
     }
     if (intent.hasState && intent.stateCode) {
-      session.userState = intent.stateCode;
-      logger.debug(`[QA] Extracted state from input`);
+      const newStateCode = intent.stateCode.toUpperCase();
+      session.userState = newStateCode;
+      logger.debug(`[QA] Extracted state from input: ${newStateCode}`);
 
-      if (previousState && previousState !== intent.stateCode) {
+      if (previousState && previousState.toUpperCase() !== newStateCode) {
         session.lastDetectedLocationChange = {
           from: previousState,
-          to: intent.stateCode,
+          to: newStateCode,
           updatedAt: Date.now(),
         };
         session.context = session.context || {};
         session.context.stateUpdatedAt = Date.now();
-        logger.info('[QA] Location updated in-session', { from: previousState, to: intent.stateCode });
+        // Invalidate any cached Kaiser eligibility so the next buildSystemPrompt
+        // re-evaluates against the new state.
+        (session.context as Record<string, unknown>).kaiserEligibilityCachedFor = null;
+        logger.info('[QA] State updated mid-session — Kaiser eligibility re-evaluated', { from: previousState, to: newStateCode, kaiserNow: KAISER_STATES.has(newStateCode) });
       }
     }
     
@@ -1155,10 +1206,71 @@ export async function POST(req: NextRequest) {
     }
 
     if (preprocessSignals.spouseGeneralFsaConflictIntent) {
-      const msg = `Important rule: if your spouse is enrolled in a **general-purpose Healthcare FSA**, you are generally **not eligible to contribute to an HSA** for those same months (IRS eligibility rule).\n\nIf your spouse has a **Limited Purpose FSA (LPFSA)** that only covers dental/vision, HSA eligibility can still be allowed.\n\nFor enrollment action order: (1) confirm your spouse's FSA type, (2) elect an HSA-compatible medical plan if eligible, (3) choose LPFSA instead of general FSA if you want to keep HSA eligibility. Please verify in Workday/SPD before final elections.`;
-      session.lastBotMessage = msg;
+      const msg = `IRS COMPLIANCE RULE (IRS Publication 969): If your spouse is enrolled in a general-purpose Healthcare FSA, you are NOT eligible to contribute to an HSA for those same months. This is a hard IRS rule with no exceptions.
+
+The only workaround: your spouse switches to a Limited Purpose FSA (LPFSA) that covers ONLY dental and vision — then your HSA eligibility is restored.
+
+Action order:
+1. Confirm your spouse's FSA type with their employer (general-purpose vs limited-purpose).
+2. If general-purpose FSA: do NOT elect HSA contributions — you are ineligible.
+3. If limited-purpose FSA: you may elect HSA contributions normally.
+4. Make this determination BEFORE finalizing plan elections in Workday. You cannot retroactively correct excess HSA contributions without IRS penalty.
+
+For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
+      const plainMsg = toPlainAssistantText(msg);
+      session.lastBotMessage = plainMsg;
       await updateSession(sessionId, session);
-      return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'hsa-spouse-fsa-conflict' } });
+      return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'hsa-spouse-fsa-conflict' } });
+    }
+
+    // ── MULTI-QLE STATE MACHINE INTERCEPTOR ─────────────────────────────────
+    // Fires when user reports BOTH a marriage QLE AND a job-status change (or
+    // pregnancy) in the same message. Returns ordered A-grade response with
+    // state-specific plan recommendation.  Must run BEFORE qleFilingOrderRequested.
+    if (preprocessSignals.multiQLESignal) {
+      session.policyReasoningMode = true;  // Prevent pricing tables on subsequent turns
+      const currentState = session.userState || '';
+      const isKaiserState = KAISER_STATES.has(currentState.toUpperCase());
+      const stateLabel = currentState || 'your state';
+      const stateNote = currentState
+        ? (isKaiserState
+          ? `For ${stateLabel}: Kaiser Permanente Standard HMO is available as a third option alongside Standard HSA and Enhanced HSA.`
+          : `For ${stateLabel}: Kaiser HMO is not available. Your medical options are Standard HSA and Enhanced HSA (both BCBSTX). For maternity cost protection, Enhanced HSA has a lower deductible and is the stronger choice. Consider pairing it with an HSA contribution to offset out-of-pocket costs.`)
+        : `Share your state and I can add a specific plan recommendation.`;
+
+      const hasPregnancy = /\b(pregnan|expecting|maternity|having\s+a\s+baby|due\s+date)\b/i.test(lowerQuery);
+      const hasJobChange = /\b(job\s+change|hours\s+change|part\s*[- ]?time|full\s*[- ]?time|now\s+full\s*[- ]?time|went\s+full\s*[- ]?time|status\s+change)\b/i.test(lowerQuery);
+
+      let msg = `You have multiple Qualifying Life Events (QLEs) active at once. Here is your correct action sequence:\n\n`;
+      msg += `Step 1 — Marriage QLE (30-day window, file FIRST)\n`;
+      msg += `- File the marriage QLE in Workday immediately to add your spouse to Medical, Dental, and Vision.\n`;
+      msg += `- Upload your marriage certificate as documentation.\n`;
+      msg += `- Most plans require QLE submission within 30 days of the marriage date. Missing this window locks you out until Open Enrollment.\n\n`;
+
+      if (hasJobChange) {
+        msg += `Step 2 — Employment Status Change (file same day or next business day)\n`;
+        msg += `- A change from part-time to full-time resets your benefits eligibility tier.\n`;
+        msg += `- File this event in Workday AFTER the marriage QLE so you get the correct full-time plan options.\n`;
+        msg += `- Confirm with HR that your status is updated to Full-Time in the payroll system BEFORE electing benefits.\n\n`;
+      }
+
+      if (hasPregnancy) {
+        msg += `Step ${hasJobChange ? 3 : 2} — Maternity Prep (act now, before Open Enrollment)\n`;
+        msg += `- Enroll in Short-Term Disability (STD) via Unum NOW if not already enrolled.\n`;
+        msg += `- STD pays approximately 60% of your salary during the disability period from delivery (typically up to 13 weeks).\n`;
+        msg += `- FMLA provides up to 12 weeks of job-protected leave — it runs concurrently with STD, not after.\n`;
+        msg += `- File FMLA paperwork with HR at least 30 days before your expected leave date.\n\n`;
+      }
+
+      msg += `State-Specific Recommendation:\n`;
+      msg += `${stateNote}\n\n`;
+      msg += `IRS Rule to know: If your spouse has a general-purpose FSA at their employer, you cannot contribute to an HSA. Confirm FSA type before electing HSA contributions.\n\n`;
+      msg += `To file all QLE events: ${ENROLLMENT_PORTAL_URL} | HR questions: ${HR_PHONE}`;
+
+      const plainMsg = toPlainAssistantText(msg);
+      session.lastBotMessage = plainMsg;
+      await updateSession(sessionId, session);
+      return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'multi-qle-state-machine' } });
     }
 
     const marriageWindowQuestion = /\b(married|marriage|got\s+married)\b/i.test(lowerQuery)
@@ -1171,20 +1283,45 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'marriage-window-deductible' } });
     }
 
-    const stdPayQuestion = /\b(maternity\s+leave|leave)\b/i.test(lowerQuery)
-      && /\b(std|short\s*[- ]?term\s+disability)\b/i.test(lowerQuery)
-      && /\b(60%|sixty\s*percent|salary|paid|get\s+paid|week\s*\d+|6th\s+week|sixth\s+week)\b/i.test(lowerQuery);
-    if (stdPayQuestion) {
+    // ── FMLA + STD Leave Pay Timeline (week-by-week) ────────────────────────
+    // Fires on ANY leave/pay question involving maternity leave or STD —
+    // even without a salary number. Returns the 3-phase timeline + inline math
+    // if salary was given. NEVER returns a medical OOP cost table.
+    const stdLeavePayQuestion = (
+      /\b(maternity\s+leave|parental\s+leave|fmla|leave\s+of\s+absence)\b/i.test(lowerQuery) &&
+      /\b(pay(?:check)?|paid|income|salary|money|how\s+much|week\s*\d*|6th\s+week|sixth\s+week|std|short\s*[- ]?term\s+disability|60%)\b/i.test(lowerQuery)
+    ) || (
+      /\b(std|short\s*[- ]?term\s+disability)\b/i.test(lowerQuery) &&
+      /\b(maternity|leave|pay(?:check)?|paid|salary|60%|sixty\s*percent|week\s*\d+|6th\s+week|sixth\s+week|get\s+paid|income)\b/i.test(lowerQuery)
+    );
+    if (stdLeavePayQuestion) {
       const salaryMatch = lowerQuery.match(/\$?\s*([0-9]{1,3}(?:,[0-9]{3})*|[0-9]{4,6})\s*\/?\s*month/);
       const salary = salaryMatch ? Number(salaryMatch[1].replace(/,/g, '')) : null;
-      const stdAmount = salary ? salary * 0.6 : null;
-      const msg = salary && stdAmount
-        ? `At 60% STD benefit, your estimated STD pay is ${stdAmount.toFixed(2)} per month while eligible (for example, in week 6 if elimination period and claim approval are already satisfied).\n\nFMLA is job protection and is generally unpaid by itself; pay comes from STD (and any employer-paid leave/PTO coordination per plan rules).\n\nPlease verify waiting period, benefit start date, offsets, and payroll timing in your STD certificate/SPD and Workday.`
-        : `For STD at 60%, estimated monthly pay is typically salary × 0.60 during eligible benefit weeks (once any waiting period is satisfied).\n\nFMLA is job-protection and usually unpaid on its own; compensation comes from STD and any employer-paid leave/PTO coordination.\n\nShare your monthly salary if you want a precise calculation.`;
-      const plainMsg = session.noPricingMode ? stripPricingDetails(toPlainAssistantText(msg)) : toPlainAssistantText(msg);
+      const stdMonthly = salary ? (salary * 0.6).toFixed(2) : null;
+      const mathLine = stdMonthly
+        ? `With a salary of $${salary?.toLocaleString()}/month, STD pays approximately $${stdMonthly}/month during the STD-active weeks.`
+        : 'Share your monthly salary if you want a precise dollar calculation.';
+      const lines = [
+        'Leave Pay Timeline — Maternity / FMLA + UNUM STD:',
+        '',
+        '- Weeks 1-2 (Elimination Period): STD benefit is not yet active. Use PTO or this period may be unpaid, depending on your employer leave policy.',
+        '- Weeks 3-6 (STD Active — UNUM): UNUM pays 60% of your pre-disability base earnings. FMLA runs concurrently, providing job protection.',
+        '- Weeks 7-8 (if physician-certified): STD may continue through week 8 for vaginal delivery or week 10 for C-section, subject to claim approval.',
+        '- FMLA (all 12 weeks): Job-protected leave — FMLA does NOT supply pay on its own; income comes from STD and any PTO coordination.',
+        '',
+        'Key distinctions:',
+        '- STD = income replacement (60% of base pay via UNUM).',
+        '- FMLA = job protection (federal law, concurrent with STD, unpaid on its own).',
+        '- Medical out-of-pocket costs (deductible, OOP max) are a separate question from leave pay.',
+        '',
+        mathLine,
+        '',
+        'Verify elimination period, claim approval timeline, and PTO coordination in your UNUM STD certificate/SPD and Workday.',
+      ].join('\n');
+      const plainMsg = session.noPricingMode ? stripPricingDetails(toPlainAssistantText(lines)) : toPlainAssistantText(lines);
       session.lastBotMessage = plainMsg;
       await updateSession(sessionId, session);
-      return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'std-pay-calculation' } });
+      return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'fmla-std-leave-pay-timeline' } });
     }
 
     const stdPreexistingQuestion = /\b(std|short\s*[- ]?term\s+disability)\b/i.test(lowerQuery)
@@ -1464,6 +1601,62 @@ export async function POST(req: NextRequest) {
         session.lastBotMessage = plainMsg;
         await updateSession(sessionId, session);
         return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'orthodontics' } });
+    }
+
+    // ========================================================================
+    // DENTAL DHMO CLARIFICATION INTERCEPT (Deterministic)
+    // ========================================================================
+    // AmeriVet does NOT offer a DHMO plan. Only BCBSTX Dental PPO (DPPO).
+    // If user asks about DHMO or compares DPPO vs DHMO, clarify and provide DPPO details.
+    const dentalDhmoAsked = /\bdhmo\b/i.test(lowerQuery);
+    const dentalComparisonAsked = /\b(?:d(?:ifference|ppo)\s*(?:vs?\.?|versus|between|and|compared)|compare.*dental|dental.*compare|explain.*difference.*dental|dental.*difference)\b/i.test(lowerQuery) && /\bdental\b/i.test(lowerQuery);
+    if (dentalDhmoAsked || dentalComparisonAsked) {
+      const dental = pricingUtils.getDentalPlanDetails();
+      let msg = '';
+      if (dentalDhmoAsked) {
+        msg = `Important clarification: AmeriVet does **not** offer a DHMO (Dental Health Maintenance Organization) plan. Your dental benefit is the **${dental.name}** through ${dental.provider}.\n\n`;
+        msg += `Here's what the ${dental.name} provides:\n`;
+      } else {
+        msg = `AmeriVet offers one dental plan: the **${dental.name}** (${dental.provider}). There is no DHMO option — only the DPPO.\n\n`;
+        msg += `Here's what it includes:\n`;
+      }
+      msg += `- Preventive care (cleanings, exams, X-rays): Covered at 100%\n`;
+      msg += `- Basic services (fillings, extractions): 80/20 coinsurance\n`;
+      msg += `- Major services (crowns, bridges): 50/50 coinsurance\n`;
+      msg += `- Orthodontia: $${dental.orthoCopay} copay\n`;
+      msg += `- Deductible: $${dental.deductible} individual / $${dental.familyDeductible} family\n`;
+      msg += `- Annual maximum: $${pricingUtils.formatMoney(dental.outOfPocketMax)}\n`;
+      msg += `- Network: Nationwide PPO — you can see any dentist, but in-network saves more\n`;
+      if (!session.noPricingMode) {
+        msg += `\nMonthly premiums:\n`;
+        msg += `- Employee Only: $${pricingUtils.formatMoney(dental.tiers.employeeOnly)}/month\n`;
+        msg += `- Employee + Spouse: $${pricingUtils.formatMoney(dental.tiers.employeeSpouse)}/month\n`;
+        msg += `- Employee + Child(ren): $${pricingUtils.formatMoney(dental.tiers.employeeChildren)}/month\n`;
+        msg += `- Employee + Family: $${pricingUtils.formatMoney(dental.tiers.employeeFamily)}/month\n`;
+      }
+      msg += `\nWould you like to explore another benefit, or do you have questions about dental coverage details?`;
+      const plainMsg = session.noPricingMode ? stripPricingDetails(toPlainAssistantText(msg)) : toPlainAssistantText(msg);
+      session.currentTopic = 'Dental';
+      session.lastBotMessage = plainMsg;
+      await updateSession(sessionId, session);
+      return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'dental-dhmo-clarification' } });
+    }
+
+    // ========================================================================
+    // CONTINUATION / FOLLOW-UP HANDLER (Short messages with session context)
+    // ========================================================================
+    // Catches short follow-ups like "difference", "more", "details", "explain"
+    // and uses session.currentTopic to provide a context-aware response.
+    const isShortFollowUp = query.trim().length < 30 && /^(difference|more|details|explain|tell me more|what'?s the difference|go on|elaborate|how so|why|which one|more info|more details|expand|break it down)$/i.test(query.trim());
+    if (isShortFollowUp && session.currentTopic) {
+      // Re-route to category exploration with the current topic
+      const topicResponse = buildCategoryExplorationResponse(session.currentTopic.toLowerCase(), session, extractCoverageFromQuery(query));
+      if (topicResponse) {
+        const plainMsg = toPlainAssistantText(topicResponse);
+        session.lastBotMessage = plainMsg;
+        await updateSession(sessionId, session);
+        return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'continuation-handler', topic: session.currentTopic } });
+      }
     }
 
     // ========================================================================
@@ -1830,6 +2023,12 @@ export async function POST(req: NextRequest) {
         ? `If the catalog doesn't have an exact match, say: "Based on the plans available to you..." and give the closest answer from the catalog.`
         : `Answer directly from the catalog.`;
 
+    // POLICY ROUTING MODE: when intent is policy (FMLA, SPD, QLE, IRS rules)
+    // instruct LLM to SKIP pricing tables and focus on rules/process.
+    const policyRoutingHint = preprocessSignals.intentDomainRoute === 'policy'
+      ? `\nPOLICY REASONING MODE ACTIVE: The user is asking about rules, process, timelines, or compliance — NOT about pricing. Do NOT show any cost tables, premium comparisons, or dollar amounts. Search specifically for SPD language, QLE rules, FMLA policy, and IRS compliance rules. Answer in plain text paragraphs, not tables.`
+      : '';
+
     // NO-PRICING MODE: If user requested "no pricing" / "coverage only", instruct LLM accordingly
     const noPricingHint = session.noPricingMode
         ? `\nIMPORTANT: The user has requested NO PRICING information. Do NOT include any dollar amounts, cost tables, premium figures, or $ signs. Focus exclusively on plan features, deductibles, coinsurance percentages, coverage details, and network information.`
@@ -1847,7 +2046,16 @@ export async function POST(req: NextRequest) {
         : '';
 
     // User message with retrieval context and current question
-    const userMessage = `RETRIEVAL CONTEXT (supplementary — catalog in system prompt is authoritative):
+    // Build the strict state header to inject into every user message (re-enforcement)
+    const stateEnforcement = session.userState
+      ? (KAISER_STATES.has(session.userState.toUpperCase())
+        ? `STATE LOCK [${session.userState}]: Kaiser IS available. Include it.`
+        : `STATE LOCK [${session.userState}]: KAISER IS FORBIDDEN — exclude it entirely. Do NOT mention Kaiser.`)
+      : `STATE: Unknown — do not reference regional plan availability.`;
+
+    const userMessage = `${stateEnforcement}
+
+RETRIEVAL CONTEXT (supplementary — catalog in system prompt is authoritative):
 ${contextText}
 
 CONVERSATION HISTORY:
@@ -1855,8 +2063,19 @@ ${recentHistory}
 
 QUESTION: ${query}
 
-${confidenceHint}${alternativeHint}${noPricingHint}${tierLockHint}
-Remember: answer ONLY from the IMMUTABLE CATALOG in your system instructions. Do NOT ask for name, age, or state. Do NOT mention Rightway. Do NOT attribute Whole Life to Unum or Term Life to Allstate. Do NOT invent a "PPO" medical plan — AmeriVet's medical plans are Standard HSA and Enhanced HSA (they use a PPO network, but are HDHP/HSA plans).`;
+═══════════════════════════════════════════════════════════════════════════
+CHAIN-OF-THOUGHT REASONING (MANDATORY — follow this BEFORE answering)
+═══════════════════════════════════════════════════════════════════════════
+Before writing your answer, silently work through these steps:
+1. IDENTIFY: What specific benefit category/plan is the user asking about?
+2. CLASSIFY: Is this a policy/rules question, a pricing question, or a coverage comparison?
+3. LOCATE: Find the EXACT data in the IMMUTABLE CATALOG that answers this question.
+4. VERIFY: Does the catalog contain this information? If not, say so honestly.
+5. COMPOSE: Write a clear, direct answer using ONLY catalog data.
+
+Do NOT output your reasoning steps — only output the final answer.
+${confidenceHint}${alternativeHint}${noPricingHint}${policyRoutingHint}${tierLockHint}
+Remember: answer ONLY from the IMMUTABLE CATALOG. Do NOT ask for name, age, or state. Do NOT mention Rightway. Do NOT attribute Whole Life to Unum or Term Life to Allstate. Do NOT invent a "PPO" medical plan. Do NOT show [Source N] or [Doc N] citations in your response. AmeriVet does NOT offer a DHMO dental plan — only the BCBSTX Dental PPO.`;
 
     logger.debug(`[RAG] Generating answer with ${result.chunks.length} chunks`);
 
@@ -1898,6 +2117,9 @@ Remember: answer ONLY from the IMMUTABLE CATALOG in your system instructions. Do
     }
     // Strip the (305) 851-7310 number if it appears - replace with real HR number
     answer = answer.replace(BANNED_PHONE_RE, `AmeriVet HR/Benefits at ${HR_PHONE}`);
+
+    // POST-PROCESSING: Strip [Source N] / [Doc N] citation artifacts from LLM output
+    answer = answer.replace(/\[(?:Source|Doc(?:ument)?|Ref(?:erence)?)\s*\d+\]/gi, '').replace(/\s{2,}/g, ' ').trim();
 
     // POST-PROCESSING: Apply Brandon Rule (HSA Cross-Sell)
     
