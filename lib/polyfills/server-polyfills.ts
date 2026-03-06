@@ -344,6 +344,41 @@ if (typeof globalThis.TextDecoder === 'undefined') {
   } as any;
 }
 
+// Polyfill for document object (used by styled-jsx and DOM libraries)
+// CRITICAL: Must be created BEFORE styled-jsx is imported
+if (typeof globalThis.document === 'undefined') {
+  const mockElement = {
+    appendChild: () => {},
+    insertBefore: () => {},
+    setAttribute: () => {},
+    getAttribute: () => null,
+    removeAttribute: () => {},
+    classList: { add: () => {}, remove: () => {}, contains: () => false },
+    style: {},
+    innerText: '',
+    innerHTML: '',
+    textContent: '',
+  };
+
+  globalThis.document = {
+    createElement: () => mockElement,
+    createTextNode: () => ({}),
+    head: mockElement,
+    body: mockElement,
+    documentElement: { ...mockElement, className: '' },
+    getElementById: () => null,
+    querySelector: () => null,
+    querySelectorAll: () => [],
+    getElementsByClassName: () => [],
+    getElementsByTagName: () => [],
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    location: { href: 'http://localhost:3000' },
+    createComment: () => ({}),
+    readyState: 'complete',
+  } as any;
+}
+
 // Export the polyfills to ensure they're loaded
 export const serverPolyfills = {
   DOMMatrix: globalThis.DOMMatrix,
@@ -355,4 +390,5 @@ export const serverPolyfills = {
   ReadableStream: globalThis.ReadableStream,
   TextEncoder: globalThis.TextEncoder,
   TextDecoder: globalThis.TextDecoder,
+  document: globalThis.document,
 };

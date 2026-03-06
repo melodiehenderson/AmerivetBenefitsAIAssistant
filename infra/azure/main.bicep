@@ -43,7 +43,7 @@ param redisSkuCapacity string = 'C1'
 
 @description('Number of replicas for Azure AI Search. Minimum of 1, 2+ required for SLA in production.')
 @minValue(1)
-param searchReplicaCount int = 2
+param searchReplicaCount int = 1
 
 @description('Number of partitions for Azure AI Search. Minimum of 1.')
 @minValue(1)
@@ -51,7 +51,7 @@ param searchPartitionCount int = 1
 
 @description('Maximum autoscale throughput to allocate to the Cosmos DB SQL database (RU/s).')
 @minValue(4000)
-param cosmosMaxAutoscaleThroughput int = 10000
+param cosmosMaxAutoscaleThroughput int = 1000
 
 var commonTags = {
   environment: environment

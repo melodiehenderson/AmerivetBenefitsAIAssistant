@@ -24,7 +24,7 @@ export const createBenefitPlanSchema = z.object({
   maxCoverage: z.number().min(0, 'Maximum coverage must be positive').optional(),
   employerContribution: z.number().min(0, 'Employer contribution must be positive').optional(),
   employeeContribution: z.number().min(0, 'Employee contribution must be positive').optional(),
-  metadata: z.record(z.any()).optional()
+  metadata: z.record(z.string(), z.any()).optional()
 });
 
 export const updateBenefitPlanSchema = createBenefitPlanSchema.partial().extend({

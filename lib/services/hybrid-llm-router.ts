@@ -25,13 +25,23 @@ export interface LLMResponse {
 }
 
 export class HybridLLMRouter {
-  private openaiClient: OpenAI;
+  private openaiClient: OpenAI | null = null;
   private costThreshold: number = 0.01; // $0.01 threshold for model selection
 
   constructor() {
-    this.openaiClient = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY!,
-    });
+    // Lazy initialization: defer OpenAI client creation until runtime to prevent build-time crashes
+  }
+
+  /**
+   * Lazy-initialize OpenAI client on first use (runtime only)
+   */
+  private getClient(): OpenAI {
+    if (!this.openaiClient) {
+      this.openaiClient = new OpenAI({
+        apiKey: process.env.OPENAI_API_KEY || 'dummy-key-for-build',
+      });
+    }
+    return this.openaiClient;
   }
 
   /**
@@ -75,7 +85,7 @@ export class HybridLLMRouter {
   }
 
   private async routeToGPT35(request: LLMRequest): Promise<LLMResponse> {
-    const response = await this.openaiClient.chat.completions.create({
+    const response = await this.getClient().chat.completions.create({
       model: 'gpt-3.5-turbo',
       messages: request.messages as any,
       temperature: request.temperature || 0.7,
@@ -95,7 +105,7 @@ export class HybridLLMRouter {
   }
 
   private async routeToGPT4(request: LLMRequest): Promise<LLMResponse> {
-    const response = await this.openaiClient.chat.completions.create({
+    const response = await this.getClient().chat.completions.create({
       model: 'gpt-4',
       messages: request.messages as any,
       temperature: request.temperature || 0.7,

@@ -117,10 +117,15 @@ export class DocumentService {
 
       // Get the stored document ID
       const repositories = await getRepositories();
-      const documents = await repositories.documents.list();
-      const latestDocument = documents
-        .filter(doc => doc.companyId === companyId && doc.uploadedBy === uploadedBy)
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+      const queryResult = await repositories.documents.query({
+        query: 'SELECT * FROM c WHERE c.companyId = @companyId AND c.uploadedBy = @uploadedBy ORDER BY c.createdAt DESC OFFSET 0 LIMIT 1',
+        parameters: [
+          { name: '@companyId', value: companyId },
+          { name: '@uploadedBy', value: uploadedBy }
+        ]
+      });
+      const documents = (queryResult as any).items ?? queryResult;
+      const latestDocument = (Array.isArray(documents) ? documents : [])[0];
 
       return {
         success: true,
@@ -187,10 +192,11 @@ export class DocumentService {
       searchQuery += ' ORDER BY c.updatedAt DESC';
 
       // Execute search
-      const documents = await repositories.documents.query({
+      const queryResult = await repositories.documents.query({
         query: searchQuery,
         parameters
       });
+      const documents = ((queryResult as any).items ?? queryResult) as any[];
 
       // Limit results
       const limitedDocuments = documents.slice(
@@ -237,7 +243,7 @@ export class DocumentService {
   async getDocument(documentId: string, companyId: string): Promise<Document | null> {
     try {
       const repositories = await getRepositories();
-      const document = await repositories.documents.get(documentId);
+      const document = await repositories.documents.getById(documentId) as any;
       
       if (!document || document.companyId !== companyId) {
         return null;
@@ -274,15 +280,16 @@ export class DocumentService {
 
       query += ' ORDER BY c.updatedAt DESC';
 
-      const documents = await repositories.documents.query({
+      const queryResult3 = await repositories.documents.query({
         query,
         parameters
       });
+      const documents3 = ((queryResult3 as any).items ?? queryResult3) as any[];
 
       const limit = options?.limit || 50;
       const offset = options?.offset || 0;
 
-      return documents.slice(offset, offset + limit);
+      return documents3.slice(offset, offset + limit);
 
     } catch (error) {
       logger.error('Failed to list documents', { data: error });
@@ -298,7 +305,7 @@ export class DocumentService {
       const repositories = await getRepositories();
       
       // Verify document exists and user has permission
-      const document = await repositories.documents.get(documentId);
+      const document = await repositories.documents.getById(documentId) as any;
       if (!document || document.companyId !== companyId) {
         return false;
       }
@@ -339,8 +346,11 @@ export class DocumentService {
   }> {
     try {
       const repositories = await getRepositories();
-      const documents = await repositories.documents.list();
-      const companyDocuments = documents.filter(doc => doc.companyId === companyId);
+      const queryResult4 = await repositories.documents.query({
+        query: 'SELECT * FROM c WHERE c.companyId = @companyId',
+        parameters: [{ name: '@companyId', value: companyId }]
+      });
+      const companyDocuments = (((queryResult4 as any).items ?? queryResult4) as any[]);
 
       const stats = {
         totalDocuments: companyDocuments.length,

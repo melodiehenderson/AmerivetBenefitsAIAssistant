@@ -794,9 +794,9 @@ Password: admin2024!
   - Enable Multi-hop Reasoning
   - Max Reasoning Steps (1-5)
 
-**Embeddings**:
-- **Model**: text-embedding-ada-002, text-embedding-3-small
-- **Dimensions**: 1536 (ada-002), 512/1536 (3-small)
+- **Embeddings**:
+- **Model**: text-embedding-3-large (preferred), text-embedding-3-small
+- **Dimensions**: 3072 (3-large), 512/1536 (3-small)
 - **Batch Size**: 10, 50, 100
 
 **Guardrails**:

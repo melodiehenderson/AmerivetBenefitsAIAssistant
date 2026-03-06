@@ -203,7 +203,7 @@ class RedisRateLimiter {
 
     // Add current request
     validRequests.push(now);
-    memoryStore.create(key, validRequests);
+    memoryStore.set(key, validRequests);
 
     return {
       allowed: true,

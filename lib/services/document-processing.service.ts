@@ -184,7 +184,6 @@ export class DocumentProcessingService {
    */
   private async extractTextFromDOCX(buffer: Buffer): Promise<string> {
     try {
-      // eslint-disable-next-line import/namespace
       const result = await mammoth.extractRawText({ buffer });
       return result.value;
     } catch (error) {
@@ -199,7 +198,6 @@ export class DocumentProcessingService {
   private async extractTextFromDOC(buffer: Buffer): Promise<string> {
     try {
       // For DOC files, we'll use mammoth as well (it supports some DOC files)
-      // eslint-disable-next-line import/namespace
       const result = await mammoth.extractRawText({ buffer });
       return result.value;
     } catch (error) {
@@ -448,7 +446,7 @@ export class DocumentProcessingService {
         chunkCount: processedDoc.chunks.length,
         metadata: processedDoc.metadata,
         updatedAt: new Date().toISOString(),
-      });
+      } as any);
 
       // Save document chunks
       for (const chunk of processedDoc.chunks) {
@@ -479,7 +477,7 @@ export class DocumentProcessingService {
         status,
         error,
         updatedAt: new Date().toISOString(),
-      });
+      } as any);
     } catch (error) {
       logger.error('Failed to update document status', {
         documentId,

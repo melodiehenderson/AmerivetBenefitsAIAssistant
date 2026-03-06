@@ -100,7 +100,7 @@ export async function PATCH(
       return NextResponse.json(
         {
           error: 'Validation Error',
-          details: validationResult.error.errors,
+          details: validationResult.error.issues,
         },
         { status: 400 }
       );
@@ -109,7 +109,7 @@ export async function PATCH(
     // Update document with version increment
     const input: UpdateDocumentInput = {
       ...validationResult.data,
-      modifiedBy: session.user.email || session.user.id || 'unknown',
+      modifiedBy: session.user.email || (session.user as any).id || 'unknown',
     };
 
     const updated = await DocumentsRepository.updateDocument(
@@ -167,7 +167,7 @@ export async function DELETE(
     await DocumentsRepository.deleteDocument(
       params.id,
       companyId,
-      session.user.email || session.user.id || 'unknown'
+      session.user.email || (session.user as any).id || 'unknown'
     );
 
     console.log(`[AUDIT] Document archived: ${params.id} by ${session.user.email}`);

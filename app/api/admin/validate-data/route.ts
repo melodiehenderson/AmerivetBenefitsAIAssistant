@@ -1,8 +1,10 @@
 /**
  * Data Validation API Endpoint
  * GET /api/admin/validate-data
- * Validates that real AmeriVet data is loaded and accessible in Cosmos DB
+ * Validates that company data is loaded and accessible in Cosmos DB efficiently
  */
+
+export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { requireCompanyAdmin } from '@/lib/auth/unified-auth';
@@ -19,28 +21,43 @@ interface ValidationResult {
 
 async function validateContainer(
   containerName: string,
-  companyId: string = 'amerivet'
+  companyId: string
 ): Promise<ValidationResult> {
   try {
     const container = await getContainer(containerName);
     
-    // Query with company filter
-    const querySpec = {
-      query: 'SELECT * FROM c WHERE c.companyId = @companyId',
+    // 1. OPTIMIZED: Get Count Only (Low RU cost)
+    // "SELECT VALUE COUNT(1)" returns just a number, not documents.
+    const countQuery = {
+      query: 'SELECT VALUE COUNT(1) FROM c WHERE c.companyId = @companyId',
+      parameters: [{ name: '@companyId', value: companyId }],
+    };
+    
+    // 2. OPTIMIZED: Get One Sample ID (Low RU cost)
+    // We only need 1 ID to prove data exists, not the whole object.
+    const sampleQuery = {
+      query: 'SELECT TOP 1 c.id FROM c WHERE c.companyId = @companyId',
       parameters: [{ name: '@companyId', value: companyId }],
     };
 
-    const { resources } = await container.items.query(querySpec).fetchAll();
-    
+    // Run queries in parallel for this container
+    const [countResponse, sampleResponse] = await Promise.all([
+      container.items.query(countQuery).fetchAll(),
+      container.items.query(sampleQuery).fetchAll()
+    ]);
+
+    const count = countResponse.resources[0] || 0;
+    const sampleId = sampleResponse.resources[0]?.id;
+
     return {
       container: containerName,
-      status: resources.length > 0 ? 'success' : 'warning',
-      count: resources.length,
-      sampleId: resources[0]?.id,
-      issues: resources.length === 0 ? [`No ${containerName} found for AmeriVet`] : [],
+      status: count > 0 ? 'success' : 'warning',
+      count,
+      sampleId,
+      issues: count === 0 ? [`No data found in ${containerName} for ${companyId}`] : [],
     };
   } catch (error) {
-    logger.error(`Failed to validate ${containerName}`, error);
+    logger.error(`Failed to validate ${containerName}`, error as Error);
     return {
       container: containerName,
       status: 'error',
@@ -51,12 +68,13 @@ async function validateContainer(
 }
 
 export const GET = requireCompanyAdmin(async (req: NextRequest, { user }) => {
+  const startTime = Date.now();
+  // Use the admin's actual company ID, or fallback to 'amerivet' if hardcoding is required
+  const targetCompanyId = user.companyId || 'amerivet';
+
   try {
-    logger.info('Starting data validation', { userId: user.id });
+    logger.info('Starting data validation', { userId: user.id, companyId: targetCompanyId });
 
-    const results: ValidationResult[] = [];
-
-    // Validate all critical containers
     const containers = [
       'Users',
       'Companies',
@@ -67,10 +85,10 @@ export const GET = requireCompanyAdmin(async (req: NextRequest, { user }) => {
       'Conversations',
     ];
 
-    for (const containerName of containers) {
-      const result = await validateContainer(containerName);
-      results.push(result);
-    }
+    // 3. OPTIMIZED: Parallel Execution
+    // Check all containers simultaneously instead of waiting for one to finish before starting the next.
+    const validationPromises = containers.map(name => validateContainer(name, targetCompanyId));
+    const results = await Promise.all(validationPromises);
 
     // Calculate summary statistics
     const successCount = results.filter(r => r.status === 'success').length;
@@ -80,11 +98,13 @@ export const GET = requireCompanyAdmin(async (req: NextRequest, { user }) => {
 
     const summary = {
       timestamp: new Date().toISOString(),
+      durationMs: Date.now() - startTime,
       totalContainers: results.length,
       successCount,
       warningCount,
       errorCount,
       totalRecords,
+      targetCompanyId,
       overallStatus: errorCount === 0 
         ? (warningCount === 0 ? 'operational' : 'warnings') 
         : 'errors',
@@ -92,10 +112,7 @@ export const GET = requireCompanyAdmin(async (req: NextRequest, { user }) => {
 
     const allIssues = results.flatMap(r => r.issues);
 
-    logger.info('Data validation completed', {
-      summary,
-      hasIssues: allIssues.length > 0,
-    });
+    logger.info('Data validation completed', { summary });
 
     return NextResponse.json({
       success: errorCount === 0,
@@ -103,16 +120,16 @@ export const GET = requireCompanyAdmin(async (req: NextRequest, { user }) => {
       results,
       issues: allIssues,
       message: errorCount === 0 
-        ? '✅ Real AmeriVet data successfully loaded and accessible'
-        : '❌ Issues detected with data validation',
+        ? '✅ Data integrity check passed successfully'
+        : '❌ Data integrity issues detected',
     });
 
   } catch (error) {
-    logger.error('Data validation endpoint failed', error);
+    logger.error('Data validation endpoint failed', error as Error);
     return NextResponse.json(
       {
         success: false,
-        error: 'Data validation failed',
+        error: 'Data validation critical failure',
         message: error instanceof Error ? error.message : 'Unknown error',
       },
       { status: 500 }

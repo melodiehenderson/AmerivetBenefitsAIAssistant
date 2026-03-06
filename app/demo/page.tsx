@@ -52,7 +52,7 @@ const DEMO_SCENARIOS = [
   },
   {
     id: 'cost-calculator',
-    title: 'Total Cost Calculator',
+    title: 'Total Medical Plan Cost Comparison Tool',
     description: 'Calculate total annual healthcare costs',
     icon: <Calculator className="h-5 w-5" />,
     message: 'Help me calculate the total cost of healthcare for next year. I want to compare all available plans including premiums, deductibles, copays, and out-of-pocket maximums. I typically have 2-3 doctor visits and 1 specialist visit per year.'
@@ -146,7 +146,7 @@ export default function DemoPage() {
             </Badge>
             <Badge variant="secondary" className="px-4 py-2">
               <Calculator className="h-4 w-4 mr-2" />
-              Cost Calculator
+              Medical Plan Cost Comparison Tool
             </Badge>
           </div>
         </div>
@@ -313,7 +313,7 @@ export default function DemoPage() {
               <CardHeader>
                 <div className="flex items-center gap-2">
                   <Calculator className="h-6 w-6 text-green-500" />
-                  <CardTitle>Cost Calculator</CardTitle>
+                  <CardTitle>Medical Plan Cost Comparison Tool</CardTitle>
                 </div>
               </CardHeader>
               <CardContent>
@@ -351,3 +351,4 @@ export default function DemoPage() {
     </div>
   );
 }
+

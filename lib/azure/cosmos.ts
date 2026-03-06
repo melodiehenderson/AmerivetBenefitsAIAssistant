@@ -317,7 +317,7 @@ export class CosmosRepository<T extends { id: string }> {
     limit?: number
   ): Promise<TResult[]> {
     try {
-      let query = this.container.items.query<TResult>('SELECT * FROM c');
+      const query = this.container.items.query<TResult>('SELECT * FROM c');
       
       if (partitionKey) {
         // query = query.query('c.partitionKey = @partitionKey', { partitionKey });

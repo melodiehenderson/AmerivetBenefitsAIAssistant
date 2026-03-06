@@ -14,7 +14,7 @@ export function validateSchema<T>(schema: z.ZodSchema<T>) {
       return { success: true, data: validatedData };
     } catch (error) {
       if (error instanceof z.ZodError) {
-        const errorMessage = error.errors
+        const errorMessage = error.issues
           .map(err => `${err.path.join('.')}: ${err.message}`)
           .join(', ');
         return { success: false, error: errorMessage };

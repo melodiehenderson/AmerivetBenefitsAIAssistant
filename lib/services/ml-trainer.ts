@@ -252,7 +252,8 @@ export class MLTrainer {
 
       features.push(combinedFeatures);
       labels.push({ 
-
+        responseType: 'pattern',
+        complexity: 'simple',
         category: data.category || 'general'
       });
     }

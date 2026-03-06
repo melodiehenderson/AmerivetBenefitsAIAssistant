@@ -1,7 +1,7 @@
 'use client';
 
 import React, { memo, useEffect, useMemo, useState } from 'react';
-import { DataGrid, textEditor } from 'react-data-grid';
+import { DataGrid } from 'react-data-grid';
 
 import { parse, unparse } from 'papaparse';
 import { useTheme } from 'next-themes';
@@ -18,8 +18,8 @@ type SheetEditorProps = {
 const MIN_ROWS = 50;
 const MIN_COLS = 26;
 
-// Simple text editor for cells
-const textEditor = ({ row, column, onRowChange, onClose }: any) => {
+// Custom text editor for cells
+const customTextEditor = ({ row, column, onRowChange, onClose }: any) => {
   return (
     <input
       value={row[column.key] || ''}
@@ -43,7 +43,7 @@ const PureSpreadsheetEditor = ({
     if (!content) return Array(MIN_ROWS).fill(Array(MIN_COLS).fill(''));
     const result = parse<string[]>(content, { skipEmptyLines: true });
 
-    const paddedData = result.data.map((row) => {
+    const paddedData = result.data.map((row: string[]) => {
       const paddedRow = [...row];
       while (paddedRow.length < MIN_COLS) {
         paddedRow.push('');
@@ -72,7 +72,7 @@ const PureSpreadsheetEditor = ({
     const dataColumns = Array.from({ length: MIN_COLS }, (_, i) => ({
       key: i.toString(),
       name: String.fromCharCode(65 + i),
-      renderEditCell: textEditor,
+      renderEditCell: customTextEditor,
       width: 120,
       cellClass: cn(`border-t dark:bg-zinc-950 dark:text-zinc-50`, {
         'border-l': i !== 0,
@@ -86,7 +86,7 @@ const PureSpreadsheetEditor = ({
   }, []);
 
   const initialRows = useMemo(() => {
-    return parseData.map((row, rowIndex) => {
+    return parseData.map((row: string[], rowIndex: number) => {
       const rowData: any = {
         id: rowIndex,
         rowNumber: rowIndex + 1,
@@ -140,7 +140,7 @@ const PureSpreadsheetEditor = ({
           </tr>
         </thead>
         <tbody>
-          {localRows.map((row, rowIndex) => (
+          {localRows.map((row: any, rowIndex: number) => (
             <tr key={rowIndex}>
               {columns.map((col) => (
                 <td

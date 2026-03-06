@@ -45,7 +45,7 @@ const TEST_CHUNKS: Chunk[] = [
   {
     id: 'chunk-002',
     docId: 'doc-001',
-    companyId: 'test-company',
+    companyId: 'amerivet',
     sectionPath: 'Health Plan Types > HDHP',
     title: 'HDHP Explanation',
     content: 'HDHP stands for High Deductible Health Plan. These plans have lower monthly premiums but higher deductibles. HDHPs are required if you want to contribute to a Health Savings Account (HSA).',
@@ -63,7 +63,7 @@ const TEST_CHUNKS: Chunk[] = [
   {
     id: 'chunk-003',
     docId: 'doc-002',
-    companyId: 'test-company',
+    companyId: 'amerivet',
     sectionPath: 'Cost Calculator Guide > OOP Calculation',
     title: 'Out-of-Pocket Cost Calculation',
     content: 'To calculate out-of-pocket costs, consider your deductible, co-insurance rate, and out-of-pocket maximum. For example, with a $2000 deductible and 80% coverage, a $5000 procedure costs: $2000 (deductible) + 20% of $3000 = $2600 total.',

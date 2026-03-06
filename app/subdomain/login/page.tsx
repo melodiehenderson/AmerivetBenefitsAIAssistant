@@ -4,60 +4,67 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2, Lock, User, Building, Eye, EyeOff } from 'lucide-react';
+import { Loader2, Lock, Eye, EyeOff } from 'lucide-react';
+
+// Centralized API helper
+async function api(path: string, body: unknown) {
+  const r = await fetch(path, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const t = await r.text();
+  let d: any = {};
+  try {
+    d = JSON.parse(t);
+  } catch {
+    // JSON parse failed
+  }
+  if (!r.ok || !(d as any).ok) {
+    throw new Error((d as any).error ?? `HTTP_${r.status}`);
+  }
+  return d;
+}
 
 export default function SubdomainLoginPage() {
-  const [password, setPassword] = useState('');
-  const [email, setEmail] = useState('');
-  const [name, setName] = useState('');
-  const [companyId, setCompanyId] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const submittingRef = useRef(false);
   const router = useRouter();
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    
+    // Guard against multiple clicks
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    
     setIsLoading(true);
     setError('');
 
     try {
-      const response = await fetch('/api/subdomain/auth/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          password,
-          email: email || 'demo@benefits.com',
-          name: name || 'Demo User',
-          companyId: companyId || 'demo-company',
-        }),
-      });
+      const form = new FormData(e.currentTarget);
+      const password = String(form.get('password') ?? '');
 
-      const data = await response.json();
+      const data = await api('/api/subdomain/auth/login', { password });
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Login failed');
-      }
+      console.log('[LOGIN] Success', { role: data.role });
 
-      if (data.success) {
-        // Redirect to main subdomain page
-        router.push('/subdomain/dashboard');
-      } else {
-        setError(data.error || 'Login failed');
-      }
+      // Redirect to dashboard on success
+      router.push('/subdomain/dashboard');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
       setIsLoading(false);
+      submittingRef.current = false;
     }
   };
 
@@ -90,9 +97,8 @@ export default function SubdomainLoginPage() {
               <div className="relative">
                 <Input
                   id="password"
+                  name="password"
                   type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••••••"
                   required
                   className="w-full pr-10"
@@ -111,55 +117,10 @@ export default function SubdomainLoginPage() {
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="email" className="flex items-center gap-2">
-                <User className="w-4 h-4" />
-                Email (Optional)
-              </Label>
-              <Input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="your.email@company.com"
-                className="w-full"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="name" className="flex items-center gap-2">
-                <User className="w-4 h-4" />
-                Name (Optional)
-              </Label>
-              <Input
-                id="name"
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Your Name"
-                className="w-full"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="companyId" className="flex items-center gap-2">
-                <Building className="w-4 h-4" />
-                Company ID (Optional)
-              </Label>
-              <Input
-                id="companyId"
-                type="text"
-                value={companyId}
-                onChange={(e) => setCompanyId(e.target.value)}
-                placeholder="company-id"
-                className="w-full"
-              />
-            </div>
-
             <Button
               type="submit"
               className="w-full"
-              disabled={isLoading || !password}
+              disabled={isLoading}
             >
               {isLoading ? (
                 <>

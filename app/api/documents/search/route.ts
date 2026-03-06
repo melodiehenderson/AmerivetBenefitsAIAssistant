@@ -21,7 +21,7 @@ export const GET = requireCompanyAdmin(async (request: NextRequest) => {
     const tenantId = request.headers.get('x-company-id');
 
     if (!userId || !tenantId) {
-      logger.securityEvent('Unauthorized document search request', {
+      logger.warn('Unauthorized document search request', {
         userAgent: request.headers.get('user-agent'),
       });
       return new NextResponse('Unauthorized', { status: 401 });

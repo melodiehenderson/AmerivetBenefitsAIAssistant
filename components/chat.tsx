@@ -115,6 +115,23 @@ export function Chat({
     }
   }, [query, sendMessage, hasAppendedQuery, id]);
 
+  useEffect(() => {
+    if (messages.length === 0) {
+      setMessages([
+        {
+          id: generateUUID(),
+          role: 'assistant',
+          parts: [
+            {
+              type: 'text',
+              text: "Hi! 👋 Hello!\n\nWelcome! I'm your virtual Benefits Assistant today. I can help you with questions about your AmeriVet benefits, insurance plans, and more. I am NOT your enrollment platform. Once you make your choices, you will still need to log into your benefits enrollment system and enter your elections there. Tell me - what can I help you with today?",
+            },
+          ],
+        }
+      ]);
+    }
+  }, [messages.length, setMessages]);
+
   const { data: votes } = useSWR<Array<Vote>>(
     messages.length >= 2 ? `/api/vote?chatId=${id}` : null,
     fetcher,

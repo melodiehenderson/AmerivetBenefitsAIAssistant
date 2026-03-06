@@ -26,7 +26,7 @@ import type { Document } from '../types/rag';
 
 const SAMPLE_DOCUMENT: Document = {
   id: 'doc-test-001',
-  companyId: 'test-company',
+  companyId: `amerivet`,
   title: 'Employee Benefits Handbook 2025',
   type: 'handbook',
   source: 'benefits-2025.pdf',

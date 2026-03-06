@@ -521,7 +521,7 @@ Employee (End User)
 | Technology | Purpose |
 |------------|---------|
 | **Vercel AI SDK** | Streaming chat responses |
-| **OpenAI** | Embeddings (text-embedding-ada-002) |
+| **OpenAI** | Embeddings (text-embedding-3-large) |
 | **LangChain** | Document processing |
 | **Mammoth** | DOCX parsing |
 | **PDF-Parse** | PDF extraction |

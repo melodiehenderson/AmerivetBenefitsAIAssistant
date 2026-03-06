@@ -1,19 +1,20 @@
-import type OpenAI from 'openai';
+import type { AzureOpenAI } from 'openai';
 import { getOpenAIConfig } from './config';
-import { logger } from '@/lib/logger';
+import { logger, log } from '@/lib/logger';
 
 // Lazy client initialization
-let client: OpenAI | null = null;
+let client: AzureOpenAI | null = null;
 
-async function getOpenAIClient(): Promise<OpenAI> {
+async function getOpenAIClient(): Promise<AzureOpenAI> {
   if (client) return client;
 
   const openaiConfig = getOpenAIConfig();
-  const { default: OpenAIClass } = await import('openai');
+  const { AzureOpenAI: AzureOpenAIClass } = await import('openai');
   
-  client = new OpenAIClass({
-    apiKey: (getOpenAIConfig()).apiKey,
-    baseURL: (getOpenAIConfig()).endpoint,
+  client = new AzureOpenAIClass({
+    apiKey: openaiConfig.apiKey,
+    endpoint: openaiConfig.endpoint,
+    apiVersion: openaiConfig.apiVersion,
   });
   
   return client;
@@ -21,9 +22,9 @@ async function getOpenAIClient(): Promise<OpenAI> {
 
 // Azure OpenAI service class
 export class AzureOpenAIService {
-  private client: OpenAI | null = null;
+  private client: AzureOpenAI | null = null;
   
-  private async ensureClient(): Promise<OpenAI> {
+  private async ensureClient(): Promise<AzureOpenAI> {
     if (!this.client) {
       this.client = await getOpenAIClient();
     }
@@ -80,10 +81,10 @@ export class AzureOpenAIService {
 
       return content;
     } catch (error) {
-      logger.error('Failed to generate text', {
+      log.error('Failed to generate text', error as Error, {  
         promptLength: prompt.length,
         options
-      }, error as Error);
+        });
       throw error;
     }
   }
@@ -106,6 +107,7 @@ export class AzureOpenAIService {
       totalTokens: number;
     };
   }> {
+    const client = await this.ensureClient();
     try {
       const {
         maxTokens = 1000,
@@ -153,10 +155,10 @@ export class AzureOpenAIService {
         }
       };
     } catch (error) {
-      logger.error('Failed to generate chat completion', {
+      log.error('Failed to generate chat completion', error as Error, {  
         messageCount: messages.length,
         options
-      }, error as Error);
+        });
       throw error;
     }
   }
@@ -177,10 +179,14 @@ export class AzureOpenAIService {
   }
 
   async generateEmbedding(text: string): Promise<number[]> {
+    const client = await this.ensureClient();
+    const config = getOpenAIConfig();
+    
     try {
       const response = await client.embeddings.create({
-        model: (getOpenAIConfig()).embeddingDeployment,
-        input: text
+        model: config.embeddingDeployment,
+        input: text,
+        dimensions: 3072  // Match index dimensions (text-embedding-3-large)
       });
 
       const embedding = response.data[0]?.embedding;
@@ -195,19 +201,37 @@ export class AzureOpenAIService {
       }, 'Embedding generated successfully');
 
       return embedding;
-    } catch (error) {
-      logger.error('Failed to generate embedding', {
+    } catch (error: any) {
+      // Provide detailed error for deployment not found
+      if (error?.status === 404 || error?.message?.includes('Resource not found')) {
+        const errorMsg = `Azure OpenAI embedding deployment "${config.embeddingDeployment}" not found. ` +
+          `Please verify AZURE_OPENAI_EMBEDDING_DEPLOYMENT matches your Azure OpenAI deployment name exactly. ` +
+          `Current endpoint: ${config.endpoint}`;
+        log.error(errorMsg, error as Error, {
+          deployment: config.embeddingDeployment,
+          endpoint: config.endpoint,
+          textLength: text.length
+        });
+        throw new Error(errorMsg);
+      }
+      
+      log.error('Failed to generate embedding', error as Error, {  
+        deployment: config.embeddingDeployment,
         textLength: text.length
-      }, error as Error);
+      });
       throw error;
     }
   }
 
   async generateEmbeddings(texts: string[]): Promise<number[][]> {
+    const client = await this.ensureClient();
+    const config = getOpenAIConfig();
+    
     try {
       const response = await client.embeddings.create({
-        model: (getOpenAIConfig()).embeddingDeployment,
-        input: texts
+        model: config.embeddingDeployment,
+        input: texts,
+        dimensions: 3072  // Match index dimensions (text-embedding-3-large)
       });
 
       const embeddings = response.data.map((item: any) => item.embedding);
@@ -222,10 +246,24 @@ export class AzureOpenAIService {
       }, 'Embeddings generated successfully');
 
       return embeddings;
-    } catch (error) {
-      logger.error('Failed to generate embeddings', {
+    } catch (error: any) {
+      // Provide detailed error for deployment not found
+      if (error?.status === 404 || error?.message?.includes('Resource not found')) {
+        const errorMsg = `Azure OpenAI embedding deployment "${config.embeddingDeployment}" not found. ` +
+          `Please verify AZURE_OPENAI_EMBEDDING_DEPLOYMENT matches your Azure OpenAI deployment name exactly. ` +
+          `Current endpoint: ${config.endpoint}`;
+        log.error(errorMsg, error as Error, {
+          deployment: config.embeddingDeployment,
+          endpoint: config.endpoint,
+          textCount: texts.length
+        });
+        throw new Error(errorMsg);
+      }
+      
+      log.error('Failed to generate embeddings', error as Error, {  
+        deployment: config.embeddingDeployment,
         textCount: texts.length
-      }, error as Error);
+      });
       throw error;
     }
   }
@@ -241,6 +279,7 @@ export class AzureOpenAIService {
       stop?: string[];
     } = {}
   ): Promise<AsyncIterable<string>> {
+    const client = await this.ensureClient();
     try {
       const {
         maxTokens = 1000,
@@ -270,10 +309,10 @@ export class AzureOpenAIService {
 
       return this.processStream(stream);
     } catch (error) {
-      logger.error('Failed to start chat completion stream', {
+      log.error('Failed to start chat completion stream', error as Error, {  
         messageCount: messages.length,
         options
-      }, error as Error);
+        });
       throw error;
     }
   }
@@ -287,7 +326,7 @@ export class AzureOpenAIService {
         }
       }
     } catch (error) {
-      logger.error('Error processing stream', {}, error as Error);
+      log.error('Error processing stream', error as Error);
       throw error;
     }
   }
@@ -328,9 +367,9 @@ export class AzureOpenAIService {
         }
       };
     } catch (error) {
-      logger.error('Failed to moderate content', {
+      log.error('Failed to moderate content', error as Error, {  
         textLength: text.length
-      }, error as Error);
+        });
       throw error;
     }
   }
@@ -351,7 +390,7 @@ export class AzureOpenAIService {
         }
       ];
     } catch (error) {
-      logger.error('Failed to get models', {}, error as Error);
+      log.error('Failed to get models', error as Error);
       throw error;
     }
   }
@@ -362,4 +401,6 @@ export const azureOpenAIService = new AzureOpenAIService();
 
 // Export the client getter for advanced operations
 export { getOpenAIClient };
+
+
 

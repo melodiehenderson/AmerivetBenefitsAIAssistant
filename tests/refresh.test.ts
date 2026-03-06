@@ -17,7 +17,7 @@ describe('Refresh token flows', () => {
   it('rotates refresh tokens', async () => {
     const oldToken = 'old-token';
     const newToken = 'new-token';
-    const companyId = 'test-company';
+    const companyId = 'amerivet';
     await storeRefreshToken(userId, companyId, oldToken, 60);
     const valid = await verifyRefreshToken(oldToken);
     expect(valid).not.toBeNull();
@@ -31,7 +31,7 @@ describe('Refresh token flows', () => {
 
   it('revokes refresh tokens', async () => {
     const token = 'temp-token';
-    const companyId = 'test-company';
+    const companyId = 'amerivet';
     await storeRefreshToken(userId, companyId, token, 60);
     await revokeRefreshToken(token);
     const check = await verifyRefreshToken(token);

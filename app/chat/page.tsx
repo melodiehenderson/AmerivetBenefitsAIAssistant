@@ -44,7 +44,6 @@ function ChatPageContent() {
     if (personalize === 'true') {
       setShowPersonalize(true);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
   const scrollToBottom = () => {
@@ -181,7 +180,7 @@ function ChatPageContent() {
                 className="border rounded px-3 py-2 text-xs hover:bg-gray-100"
                 onClick={() => { window.location.assign('/benefits/compare'); }}
               >
-                📊 Open Cost Calculator
+                📊 Open Medical Plan Cost Comparison Tool
               </button>
             </div>
             <div className="space-y-2">

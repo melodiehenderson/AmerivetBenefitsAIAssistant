@@ -12,6 +12,15 @@ import { TextEncoder, TextDecoder } from 'node:util';
 (globalThis as any).TextEncoder = TextEncoder;
 (globalThis as any).TextDecoder = TextDecoder;
 
+// Force environment variables for ALL tests to prevent constructor crashes
+process.env.OPENAI_API_KEY = process.env.OPENAI_API_KEY || 'test-openai-key';
+process.env.AZURE_OPENAI_API_KEY = process.env.AZURE_OPENAI_API_KEY || 'test-azure-key';
+process.env.AZURE_OPENAI_ENDPOINT = process.env.AZURE_OPENAI_ENDPOINT || 'https://test.openai.azure.com';
+
+// In tests we intentionally avoid real Azure clients (Search/Cosmos/etc.)
+// to keep the suite hermetic and prevent background initialization errors.
+process.env.DISABLE_AZURE = process.env.DISABLE_AZURE || '1';
+
 // Mock for window.crypto needed by Playwright in a Node environment
 // Set up global window object if it doesn't exist
 if (typeof globalThis.window === 'undefined') {
@@ -73,6 +82,9 @@ vi.mock('@/lib/azure/openai', () => ({
     generateChatCompletion: vi.fn().mockResolvedValue({ content: 'ok', usage: { tokens: 1 } }),
     generateText: vi.fn().mockResolvedValue('ok'),
     createChatCompletion: vi.fn().mockResolvedValue({ content: 'ok', usage: { tokens: 1 } }),
+    // Critical for hybrid-retrieval and ingestion tests
+    generateEmbedding: vi.fn().mockResolvedValue(new Array(1536).fill(0.1)),
+    generateEmbeddings: vi.fn().mockResolvedValue([new Array(1536).fill(0.1)]),
   }
 }));
 
@@ -270,14 +282,14 @@ export const createMockUser = (overrides = {}) => ({
   email: 'test@example.com',
   name: 'Test User',
   roles: ['employee'],
-  companyId: 'test-company-id',
+  companyId: '-id',
   permissions: ['view_benefits', 'chat_with_ai'],
   metadata: {},
   ...overrides
 });
 
 export const createMockCompany = (overrides = {}) => ({
-  id: 'test-company-id',
+  id: 'amerivet',
   name: 'Test Company',
   domain: 'test.com',
   status: 'active',
@@ -294,7 +306,7 @@ export const createMockDocument = (overrides = {}) => ({
   fileName: 'test.pdf',
   mimeType: 'application/pdf',
   fileSize: 1024,
-  companyId: 'test-company-id',
+  companyId: 'amerivet',
   uploadedBy: 'test-user-id',
   category: 'benefits',
   tags: ['test'],

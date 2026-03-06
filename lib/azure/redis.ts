@@ -1,4 +1,4 @@
-import type Redis from 'ioredis';
+﻿import type Redis from 'ioredis';
 import { isBuild } from '@/lib/runtime/is-build';
 import { DISABLE_AZURE } from '@/lib/runtime/feature-flags';
 import { getRedisConfig } from './config';
@@ -52,6 +52,12 @@ export async function getRedis(): Promise<Redis | null> {
 
 // Redis service class
 export class RedisService {
+  private async requireClient(): Promise<Redis> {
+    const client = await getRedis();
+    if (!client) throw new Error('Redis client not available');
+    return client;
+  }
+
   async get(key: string): Promise<string | null> {
     const client = await getRedis();
     if (!client) return null;
@@ -66,8 +72,12 @@ export class RedisService {
   }
 
   async set(key: string, value: string, ttlSeconds?: number): Promise<void> {
+    const client = await getRedis();
+    if (!client) {
+      logger.warn('Redis SET skipped - no client available', { key });
+      return; // Silent return, let filesystem fallback handle it
+    }
     try {
-      const client = await getRedis();
       if (ttlSeconds) {
         await client.setex(key, ttlSeconds, value);
       } else {
@@ -81,8 +91,12 @@ export class RedisService {
   }
 
   async del(key: string): Promise<number> {
+    const client = await getRedis();
+    if (!client) {
+      logger.warn('Redis DEL skipped - no client available', { key });
+      return 0;
+    }
     try {
-      const client = await getRedis();
       const result = await client.del(key);
       logger.debug('Redis DEL operation', { key, deletedCount: result });
       return result;
@@ -93,8 +107,9 @@ export class RedisService {
   }
 
   async exists(key: string): Promise<boolean> {
+    const client = await getRedis();
+    if (!client) return false;
     try {
-      const client = await getRedis();
       const result = await client.exists(key);
       logger.debug('Redis EXISTS operation', { key, exists: result === 1 });
       return result === 1;
@@ -105,8 +120,9 @@ export class RedisService {
   }
 
   async expire(key: string, ttlSeconds: number): Promise<boolean> {
+    const client = await getRedis();
+    if (!client) return false;
     try {
-      const client = await getRedis();
       const result = await client.expire(key, ttlSeconds);
       logger.debug('Redis EXPIRE operation', { key, ttlSeconds, success: result === 1 });
       return result === 1;
@@ -117,8 +133,9 @@ export class RedisService {
   }
 
   async ttl(key: string): Promise<number> {
+    const client = await getRedis();
+    if (!client) return -2; // Key doesn't exist
     try {
-      const client = await getRedis();
       const result = await client.ttl(key);
       logger.debug('Redis TTL operation', { key, ttl: result });
       return result;
@@ -129,8 +146,9 @@ export class RedisService {
   }
 
   async keys(pattern: string): Promise<string[]> {
+    const client = await getRedis();
+    if (!client) return [];
     try {
-      const client = await getRedis();
       const result = await client.keys(pattern);
       logger.debug('Redis KEYS operation', { pattern, count: result.length });
       return result;
@@ -141,8 +159,9 @@ export class RedisService {
   }
 
   async flushdb(): Promise<void> {
+    const client = await getRedis();
+    if (!client) return;
     try {
-      const client = await getRedis();
       await client.flushdb();
       logger.info('Redis database flushed', {});
     } catch (error) {
@@ -152,8 +171,9 @@ export class RedisService {
   }
 
   async info(section?: string): Promise<string> {
+    const client = await getRedis();
+    if (!client) return 'Redis not available';
     try {
-      const client = await getRedis();
       const result = await client.info(section || '');
       logger.debug('Redis INFO operation', { section });
       return result;
@@ -164,8 +184,9 @@ export class RedisService {
   }
 
   async ping(): Promise<string> {
+    const client = await getRedis();
+    if (!client) return 'Redis not available';
     try {
-      const client = await getRedis();
       const result = await client.ping();
       logger.debug('Redis PING operation', { response: result });
       return result;
@@ -177,8 +198,9 @@ export class RedisService {
 
   // Hash operations
   async hget(key: string, field: string): Promise<string | null> {
+    const client = await getRedis();
+    if (!client) return null;
     try {
-      const client = await getRedis();
       const result = await client.hget(key, field);
       logger.debug('Redis HGET operation', { key, field, found: result !== null });
       return result;
@@ -190,7 +212,7 @@ export class RedisService {
 
   async hset(key: string, field: string, value: string): Promise<number> {
     try {
-      const client = await getRedis();
+      const client = await this.requireClient();
       const result = await client.hset(key, field, value);
       logger.debug('Redis HSET operation', { key, field, result });
       return result;
@@ -202,7 +224,7 @@ export class RedisService {
 
   async hgetall(key: string): Promise<Record<string, string>> {
     try {
-      const client = await getRedis();
+      const client = await this.requireClient();
       const result = await client.hgetall(key);
       logger.debug('Redis HGETALL operation', { key, fieldCount: Object.keys(result).length });
       return result;
@@ -214,7 +236,7 @@ export class RedisService {
 
   async hdel(key: string, field: string): Promise<number> {
     try {
-      const client = await getRedis();
+      const client = await this.requireClient();
       const result = await client.hdel(key, field);
       logger.debug('Redis HDEL operation', { key, field, deletedCount: result });
       return result;
@@ -227,7 +249,7 @@ export class RedisService {
   // List operations
   async lpush(key: string, ...values: string[]): Promise<number> {
     try {
-      const client = await getRedis();
+      const client = await this.requireClient();
       const result = await client.lpush(key, ...values);
       logger.debug('Redis LPUSH operation', { key, valueCount: values.length, newLength: result });
       return result;
@@ -239,7 +261,7 @@ export class RedisService {
 
   async rpush(key: string, ...values: string[]): Promise<number> {
     try {
-      const client = await getRedis();
+      const client = await this.requireClient();
       const result = await client.rpush(key, ...values);
       logger.debug('Redis RPUSH operation', { key, valueCount: values.length, newLength: result });
       return result;
@@ -251,7 +273,7 @@ export class RedisService {
 
   async lpop(key: string): Promise<string | null> {
     try {
-      const client = await getRedis();
+      const client = await this.requireClient();
       const result = await client.lpop(key);
       logger.debug('Redis LPOP operation', { key, popped: result });
       return result;
@@ -263,7 +285,7 @@ export class RedisService {
 
   async rpop(key: string): Promise<string | null> {
     try {
-      const client = await getRedis();
+      const client = await this.requireClient();
       const result = await client.rpop(key);
       logger.debug('Redis RPOP operation', { key, popped: result });
       return result;
@@ -275,7 +297,7 @@ export class RedisService {
 
   async lrange(key: string, start: number, stop: number): Promise<string[]> {
     try {
-      const client = await getRedis();
+      const client = await this.requireClient();
       const result = await client.lrange(key, start, stop);
       logger.debug('Redis LRANGE operation', { key, start, stop, count: result.length });
       return result;
@@ -288,7 +310,7 @@ export class RedisService {
   // Set operations
   async sadd(key: string, ...members: string[]): Promise<number> {
     try {
-      const client = await getRedis();
+      const client = await this.requireClient();
       const result = await client.sadd(key, ...members);
       logger.debug('Redis SADD operation', { key, memberCount: members.length, addedCount: result });
       return result;
@@ -300,7 +322,7 @@ export class RedisService {
 
   async smembers(key: string): Promise<string[]> {
     try {
-      const client = await getRedis();
+      const client = await this.requireClient();
       const result = await client.smembers(key);
       logger.debug('Redis SMEMBERS operation', { key, memberCount: result.length });
       return result;
@@ -312,7 +334,7 @@ export class RedisService {
 
   async srem(key: string, ...members: string[]): Promise<number> {
     try {
-      const client = await getRedis();
+      const client = await this.requireClient();
       const result = await client.srem(key, ...members);
       logger.debug('Redis SREM operation', { key, memberCount: members.length, removedCount: result });
       return result;
@@ -325,7 +347,7 @@ export class RedisService {
   // Sorted set operations
   async zadd(key: string, score: number, member: string): Promise<number> {
     try {
-      const client = await getRedis();
+      const client = await this.requireClient();
       const result = await client.zadd(key, score, member);
       logger.debug('Redis ZADD operation', { key, score, member, result });
       return result;
@@ -337,7 +359,7 @@ export class RedisService {
 
   async zrange(key: string, start: number, stop: number, withScores: boolean = false): Promise<string[]> {
     try {
-      const client = await getRedis();
+      const client = await this.requireClient();
       const result = withScores 
         ? await client.zrange(key, start, stop, 'WITHSCORES')
         : await client.zrange(key, start, stop);
@@ -351,7 +373,7 @@ export class RedisService {
 
   async zrem(key: string, ...members: string[]): Promise<number> {
     try {
-      const client = await getRedis();
+      const client = await this.requireClient();
       const result = await client.zrem(key, ...members);
       logger.debug('Redis ZREM operation', { key, memberCount: members.length, removedCount: result });
       return result;
@@ -364,7 +386,7 @@ export class RedisService {
   // Close connection
   async disconnect(): Promise<void> {
     try {
-      const client = await getRedis();
+      const client = await this.requireClient();
       await client.disconnect();
       logger.info('Redis connection disconnected', {});
     } catch (error) {
@@ -379,5 +401,7 @@ export const redisService = new RedisService();
 
 // Export getter for advanced operations
 export async function getRedisClient(): Promise<Redis> {
-  return getRedis();
+  const client = await getRedis();
+  if (!client) throw new Error('Redis client not available');
+  return client;
 }

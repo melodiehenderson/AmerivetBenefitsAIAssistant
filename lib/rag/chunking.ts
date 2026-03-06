@@ -18,7 +18,7 @@
  * Architecture:
  * - Text extraction: PDF.js, Mammoth (DOCX), Cheerio (HTML)
  * - Tokenization: GPT-4 tokenizer (cl100k_base)
- * - Embedding: Azure OpenAI text-embedding-ada-002 or text-embedding-3-large
+ * - Embedding: Azure OpenAI text-embedding-3-large
  * - Storage: Azure AI Search with vector config
  */
 
@@ -356,7 +356,7 @@ export function chunkText(
  * Generate embedding for text chunk
  * 
  * TODO: Integrate Azure OpenAI Embeddings API
- * - Model: text-embedding-ada-002 (1536 dims) or text-embedding-3-large (3072 dims)
+ * - Model: text-embedding-3-large (3072 dims)
  * - Batch requests for efficiency (max 16 per batch)
  * - Handle rate limits and retries
  * 
@@ -366,13 +366,13 @@ async function generateEmbedding(text: string): Promise<number[]> {
   // TODO: Call Azure OpenAI Embeddings API
   // Example:
   // const response = await openai.embeddings.create({
-  //   model: "text-embedding-ada-002",
+  //   model: "text-embedding-3-large",
   //   input: text,
   // });
   // return response.data[0].embedding;
 
-  // Stub: Generate random 1536-dimensional vector
-  const dims = 1536;
+  // Stub: Generate random 3072-dimensional vector
+  const dims = 3072;
   const vector = new Array(dims).fill(0).map(() => Math.random() * 2 - 1);
   
   // Normalize to unit vector

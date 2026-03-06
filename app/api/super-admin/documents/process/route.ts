@@ -25,6 +25,9 @@ export const POST = requireCompanyAdmin(async (request: NextRequest) => {
     const { blobName, fileName, companyId } = await request.json();
 
     const containerClient = await getContainerClient(DOCUMENTS_CONTAINER_NAME);
+    if (!containerClient) {
+      return NextResponse.json({ error: 'Storage not available' }, { status: 503 });
+    }
     const blockBlobClient = containerClient.getBlockBlobClient(blobName);
     const downloadResponse = await blockBlobClient.download(0);
     const content = await streamToString(downloadResponse.readableStreamBody as NodeJS.ReadableStream);

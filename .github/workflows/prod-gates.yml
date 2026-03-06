@@ -1,0 +1,56 @@
+name: prod-gates
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, production ]
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install PowerShell
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y powershell
+      
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      
+      - name: Install Vercel CLI
+        run: npm install -g vercel@48
+      
+      - name: Set up Vercel scope
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: echo "Vercel configured"
+      
+      - name: Run diagnose-and-heal (diagnose only)
+        shell: pwsh
+        env:
+          AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
+          AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
+          AZURE_OPENAI_API_VERSION: 2024-02-15-preview
+          AZURE_OPENAI_EMBEDDING_DEPLOYMENT: text-embedding-3-large
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: pwsh -NoProfile -File scripts/diagnose-and-heal.ps1 -Mode Diagnose
+      
+      - name: Smoke test (must meet thresholds)
+        shell: pwsh
+        env:
+          AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
+          AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
+          AZURE_OPENAI_API_VERSION: 2024-02-15-preview
+          AZURE_OPENAI_EMBEDDING_DEPLOYMENT: text-embedding-3-large
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          pwsh -NoProfile -File scripts/diagnose-and-heal.ps1 -Mode Auto
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "Smoke test failed with exit code $LASTEXITCODE"
+            exit $LASTEXITCODE
+          }

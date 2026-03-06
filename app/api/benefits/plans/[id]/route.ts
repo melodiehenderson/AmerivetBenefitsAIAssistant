@@ -23,7 +23,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const companyId = request.headers.get('x-company-id');
 
     if (!userId || !companyId) {
-      logger.securityEvent('Unauthorized plan details request', {
+      logger.warn('Unauthorized plan details request', {
         userAgent: request.headers.get('user-agent'),
         planId: id
       });

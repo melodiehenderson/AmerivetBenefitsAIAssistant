@@ -31,7 +31,7 @@ class UserService {
   async getUserById(id: string): Promise<User | null> {
     await this.ensureInitialized();
     try {
-      const { resource } = await this.container.item(id).read<User>();
+      const { resource } = await this.container.item(id).read();
       return resource || null;
     } catch (error) {
       if ((error as any).code === 404) {
@@ -46,7 +46,7 @@ class UserService {
     await this.ensureInitialized();
     try {
       const query = 'SELECT * FROM c WHERE c.email = @email';
-      const { resources } = await this.container.items.query<User>({
+      const { resources } = await this.container.items.query({
         query,
         parameters: [{ name: '@email', value: email }]
       }).fetchAll();
@@ -112,7 +112,7 @@ class UserService {
     await this.ensureInitialized();
     try {
       const query = 'SELECT * FROM c WHERE c.companyId = @companyId AND c.isActive = true';
-      const { resources } = await this.container.items.query<User>({
+      const { resources } = await this.container.items.query({
         query,
         parameters: [{ name: '@companyId', value: companyId }]
       }).fetchAll();
@@ -127,7 +127,7 @@ class UserService {
   async listUsers(options: { companyId: string; limit?: number; offset?: number }): Promise<User[]> {
     try {
       const query = 'SELECT * FROM c WHERE c.companyId = @companyId AND c.isActive = true ORDER BY c.createdAt DESC';
-      const { resources } = await this.container.items.query<User>({
+      const { resources } = await this.container.items.query({
         query,
         parameters: [{ name: '@companyId', value: options.companyId }]
       }).fetchAll();

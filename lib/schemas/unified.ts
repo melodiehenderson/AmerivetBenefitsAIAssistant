@@ -68,17 +68,23 @@ export const userSchema = baseDocumentSchema.extend({
   
   // Benefits & Preferences
   benefitsInterests: z.array(z.string()).default([]),
-  benefitsSelections: z.record(z.any()).optional(),
+  benefitsSelections: z.record(z.string(), z.any()).optional(),
   preferences: z.object({
     notifications: z.boolean().default(true),
     language: z.string().default('en'),
     timezone: z.string().default('UTC'),
     theme: z.enum(['light', 'dark', 'auto']).default('auto'),
     chatModel: z.string().default('gpt-3.5-turbo'),
-  }).default({}),
+  }).default(() => ({
+    notifications: true,
+    language: 'en',
+    timezone: 'UTC',
+    theme: 'auto' as const,
+    chatModel: 'gpt-3.5-turbo',
+  })),
   
   // Metadata
-  metadata: z.record(z.any()).optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
 });
 
 // Unified Company Schema
@@ -112,7 +118,13 @@ export const companySchema = baseDocumentSchema.extend({
       documentUpload: z.boolean().default(true),
       benefitsComparison: z.boolean().default(true),
       adminPortal: z.boolean().default(true),
-    }).default({}),
+    }).default(() => ({
+      sso: false,
+      analytics: true,
+      documentUpload: true,
+      benefitsComparison: true,
+      adminPortal: true,
+    })),
     workday: z.object({
       tenantId: z.string().optional(),
       ssoConfig: z.object({
@@ -122,7 +134,15 @@ export const companySchema = baseDocumentSchema.extend({
         jwksUrl: z.string().optional(),
       }).optional(),
     }).optional(),
-  }).default({}),
+  }).default(() => ({
+    features: {
+      sso: false,
+      analytics: true,
+      documentUpload: true,
+      benefitsComparison: true,
+      adminPortal: true,
+    },
+  })),
   
   // Benefits data
   benefitsData: z.object({
@@ -158,7 +178,7 @@ export const companySchema = baseDocumentSchema.extend({
   }).optional(),
   
   // Metadata
-  metadata: z.record(z.any()).optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
 });
 
 // Benefit Plan Schema
@@ -193,7 +213,7 @@ export const benefitPlanSchema = baseDocumentSchema.extend({
   isActive: z.boolean().default(true),
   
   // Metadata
-  metadata: z.record(z.any()).optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
 });
 
 // Document Schema
@@ -222,7 +242,7 @@ export const documentSchema = baseDocumentSchema.extend({
   tags: z.array(z.string()).default([]),
   
   // Metadata
-  metadata: z.record(z.any()).optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
 });
 
 // Conversation Schema
@@ -237,7 +257,7 @@ export const conversationSchema = baseDocumentSchema.extend({
     role: z.enum(['user', 'assistant', 'system']),
     content: z.string(),
     timestamp: z.string().datetime(),
-    metadata: z.record(z.any()).optional(),
+    metadata: z.record(z.string(), z.any()).optional(),
   })).default([]),
   
   // Status
@@ -248,7 +268,7 @@ export const conversationSchema = baseDocumentSchema.extend({
   lastMessageAt: z.string().datetime().optional(),
   
   // Metadata
-  metadata: z.record(z.any()).optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
 });
 
 // FAQ Schema
@@ -264,7 +284,7 @@ export const faqSchema = baseDocumentSchema.extend({
   notHelpfulCount: z.number().int().min(0).default(0),
   
   // Metadata
-  metadata: z.record(z.any()).optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
 });
 
 // Type exports

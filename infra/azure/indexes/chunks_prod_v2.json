@@ -1,0 +1,31 @@
+{
+  "name": "chunks_prod_v2",
+  "fields": [
+    { "name": "id", "type": "Edm.String", "key": true, "filterable": false, "sortable": false, "facetable": false, "searchable": false },
+    { "name": "document_id", "type": "Edm.String", "filterable": true, "sortable": false, "facetable": false, "searchable": false },
+    { "name": "company_id", "type": "Edm.String", "filterable": true, "sortable": false, "facetable": false, "searchable": false },
+    { "name": "chunk_index", "type": "Edm.Int32", "filterable": true, "sortable": true, "facetable": false, "searchable": false },
+    { "name": "content", "type": "Edm.String", "searchable": true, "analyzer": "en.lucene", "filterable": false, "sortable": false, "facetable": false },
+    { "name": "metadata", "type": "Edm.String", "searchable": false, "filterable": false, "sortable": false, "facetable": false },
+    { "name": "content_vector", "type": "Collection(Edm.Single)", "searchable": false, "filterable": false, "sortable": false, "facetable": false, "dimensions": 3072, "vectorSearchProfile": "v2-hnsw" }
+  ],
+  "semantic": {
+    "configurations": [
+      {
+        "name": "default",
+        "prioritizedFields": {
+          "titleField": { "fieldName": "metadata" },
+          "contentFields": [ { "fieldName": "content" } ]
+        }
+      }
+    ]
+  },
+  "vectorSearch": {
+    "algorithms": [
+      { "name": "v2-hnsw", "kind": "hnsw", "parameters": { "m": 4, "efConstruction": 400, "efSearch": 100, "metric": "cosine" } }
+    ],
+    "profiles": [
+      { "name": "v2-hnsw", "algorithm": "v2-hnsw" }
+    ]
+  }
+}

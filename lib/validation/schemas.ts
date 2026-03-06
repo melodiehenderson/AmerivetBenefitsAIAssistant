@@ -31,7 +31,7 @@ export const createCompanySchema = z.object({
 export const updateCompanySchema = z.object({
   name: z.string().min(1, 'Company name is required').optional(),
   domain: z.string().optional(),
-  settings: z.record(z.any()).optional(),
+  settings: z.record(z.string(), z.any()).optional(),
 });
 
 // ============================================================================

@@ -30,7 +30,7 @@ const TEST_CASES: TestCase[] = [
     name: 'Simple FAQ - L1 Tier',
     request: {
       query: 'What is a PPO plan?',
-      companyId: 'test-company',
+      companyId: 'amerivet',
       userId: 'test-user-1',
     },
     expectedTier: 'L1',
@@ -39,7 +39,7 @@ const TEST_CASES: TestCase[] = [
     name: 'Moderate Comparison - L2 Tier',
     request: {
       query: 'What is the difference between PPO and HDHP plans?',
-      companyId: 'test-company',
+      companyId: 'amerivet',
       userId: 'test-user-2',
     },
     expectedTier: 'L2',
@@ -48,7 +48,7 @@ const TEST_CASES: TestCase[] = [
     name: 'Complex Calculation - L3 Tier',
     request: {
       query: 'How much will I pay for a $5000 procedure with 80% coverage and a $2000 deductible?',
-      companyId: 'test-company',
+      companyId: 'amerivet',
       userId: 'test-user-3',
     },
     expectedTier: 'L3',
@@ -57,7 +57,7 @@ const TEST_CASES: TestCase[] = [
     name: 'Cache Hit - Repeat Query',
     request: {
       query: 'What is a PPO plan?',
-      companyId: 'test-company',
+      companyId: 'amerivet',
       userId: 'test-user-1',
     },
     expectCache: true,

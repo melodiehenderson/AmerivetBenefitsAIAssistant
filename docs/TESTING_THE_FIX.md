@@ -10,9 +10,7 @@ The fix has been successfully implemented. The code now properly:
 5. ✅ **Generates embeddings** for each chunk (1536-dim vectors)
 6. ✅ **Indexes chunks into Azure AI Search** for vector retrieval
 7. ✅ Returns documentId in the ProcessingResult
-
 ## Test Results
-
 ### Integration Test Output
 ```
 📄 Testing PDF: AmeriVet_2026_Benefits_Guide.pdf (8425.03 KB)
@@ -21,13 +19,9 @@ The fix has been successfully implemented. The code now properly:
 ✅ Document stored in Cosmos DB
 ✅ RAG indexing pipeline executed
 ```
-
 **Test failures** were due to missing test environment configuration (Azure credentials), NOT code issues.
-
 ## How to Test in Production
-
 ### Method 1: Via UI
-
 1. **Login** to your Benefits AI chatbot
 2. **Navigate** to Documents section
 3. **Upload** a PDF file (e.g., benefits guide)
@@ -42,9 +36,7 @@ The fix has been successfully implemented. The code now properly:
    ```
 5. **Query** the chatbot about content from the uploaded PDF
 6. **Verify** the response includes citations from your document
-
 ### Method 2: Via API
-
 ```bash
 # 1. Upload PDF
 curl -X POST https://your-domain.com/api/documents/upload \
@@ -52,7 +44,6 @@ curl -X POST https://your-domain.com/api/documents/upload \
   -F "file=@benefits-guide.pdf" \
   -F "filename=benefits-guide.pdf" \
   -F "mimeType=application/pdf"
-
 # Response:
 # {
 #   "success": true,
@@ -61,7 +52,6 @@ curl -X POST https://your-domain.com/api/documents/upload \
 #     "processingResult": { "success": true }
 #   }
 # }
-
 # 2. Wait 5-10 seconds for indexing to complete
 
 # 3. Query the document
@@ -128,7 +118,7 @@ curl -X POST https://your-domain.com/api/qa \
 
 - **`lib/rag/chunking.ts`** - `ingestDocument()` - Sliding window chunking
 - **`lib/ai/vector-search.ts`** - `upsertDocumentChunks()` - Azure AI Search indexing
-- **`lib/ai/embeddings.ts`** - `generateEmbedding()` - OpenAI text-embedding-ada-002
+- **`lib/ai/embeddings.ts`** - `generateEmbedding()` - OpenAI text-embedding-3-large
 - **`pdf-parse`** - PDF text extraction (version 2.4.5)
 
 ## Performance Expectations

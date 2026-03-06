@@ -21,7 +21,7 @@ function createStubChunks(count: number, relevanceScore: number = 0.8): Chunk[] 
   return Array.from({ length: count }, (_, i) => ({
     id: `chunk-${i}`,
     docId: `doc-${i % 3}`, // Simulate 3 different docs
-    companyId: "test-company",
+    companyId: "",
     sectionPath: `section-${i}`,
     content: `This is test content for chunk ${i}`,
     title: `Document ${i % 3}`,

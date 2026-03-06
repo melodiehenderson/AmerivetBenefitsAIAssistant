@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url';
 import { URL } from 'node:url';
 import tsconfigPaths from 'vite-tsconfig-paths';
 
+const isWindows = process.platform === 'win32';
+
 export default defineConfig({
   plugins: [tsconfigPaths()],
   resolve: {
@@ -35,5 +37,21 @@ export default defineConfig({
     environmentOptions: { jsdom: { url: 'http://localhost' } },
     coverage: { provider: 'v8' },
     onConsoleLog: (log) => /TT: undefined function: 21/.test(log) ? false : undefined,
+    // Windows: forks pool is more reliable (threads can exit 1 despite passing)
+    pool: isWindows ? 'forks' : 'threads',
+    poolOptions: isWindows
+      ? {
+          forks: {
+            singleFork: true,
+            maxForks: 1,
+            minForks: 1,
+          },
+        }
+      : {
+          threads: {
+            maxThreads: 2,
+            minThreads: 1,
+          },
+        },
   },
 });

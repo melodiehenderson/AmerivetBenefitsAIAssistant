@@ -25,7 +25,15 @@ export async function POST(
       );
     }
 
-    const acknowledged = alertingSystem.acknowledgeAlert(alertId, acknowledgedBy);
+    const system = alertingSystem.current;
+    if (!system) {
+      return NextResponse.json(
+        { error: 'Alerting system not initialized' },
+        { status: 503 }
+      );
+    }
+
+    const acknowledged = system.acknowledgeAlert(alertId, acknowledgedBy);
     
     if (!acknowledged) {
       return NextResponse.json(

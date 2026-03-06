@@ -1,0 +1,25 @@
+{
+  "name": "chunks_prod_v1",
+  "fields": [
+    { "name": "chunk_id", "type": "Edm.String", "key": true, "searchable": false, "filterable": false, "sortable": false, "facetable": false },
+    { "name": "doc_id", "type": "Edm.String", "searchable": false, "filterable": true, "sortable": false, "facetable": true },
+    { "name": "document_id", "type": "Edm.String", "searchable": false, "filterable": false, "sortable": false, "facetable": false },
+    { "name": "company_id", "type": "Edm.String", "searchable": false, "filterable": true, "sortable": false, "facetable": true },
+    { "name": "chunk_index", "type": "Edm.Int32", "searchable": false, "filterable": true, "sortable": true, "facetable": false },
+    { "name": "content", "type": "Edm.String", "searchable": true, "filterable": false, "sortable": false, "facetable": false, "analyzer": "standard.lucene" },
+    { "name": "content_vector", "type": "Collection(Edm.Single)", "searchable": true, "retrievable": true, "dimensions": 3072, "vectorSearchProfile": "vector-profile" },
+    { "name": "metadata", "type": "Edm.String", "searchable": false, "filterable": false, "sortable": false, "facetable": false }
+  ],
+  "vectorSearch": {
+    "algorithms": [
+      {
+        "name": "hnsw-config",
+        "kind": "hnsw",
+        "hnswParameters": { "m": 4, "efConstruction": 400, "metric": "cosine" }
+      }
+    ],
+    "profiles": [
+      { "name": "vector-profile", "algorithm": "hnsw-config" }
+    ]
+  }
+}

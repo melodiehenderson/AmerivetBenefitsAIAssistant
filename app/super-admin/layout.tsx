@@ -1,35 +1,6 @@
-'use client';
+export const dynamic = 'force-dynamic';
 
-import { useAuth } from '@/context/auth-context';
-import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
-
-export default function SuperAdminLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  const { account: user, loading } = useAuth();
-  const router = useRouter();
-  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
-
-  useEffect(() => {
-    if (!loading && !user) {
-      router.push('/login');
-    } else if (user) {
-      user.getIdTokenResult().then((idTokenResult: any) => {
-        if (idTokenResult.claims.super_admin) {
-          setIsSuperAdmin(true);
-        } else {
-          router.push('/');
-        }
-      });
-    }
-  }, [user, loading, router]);
-
-  if (loading || !isSuperAdmin) {
-    return <div>Loading...</div>;
-  }
-
-  return <div>{children}</div>;
+export default function Layout({ children }: { children: React.ReactNode }) {
+  return children;
 }
+

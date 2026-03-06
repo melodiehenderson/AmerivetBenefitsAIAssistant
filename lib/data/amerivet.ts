@@ -336,35 +336,115 @@ export const amerivetBenefits2024_2025: AmerivetBenefitsCatalog = {
     },
   }),
   voluntaryPlans: [
+    // ── UNUM: Basic Life & AD&D (Employer-Paid) ─────────────────────────────
     createPlan({
       id: 'unum-basic-life',
-      name: 'Unum Basic Life',
+      name: 'Unum Basic Life & AD&D',
       provider: 'Unum',
       type: 'voluntary',
-      description: 'Employer-paid basic life insurance with optional buy-up.',
+      description: 'Employer-paid basic life and AD&D coverage — $25,000 flat benefit.',
       regionalAvailability: ['nationwide'],
       premiums: {
-        employee: { monthly: 15.75, biweekly: biweekly(15.75) },
+        employee: { monthly: 0, biweekly: 0 },          // Employer-paid
+        employer: { monthly: 15.75, biweekly: biweekly(15.75) },
       },
       tiers: {
-        employeeOnly: 15.75,
-        employeeSpouse: 24.11,
-        employeeChildren: 18.33,
-        employeeFamily: 32.48,
+        employeeOnly: 0,
+        employeeSpouse: 0,
+        employeeChildren: 0,
+        employeeFamily: 0,
       },
       benefits: {
         deductible: 0,
         outOfPocketMax: 0,
         coinsurance: 0,
-        description: 'Life and AD&D coverage with additional voluntary options.',
+        description: '$25,000 employer-paid basic life and accidental death & dismemberment.',
       },
       features: [
-        '1x salary basic life coverage',
-        'Optional supplemental coverage',
-        'Includes AD&D benefits',
+        '$25,000 flat life benefit — employer-paid',
+        'Includes Accidental Death & Dismemberment (AD&D)',
+        'All benefits-eligible employees automatically enrolled',
       ],
       limitations: [
-        'Evidence of insurability required above guaranteed issue',
+        'Coverage amount is a flat $25,000 — not salary-based',
+      ],
+      eligibility: {
+        employeeType: 'all',
+        minHours: 20,
+      },
+      voluntaryType: 'life',
+    }),
+    // ── UNUM: Voluntary Term Life ────────────────────────────────────────────
+    createPlan({
+      id: 'unum-voluntary-life',
+      name: 'Unum Voluntary Term Life',
+      provider: 'Unum',
+      type: 'voluntary',
+      description: 'Employee-paid voluntary term life insurance — age-banded rates.',
+      regionalAvailability: ['nationwide'],
+      premiums: {
+        employee: { monthly: 0, biweekly: 0 },          // Age-banded; placeholder
+      },
+      tiers: {
+        employeeOnly: 0,
+        employeeSpouse: 0,
+        employeeChildren: 0,
+        employeeFamily: 0,
+      },
+      benefits: {
+        deductible: 0,
+        outOfPocketMax: 0,
+        coinsurance: 0,
+        description: 'Voluntary term life: 1x–5x salary up to $500,000. Spouse and child coverage available.',
+      },
+      features: [
+        'Coverage: 1x to 5x annual salary (up to $500,000)',
+        'Guaranteed Issue: up to $150,000 during open enrollment',
+        'Spouse and dependent child coverage available',
+        'Portable — can continue coverage after leaving AmeriVet',
+      ],
+      limitations: [
+        'Age-banded pricing — rates increase with age',
+        'Evidence of insurability required above guaranteed issue amount',
+      ],
+      eligibility: {
+        employeeType: 'all',
+        minHours: 20,
+      },
+      voluntaryType: 'life',
+    }),
+    // ── ALLSTATE: Whole Life (Permanent) ─────────────────────────────────────
+    createPlan({
+      id: 'allstate-whole-life',
+      name: 'Allstate Whole Life',
+      provider: 'Allstate',
+      type: 'voluntary',
+      description: 'Permanent whole life insurance with cash value — rates locked at enrollment age.',
+      regionalAvailability: ['nationwide'],
+      premiums: {
+        employee: { monthly: 0, biweekly: 0 },          // Age-banded; placeholder
+      },
+      tiers: {
+        employeeOnly: 0,
+        employeeSpouse: 0,
+        employeeChildren: 0,
+        employeeFamily: 0,
+      },
+      benefits: {
+        deductible: 0,
+        outOfPocketMax: 0,
+        coinsurance: 0,
+        description: 'Permanent whole life insurance that builds cash value over time.',
+      },
+      features: [
+        'Permanent coverage — does not expire as long as premiums are paid',
+        'Builds cash value over time (tax-deferred growth)',
+        'Rates locked at your enrollment age',
+        'Portable — you keep the policy if you leave AmeriVet',
+      ],
+      limitations: [
+        'Age-banded pricing — locked at enrollment age',
+        'Higher premium than term life for equivalent face value',
       ],
       eligibility: {
         employeeType: 'all',
@@ -377,7 +457,7 @@ export const amerivetBenefits2024_2025: AmerivetBenefitsCatalog = {
     California: ['kaiser-standard-hmo'],
     Oregon: ['kaiser-standard-hmo'],
     Washington: ['kaiser-standard-hmo'],
-    nationwide: ['bcbstx-standard-hsa', 'bcbstx-enhanced-hsa', 'bcbstx-dental', 'vsp-vision-plus', 'unum-basic-life'],
+    nationwide: ['bcbstx-standard-hsa', 'bcbstx-enhanced-hsa', 'bcbstx-dental', 'vsp-vision-plus', 'unum-basic-life', 'unum-voluntary-life', 'allstate-whole-life'],
   },
   openEnrollment: {
     year: '2024-2025',
@@ -486,4 +566,98 @@ export function calculateTierMonthly(planId: string, tier: BenefitTier): number 
     return undefined;
   }
   return plan.tiers[tier];
+}
+
+// =============================================================================
+// PROMPT SERIALISER — Immutable Truth Table for LLM grounding
+// =============================================================================
+
+/**
+ * Serialises the AmeriVet benefit catalog into a compact, LLM-readable string
+ * that acts as an immutable lookup table inside the system prompt.
+ *
+ * - Only plans available in `stateCode` (or nationwide) are included.
+ * - A "NOT IN CATALOG" block lists common benefits AmeriVet does NOT offer,
+ *   giving the LLM an explicit decline list instead of hallucinating.
+ *
+ * @param stateCode  2-letter US state code (e.g. "IL"). Pass null for nationwide only.
+ */
+export function getCatalogForPrompt(stateCode?: string | null): string {
+  const catalog = amerivetBenefits2024_2025;
+  const availablePlans = getPlansByRegion(stateCode ?? 'nationwide');
+  const biw = (m: number) => `$${((m * 12) / 26).toFixed(2)}`;
+
+  const lines: string[] = [
+    `=== AMERIVET BENEFITS CATALOG (${catalog.openEnrollment.year}) — IMMUTABLE LOOKUP TABLE ===`,
+    `Respond ONLY with plans listed here. Plans not listed DO NOT EXIST for AmeriVet employees.`,
+    `NOT IN CATALOG (decline politely if asked): pet insurance, legal insurance, ID theft protection,`,
+    `  gym membership, wellness reimbursement, student loan repayment, long-term care, cancer-only plans.`,
+    '',
+    '── CARRIER LOCK (immutable — never re-assign a carrier to a different plan type) ──',
+    '  UNUM       = Basic Life & AD&D, Voluntary Term Life, Short-Term Disability, Long-Term Disability ONLY.',
+    '  ALLSTATE   = Group Whole Life (Permanent), Accident Insurance, Critical Illness ONLY.',
+    '  BCBSTX     = Medical plans (Standard HSA, Enhanced HSA) and Dental PPO ONLY.',
+    '  VSP        = Vision plan ONLY.',
+    '  KAISER     = Medical HMO — California, Oregon, Washington ONLY. NEVER mention in any other state.',
+    '  RIGHTWAY   — NOT an AmeriVet carrier. NEVER mention Rightway in any response.',
+    '',
+  ];
+
+  // ── Medical ────────────────────────────────────────────────────────────────
+  const medPlans = availablePlans.filter(p => p.type === 'medical');
+  if (medPlans.length) {
+    lines.push('── MEDICAL PLANS ──────────────────────────────────────────────────────────');
+    for (const p of medPlans) {
+      lines.push(`[${p.id}] ${p.name} | Provider: ${p.provider}`);
+      lines.push(`  Premiums: Employee $${p.tiers.employeeOnly}/mo (${biw(p.tiers.employeeOnly)}/bi-wk) | +Spouse $${p.tiers.employeeSpouse}/mo | +Child $${p.tiers.employeeChildren}/mo | Family $${p.tiers.employeeFamily}/mo`);
+      lines.push(`  Deductible: $${p.benefits.deductible} | OOP Max: $${p.benefits.outOfPocketMax} | Coinsurance: ${p.benefits.coinsurance * 100}%`);
+      lines.push(`  Key features: ${p.features.slice(0, 3).join(' | ')}`);
+      if (p.limitations.length) lines.push(`  Limitations: ${p.limitations[0]}`);
+      lines.push('');
+    }
+  }
+
+  // ── Dental ─────────────────────────────────────────────────────────────────
+  const d = catalog.dentalPlan;
+  lines.push('── DENTAL PLAN ─────────────────────────────────────────────────────────────');
+  lines.push(`[${d.id}] ${d.name} | Provider: ${d.provider}`);
+  lines.push(`  Premiums: Employee $${d.tiers.employeeOnly}/mo | +Spouse $${d.tiers.employeeSpouse}/mo | +Child $${d.tiers.employeeChildren}/mo | Family $${d.tiers.employeeFamily}/mo`);
+  lines.push(`  Deductible: $${d.benefits.deductible}/individual | Annual Max: $${d.benefits.outOfPocketMax}`);
+  lines.push(`  Key features: ${d.features.join(' | ')}`);
+  lines.push('');
+
+  // ── Vision ─────────────────────────────────────────────────────────────────
+  const v = catalog.visionPlan;
+  lines.push('── VISION PLAN ─────────────────────────────────────────────────────────────');
+  lines.push(`[${v.id}] ${v.name} | Provider: ${v.provider}`);
+  lines.push(`  Premiums: Employee $${v.tiers.employeeOnly}/mo | +Spouse $${v.tiers.employeeSpouse}/mo | +Child $${v.tiers.employeeChildren}/mo | Family $${v.tiers.employeeFamily}/mo`);
+  lines.push(`  Key features: ${v.features.join(' | ')}`);
+  lines.push('');
+
+  // ── Voluntary / Life ───────────────────────────────────────────────────────
+  const volPlans = availablePlans.filter(p => p.type === 'voluntary');
+  if (volPlans.length) {
+    lines.push('── VOLUNTARY / LIFE & DISABILITY ───────────────────────────────────────────');
+    for (const p of volPlans) {
+      lines.push(`[${p.id}] ${p.name} | Provider: ${p.provider}`);
+      lines.push(`  Premiums: Employee $${p.tiers.employeeOnly}/mo | +Spouse $${p.tiers.employeeSpouse}/mo | Family $${p.tiers.employeeFamily}/mo`);
+      lines.push(`  Key features: ${p.features.join(' | ')}`);
+      lines.push('');
+    }
+  }
+
+  // ── Special Accounts ───────────────────────────────────────────────────────
+  lines.push('── SPECIAL ACCOUNTS ────────────────────────────────────────────────────────');
+  lines.push(`HSA: Employer contributes $${catalog.specialCoverage.hsa.employerContribution}/yr`);
+  lines.push(`FSA: Employee max $${catalog.specialCoverage.fsa.maximumContribution}/yr`);
+  lines.push(`Commuter: $${catalog.specialCoverage.commuter.monthlyBenefit}/mo benefit`);
+  lines.push('');
+
+  // ── Enrollment Window ──────────────────────────────────────────────────────
+  lines.push('── ENROLLMENT WINDOW ───────────────────────────────────────────────────────');
+  lines.push(`Open: ${catalog.openEnrollment.startDate} – ${catalog.openEnrollment.endDate} | Effective: ${catalog.openEnrollment.effectiveDate}`);
+  lines.push(`Eligibility: Full-time ≥${catalog.eligibility.fullTimeHours}h/wk. Coverage ${catalog.eligibility.coverageEffective}`);
+  lines.push(`Dependents: Spouse=${catalog.eligibility.dependents.spouse} | Children: ${catalog.eligibility.dependents.children}`);
+
+  return lines.join('\n');
 }

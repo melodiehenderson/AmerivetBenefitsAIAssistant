@@ -1,305 +1,361 @@
+import { randomUUID } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { hybridLLMRouter } from '@/lib/services/hybrid-llm-router';
 
+type SessionStep = 'start' | 'awaiting_state' | 'awaiting_dept' | 'active_chat';
+
+type Session = {
+  step: SessionStep;
+  context: {
+    state?: string;
+    dept?: string;
+    lastTransitionPromptAt?: number;
+    lastRecommendationPromptAt?: number;
+  };
+  // Conversational UX state
+  turn?: number;
+  lastBotMessage?: string;
+  lastTransitionTurn?: number;
+};
+
+const sessionStore = new Map<string, Session>();
+
+// Sprint 2 & 3 content and persona configuration
+const WELCOME_MESSAGE = `**Welcome! I'm Susie, your virtual Benefits Assistant.**
+
+I'm here to help you compare plans, check eligibility, and understand your options.
+
+Warning: I am not your enrollment platform. Once you decide, I'll give you the link to complete your elections.
+
+To get started, what **state** do you live in?`;
+
+const SYSTEM_PROMPT = `
+You are Susie, a proactive Virtual Benefits Assistant for AmeriVet.
+Goal: guide employees to the right plans using the provided context and the user's state/department filters.
+
+CORE BEHAVIORS
+- Be proactive. Offer the next logical step after every answer.
+- Tone: professional, empathetic, and concise.
+- Grounding: use only provided context and user-supplied state/department. If unsure, say so and ask clarifying questions.
+
+CRITICAL PRICING RULES (Sprint 3.3)
+- Never show annual premium alone.
+- Always show Monthly first, then Annual in parentheses. Format: "$X per month ($Y annually)".
+- If data is missing, be transparent and ask for specifics.
+
+CONVERSATIONAL RULES (Sprint 2.4)
+- After covering Medical, ask: "Would you like my official recommendation, or should we look at Dental and Vision next?"
+- When the user selects a plan, confirm it and ask if they want to move to the next benefit category.
+
+SAFETY & SCOPE
+- If a question is about age-banded products (Critical Illness, Voluntary Life, Disability) and exact rates are unknown, use the age-banded safe-path guidance instead of guessing numbers.
+- Do NOT recommend plans that conflict with the user's state or department context.
+`;
+
+const AGE_BANDED_RESPONSE = `That's a great question. Plans like Critical Illness, Voluntary Life, and Disability are age-banded, so costs change by age and coverage amount.
+
+To stay 100% accurate, I won't quote a dollar amount here.
+
+Action: Please log into the Enrollment Portal to see your exact paycheck deduction based on your date of birth.
+
+Would you like the link to the portal?`;
+
+const ENROLLMENT_HANDOFF_MSG = `Ready to enroll?
+
+Great! I'm your assistant, so you'll submit elections in the official system.
+
+Go to your enrollment portal: {ENROLLMENT_PORTAL_URL}
+
+Do you want to review Dental or Vision before you head over?`;
+
+const ANCILLARY_MENU = `We can review Dental, Vision, Accident, Critical Illness, Hospital Indemnity, Life, or Disability. Which one would you like to explore next?`;
+
+const CROSS_SELL_TIP = `\n\nPro Tip: Since you're looking at an HSA/High Deductible plan, consider Accident and Critical Illness. They pay you cash to help offset the higher deductible if something happens.`;
+
+const FINAL_RECOMMENDATION_PROMPT = `Would you like my official recommendation based on what we've discussed?`;
+const TOPIC_TRANSITION_PROMPT = `Now that we've covered medical, should we move to Dental, Vision, or other benefits next?`;
+const ENROLLMENT_PORTAL_URL =
+  process.env.ENROLLMENT_PORTAL_URL
+  ?? process.env.ENROLLMENT_URL
+  ?? 'https://wd5.myworkday.com/amerivet/login.htmld';
+
 export async function POST(req: NextRequest) {
   try {
-    const { message, attachments } = await req.json();
-    
-    if (!message) {
+    const { message, attachments = [], sessionId }: { message?: string; attachments?: any[]; sessionId?: string } = await req.json();
+
+    if (!message || typeof message !== 'string') {
       return NextResponse.json({ error: 'Message is required' }, { status: 400 });
     }
 
-    const lowerMessage = message.toLowerCase();
-    const hasAttachments = attachments && attachments.length > 0;
+    const sessionKey = sessionId || req.headers.get('x-session-id') || 'demo-session';
+    const session = getOrCreateSession(sessionKey);
+    // Initialize or increment conversational turn counter
+    session.turn = (session.turn ?? 0) + 1;
+    const hasAttachments = Array.isArray(attachments) && attachments.length > 0;
 
-    // System prompt for Azure OpenAI
-    const systemPrompt = `You are an expert AmeriVet Benefits AI Assistant. You help employees understand their benefits, compare plans, and make informed decisions.
+    // Sprint 1.1: Eligibility scoping (state -> dept)
+    if (session.step === 'start') {
+      updateSession(sessionKey, { ...session, step: 'awaiting_state' });
+      return respond(WELCOME_MESSAGE, 'eligibility');
+    }
 
-**Your Knowledge Base:**
-- Kaiser Permanente HMO plans (Standard & Enhanced for Washington & Oregon)
-- HSA plans (Standard $3,500 deductible & Enhanced $2,000 deductible)
-- PPO plans with provider flexibility
-- Regional DHMO dental plans (Northern CA $500/$2K, Southern CA $2K)
-- Vision benefits through AmeriVet Partners Management
-- Voluntary benefits (Unum disability, life insurance, worksite benefits)
-- Open enrollment process and deadlines
+    if (session.step === 'awaiting_state') {
+      session.context.state = message.trim();
+      updateSession(sessionKey, { ...session, step: 'awaiting_dept' });
+      return respond('Got it. Which department or division are you in? (e.g., Sales, Operations, HQ)', 'eligibility');
+    }
 
-**Your Capabilities:**
-- Analyze benefits documents and PDFs
-- Compare plan costs and coverage
-- Explain complex benefits concepts simply
-- Provide personalized recommendations
-- Answer enrollment questions
-- Help with provider networks and coverage
+    if (session.step === 'awaiting_dept') {
+      session.context.dept = message.trim();
+      updateSession(sessionKey, { ...session, step: 'active_chat' });
+      const intro = `Thanks! I've personalized options for ${session.context.state} - ${session.context.dept}.\n\nWe can discuss Medical, Dental, Vision, or other ancillary benefits. Where would you like to start?`;
+      return respond(intro, 'eligibility');
+    }
 
-**Your Style:**
-- Be conversational and helpful, not robotic
-- Use specific examples and numbers when relevant
-- Ask follow-up questions to better understand needs
-- Provide actionable next steps
-- Be empathetic about healthcare decisions
+    // Sprint 1.2 & 1.3: Intent routing to avoid loops and unsafe costs
+    const intent = classifyIntent(message);
+    if (intent === 'age_banded_cost') {
+      return respond(AGE_BANDED_RESPONSE, 'age-banded');
+    }
+    if (intent === 'ancillary_switch') {
+      return respond(ANCILLARY_MENU, 'ancillary');
+    }
+    if (intent === 'enrollment_handoff') {
+      return respond(ENROLLMENT_HANDOFF_MSG.replace('{ENROLLMENT_PORTAL_URL}', ENROLLMENT_PORTAL_URL), 'handoff');
+    }
 
-**Document Analysis:**
-When users attach documents or ask about specific PDFs, analyze the content and provide specific insights about:
-- Plan details and coverage
-- Cost structures and savings opportunities
-- Network information
-- Key benefits and limitations
-- Recommendations based on their situation
+    // Main AI flow with system prompt + context
+    const userContextPrefix = [
+      `User State: ${session.context.state || 'unknown'}`,
+      `User Department: ${session.context.dept || 'unknown'}`,
+      hasAttachments ? `Attachments: ${attachments.map((f) => f?.name || 'file').join(', ')}` : undefined,
+    ]
+      .filter(Boolean)
+      .join('\n');
 
-Always be helpful, accurate, and focused on helping them make the best benefits decisions.`;
+    const userContent = hasAttachments
+      ? `${userContextPrefix}\nThe user provided attachments. Analyze them and answer the question.\n\nUser request: ${message}`
+      : `${userContextPrefix}\nUser request: ${message}`;
 
-    // Try Azure OpenAI first
     try {
       const aiResponse = await hybridLLMRouter.routeRequest({
         messages: [
-          { role: 'system', content: systemPrompt },
-          { 
-            role: 'user', 
-            content: hasAttachments 
-              ? `I've attached a benefits document. Please analyze it and tell me what it contains: ${message}`
-              : message
-          }
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user', content: userContent },
         ],
         model: 'gpt-4',
-        temperature: 0.7,
-        maxTokens: 2000
+        temperature: 0.6,
+        maxTokens: 1800,
       });
 
-      return NextResponse.json({
-        content: aiResponse.content,
-        source: 'azure-openai'
-      });
+      let content = (aiResponse.content || '').trim();
+
+      // Sprint 2.2: Proactive cross-sell for HSA/HDHP
+      if (isHsaDiscussion(content, message)) {
+        content += CROSS_SELL_TIP;
+      }
+
+      // Sprint 2.3: Offer official recommendation (guarded)
+      if (shouldAppendRecommendation(content, session)) {
+        content += `\n\n${FINAL_RECOMMENDATION_PROMPT}`;
+        session.context.lastRecommendationPromptAt = Date.now();
+      }
+
+      // Sprint 2.4: Proactive topic transition with state-aware gating to avoid nagging
+      if (shouldAppendTransition(content, session)) {
+        content += `\n${TOPIC_TRANSITION_PROMPT}`;
+        session.lastTransitionTurn = session.turn;
+        session.context.lastTransitionPromptAt = Date.now();
+      }
+
+      // Sprint 3.3: Ensure monthly-first pricing reminder when needed
+      content = enforceMonthlyFirstFormat(content);
+      // Additional post-processing: enforce monthly-first visibility via regex validator
+      content = validatePricingFormat(content);
+
+      // Persist last bot message for UX checks
+      session.lastBotMessage = content;
+      updateSession(sessionKey, session);
+
+      return respond(content, 'azure-openai');
     } catch (aiError) {
-      console.log('Azure OpenAI not available, using enhanced pattern matching:', aiError instanceof Error ? aiError.message : String(aiError));
-      
-      // Fallback to enhanced pattern matching
-      return getPatternMatchingResponse(lowerMessage, hasAttachments, attachments);
+      console.log(
+        'Azure OpenAI not available, using enhanced pattern matching:',
+        aiError instanceof Error ? aiError.message : String(aiError),
+      );
+      return getPatternMatchingResponse(message, hasAttachments, attachments);
     }
-
   } catch (error) {
     console.error('Error in chat-demo API:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
 
-// Enhanced pattern matching fallback
-function getPatternMatchingResponse(lowerMessage: string, hasAttachments: boolean, attachments: any[]) {
-  // Enhanced file upload handling
+function classifyIntent(message: string): 'age_banded_cost' | 'ancillary_switch' | 'enrollment_handoff' | 'general' {
+  const msg = message.toLowerCase();
+  const ageBandedKeywords = ['cost of life', 'price of critical illness', 'critical illness cost', 'disability cost', 'voluntary life cost'];
+  if (ageBandedKeywords.some((k) => msg.includes(k))) return 'age_banded_cost';
+
+  const ancillaryKeywords = ['other plans', 'anything else', 'move on', 'other benefits', 'what else'];
+  if (ancillaryKeywords.some((k) => msg.includes(k))) return 'ancillary_switch';
+
+  if (msg.includes('enroll') || msg.includes('sign up') || msg.includes('portal')) return 'enrollment_handoff';
+
+  return 'general';
+}
+
+function hasPrompt(content: string, prompt: string) {
+  return content.toLowerCase().includes(prompt.toLowerCase());
+}
+
+function shouldAppendRecommendation(content: string, session: Session): boolean {
+  if (!content.trim()) return false;
+  if (hasPrompt(content, FINAL_RECOMMENDATION_PROMPT)) return false;
+
+  const last = session.context.lastRecommendationPromptAt ?? 0;
+  return Date.now() - last > 45_000;
+}
+
+function shouldAppendTransition(content: string, session: Session): boolean {
+  const trimmed = content.trim();
+  if (!trimmed) return false;
+  if (hasPrompt(content, TOPIC_TRANSITION_PROMPT)) return false;
+
+  const normalized = trimmed.toLowerCase();
+  if (normalized.includes('enrollment portal')) return false;
+  if (trimmed.endsWith('?')) return false;
+  if ((session.lastBotMessage || '').includes('Dental, Vision')) return false;
+
+  const lastTurn = session.lastTransitionTurn ?? -Infinity;
+  const currentTurn = session.turn ?? 0;
+  if (Number.isFinite(lastTurn) && currentTurn - lastTurn < 2) return false;
+
+  const lastTimestamp = session.context.lastTransitionPromptAt ?? 0;
+  return Date.now() - lastTimestamp > 45_000;
+}
+
+function isHsaDiscussion(response: string, query: string): boolean {
+  const text = `${response} ${query}`.toLowerCase();
+  return ['hsa', 'high deductible', 'hdhp'].some((token) => text.includes(token));
+}
+
+function getOrCreateSession(sessionKey: string): Session {
+  if (!sessionStore.has(sessionKey)) {
+    sessionStore.set(sessionKey, { step: 'start', context: {} });
+  }
+  return sessionStore.get(sessionKey)!;
+}
+
+function updateSession(sessionKey: string, session: Session) {
+  sessionStore.set(sessionKey, session);
+}
+
+function respond(content: string, source: string) {
+  const message = {
+    id: randomUUID(),
+    role: 'assistant',
+    content,
+    timestamp: new Date().toISOString(),
+  };
+
+  return NextResponse.json(
+    {
+      message,
+      content,
+      source,
+    },
+    { status: 200 },
+  );
+}
+
+// Helper to reinforce monthly-first pricing presentation
+function enforceMonthlyFirstFormat(text: string): string {
+  const hasAnnually = text.toLowerCase().includes('annually');
+  const hasPerMonth = text.toLowerCase().includes('per month');
+  if (hasAnnually && !hasPerMonth) {
+    return `Reminder: Show costs as "$X per month ($Y annually)".\n\n${text}`;
+  }
+  return text;
+}
+
+// Regex-based validator to ensure monthly pricing is present when annual pricing appears
+function validatePricingFormat(text: string): string {
+  // Detect annual pricing mentions such as "$4,800/year" or "$4,800 annually"
+  const annualPriceRegex = /\$[\d,]+(?:\s*\/|\s+per\s+)?(?:year|annually)/gi;
+  if (annualPriceRegex.test(text) && !text.toLowerCase().includes('month')) {
+    // Append a disclaimer rather than attempting arithmetic in code
+    return text + '\n_(Note: Please divide annual costs by 12 for your monthly premium)_';
+  }
+  return text;
+}
+
+// Pattern-matching fallback that honors the new UX and safety rules
+function getPatternMatchingResponse(userMessage: string, hasAttachments: boolean, attachments: any[]) {
+  const lowerMessage = userMessage.toLowerCase();
+
   if (hasAttachments || lowerMessage.includes('attached') || lowerMessage.includes('pdf') || lowerMessage.includes('document')) {
     const fileName = attachments?.[0]?.name || 'your document';
-    
-    return NextResponse.json({
-      content: `**📎 Document Analysis - ${fileName}**
+    return respond(
+      `**Document Analysis - ${fileName}**
 
-I can see you've uploaded a benefits document! Let me analyze what it contains:
+I'll review your benefits document and summarize the key points:
 
-**🔍 Document Details:**
-• **File**: ${fileName}
-• **Type**: Benefits Summary/Plan Details
-• **Provider**: AmeriVet Benefits
-• **Coverage Period**: 2024-2025
+**Document Details**
+- File: ${fileName}
+- Type: Benefits summary / plan details
+- Provider: AmeriVet Benefits
+- Coverage Period: 2024-2025
 
-**📊 Key Information I Found:**
-• **Health Plans**: Kaiser Permanente HMO options (Standard & Enhanced)
-• **Dental Coverage**: Regional DHMO plans with different annual maximums
-• **Vision Benefits**: Comprehensive eye care through AmeriVet Partners
-• **Voluntary Benefits**: Disability, life insurance, and worksite benefits
+**What I Typically Look For**
+- Health Plans: Kaiser HMO options (Standard and Enhanced)
+- Dental Coverage: Regional DHMO plan options
+- Vision Benefits: Eye care and corrective lenses
+- Voluntary Benefits: Disability, life insurance, and worksite benefits
 
-**💰 Cost Structure Analysis:**
-• **Monthly Premiums**: Vary by plan selection and coverage level
-• **Copays**: Fixed amounts for different services
-• **Deductibles**: Some plans have deductibles, others are copay-based
-• **Annual Maximums**: Protection against high out-of-pocket costs
+**Cost Structure (Examples)**
+- Monthly premiums vary by plan and tier
+- Copays vs. deductibles depending on the plan
+- Annual maximums to cap out-of-pocket exposure
 
-**🎯 Plan Options Available:**
-• **Kaiser Standard HMO**: Lower premium, higher copays ($20-30)
-• **Kaiser Enhanced HMO**: Higher premium, lower copays ($0-15)
-• **HSA Plans**: High-deductible options with tax advantages
-• **PPO Plans**: Maximum provider flexibility
-
-**💡 My Recommendations:**
-Based on the document, here's what I suggest:
-
-**For Young, Healthy Individuals:**
-- Consider HSA plans for tax advantages
-- Kaiser Standard if you rarely visit doctors
-- Max out HSA contributions early in the year
-
-**For Families with Children:**
-- Kaiser Enhanced for lower copays on frequent visits
-- Check pediatric coverage and vaccination benefits
-- Consider family HSA contributions
-
-**For Regular Healthcare Users:**
-- Kaiser Enhanced for predictable costs
-- Review prescription drug coverage tiers
-- Check specialist referral requirements
-
-**❓ Questions to Help You Decide:**
-• How often do you typically visit the doctor?
-• Do you have preferred doctors or specialists?
-• What's your budget for monthly premiums?
-• Any specific health conditions or medications?
-• Do you want maximum flexibility or predictable costs?
-
-**🚀 Next Steps:**
-1. **Compare Plans**: I can help you compare specific plans side-by-side
-2. **Cost Calculator**: Calculate total annual costs for each option
-3. **Provider Search**: Find doctors in your preferred plan's network
-4. **Enrollment Help**: Guide you through the sign-up process
-
-Would you like me to dive deeper into any specific plan or help you calculate costs for your situation?`,
-      source: 'pattern-matching'
-    });
+**How I Can Help Next**
+1) Compare plans side-by-side
+2) Estimate monthly vs. annual costs
+3) Check network/provider fit
+4) Guide you to the enrollment portal when you're ready`,
+      'pattern-matching',
+    );
   }
 
-  // Enhanced HSA responses with personalized analysis
-  if (lowerMessage.includes('hsa') || lowerMessage.includes('health savings') || lowerMessage.includes('investment')) {
-    
-    // Extract user profile from message
-    const isYoung = lowerMessage.includes('28') || lowerMessage.includes('young') || lowerMessage.includes('20') || lowerMessage.includes('30');
-    const isSingle = lowerMessage.includes('single') || lowerMessage.includes('individual');
-    const isHealthy = lowerMessage.includes('healthy') || lowerMessage.includes('generally healthy');
-    const hasMedication = lowerMessage.includes('prescription') || lowerMessage.includes('medication');
-    const hasSpecificAge = lowerMessage.match(/\b(2[0-9]|3[0-9]|4[0-9]|5[0-9])\b/);
-    const age = hasSpecificAge ? parseInt(hasSpecificAge[0]) : null;
-    
-    if (isYoung && isSingle && isHealthy) {
-      return NextResponse.json({
-        content: `**🎯 YES! HSA is PERFECT for you!**
+  if (['hsa', 'health savings', 'investment'].some((k) => lowerMessage.includes(k))) {
+    return respond(
+      `**HSA Quick Guide**
 
-Based on your profile (${age ? age + ', ' : ''}single, healthy${hasMedication ? ', one monthly prescription' : ''}), you're an **ideal HSA candidate**. Here's why:
+**Why Choose HSA/HDHP**
+- Lower premiums, higher deductible
+- Triple tax advantage on contributions, growth, and qualified withdrawals
+- Good fit if you have low-to-moderate medical usage and an emergency fund
 
-**✅ Why HSA Works for You:**
-• **Young & Healthy**: Low healthcare usage = minimal out-of-pocket costs
-• **Single**: No family coverage complexity
-• **Long Investment Horizon**: 30+ years to retirement = massive growth potential
-• **Tax Benefits**: Higher savings rate due to your age and income potential
-
-**💰 Your Personalized HSA Strategy:**
-
-**Contribution Recommendation:**
-• **Max Out Annually**: $4,300 (individual limit)
-• **Monthly Target**: $358/month
-• **Tax Savings**: ~$1,290 annually (30% bracket)
-• **Start Early**: Contribute in January for maximum growth
-
-**Investment Strategy (Aggressive Growth):**
-• **60% Total Stock Market ETF** (VTI or similar)
-• **25% Small-cap Growth Funds** (VBK or similar)  
-• **10% International Emerging Markets** (VWO or similar)
-• **5% Cash** (emergency medical expenses)
-
-**Why This Allocation:**
-• You have 30+ years to retirement
-• Can handle market volatility
-• Maximizes long-term growth potential
-• Small-cap and international for diversification
-
-**📊 Your Cost Analysis:**
-
-**HSA Plan for You:**
-• Monthly Premium: $200
-• Annual Premium: $2,400
-• Deductible: $3,500 (you'll rarely hit this)
-• HSA Contribution: $4,300
-• Tax Savings: $1,290
-• **Net Annual Cost: $3,110**
-
-**Traditional Plan Alternative:**
-• Monthly Premium: $400
-• Annual Premium: $4,800
-• Copays: $25/visit + prescription costs
-• **Total Cost: $4,800+**
-
-**Your HSA Advantage:**
-• **Saves $1,690+ annually** vs traditional plan
-• **Builds $4,300+ annually** in tax-free healthcare savings
-• **Investment growth** over 30+ years = $200,000+ potential
-• **Flexibility** to use for current or future medical needs
-
-**💡 Your Action Plan:**
-1. **Choose HSA Plan**: Select qualifying high-deductible plan
-2. **Open HSA Account**: Through employer or bank (Fidelity, Vanguard)
-3. **Set Up Auto-Contributions**: $358/month to max out
-4. **Invest Aggressively**: Use the 60/25/10/5 allocation
-5. **Track Receipts**: Save all medical receipts for future withdrawals
-6. **Review Annually**: Rebalance and adjust as needed
-
-**🚀 Expected Results:**
-• **Year 1**: $4,300 in HSA + $1,290 tax savings
-• **Year 10**: $43,000+ in HSA (with growth)
-• **Year 30**: $200,000+ in tax-free healthcare savings
-• **Retirement**: Use for any purpose after 65
-
-**❓ Questions for You:**
-• What's your current income level? (affects tax savings calculation)
-• Do you have emergency savings for the $3,500 deductible?
-• Are you comfortable with investment risk for long-term growth?
-• Any specific health concerns or upcoming medical needs?
-
-This HSA strategy will save you money now AND build significant wealth for your future healthcare needs!`,
-        source: 'pattern-matching'
-      });
-    }
+**Cost Snapshot (example individual)**
+- Monthly Premium: $200
+- Annual Premium: $2,400
+- Deductible: $3,500
+- Suggested HSA contribution: $4,300/year ($358/month)
+- Always show costs as: "$X per month ($Y annually)"`
+        + CROSS_SELL_TIP,
+      'pattern-matching',
+    );
   }
 
-  // Default response
-  return NextResponse.json({
-    content: `**🤖 AmeriVet Benefits AI Assistant**
+  return respond(
+    `**AmeriVet Benefits Assistant (fallback mode)**
 
-I'm here to help you understand and navigate your AmeriVet benefits! I can assist with:
+I can help you with:
+- Plan information: Kaiser HMO, HSA/HDHP, PPO, Dental, Vision
+- Cost and coverage analysis: monthly vs. annual costs, comparisons
+- Document help: upload benefits PDFs for review
+- Enrollment guidance: steps and timelines
 
-**🎯 Plan Information:**
-• **Kaiser Permanente** - HMO plans with integrated care
-• **HSA Plans** - High-deductible plans with tax advantages  
-• **PPO Plans** - Maximum flexibility and provider choice
-• **Dental DHMO** - Regional dental coverage options
-• **Vision Benefits** - Eye care and corrective lenses
-
-**💰 Cost & Coverage Analysis:**
-• **Plan Comparisons** - Side-by-side cost and feature analysis
-• **Total Cost Calculator** - Annual healthcare cost projections
-• **Savings Opportunities** - Ways to reduce your healthcare costs
-• **Tax Benefits** - HSA and FSA optimization strategies
-• **Provider Networks** - Find doctors and specialists
-
-**📋 Document & Enrollment Help:**
-• **Benefits Analysis** - Upload and analyze your documents
-• **Enrollment Guidance** - Step-by-step sign-up process
-• **Open Enrollment** - When and how to make changes
-• **Life Events** - Coverage changes for major life events
-• **Claims Support** - Understanding your benefits
-
-**❓ Common Questions I Can Answer:**
-• "What is an HSA and how does it work?"
-• "Compare Kaiser Standard vs Enhanced plans"
-• "What's covered under dental insurance?"
-• "How do I find a doctor in my network?"
-• "What's the enrollment deadline?"
-• "How much does family coverage cost?"
-
-**💡 Pro Tips for Better Help:**
-• **Be Specific** - Share your age, family size, health usage
-• **Ask Follow-ups** - Don't hesitate to ask for more details
-• **Upload Documents** - I can analyze your benefits documents
-• **Compare Options** - I can help you compare different plans
-• **Get Personalized** - Tell me about your specific situation
-
-**🚀 Ready to Get Started?**
-
-Try asking me about:
-• Specific plans you're considering
-• Your healthcare needs and budget
-• Benefits you don't understand
-• Cost comparisons and calculations
-• Enrollment process and deadlines
-
-What would you like to know about your AmeriVet benefits?`,
-    source: 'pattern-matching'
-  });
+Tell me what you'd like to explore first. If you've selected a medical plan, I can move you to Dental, Vision, and other benefits next.`,
+    'pattern-matching',
+  );
 }

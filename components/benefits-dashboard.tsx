@@ -45,7 +45,7 @@ export function BenefitsDashboard() {
   }
 
   const getCoverageIcon = (type: string) => {
-    const icons: Record<string, JSX.Element> = {
+    const icons: Record<string, React.ReactElement> = {
       Medical: <Heart className="size-5" />,
       Dental: <Shield className="size-5" />,
       Vision: <Eye className="size-5" />,

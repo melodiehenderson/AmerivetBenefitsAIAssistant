@@ -10,10 +10,27 @@ import './globals.css';
 
 const { appUrl } = getConfig();
 
+function safeMetadataBase(): URL {
+  try {
+    const val = (appUrl || '').trim();
+    if (!val) return new URL('https://benefitsbot.com');
+    return new URL(val);
+  } catch {
+    return new URL('https://benefitsbot.com');
+  }
+}
+
 export const metadata = {
-  metadataBase: new URL(appUrl),
+  metadataBase: safeMetadataBase(),
   title: 'AmeriVet Benefits AI Assistant',
   description: 'Your personal AmeriVet benefits advisor powered by AI',
+  icons: {
+    icon: [
+      { url: '/favicon.png', type: 'image/png' },
+    ],
+    shortcut: '/favicon.png',
+    apple: '/favicon.png',
+  },
 };
 
 export const viewport = {
@@ -76,6 +93,8 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
+        <link rel="icon" href="/favicon.png" type="image/png" />
+        <link rel="shortcut icon" href="/favicon.png" type="image/png" />
         <script
           suppressHydrationWarning
           dangerouslySetInnerHTML={{

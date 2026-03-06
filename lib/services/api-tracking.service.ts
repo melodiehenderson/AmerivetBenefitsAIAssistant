@@ -34,7 +34,7 @@ export class APITrackingService {
   private apiCallsRepository: any = null;
 
   private async initializeRepository() {
-    if (this.messagesRepository || this.benefitsRepository || this.auditRepository || this.trackingRepository) return;
+    if (this.apiCallsRepository) return;
     try {
     const repositories = await getRepositories();
     this.apiCallsRepository = repositories.documents;

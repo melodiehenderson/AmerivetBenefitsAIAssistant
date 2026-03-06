@@ -21,6 +21,7 @@ interface MLPrediction {
 
 export class EmbeddingsRouter {
 
+  private openai: OpenAI | null = null;
   private embeddings: Map<string, QueryEmbedding> = new Map();
   private mlModel: any; // XGBoost model placeholder
   private isModelTrained: boolean = false;
@@ -82,7 +83,8 @@ export class EmbeddingsRouter {
         query: item.query,
         embedding: [], // Will be populated with actual embeddings
         category: item.category,
-
+        complexity: 'simple',
+        responseType: 'pattern',
         confidence: item.confidence
       });
     });
@@ -358,7 +360,8 @@ export class EmbeddingsRouter {
           query: item.query,
           embedding,
           category: item.category,
-
+          complexity: 'simple',
+          responseType: 'pattern',
           confidence: item.confidence
         });
       } catch (error) {

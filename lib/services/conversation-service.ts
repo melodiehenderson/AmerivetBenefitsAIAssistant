@@ -1,5 +1,6 @@
 import { logger } from '@/lib/logger';
 import { getClient } from '@/lib/azure/cosmos';
+import { Container } from '@azure/cosmos';
 
 export interface Message {
   id: string;
@@ -17,14 +18,21 @@ export interface Conversation {
   messages: Message[];
   createdAt: Date;
   updatedAt: Date;
+  metadata?: Record<string, any>;
 }
 
 class ConversationService {
-  private container: any = null;
+  private container: Container | null = null;
+
+  private get db(): Container {
+    if (!this.container) throw new Error('Container not initialized');
+    return this.container;
+  }
 
   private async ensureInitialized() {
     if (this.container) return;
     const client = await getClient();
+    if (!client) throw new Error('Cosmos client not available');
     this.container = client.database('BenefitsDB').container('conversations');
   }
 
@@ -39,7 +47,7 @@ class ConversationService {
       conversation.messages.push(message);
       conversation.updatedAt = new Date();
 
-      await this.container.item(conversationId).replace(conversation);
+      await this.db.item(conversationId).replace(conversation);
     } catch (error) {
       logger.error('Error adding message to conversation', { error, conversationId, messageId: message.id }, error as Error);
       throw error;
@@ -49,7 +57,7 @@ class ConversationService {
   async getConversation(conversationId: string): Promise<Conversation | null> {
     await this.ensureInitialized();
     try {
-      const { resource } = await this.container.item(conversationId).read<Conversation>();
+      const { resource } = await this.db.item(conversationId).read();
       return resource || null;
     } catch (error) {
       if ((error as any).code === 404) {
@@ -63,16 +71,17 @@ class ConversationService {
   async createConversation(userId: string, companyId: string): Promise<Conversation> {
     await this.ensureInitialized();
     try {
-      const conversation: Conversation = {
-        id: crypto.randomUUID(),
-        userId,
-        companyId,
-        messages: [],
-        createdAt: new Date(),
-        updatedAt: new Date()
-      };
+    const conversation: Conversation = {
+      id: crypto.randomUUID(),
+      userId,
+      companyId,
+      messages: [],
+      metadata: {},
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
 
-      const { resource } = await this.container.items.create(conversation);
+      const { resource } = await this.db.items.create(conversation);
       return resource!;
     } catch (error) {
       logger.error({ error, userId, companyId }, 'Error creating conversation');
@@ -84,7 +93,7 @@ class ConversationService {
     await this.ensureInitialized();
     try {
       const query = 'SELECT * FROM c WHERE c.userId = @userId AND c.companyId = @companyId ORDER BY c.updatedAt DESC';
-      const { resources } = await this.container.items.query<Conversation>({
+      const { resources } = await this.db.items.query({
         query,
         parameters: [
           { name: '@userId', value: userId },
@@ -97,6 +106,23 @@ class ConversationService {
       logger.error({ error, userId, companyId }, 'Error fetching user conversations');
       return [];
     }
+  }
+
+  async patchMetadata(conversationId: string, patch: Record<string, any>): Promise<Conversation> {
+    await this.ensureInitialized();
+    const conversation = await this.getConversation(conversationId);
+    if (!conversation) {
+      throw new Error('Conversation not found');
+    }
+
+    conversation.metadata = {
+      ...(conversation.metadata ?? {}),
+      ...patch
+    };
+    conversation.updatedAt = new Date();
+
+    const { resource } = await this.db.item(conversationId).replace(conversation);
+    return resource!;
   }
 }
 

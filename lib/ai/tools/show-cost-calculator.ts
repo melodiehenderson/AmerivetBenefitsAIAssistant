@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 export const showCostCalculator = tool({
   description:
-    'Show an interactive cost calculator for estimating healthcare expenses',
+    'Show an interactive medical plan cost comparison tool for estimating healthcare expenses',
   inputSchema: z.object({
     currentPlanType: z.string().optional().describe("User's current plan type"),
   }),

@@ -99,12 +99,12 @@ class Logger {
         console.info(logMessage, logData);
         break;
       case 'warn':
-        logger.warn(logMessage, logData);
+        console.warn(logMessage, logData);
         break;
       case 'error':
-        logger.error(logMessage, logData);
+        console.error(logMessage, logData);
         if (error) {
-          logger.error(error.stack || 'Unknown error');
+          console.error(error.stack || 'Unknown error');
         }
         break;
     }

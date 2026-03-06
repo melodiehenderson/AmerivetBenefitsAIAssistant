@@ -11,7 +11,40 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { DollarSign } from 'lucide-react';
+import { DollarSign, AlertCircle } from 'lucide-react';
+import { amerivetBenefits2024_2025, type BenefitTier } from '@/lib/data/amerivet';
+
+// Regional availability is defined by the catalog (e.g., Kaiser may be region-limited)
+
+// All US states for dropdown
+const US_STATES = [
+  { code: 'AL', name: 'Alabama' }, { code: 'AK', name: 'Alaska' }, { code: 'AZ', name: 'Arizona' },
+  { code: 'AR', name: 'Arkansas' }, { code: 'CA', name: 'California' }, { code: 'CO', name: 'Colorado' },
+  { code: 'CT', name: 'Connecticut' }, { code: 'DE', name: 'Delaware' }, { code: 'DC', name: 'District of Columbia' },
+  { code: 'FL', name: 'Florida' }, { code: 'GA', name: 'Georgia' }, { code: 'HI', name: 'Hawaii' },
+  { code: 'ID', name: 'Idaho' }, { code: 'IL', name: 'Illinois' }, { code: 'IN', name: 'Indiana' },
+  { code: 'IA', name: 'Iowa' }, { code: 'KS', name: 'Kansas' }, { code: 'KY', name: 'Kentucky' },
+  { code: 'LA', name: 'Louisiana' }, { code: 'ME', name: 'Maine' }, { code: 'MD', name: 'Maryland' },
+  { code: 'MA', name: 'Massachusetts' }, { code: 'MI', name: 'Michigan' }, { code: 'MN', name: 'Minnesota' },
+  { code: 'MS', name: 'Mississippi' }, { code: 'MO', name: 'Missouri' }, { code: 'MT', name: 'Montana' },
+  { code: 'NE', name: 'Nebraska' }, { code: 'NV', name: 'Nevada' }, { code: 'NH', name: 'New Hampshire' },
+  { code: 'NJ', name: 'New Jersey' }, { code: 'NM', name: 'New Mexico' }, { code: 'NY', name: 'New York' },
+  { code: 'NC', name: 'North Carolina' }, { code: 'ND', name: 'North Dakota' }, { code: 'OH', name: 'Ohio' },
+  { code: 'OK', name: 'Oklahoma' }, { code: 'OR', name: 'Oregon' }, { code: 'PA', name: 'Pennsylvania' },
+  { code: 'RI', name: 'Rhode Island' }, { code: 'SC', name: 'South Carolina' }, { code: 'SD', name: 'South Dakota' },
+  { code: 'TN', name: 'Tennessee' }, { code: 'TX', name: 'Texas' }, { code: 'UT', name: 'Utah' },
+  { code: 'VT', name: 'Vermont' }, { code: 'VA', name: 'Virginia' }, { code: 'WA', name: 'Washington' },
+  { code: 'WV', name: 'West Virginia' }, { code: 'WI', name: 'Wisconsin' }, { code: 'WY', name: 'Wyoming' },
+];
+
+const coverageTierToBenefitTier: Record<CoverageTier, BenefitTier> = {
+  'Employee Only': 'employeeOnly',
+  'Employee + Spouse': 'employeeSpouse',
+  'Employee + Child(ren)': 'employeeChildren',
+  'Employee + Family': 'employeeFamily',
+};
+
+type CoverageTier = 'Employee Only' | 'Employee + Spouse' | 'Employee + Child(ren)' | 'Employee + Family';
 
 interface PlanCost {
   name: string;
@@ -19,24 +52,28 @@ interface PlanCost {
   deductible: number;
   outOfPocketMax: number;
   estimatedCost: number;
+  available: boolean;
 }
 
 export function CostCalculator() {
-  const [plan, setPlan] = useState('HSA High Deductible - $250/month');
-  const [coverage, setCoverage] = useState<'Individual' | 'Family'>('Individual');
+  const [plan, setPlan] = useState(amerivetBenefits2024_2025.medicalPlans[0]?.name || 'Standard HSA');
+  const [coverage, setCoverage] = useState<CoverageTier>('Employee Only');
+  const [userState, setUserState] = useState('');
   const [doctorVisits, setDoctorVisits] = useState(0);
   const [prescriptions, setPrescriptions] = useState(0);
   const [hospitalDays, setHospitalDays] = useState(0);
   const [surgeries, setSurgeries] = useState(0);
   const [planCosts, setPlanCosts] = useState<PlanCost[]>([]);
 
-  let monthlyPremium = 300;
-  if (plan.includes('HSA')) {
-    monthlyPremium = 250;
-  } else if (plan.includes('PPO')) {
-    monthlyPremium = 400;
-  }
-  const premiumAdj = coverage === 'Family' ? 2 : 1;
+  const region = userState === 'CA' ? 'California' : 'nationwide';
+  const availablePlans = amerivetBenefits2024_2025.medicalPlans.filter((p) =>
+    p.regionalAvailability.includes('nationwide') ||
+    p.regionalAvailability.includes(region)
+  );
+
+  const isKaiserAvailable = !!availablePlans.find((p) => p.provider.toLowerCase().includes('kaiser'));
+
+  const benefitTier = coverageTierToBenefitTier[coverage];
 
   const doctorCost = doctorVisits * 150;
   const rxCost = prescriptions * 50 * 12; // monthly prescriptions -> annual
@@ -44,16 +81,19 @@ export function CostCalculator() {
   const surgeryCost = surgeries * 2000;
   const estimatedMedicalCosts = doctorCost + rxCost + hospitalCost + surgeryCost;
 
-  const plans = [
-    { name: 'HSA High Deductible', premium: monthlyPremium * 12 * premiumAdj, deductible: 3500, outOfPocketMax: 7000 },
-    { name: 'PPO Plan', premium: 4800 * premiumAdj, deductible: 1000, outOfPocketMax: 5000 },
-    { name: 'Kaiser HMO', premium: 3600 * premiumAdj, deductible: 0, outOfPocketMax: 3500 },
-  ];
+  const plans = availablePlans.map((p) => {
+    const monthly = p.tiers?.[benefitTier] ?? 0;
+    return {
+      name: p.name,
+      premium: monthly * 12, // annual premium
+      deductible: p.benefits?.deductible ?? 0,
+      outOfPocketMax: p.benefits?.outOfPocketMax ?? 0,
+      available: true,
+    };
+  });
 
   function selectedPlanName() {
-    if (plan.includes('HSA')) return 'HSA High Deductible';
-    if (plan.includes('PPO')) return 'PPO Plan';
-    return 'Kaiser HMO';
+    return plan;
   }
 
   const calculateCosts = () => {
@@ -67,7 +107,9 @@ export function CostCalculator() {
   };
 
   const selected = (() => {
-    const list = planCosts.length ? planCosts : plans.map((p) => ({ ...p, estimatedCost: p.premium + Math.min(estimatedMedicalCosts, p.outOfPocketMax) } as PlanCost));
+    const list = planCosts.length
+      ? planCosts
+      : plans.map((p) => ({ ...p, estimatedCost: p.premium + Math.min(estimatedMedicalCosts, p.outOfPocketMax) } as PlanCost));
     return list.find((p) => p.name === selectedPlanName()) || list[0];
   })();
 
@@ -81,25 +123,53 @@ export function CostCalculator() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <DollarSign className="size-5" />
-            Interactive Benefits Cost Calculator
+            Medical Plan Cost Comparison Tool
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
           {/* Selectors */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <Label>Health Plan</Label>
-              <select className="mt-1 w-full rounded border p-2" value={plan} onChange={(e) => setPlan(e.target.value)}>
-                <option>HSA High Deductible - $250/month</option>
-                <option>PPO - $400/month</option>
-                <option>Kaiser HMO - $300/month</option>
+              <Label>Your State</Label>
+              <select className="mt-1 w-full rounded border p-2" value={userState} onChange={(e) => {
+                setUserState(e.target.value);
+                // Reset plan if Kaiser selected but not available in new state
+                if (/kaiser/i.test(plan) && e.target.value !== 'CA') {
+                  setPlan(amerivetBenefits2024_2025.medicalPlans[0]?.name || 'Standard HSA');
+                }
+              }}>
+                <option value="">Select your state...</option>
+                {US_STATES.map(s => (
+                  <option key={s.code} value={s.code}>{s.name}</option>
+                ))}
               </select>
             </div>
             <div>
-              <Label>Coverage Type</Label>
-              <select className="mt-1 w-full rounded border p-2" value={coverage} onChange={(e) => setCoverage(e.target.value as any)}>
-                <option>Individual</option>
-                <option>Family</option>
+              <Label>Health Plan</Label>
+              <select className="mt-1 w-full rounded border p-2" value={plan} onChange={(e) => setPlan(e.target.value)}>
+                {availablePlans.map((p) => {
+                  const monthly = (p.tiers?.[benefitTier] ?? 0).toFixed(2);
+                  return (
+                    <option key={p.id} value={p.name}>
+                      {p.name} - ${monthly}/month
+                    </option>
+                  );
+                })}
+              </select>
+              {userState && !isKaiserAvailable && (
+                <div className="flex items-center gap-1 mt-1 text-xs text-amber-600">
+                  <AlertCircle className="size-3" />
+                  Kaiser HMO is not available in {US_STATES.find(s => s.code === userState)?.name || userState}
+                </div>
+              )}
+            </div>
+            <div>
+              <Label>Coverage Tier</Label>
+              <select className="mt-1 w-full rounded border p-2" value={coverage} onChange={(e) => setCoverage(e.target.value as CoverageTier)}>
+                <option value="Employee Only">Employee Only</option>
+                <option value="Employee + Spouse">Employee + Spouse</option>
+                <option value="Employee + Child(ren)">Employee + Child(ren)</option>
+                <option value="Employee + Family">Employee + Family</option>
               </select>
             </div>
           </div>
@@ -207,7 +277,8 @@ export function CostCalculator() {
             <div className="mt-4 flex justify-end">
               <Button
                 onClick={() => {
-                  const summary = `Please review these results and advise: Plan=${selected.name}, Monthly Premium=$${(selected.premium/12).toLocaleString()}, Estimated OOP=$${Math.min(selected.outOfPocketMax, Math.max(0, selected.estimatedCost - selected.premium)).toLocaleString()}, Total Annual Cost=$${selected.estimatedCost.toLocaleString()}. Profile: ${coverage} coverage; usage — ${doctorVisits} doctor visits, ${prescriptions} monthly prescriptions, ${hospitalDays} hospital days, ${surgeries} surgeries.`;
+                  const stateName = US_STATES.find(s => s.code === userState)?.name || userState;
+                  const summary = `Please review these results and advise: Plan=${selected.name}, Monthly Premium=$${(selected.premium/12).toLocaleString()}, Estimated OOP=$${Math.min(selected.outOfPocketMax, Math.max(0, selected.estimatedCost - selected.premium)).toLocaleString()}, Total Annual Cost=$${selected.estimatedCost.toLocaleString()}. Profile: ${coverage} coverage in ${stateName || 'unknown state'}; usage — ${doctorVisits} doctor visits, ${prescriptions} monthly prescriptions, ${hospitalDays} hospital days, ${surgeries} surgeries.`;
                   const url = `/chat?seed=${encodeURIComponent(summary)}`;
                   if (typeof window !== 'undefined') window.location.assign(url);
                 }}

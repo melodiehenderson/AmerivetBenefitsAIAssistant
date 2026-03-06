@@ -8,6 +8,12 @@ import {
 import { logger } from '@/lib/logger';
 import { getRepositories } from '@/lib/azure/cosmos';
 
+// Helper to extract items from PaginatedResult or array
+async function listAll(repo: any): Promise<any[]> {
+  const result = await repo.query({ query: 'SELECT * FROM c', parameters: [] });
+  return ((result as any).items ?? result) as any[];
+}
+
 // Base URL for the new API route
 const API_URL = '/api/super-admin/service';
 
@@ -149,35 +155,35 @@ class SuperAdminService {
       const deletionPromises = [];
 
       // Delete all users in the company
-      const users = await repositories.users.list();
+      const users = await listAll(repositories.users);
       const companyUsers = users.filter(user => user.companyId === companyId);
       for (const user of companyUsers) {
         deletionPromises.push(repositories.users.delete(user.id, companyId));
       }
 
       // Delete all documents in the company
-      const documents = await repositories.documents.list();
+      const documents = await listAll(repositories.documents);
       const companyDocuments = documents.filter(doc => doc.companyId === companyId);
       for (const doc of companyDocuments) {
         deletionPromises.push(repositories.documents.delete(doc.id, companyId));
       }
 
       // Delete all chats in the company
-      const chats = await repositories.chats.list();
+      const chats = await listAll(repositories.chats);
       const companyChats = chats.filter(chat => chat.companyId === companyId);
       for (const chat of companyChats) {
         deletionPromises.push(repositories.chats.delete(chat.id, companyId));
       }
 
       // Delete all messages in the company
-      const messages = await repositories.messages.list();
+      const messages = await listAll(repositories.messages);
       const companyMessages = messages.filter(msg => msg.companyId === companyId);
       for (const msg of companyMessages) {
         deletionPromises.push(repositories.messages.delete(msg.id, companyId));
       }
 
       // Delete all benefit plans in the company
-      const benefitPlans = await repositories.benefits.list();
+      const benefitPlans = await listAll(repositories.benefits);
       const companyBenefitPlans = benefitPlans.filter((plan: any) => plan.companyId === companyId);
       for (const plan of companyBenefitPlans) {
         deletionPromises.push(repositories.benefits.delete(plan.id, companyId));
@@ -252,7 +258,7 @@ class SuperAdminService {
 
       // Export companies if requested
       if (request.includeTypes.includes('companies')) {
-        const companies = await repositories.companies.list();
+        const companies = await listAll(repositories.companies);
         exportData.companies = companies.filter(company => 
           !request.companyId || company.id === request.companyId
         );
@@ -260,7 +266,7 @@ class SuperAdminService {
 
       // Export users if requested
       if (request.includeTypes.includes('users')) {
-        const users = await repositories.users.list();
+        const users = await listAll(repositories.users);
         exportData.users = users.filter(user => 
           !request.companyId || user.companyId === request.companyId
         );
@@ -268,7 +274,7 @@ class SuperAdminService {
 
       // Export documents if requested
       if (request.includeTypes.includes('documents')) {
-        const documents = await repositories.documents.list();
+        const documents = await listAll(repositories.documents);
         exportData.documents = documents.filter(doc => 
           !request.companyId || doc.companyId === request.companyId
         );
@@ -276,7 +282,7 @@ class SuperAdminService {
 
       // Export chats if requested
       if (request.includeTypes.includes('chats')) {
-        const chats = await repositories.chats.list();
+        const chats = await listAll(repositories.chats);
         exportData.chats = chats.filter(chat => 
           !request.companyId || chat.companyId === request.companyId
         );
@@ -284,7 +290,7 @@ class SuperAdminService {
 
       // Export messages if requested
       if (request.includeTypes.includes('messages')) {
-        const messages = await repositories.messages.list();
+        const messages = await listAll(repositories.messages);
         exportData.messages = messages.filter(msg => 
           !request.companyId || msg.companyId === request.companyId
         );

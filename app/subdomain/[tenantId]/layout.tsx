@@ -48,5 +48,12 @@ export async function generateMetadata({ params }: { params: Promise<{ tenantId:
     title: `Benefits Assistant - ${tenantId}`,
     description: 'AI-powered benefits assistant for your organization',
     robots: 'index, follow',
+    icons: {
+      icon: [
+        { url: '/favicon.png', type: 'image/png' },
+      ],
+      shortcut: '/favicon.png',
+      apple: '/favicon.png',
+    },
   };
 }

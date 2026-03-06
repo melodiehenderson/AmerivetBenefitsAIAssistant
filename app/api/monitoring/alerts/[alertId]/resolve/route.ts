@@ -16,7 +16,15 @@ export async function POST(
   try {
     const { alertId } = await params;
 
-    const resolved = alertingSystem.resolveAlert(alertId);
+    const system = alertingSystem.current;
+    if (!system) {
+      return NextResponse.json(
+        { error: 'Alerting system not initialized' },
+        { status: 503 }
+      );
+    }
+
+    const resolved = system.resolveAlert(alertId);
     
     if (!resolved) {
       return NextResponse.json(

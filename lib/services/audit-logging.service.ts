@@ -23,7 +23,7 @@ export class AuditLoggingService {
   private documentsRepository: any = null;
 
   private async initializeRepository() {
-    if (this.messagesRepository || this.benefitsRepository || this.auditRepository || this.trackingRepository) return;
+    if (this.documentsRepository) return;
     try {
     const repositories = await getRepositories();
     this.documentsRepository = repositories.documents;

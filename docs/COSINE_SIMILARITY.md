@@ -303,7 +303,7 @@ function cosineSimilarity(a: number[], b: number[]): number {
 }
 ```
 
-**For 1536-dim embeddings (text-embedding-ada-002):**
+**For 3072-dim embeddings (text-embedding-3-large):**
 - Single comparison: ~0.01ms
 - 1000 comparisons: ~10ms
 - Negligible compared to embedding generation (~50ms per text)
@@ -468,7 +468,7 @@ describe('VectorSearchService - Cosine Similarity', () => {
 ```typescript
 // WRONG - embeddings from different models aren't comparable
 const embedding1 = await openai.embeddings.create({
-  model: 'text-embedding-ada-002',  // 1536 dims
+  model: 'text-embedding-3-large',  // 3072 dims
   input: text1
 });
 

@@ -384,7 +384,7 @@ export class BenefitsService {
     region: string
   ): Promise<{ eligible: boolean; reason?: string }> {
     try {
-      const eligible = isEligibleForPlan(planId, employeeType, hoursWorked, region);
+      const eligible = isEligibleForPlan(planId, employeeType as 'full-time' | 'part-time', hoursWorked, region);
       
       let reason: string | undefined;
       if (!eligible) {

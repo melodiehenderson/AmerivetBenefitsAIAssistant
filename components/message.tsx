@@ -463,7 +463,7 @@ const PurePreviewMessage = ({
                 if (state === 'input-available') {
                   return (
                     <div key={toolCallId}>
-                      <ToolLoading message="Loading cost calculator..." />
+                      <ToolLoading message="Loading cost comparison tool..." />
                     </div>
                   );
                 }

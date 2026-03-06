@@ -27,7 +27,7 @@ export function validateBody<T>(schema: z.ZodSchema<T>) {
         const errorResponse = NextResponse.json(
           {
             error: 'Validation failed',
-            details: error.errors.map(err => ({
+            details: error.issues.map(err => ({
               field: err.path.join('.'),
               message: err.message,
               code: err.code,
@@ -68,7 +68,7 @@ export function validateQuery<T>(schema: z.ZodSchema<T>) {
         const errorResponse = NextResponse.json(
           {
             error: 'Invalid query parameters',
-            details: error.errors.map(err => ({
+            details: error.issues.map(err => ({
               field: err.path.join('.'),
               message: err.message,
               code: err.code,
@@ -106,7 +106,7 @@ export function validateParams<T>(schema: z.ZodSchema<T>) {
         const errorResponse = NextResponse.json(
           {
             error: 'Invalid URL parameters',
-            details: error.errors.map(err => ({
+            details: error.issues.map(err => ({
               field: err.path.join('.'),
               message: err.message,
               code: err.code,
@@ -229,6 +229,6 @@ export const commonValidationSchemas = {
   }),
   search: z.object({
     query: z.string().min(1, 'Search query is required'),
-    filters: z.record(z.any()).optional(),
+    filters: z.record(z.string(), z.any()).optional(),
   }),
 };

@@ -20,7 +20,7 @@ export function DataStreamHandler() {
     newDeltas.forEach((delta) => {
       const artifactDefinition = artifactDefinitions.find(
         (artifactDefinition) => artifactDefinition.kind === artifact.kind,
-      );
+      ) as any;
 
       if (artifactDefinition?.onStreamPart) {
         artifactDefinition.onStreamPart({

@@ -95,7 +95,7 @@ export class AzureAuditLoggingService {
       await this.logToLogAnalytics(auditEvent);
 
       // Log to console as fallback
-      logger.auditEvent('Audit event logged', {
+      logger.info('Audit event logged', {
         auditId: auditEvent.id,
         action: auditEvent.action,
         resourceType: auditEvent.resourceType,

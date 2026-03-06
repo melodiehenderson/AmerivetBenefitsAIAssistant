@@ -1,88 +1,103 @@
 export const dynamic = 'force-dynamic';
 
 import { type NextRequest, NextResponse } from 'next/server';
-import { protectAdminEndpoint } from '@/lib/middleware/auth';
+import { protectCompanyEndpoint } from '@/lib/middleware/auth'; // CHANGED: Allow all employees, not just admins
 import { rateLimiters } from '@/lib/middleware/rate-limit';
 import { logger } from '@/lib/logger';
 
-// GET /api/admin/embed/config - Minimal config for Workday Extend embedding
+// 1. CONFIG: Define allowed origins (Env vars + Defaults)
+const DEFAULT_ORIGINS = [
+  'https://www.workday.com', 
+  'https://impl.workday.com', 
+  'https://wd5.myworkday.com' // Example tenant
+];
+
+const ALLOWED_ORIGINS = new Set([
+  ...DEFAULT_ORIGINS,
+  ...(process.env.ALLOWED_EMBED_ORIGINS?.split(',') || [])
+]);
+
+// Helper to validate origin securely
+function getCorsHeaders(origin: string | null): Record<string, string> {
+  // If the incoming origin is in our whitelist, we allow it specifically.
+  // Otherwise, we return an empty object (block it).
+  const isAllowed = origin && Array.from(ALLOWED_ORIGINS).some(allowed => 
+    origin === allowed || origin.endsWith('.workday.com') || origin.endsWith('.myworkday.com')
+  );
+
+  if (isAllowed && origin) {
+    return {
+      'Access-Control-Allow-Origin': origin, // Reflect the specific origin
+      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Company-ID',
+      'Access-Control-Allow-Credentials': 'true', // Required for cookies/auth tokens in iframes
+    };
+  }
+  return {};
+}
+
 export async function GET(request: NextRequest) {
   const startTime = Date.now();
+  const origin = request.headers.get('origin');
   
   try {
     // Apply rate limiting
-    const rateLimitResponse = await rateLimiters.admin(request);
-    if (rateLimitResponse) {
-      return rateLimitResponse;
-    }
+    const rateLimitResponse = await rateLimiters.api(request); // Use general API limit, not Admin
+    if (rateLimitResponse) return rateLimitResponse;
 
-    // Authenticate and authorize
-    const { user, error } = await protectAdminEndpoint(request);
-    if (error || !user) {
-      return error!;
-    }
+    // 2. AUTH FIX: Use an endpoint that allows regular employees
+    const { user, error } = await protectCompanyEndpoint(request);
+    if (error || !user) return error!;
 
-    logger.info('API Request: GET /api/admin/embed/config', {
-      userId: user.id,
-      companyId: user.companyId
-    });
+    logger.info('Embed config requested', { userId: user.id, companyId: user.companyId });
 
     const duration = Date.now() - startTime;
-    
-    logger.apiResponse('GET', '/api/admin/embed/config', 200, duration, {
-      userId: user.id,
-      companyId: user.companyId
-    });
+    logger.apiResponse('GET', '/api/embed/config', 200, duration, { userId: user.id });
+
+    // 3. SECURE RESPONSE: Apply Dynamic CORS headers
+    const corsHeaders = getCorsHeaders(origin);
 
     return NextResponse.json({
       success: true,
       data: {
         embed: {
-          allowedOrigins: [
-            'https://*.workday.com',
-            'https://*.myworkday.com',
-          ],
-          csp: {
-            frameAncestors: [
-              'https://*.workday.com',
-              'https://*.myworkday.com',
-            ],
-          },
+          // Frontend can use this to validate parent window
+          validAncestors: Array.from(ALLOWED_ORIGINS),
           user: {
+            id: user.id,
             companyId: user.companyId,
-            role: user.roles[0] || 'user',
+            role: user.roles[0] || 'employee', // Default to employee
           },
+          features: {
+            enableChat: true,
+            enableUpload: user.roles.includes('admin') // Feature flags based on role
+          }
         },
       }
+    }, {
+      headers: corsHeaders
     });
+
   } catch (error) {
-    const duration = Date.now() - startTime;
-    
-    logger.error('Embed config error', {
-      path: request.nextUrl.pathname,
-      method: request.method,
-      duration
-    }, error as Error);
-    
+    logger.error('Embed config error', { path: '/api/embed/config' }, error as Error);
     return NextResponse.json(
-      { 
-        success: false,
-        error: 'Failed to get embed config' 
-      },
+      { success: false, error: 'Failed to load configuration' },
       { status: 500 }
     );
   }
 }
 
-// OPTIONS for preflight
+// 4. OPTIONS HANDLER (Strict Preflight)
 export async function OPTIONS(request: NextRequest) {
+  const origin = request.headers.get('origin');
+  const corsHeaders = getCorsHeaders(origin);
+
+  if (Object.keys(corsHeaders).length === 0) {
+    return new NextResponse(null, { status: 403 }); // Block unknown origins
+  }
+
   return new NextResponse(null, {
     status: 200,
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    },
+    headers: corsHeaders,
   });
 }
-

@@ -135,7 +135,6 @@ export async function getDocumentById(documentId: string) {
       return null;
     }
     return {
-      id: doc.id,
       ...doc,
     };
   } catch (error) {

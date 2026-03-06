@@ -153,8 +153,8 @@ export class ConversationsRepository {
       quality,
       metadata: {
         ...conversation.metadata,
-        resolved: quality.resolved,
-        escalated: quality.escalated,
+        resolved: (quality as any).resolved,
+        escalated: (quality as any).escalated,
       },
     };
 
@@ -270,7 +270,7 @@ export class ConversationsRepository {
 
     const sum = withQuality.reduce(
       (acc, c) => {
-        const q = c.quality!;
+        const q = c.quality! as any;
         return {
           responseTime: acc.responseTime + q.responseTime,
           groundingScore: acc.groundingScore + q.groundingScore,

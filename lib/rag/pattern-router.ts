@@ -1,17 +1,28 @@
 /**
  * Pattern Router - Tiered LLM Selection
  * Bootstrap Step 4: Deterministic routing logic for L1/L2/L3 tier selection
+ * 
+ * Phase 2 Integration: Model migration with A/B testing
+ * - L3: gpt-4 → gpt-4-turbo (60% cost reduction)
+ * - L2: 20% traffic to gpt-3.5-turbo (88% cost reduction)
  */
 
 import type { Tier, RoutingSignals, TierConfig } from "../../types/rag";
 import type { QueryProfile } from "./query-understanding";
 import type { Chunk } from "../../types/rag";
 import { calculateCoverage } from "./hybrid-retrieval";
+import { getModelForPhase2, shouldUseTreatmentModel } from "./model-migration";
 
 // ============================================================================
 // Tier Configuration
 // ============================================================================
 
+/**
+ * Tier configurations with Phase 2 model migration defaults
+ * - L1: gpt-4o-mini (no change)
+ * - L2: gpt-4-turbo (20% A/B test to gpt-3.5-turbo)
+ * - L3: gpt-4-turbo (migrated from gpt-4, -60% cost)
+ */
 export const TIER_CONFIGS: Record<Tier, TierConfig> = {
   L1: {
     model: process.env.AZURE_OPENAI_DEPLOYMENT_L1 || "gpt-4o-mini",
@@ -22,6 +33,7 @@ export const TIER_CONFIGS: Record<Tier, TierConfig> = {
     cacheTTL: 6 * 3600, // 6 hours
   },
   L2: {
+    // Phase 2: Control is gpt-4-turbo, treatment is gpt-3.5-turbo (20% A/B test)
     model: process.env.AZURE_OPENAI_DEPLOYMENT_L2 || "gpt-4-turbo",
     maxTokens: 2400,
     contextTokens: 1600,
@@ -30,7 +42,8 @@ export const TIER_CONFIGS: Record<Tier, TierConfig> = {
     cacheTTL: 12 * 3600, // 12 hours
   },
   L3: {
-    model: process.env.AZURE_OPENAI_DEPLOYMENT_L3 || "gpt-4",
+    // Phase 2: Migrated from gpt-4 to gpt-4-turbo (-60% cost)
+    model: process.env.AZURE_OPENAI_DEPLOYMENT_L3 || "gpt-4-turbo",
     maxTokens: 4000,
     contextTokens: 3000,
     temperature: 0.2,
@@ -221,9 +234,23 @@ export function getTierConfig(tier: Tier): TierConfig {
 
 /**
  * Get model name for tier
+ * Phase 2 Integration: Applies model migration rules (L3 downgrade + L2 A/B test)
+ * 
+ * @param tier - L1, L2, or L3
+ * @param userId - For deterministic A/B test assignment
+ * @param conversationId - For deterministic A/B test assignment
+ * @returns model name to use (respects Phase 2 migrations)
  */
-export function getModelForTier(tier: Tier): string {
-  return TIER_CONFIGS[tier].model;
+export function getModelForTier(tier: Tier, userId?: string, conversationId?: string): string {
+  // Use Phase 2 model migration logic
+  if (userId && conversationId && tier === "L2") {
+    // Deterministic A/B test assignment for L2
+    const useTreatment = shouldUseTreatmentModel(userId, conversationId, 0.20);
+    return getModelForPhase2(tier, undefined, useTreatment);
+  }
+
+  // For L1 and L3, or when no user context available
+  return getModelForPhase2(tier);
 }
 
 /**

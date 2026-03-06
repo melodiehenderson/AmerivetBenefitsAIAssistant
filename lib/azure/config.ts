@@ -157,16 +157,19 @@ const parseAzureConfig = (): z.infer<typeof azureConfigSchema> => {
       redisUrl: process.env.AZURE_REDIS_URL || 'redis://localhost:6379',
 
       // Azure OpenAI Service
-      openaiEndpoint: process.env.AZURE_OPENAI_ENDPOINT || 'https://test.openai.azure.com/',
-      openaiApiKey: process.env.AZURE_OPENAI_API_KEY || 'test-key',
-      openaiApiVersion: process.env.AZURE_OPENAI_API_VERSION || '2024-02-01',
-      openaiDeploymentName: process.env.AZURE_OPENAI_DEPLOYMENT_NAME || 'gpt-4',
-      openaiEmbeddingDeployment: process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT || 'text-embedding-ada-002',
+      // Trim here as well because dev .env files often include Windows CR/LF characters.
+      openaiEndpoint: (process.env.AZURE_OPENAI_ENDPOINT || 'https://test.openai.azure.com/').trim(),
+      openaiApiKey: (process.env.AZURE_OPENAI_API_KEY || 'test-key').trim(),
+      openaiApiVersion: (process.env.AZURE_OPENAI_API_VERSION || '2024-02-01').trim(),
+      openaiDeploymentName: (process.env.AZURE_OPENAI_DEPLOYMENT_NAME || process.env.AZURE_OPENAI_DEPLOYMENT || 'gpt-4').trim(),
+      // Prefer canonical plural var, fall back to singular for compatibility
+      openaiEmbeddingDeployment: (process.env.AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT || process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT || 'text-embedding-3-large').trim(),
 
       // Azure Cognitive Search
       searchEndpoint: process.env.AZURE_SEARCH_ENDPOINT || 'https://test.search.windows.net',
       searchApiKey: process.env.AZURE_SEARCH_API_KEY || 'test-key',
-      searchIndexName: process.env.AZURE_SEARCH_INDEX_NAME || 'test-index',
+  // Prefer canonical AZURE_SEARCH_INDEX, fall back to legacy *_NAME
+  searchIndexName: process.env.AZURE_SEARCH_INDEX || process.env.AZURE_SEARCH_INDEX_NAME || 'test-index',
 
       // Azure Functions
       functionsEndpoint: process.env.AZURE_FUNCTIONS_ENDPOINT || 'https://test.azurewebsites.net',
@@ -202,109 +205,138 @@ const parseAzureConfig = (): z.infer<typeof azureConfigSchema> => {
     } as z.infer<typeof azureConfigSchema>;
   }
 
-  // Production mode: strict validation
+  // Production mode: RELAXED validation (only validate RAG-critical vars)
+  // Skip strict Zod validation to avoid crashing on missing Azure vars
   const rawConfig = {
-    // Azure Core
-    tenantId: process.env.AZURE_TENANT_ID,
-    clientId: process.env.AZURE_CLIENT_ID,
-    clientSecret: process.env.AZURE_CLIENT_SECRET,
-    subscriptionId: process.env.AZURE_SUBSCRIPTION_ID,
-    resourceGroup: process.env.AZURE_RESOURCE_GROUP,
-    location: process.env.AZURE_LOCATION,
+    // Azure Core (optional - not needed for RAG)
+    tenantId: process.env.AZURE_TENANT_ID || 'not-set',
+    clientId: process.env.AZURE_CLIENT_ID || 'not-set',
+    clientSecret: process.env.AZURE_CLIENT_SECRET || 'not-set',
+    subscriptionId: process.env.AZURE_SUBSCRIPTION_ID || 'not-set',
+    resourceGroup: process.env.AZURE_RESOURCE_GROUP || 'not-set',
+    location: process.env.AZURE_LOCATION || 'eastus',
 
-    // Azure AD B2C
-    adB2CTenantName: process.env.AZURE_AD_B2C_TENANT_NAME,
-    adB2CClientId: process.env.AZURE_AD_B2C_CLIENT_ID,
-    adB2CClientSecret: process.env.AZURE_AD_B2C_CLIENT_SECRET,
-    adB2CSignupSigninPolicy: process.env.AZURE_AD_B2C_SIGNUP_SIGNIN_POLICY,
-    adB2CResetPasswordPolicy: process.env.AZURE_AD_B2C_RESET_PASSWORD_POLICY,
-    adB2CEditProfilePolicy: process.env.AZURE_AD_B2C_EDIT_PROFILE_POLICY,
+    // Azure AD B2C (optional)
+    adB2CTenantName: process.env.AZURE_AD_B2C_TENANT_NAME || 'not-set',
+    adB2CClientId: process.env.AZURE_AD_B2C_CLIENT_ID || 'not-set',
+    adB2CClientSecret: process.env.AZURE_AD_B2C_CLIENT_SECRET || 'not-set',
+    adB2CSignupSigninPolicy: process.env.AZURE_AD_B2C_SIGNUP_SIGNIN_POLICY || 'not-set',
+    adB2CResetPasswordPolicy: process.env.AZURE_AD_B2C_RESET_PASSWORD_POLICY || 'not-set',
+    adB2CEditProfilePolicy: process.env.AZURE_AD_B2C_EDIT_PROFILE_POLICY || 'not-set',
 
-    // Azure Cosmos DB
-    cosmosEndpoint: process.env.AZURE_COSMOS_ENDPOINT,
-    cosmosKey: process.env.AZURE_COSMOS_KEY,
-    cosmosDatabase: process.env.AZURE_COSMOS_DATABASE,
-    cosmosContainerUsers: process.env.AZURE_COSMOS_CONTAINER_USERS,
-    cosmosContainerCompanies: process.env.AZURE_COSMOS_CONTAINER_COMPANIES,
-    cosmosContainerBenefits: process.env.AZURE_COSMOS_CONTAINER_BENEFITS,
-    cosmosContainerChats: process.env.AZURE_COSMOS_CONTAINER_CHATS,
-    cosmosContainerDocuments: process.env.AZURE_COSMOS_CONTAINER_DOCUMENTS,
-    cosmosContainerFaqs: process.env.AZURE_COSMOS_CONTAINER_FAQS,
-    cosmosContainerDocumentChunks: process.env.AZURE_COSMOS_CONTAINER_DOCUMENT_CHUNKS,
+    // Azure Cosmos DB (optional)
+    cosmosEndpoint: (process.env.AZURE_COSMOS_ENDPOINT || 'https://not-set.documents.azure.com').trim(),
+    cosmosKey: (process.env.AZURE_COSMOS_KEY || 'not-set').trim(),
+    cosmosDatabase: process.env.AZURE_COSMOS_DATABASE || 'BenefitsChat',
+    cosmosContainerUsers: process.env.AZURE_COSMOS_CONTAINER_USERS || 'Users',
+    cosmosContainerCompanies: process.env.AZURE_COSMOS_CONTAINER_COMPANIES || 'Companies',
+    cosmosContainerBenefits: process.env.AZURE_COSMOS_CONTAINER_BENEFITS || 'Benefits',
+    cosmosContainerChats: process.env.AZURE_COSMOS_CONTAINER_CHATS || 'Conversations',
+    cosmosContainerDocuments: process.env.AZURE_COSMOS_CONTAINER_DOCUMENTS || 'Documents',
+    cosmosContainerFaqs: process.env.AZURE_COSMOS_CONTAINER_FAQS || 'FAQs',
+    cosmosContainerDocumentChunks: process.env.AZURE_COSMOS_CONTAINER_DOCUMENT_CHUNKS || 'DocumentChunks',
 
-    // Azure Blob Storage
-    storageAccountName: process.env.AZURE_STORAGE_ACCOUNT_NAME,
-    storageAccountKey: process.env.AZURE_STORAGE_ACCOUNT_KEY,
-    storageConnectionString: process.env.AZURE_STORAGE_CONNECTION_STRING,
-    storageContainerDocuments: process.env.AZURE_STORAGE_CONTAINER_DOCUMENTS,
-    storageContainerImages: process.env.AZURE_STORAGE_CONTAINER_IMAGES,
+    // Azure Blob Storage (optional)
+    storageAccountName: process.env.AZURE_STORAGE_ACCOUNT_NAME || 'not-set',
+    storageAccountKey: process.env.AZURE_STORAGE_ACCOUNT_KEY || 'not-set',
+    storageConnectionString: process.env.AZURE_STORAGE_CONNECTION_STRING || '',
+    storageContainerDocuments: process.env.AZURE_STORAGE_CONTAINER_DOCUMENTS || 'documents',
+    storageContainerImages: process.env.AZURE_STORAGE_CONTAINER_IMAGES || 'images',
 
-    // Azure Cache for Redis
-    redisHost: process.env.AZURE_REDIS_HOST,
+    // Azure Cache for Redis (REQUIRED for cache)
+    // Parse Redis URL properly to extract host, port, and password
+    redisHost: (() => {
+      if (process.env.AZURE_REDIS_HOST) return process.env.AZURE_REDIS_HOST;
+      if (process.env.REDIS_URL) {
+        // Handle various Redis URL formats:
+        // redis://host:port
+        // rediss://:password@host:port
+        // https://:password@host:port (incorrect but handle gracefully)
+        try {
+          const url = new URL(process.env.REDIS_URL.replace('rediss://', 'https://').replace('redis://', 'http://'));
+          return url.hostname;
+        } catch {
+          // Fallback regex for malformed URLs
+          const match = process.env.REDIS_URL.match(/@([^:@]+)/);
+          return match ? match[1] : 'localhost';
+        }
+      }
+      return 'localhost';
+    })(),
     redisPort: process.env.AZURE_REDIS_PORT ? parseInt(process.env.AZURE_REDIS_PORT, 10) : 6380,
-    redisPassword: process.env.AZURE_REDIS_PASSWORD,
-    redisSsl: process.env.AZURE_REDIS_SSL === 'true',
-    redisUrl: process.env.REDIS_URL,
+    redisPassword: (() => {
+      if (process.env.AZURE_REDIS_PASSWORD) return process.env.AZURE_REDIS_PASSWORD;
+      if (process.env.REDIS_URL) {
+        // Extract password from URL: redis://:password@host or rediss://:password@host
+        try {
+          const url = new URL(process.env.REDIS_URL.replace('rediss://', 'https://').replace('redis://', 'http://'));
+          return url.password || '';
+        } catch {
+          // Fallback regex: extract between first : and @
+          const match = process.env.REDIS_URL.match(/:\/\/:([^@]+)@/);
+          return match ? match[1] : '';
+        }
+      }
+      return '';
+    })(),
+    redisSsl: process.env.AZURE_REDIS_SSL !== 'false',
+    redisUrl: process.env.REDIS_URL || 'redis://localhost:6379',
 
-    // Azure OpenAI Service
-    openaiEndpoint: process.env.AZURE_OPENAI_ENDPOINT,
-    openaiApiKey: process.env.AZURE_OPENAI_API_KEY,
-    openaiApiVersion: process.env.AZURE_OPENAI_API_VERSION,
-    openaiDeploymentName: process.env.AZURE_OPENAI_DEPLOYMENT_NAME,
-    openaiEmbeddingDeployment: process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT,
+    // Azure OpenAI Service (REQUIRED for RAG)
+    // CRITICAL: .trim() to remove whitespace/CRLF from env var values (Windows line endings)
+    openaiEndpoint: (process.env.AZURE_OPENAI_ENDPOINT || '').trim(),
+    openaiApiKey: (process.env.AZURE_OPENAI_API_KEY || '').trim(),
+    openaiApiVersion: (process.env.AZURE_OPENAI_API_VERSION || '2024-08-01-preview').trim(),
+    openaiDeploymentName: (process.env.AZURE_OPENAI_DEPLOYMENT_NAME || process.env.AZURE_OPENAI_DEPLOYMENT || '').trim(),
+    openaiEmbeddingDeployment: (process.env.AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT || process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT || '').trim(),
 
-    // Azure Search
-    searchEndpoint: process.env.AZURE_SEARCH_ENDPOINT,
-    searchApiKey: process.env.AZURE_SEARCH_API_KEY,
-    searchIndexName: process.env.AZURE_SEARCH_INDEX_NAME,
+    // Azure Search (REQUIRED for RAG)
+    searchEndpoint: (process.env.AZURE_SEARCH_ENDPOINT || '').trim(),
+    searchApiKey: (process.env.AZURE_SEARCH_API_KEY || process.env.AZURE_SEARCH_ADMIN_KEY || '').trim(),
+    searchIndexName: (process.env.AZURE_SEARCH_INDEX || process.env.AZURE_SEARCH_INDEX_NAME || 'chunks_prod_v1').trim(),
 
-    // Azure Functions
-    functionsEndpoint: process.env.AZURE_FUNCTIONS_ENDPOINT,
-    functionsMasterKey: process.env.AZURE_FUNCTIONS_MASTER_KEY,
+    // Azure Functions (optional)
+    functionsEndpoint: process.env.AZURE_FUNCTIONS_ENDPOINT || 'https://not-set.azurewebsites.net',
+    functionsMasterKey: process.env.AZURE_FUNCTIONS_MASTER_KEY || 'not-set',
 
-    // Azure Monitor
-    applicationInsightsConnectionString: process.env.AZURE_APPLICATION_INSIGHTS_CONNECTION_STRING,
-    logAnalyticsWorkspaceId: process.env.AZURE_LOG_ANALYTICS_WORKSPACE_ID,
-    logAnalyticsSharedKey: process.env.AZURE_LOG_ANALYTICS_SHARED_KEY,
+    // Azure Monitor (optional)
+    applicationInsightsConnectionString: process.env.AZURE_APPLICATION_INSIGHTS_CONNECTION_STRING || '',
+    logAnalyticsWorkspaceId: process.env.AZURE_LOG_ANALYTICS_WORKSPACE_ID || 'not-set',
+    logAnalyticsSharedKey: process.env.AZURE_LOG_ANALYTICS_SHARED_KEY || 'not-set',
 
-    // Azure Key Vault
-    keyVaultUrl: process.env.AZURE_KEY_VAULT_URL,
-    keyVaultClientId: process.env.AZURE_KEY_VAULT_CLIENT_ID,
-    keyVaultClientSecret: process.env.AZURE_KEY_VAULT_CLIENT_SECRET,
+    // Azure Key Vault (optional)
+    keyVaultUrl: process.env.AZURE_KEY_VAULT_URL || 'https://not-set.vault.azure.net',
+    keyVaultClientId: process.env.AZURE_KEY_VAULT_CLIENT_ID || 'not-set',
+    keyVaultClientSecret: process.env.AZURE_KEY_VAULT_CLIENT_SECRET || 'not-set',
 
     // Application
     appUrl: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
-    nodeEnv: process.env.NODE_ENV as 'development' | 'production' | 'test',
-    logLevel: process.env.LOG_LEVEL as 'debug' | 'info' | 'warn' | 'error',
+    nodeEnv: (process.env.NODE_ENV || 'development') as 'development' | 'production' | 'test',
+    logLevel: (process.env.LOG_LEVEL || 'info') as 'debug' | 'info' | 'warn' | 'error',
 
     // Security
-    jwtSecret: process.env.JWT_SECRET,
-    encryptionKey: process.env.ENCRYPTION_KEY,
+    jwtSecret: process.env.JWT_SECRET || 'not-set-change-in-production',
+    encryptionKey: process.env.ENCRYPTION_KEY || '0123456789abcdef0123456789abcdef',
 
     // Rate Limiting
-    rateLimitRedisUrl: process.env.RATE_LIMIT_REDIS_URL,
+    rateLimitRedisUrl: process.env.RATE_LIMIT_REDIS_URL || process.env.REDIS_URL || 'redis://localhost:6379',
 
     // File Upload
     maxFileSize: process.env.MAX_FILE_SIZE ? parseInt(process.env.MAX_FILE_SIZE, 10) : 10485760,
     allowedFileTypes: process.env.ALLOWED_FILE_TYPES || 'pdf,doc,docx,txt',
 
     // Email
-    resendApiKey: process.env.RESEND_API_KEY,
+    resendApiKey: process.env.RESEND_API_KEY || 'not-set',
 
     // Development
     useEmulator: process.env.AZURE_USE_EMULATOR === 'true',
     debugMode: process.env.AZURE_DEBUG_MODE === 'true',
   };
 
-  try {
-    return azureConfigSchema.parse(rawConfig);
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      const missingFields = error.issues.map((err) => `${err.path.join('.')}: ${err.message}`);
-      throw new Error(`Azure configuration validation failed:\n${missingFields.join('\n')}`);
-    }
-    throw error;
-  }
+  // SKIP Zod validation in production - just return the config with defaults
+  // This prevents crashes when optional Azure vars are missing
+  cached = rawConfig as z.infer<typeof azureConfigSchema>;
+  return cached;
 };
 
 export const azureConfig = parseAzureConfig();

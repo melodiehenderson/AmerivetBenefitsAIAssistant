@@ -1,21 +1,28 @@
 // lib/ai/vector-search.ts
 
-import type { SearchClient } from '@azure/search-documents';
 import { isBuild } from '@/lib/runtime/is-build';
 import { DISABLE_AZURE } from '@/lib/runtime/feature-flags';
 import { getContainer } from '@/lib/azure/cosmos-db';
 import { generateEmbedding, generateEmbeddings } from './embeddings';
 import { isVitest, isNodeRuntime } from '@/lib/ai/runtime';
 
-let searchClient: SearchClient<any> | null = null;
+const VECTOR_FIELD = process.env.AZURE_SEARCH_VECTOR_FIELD || 'content_vector';
+const COMPANY_FIELD = process.env.AZURE_SEARCH_COMPANY_FIELD || 'company_id';
+const DOCUMENT_FIELD = process.env.AZURE_SEARCH_DOCUMENT_FIELD || 'document_id';
+const CONTENT_FIELD = process.env.AZURE_SEARCH_CONTENT_FIELD || 'content';
 
-async function ensureInitialized() {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let searchClient: any = null;
+
+const sanitizeFilterValue = (value: string) => value.replace(/'/g, "''");
+
+async function ensureInitialized(): Promise<any> {
   if (isBuild || DISABLE_AZURE) return null;
   if (searchClient) return searchClient;
   if (!isNodeRuntime && !isVitest) throw new Error('Server-only module');
 
   const endpoint = process.env.AZURE_SEARCH_ENDPOINT;
-  const apiKey = process.env.AZURE_SEARCH_API_KEY;
+  const apiKey = process.env.AZURE_SEARCH_API_KEY || process.env.AZURE_SEARCH_ADMIN_KEY;
   const indexName = process.env.AZURE_SEARCH_INDEX_NAME || 'document-chunks';
 
   if (!endpoint || !apiKey) {
@@ -30,16 +37,27 @@ async function ensureInitialized() {
 
 class VectorSearchService {
   async upsertChunks(
-    chunks: { id: string; embedding: number[]; companyId: string }[],
+    chunks: {
+      id: string;
+      embedding: number[];
+      companyId: string;
+      documentId?: string;
+      content?: string;
+      metadata?: Record<string, unknown>;
+    }[],
   ) {
     const client = await ensureInitialized();
     if (!client) return;
-    const docs = chunks.map((c) => ({
+    const docs = chunks.map((c, idx) => ({
       id: c.id,
-      embedding: c.embedding,
-      companyId: c.companyId,
+      [VECTOR_FIELD]: c.embedding,
+      [COMPANY_FIELD]: c.companyId,
+      [DOCUMENT_FIELD]: c.documentId,
+      [CONTENT_FIELD]: c.content ?? '',
+      chunk_index: idx,
+      metadata: c.metadata ? JSON.stringify(c.metadata) : undefined,
     }));
-    await client.mergeOrUploadDocuments(docs);
+    await client.mergeOrUploadDocuments(docs as any);
   }
 
   async upsertDocumentChunks(
@@ -83,13 +101,22 @@ class VectorSearchService {
         }
       }
 
-      const docs = chunks.map((chunk, i) => ({
-        id: chunk.id,
-        companyId,
-        documentId: chunk.metadata.documentId,
-        content: chunk.text,
-        embedding: embeddings[i],
-      }));
+      const docs = chunks.map((chunk, i) => {
+        const metadata = {
+          ...chunk.metadata,
+          companyId,
+          documentId: chunk.metadata.documentId,
+        };
+        return {
+          id: chunk.id,
+          [COMPANY_FIELD]: companyId,
+          [DOCUMENT_FIELD]: chunk.metadata.documentId,
+          [CONTENT_FIELD]: chunk.text,
+          [VECTOR_FIELD]: embeddings[i],
+          chunk_index: i,
+          metadata: JSON.stringify(metadata),
+        };
+      });
       await searchClient!.mergeOrUploadDocuments(docs as any);
       return docs.length;
     } catch (error) {
@@ -113,24 +140,34 @@ class VectorSearchService {
     await ensureInitialized();
     const vectorQuery = {
       kind: 'vector',
-      fields: ['embedding'],
+      fields: [VECTOR_FIELD],
       kNearestNeighborsCount: numNeighbors,
       vector: queryEmbedding,
     } as const;
+
+    const filter = `${COMPANY_FIELD} eq '${sanitizeFilterValue(companyId)}'`;
 
     const results = await searchClient!.search('', {
       vectorSearchOptions: {
         queries: [vectorQuery],
       },
-      filter: `companyId eq '${companyId}'`,
-      select: ['id', 'companyId', 'documentId', 'content'],
+      filter,
+      select: ['id', COMPANY_FIELD, DOCUMENT_FIELD, CONTENT_FIELD, 'metadata'],
       top: numNeighbors,
     });
 
     const items: { chunk: any; score: number }[] = [];
     for await (const res of results.results) {
+      const doc: any = res.document;
+      const chunk = {
+        id: doc.id,
+        companyId: doc[COMPANY_FIELD] ?? doc.companyId ?? doc.company_id,
+        documentId: doc[DOCUMENT_FIELD] ?? doc.documentId ?? doc.document_id,
+        content: doc[CONTENT_FIELD] ?? doc.content ?? '',
+        metadata: doc.metadata,
+      };
       items.push({
-        chunk: res.document,
+        chunk,
         score: res.score,
       });
     }
@@ -173,10 +210,14 @@ export async function upsertDocumentChunks(
     // Upsert embeddings to Azure AI Search in batches of 100
     let upserted = 0;
     for (let i = 0; i < chunks.length; i += 100) {
-      const slice = chunks.slice(i, i + 100).map((chunk) => ({
+      const slice = chunks.slice(i, i + 100).map((chunk, idx) => ({
         id: chunk.id,
         embedding: chunk.embedding,
         companyId,
+        documentId: (chunk.metadata as any)?.documentId,
+        content: chunk.text,
+        metadata: chunk.metadata,
+        chunk_index: i + idx,
       }));
       if (slice.length > 0) {
         await vectorSearchService.upsertChunks(slice);

@@ -28,8 +28,8 @@ export const DEFAULT_CHAT_MODEL = chatModels[0].id;
 export const chatModelMap = Object.fromEntries(chatModels.map(m => [m.id, m]));
 
 export const embeddingModels = {
-  'text-embedding-ada-002': {
-    name: 'Text Embedding Ada 002',
+  'text-embedding-3-large': {
+    name: 'Text Embedding 3 Large',
     dimensions: 1536,
     costPerToken: 0.0000001
   }

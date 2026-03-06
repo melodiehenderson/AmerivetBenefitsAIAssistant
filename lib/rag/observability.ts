@@ -30,8 +30,8 @@ import type { Tier, QAMetrics } from '../../types/rag';
 
 const METRICS_FLUSH_INTERVAL = 60000; // Flush metrics every 60 seconds
 const ENABLE_CONSOLE_LOGGING = true;
-const ENABLE_APP_INSIGHTS = false; // Enable when Azure Application Insights configured
-
+ // Enable when Azure Application Insights configured
+const ENABLE_APP_INSIGHTS = process.env.ENABLE_APP_INSIGHTS === 'true' || process.env.NEXT_PUBLIC_ENVIRONMENT === 'production'
 // Token pricing (per 1M tokens) - Update with current Azure OpenAI pricing
 const TOKEN_PRICING = {
   L1: {
@@ -338,6 +338,106 @@ class MetricsCollector {
       this.flushTimer = null;
     }
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Cache Metrics Tracking (Phase 1 & 2 Implementation)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface CacheMetricsData {
+  l0Hits: number;
+  l0Misses: number;
+  l1Hits: number;
+  l1Misses: number;
+  clusterHits: number;
+  warmupHits: number;
+  totalRequests: number;
+}
+
+let cacheMetricsData: CacheMetricsData = {
+  l0Hits: 0,
+  l0Misses: 0,
+  l1Hits: 0,
+  l1Misses: 0,
+  clusterHits: 0,
+  warmupHits: 0,
+  totalRequests: 0,
+};
+
+/**
+ * Track cache hit by type
+ * Called after each cache lookup result
+ */
+export function trackCacheHit(
+  type: "l0" | "l1" | "cluster" | "warmup" | "miss"
+): void {
+  cacheMetricsData.totalRequests++;
+
+  switch (type) {
+    case "l0":
+      cacheMetricsData.l0Hits++;
+      break;
+    case "l1":
+      cacheMetricsData.l1Hits++;
+      break;
+    case "cluster":
+      cacheMetricsData.clusterHits++;
+      break;
+    case "warmup":
+      cacheMetricsData.warmupHits++;
+      break;
+    case "miss":
+      cacheMetricsData.l0Misses++;
+      break;
+  }
+
+  const totalHits =
+    cacheMetricsData.l0Hits +
+    cacheMetricsData.l1Hits +
+    cacheMetricsData.clusterHits +
+    cacheMetricsData.warmupHits;
+  const hitRate = (totalHits / Math.max(cacheMetricsData.totalRequests, 1)) * 100;
+
+  // Log periodically (every 100 requests)
+  if (cacheMetricsData.totalRequests % 100 === 0) {
+    console.log(
+      `[Cache Metrics] L0: ${cacheMetricsData.l0Hits}, L1: ${cacheMetricsData.l1Hits}, ` +
+        `Cluster: ${cacheMetricsData.clusterHits}, Warmup: ${cacheMetricsData.warmupHits}, ` +
+        `Hit Rate: ${hitRate.toFixed(1)}%`
+    );
+  }
+}
+
+/**
+ * Get current cache metrics
+ */
+export function getCacheMetrics(): CacheMetricsData & { hitRate: number } {
+  const totalHits =
+    cacheMetricsData.l0Hits +
+    cacheMetricsData.l1Hits +
+    cacheMetricsData.clusterHits +
+    cacheMetricsData.warmupHits;
+  const hitRate = (totalHits / Math.max(cacheMetricsData.totalRequests, 1)) * 100;
+
+  return {
+    ...cacheMetricsData,
+    hitRate,
+  };
+}
+
+/**
+ * Reset cache metrics
+ */
+export function resetCacheMetrics(): void {
+  cacheMetricsData = {
+    l0Hits: 0,
+    l0Misses: 0,
+    l1Hits: 0,
+    l1Misses: 0,
+    clusterHits: 0,
+    warmupHits: 0,
+    totalRequests: 0,
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

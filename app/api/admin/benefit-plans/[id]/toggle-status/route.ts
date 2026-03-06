@@ -2,11 +2,8 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 import { type NextRequest, NextResponse } from 'next/server';
-import { protectAdminEndpoint } from '@/lib/middleware/auth';
-import { rateLimiters } from '@/lib/middleware/rate-limit';
-import { logger } from '@/lib/logging/logger';
-import { benefitService } from '@/lib/services/benefit-service';
 import { z } from 'zod';
+import { isBuild } from '@/lib/runtime/is-build';
 
 interface RouteParams {
   params: Promise<{
@@ -20,6 +17,13 @@ const toggleStatusSchema = z.object({
 
 // PATCH /api/admin/benefit-plans/[id]/toggle-status - Toggle benefit plan status
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
+  if (isBuild) {
+    return NextResponse.json({ message: 'Build-time placeholder' }, { status: 503 });
+  }
+  const { rateLimiters } = await import('@/lib/middleware/rate-limit');
+  const { protectAdminEndpoint } = await import('@/lib/middleware/auth');
+  const { logger } = await import('@/lib/logging/logger');
+  const { benefitService } = await import('@/lib/services/benefit-service');
   const startTime = Date.now();
   const { id: planId } = await params;
   
@@ -90,7 +94,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         { 
           success: false,
           error: 'Invalid data format', 
-          details: error.errors 
+          details: error.issues 
         },
         { status: 400 }
       );

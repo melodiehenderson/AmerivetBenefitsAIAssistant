@@ -1,5 +1,5 @@
 import { getRepositories } from '@/lib/azure/cosmos';
-import { logger } from '@/lib/logger';
+import { logger, log } from '@/lib/logger';
 import { apiTrackingService } from './api-tracking.service';
 import { benefitService } from './benefit-service';
 
@@ -252,12 +252,12 @@ class AnalyticsService {
     try {
       const repositories = await getRepositories();
       
-      // Get basic counts
+      // Get basic counts using .list() for CosmosRepository and .queryAll() for DocumentRepository
       const [users, companies, conversations, documents, totalBenefitPlans] = await Promise.all([
         repositories.users.list(),
         repositories.companies.list(),
         repositories.chats.list(),
-        repositories.documents.list(),
+        repositories.documents.queryAll('SELECT * FROM c'),
         benefitService.getTotalBenefitPlansCount()
       ]);
 
@@ -334,13 +334,13 @@ class AnalyticsService {
       // Get active employees (last 30 days)
       const activeEmployees = await this.getActiveUsersCount(repositories, 30);
 
-      // Get company documents
-      const companyDocuments = await repositories.documents.query({
-        query: 'SELECT * FROM c WHERE c.companyId = @companyId',
+      // Get company documents count (performance optimization: use COUNT query instead of fetching all documents)
+      const documentsResult = await repositories.documents.query({
+        query: 'SELECT COUNT(1) as count FROM c WHERE c.companyId = @companyId',
         parameters: [{ name: 'companyId', value: companyId }]
       });
 
-      const documentsCount = companyDocuments.length;
+      const documentsCount = Array.isArray(documentsResult) ? (documentsResult[0]?.count || 0) : 0;
 
       // Get company conversations
       const companyConversations = await repositories.chats.query({
@@ -384,7 +384,7 @@ class AnalyticsService {
         satisfactionRate
       };
     } catch (error) {
-      logger.error('Error fetching company analytics', error, { companyId });
+      log.error('Error fetching company analytics', error as Error, {  companyId  });
       throw error;
     }
   }
@@ -394,7 +394,7 @@ class AnalyticsService {
       const repositories = await getRepositories();
       
       let usersQuery = 'SELECT * FROM c';
-      let parameters: any[] = [];
+      const parameters: any[] = [];
       
       if (companyId) {
         usersQuery += ' WHERE c.companyId = @companyId';
@@ -441,7 +441,7 @@ class AnalyticsService {
 
       return activities;
     } catch (error) {
-      logger.error('Error fetching user activity', error, { companyId });
+      log.error('Error fetching user activity', error as Error, {  companyId  });
       throw error;
     }
   }
@@ -451,7 +451,7 @@ class AnalyticsService {
       const repositories = await getRepositories();
       
       let conversationsQuery = 'SELECT * FROM c';
-      let parameters: any[] = [];
+      const parameters: any[] = [];
       
       if (companyId) {
         conversationsQuery += ' WHERE c.companyId = @companyId';
@@ -528,7 +528,7 @@ class AnalyticsService {
         costPerChat
       };
     } catch (error) {
-      logger.error('Error fetching chat analytics', error, { companyId });
+      log.error('Error fetching chat analytics', error as Error, {  companyId  });
       throw error;
     }
   }
@@ -554,7 +554,7 @@ class AnalyticsService {
 
       return chats.length;
     } catch (error) {
-      logger.error('Error getting monthly chats', error, { companyId });
+      log.error('Error getting monthly chats', error as Error, {  companyId  });
       return 0;
     }
   }
@@ -611,3 +611,5 @@ class AnalyticsService {
 
 export const analyticsService = new AnalyticsService();
 export { AnalyticsService };
+
+

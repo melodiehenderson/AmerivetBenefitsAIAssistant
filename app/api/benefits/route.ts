@@ -29,7 +29,7 @@ export const GET = requireCompanyAdmin(async (request: NextRequest) => {
     const companyId = request.headers.get('x-company-id');
 
     if (!userId || !companyId) {
-      logger.securityEvent('Unauthorized benefits request', {
+      logger.warn('Unauthorized benefits request', {
         userAgent: request.headers.get('user-agent'),
       });
       return new NextResponse('Unauthorized', { status: 401 });

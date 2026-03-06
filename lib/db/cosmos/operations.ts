@@ -57,9 +57,7 @@ export class CosmosOperations {
     partitionKey: string
   ): Promise<T> {
     try {
-      const { resource } = await container.items.create(document, {
-        partitionKey,
-      });
+      const { resource } = await container.items.create(document);
       return resource as T;
     } catch (error) {
       console.error('Cosmos create error:', error);
@@ -103,7 +101,7 @@ export class CosmosOperations {
         { ...document, id },
         etag ? { accessCondition: { type: 'IfMatch', condition: etag } } : undefined
       );
-      return resource as T;
+      return resource as unknown as T;
     } catch (error: any) {
       if (error.code === 412) {
         throw new Error('Document was modified by another process. Please retry.');
@@ -185,11 +183,12 @@ export class CosmosOperations {
         partitionKey,
       }));
 
-      const { result } = await container.items.bulk(operations);
+      const bulkResult = await container.items.bulk(operations as any);
+      const responses = Array.isArray(bulkResult) ? bulkResult : (bulkResult as any).result ?? [];
       
-      return result
-        .filter((r) => r.statusCode >= 200 && r.statusCode < 300)
-        .map((r) => r.resourceBody as T);
+      return responses
+        .filter((r: any) => r.statusCode >= 200 && r.statusCode < 300)
+        .map((r: any) => r.resourceBody as T);
     } catch (error) {
       console.error('Cosmos bulk create error:', error);
       throw new Error(`Failed to bulk create documents: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -230,10 +229,8 @@ export class CosmosOperations {
     partitionKey: string
   ): Promise<T> {
     try {
-      const { resource } = await container.items.upsert(document, {
-        partitionKey,
-      });
-      return resource as T;
+      const { resource } = await container.items.upsert(document);
+      return resource as unknown as T;
     } catch (error) {
       console.error('Cosmos upsert error:', error);
       throw new Error(`Failed to upsert document: ${error instanceof Error ? error.message : 'Unknown error'}`);

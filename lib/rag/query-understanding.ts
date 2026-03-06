@@ -32,14 +32,12 @@ export type IntentType =
   | "procedure"       // How-to/process question
   | "definition"      // Term definition
   | "unknown";        // Cannot determine
-
 export interface Entity {
   type: EntityType;
   value: string;
   confidence: number;
   span: [number, number];
 }
-
 export type EntityType =
   | "benefit_type"    // "dental", "vision", "401k"
   | "plan_name"       // "PPO", "HMO", "HDHP"
@@ -70,11 +68,9 @@ export function normalizeQuery(query: string): string {
     .normalize("NFKC")
     .replace(/[^\w\s\-?.,()%$]/g, "");
 }
-
 // ============================================================================
 // Intent Detection
 // ============================================================================
-
 /**
  * Detect user intent from query patterns
  * Uses heuristic rules based on keywords and structure
@@ -87,7 +83,10 @@ export function detectIntent(query: string): IntentType {
     /^what is\b/.test(normalized) ||
     /^define\b/.test(normalized) ||
     /\bmeaning of\b/.test(normalized) ||
-    /^explain\b/.test(normalized)
+    /^explain\b/.test(normalized) ||
+    /^tell me about\b/.test(normalized) ||
+    /^what are\b/.test(normalized) ||
+    /^what's\b/.test(normalized)
   ) {
     return "definition";
   }
@@ -96,13 +95,69 @@ export function detectIntent(query: string): IntentType {
   if (
     /\bcompare\b/.test(normalized) ||
     /\bdifference between\b/.test(normalized) ||
+    /\bdifference\b/.test(normalized) ||
     /\bversus\b/.test(normalized) ||
     /\bvs\.?\b/.test(normalized) ||
+    /\bbetter\b/.test(normalized) ||
+    /\bwhich (one|plan|option)\b/.test(normalized) ||
+    /\bshould i (choose|pick|select)\b/.test(normalized) ||
     /\bor\b.*\bor\b/.test(normalized) // "A or B or C"
   ) {
     return "compare";
   }
-
+  
+  // Calculation intent: money, costs, math
+  if (
+    /\bhow much\b/.test(normalized) ||
+    /\bcost\b/.test(normalized) ||
+    /\bprice\b/.test(normalized) ||
+    /\bpremium\b/.test(normalized) ||
+    /\bsave\b/.test(normalized) ||
+    /\bspend\b/.test(normalized) ||
+    /\bcalculate\b/.test(normalized) ||
+    /\bestimate\b/.test(normalized) ||
+    /\$\d+/.test(normalized) ||
+    /\bdeductible\b/.test(normalized) ||
+    /\bout.of.pocket\b/.test(normalized)
+  ) {
+    return "calculate";
+  }
+  
+  // Eligibility intent: enrollment, qualify
+  if (
+    /\beligible\b/.test(normalized) ||
+    /\bqualify\b/.test(normalized) ||
+    /\benroll\b/.test(normalized) ||
+    /\bsign up\b/.test(normalized) ||
+    /\bregister\b/.test(normalized) ||
+    /\bcan i\b/.test(normalized) ||
+    /\bam i (covered|allowed)\b/.test(normalized) ||
+    /\bdependent\b/.test(normalized) ||
+    /\bwaiting period\b/.test(normalized)
+  ) {
+    return "eligibility";
+  }
+  // Procedure intent: how-to, process
+  if (
+    /^how (do|can|to)\b/.test(normalized) ||
+    /\bsteps? (to|for)\b/.test(normalized) ||
+    /\bprocess (of|for)\b/.test(normalized) ||
+    /\bprocedure\b/.test(normalized) ||
+    /\bwhat (do|should) i do\b/.test(normalized) ||
+    /\bwhere do i\b/.test(normalized) ||
+    /\bwhen (do|can) i\b/.test(normalized)
+  ) {
+    return "procedure";
+  }
+  // Lookup intent: simple info retrieval
+  if (
+    /^what\b/.test(normalized) ||
+    /^is there\b/.test(normalized) ||
+    /^do (we|you) (have|offer|provide)\b/.test(normalized) ||
+    /\b(include|cover|available)\b/.test(normalized)
+  ) {
+    return "lookup";
+  }
   // Calculation intent: "how much", "cost", "calculate", numbers + operators
   if (
     /\bhow much\b/.test(normalized) ||
@@ -113,7 +168,6 @@ export function detectIntent(query: string): IntentType {
   ) {
     return "calculate";
   }
-
   // Eligibility intent: "eligible", "qualify", "enroll", "can I"
   if (
     /\beligible\b/.test(normalized) ||
@@ -223,11 +277,9 @@ export function detectEntities(query: string): Entity[] {
 
   return entities;
 }
-
 // ============================================================================
 // Complexity Scoring
 // ============================================================================
-
 /**
  * Compute query complexity score (0-1)
  * Based on multiple signals:
@@ -240,28 +292,24 @@ export function detectEntities(query: string): Entity[] {
 export function computeComplexity(query: string, entities: Entity[]): number {
   let score = 0;
   const normalized = query.toLowerCase();
-
   // Length factor (0-0.2)
   const charCount = query.length;
   if (charCount > 200) score += 0.2;
   else if (charCount > 100) score += 0.15;
   else if (charCount > 50) score += 0.1;
   else score += 0.05;
-
   // Entity count (0-0.2)
   const entityCount = entities.length;
   if (entityCount > 5) score += 0.2;
   else if (entityCount > 3) score += 0.15;
   else if (entityCount > 1) score += 0.1;
   else score += 0.05;
-
   // Logical operators (0-0.2)
   const hasAnd = /\band\b/.test(normalized);
   const hasOr = /\bor\b/.test(normalized);
   const hasNot = /\bnot\b/.test(normalized);
   const operatorCount = [hasAnd, hasOr, hasNot].filter(Boolean).length;
   score += operatorCount * 0.07;
-
   // Multi-hop reasoning (0-0.2)
   const multiHopIndicators = [
     /\bthen\b/,
@@ -273,11 +321,9 @@ export function computeComplexity(query: string, entities: Entity[]): number {
   ];
   const multiHopCount = multiHopIndicators.filter((re) => re.test(normalized)).length;
   score += Math.min(multiHopCount * 0.05, 0.2);
-
   // Comparison complexity (0-0.1)
   if (/\bcompare\b/.test(normalized)) score += 0.1;
   if (/\bdifference\b/.test(normalized)) score += 0.1;
-
   // Ambiguity markers (0-0.1)
   const ambiguityMarkers = [
     /\bmaybe\b/,
@@ -288,15 +334,12 @@ export function computeComplexity(query: string, entities: Entity[]): number {
   ];
   const ambiguityCount = ambiguityMarkers.filter((re) => re.test(normalized)).length;
   score += Math.min(ambiguityCount * 0.03, 0.1);
-
   // Cap at 1.0
   return Math.min(score, 1.0);
 }
-
 // ============================================================================
 // Tool Detection
 // ============================================================================
-
 /**
  * Detect if query requires external tools
  * - Math calculations
@@ -436,6 +479,160 @@ export function analyzeQuery(query: string): QueryProfile {
     needsTool,
     riskScore,
     signals,
+  };
+}
+// ============================================================================
+// Slot-Filling Entity Extraction (Deterministic)
+// ============================================================================
+import { cityToStateMap } from '@/lib/schemas/onboarding';
+/**
+ * Represents the extractable onboarding slots from a user message.
+ * All fields are optional — only populated when found in the query.
+ */
+export interface UserSlots {
+  name?:  string;
+  age?:   number;
+  city?:  string;  // Raw city string provided by user
+  state?: string;  // Resolved 2-letter state code
+}
+const KNOWN_STATE_CODES = new Set([
+  'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA',
+  'KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ',
+  'NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT',
+  'VA','WA','WV','WI','WY','DC',
+]);
+const NOT_NAMES = new Set([
+  'hello','hi','hey','medical','dental','vision','help','benefits','insurance',
+  'quote','cost','plan','price','enroll','coverage','okay','ok','yes','no',
+]);
+/**
+ * Deterministically extracts user onboarding slots (Name, Age, City/State)
+ * from a natural-language query WITHOUT calling the LLM.
+ * - City → State: resolved via `cityToStateMap` truth table (e.g. "Chicago" → "IL").
+ * - State codes: matched against the full list of US postal codes.
+ * - Age: extracted from patterns like "I'm 34", "age 42", or bare numbers 18–99.
+ * - Name: extracted from "my name is X" / "I'm X" patterns, or a lone word.
+ * @param query  Raw user input string.
+ * @returns      Populated `UserSlots` — only fields that were found are set.
+ */
+export function extractUserSlots(query: string): UserSlots {
+  const slots: UserSlots = {};
+  const lower = query.toLowerCase().trim();
+  // ── 1. Age ─────────────────────────────────────────────────────────────────
+  const ageMatch =
+    lower.match(/\bage\s+(1[8-9]|[2-9]\d)\b/) ||
+    lower.match(/\bi(?:'m| am)\s+(1[8-9]|[2-9]\d)\b/) ||
+    lower.match(/\b(1[8-9]|[2-9]\d)\s*(?:years? old|yr\.?s?\s*old)\b/) ||
+    lower.match(/\b(1[8-9]|[2-9]\d)\b/);
+  if (ageMatch) {
+    const n = parseInt(ageMatch[1] ?? ageMatch[0], 10);
+    if (n >= 18 && n <= 99) slots.age = n;
+  }
+  // ── 2. Location: check city names first (longest match wins) ───────────────
+  let resolvedCity: string | undefined;
+  let resolvedState: string | undefined;
+
+  // Sort by length descending so "new york" beats "york"
+  const sortedCities = Object.keys(cityToStateMap).sort((a, b) => b.length - a.length);
+  for (const city of sortedCities) {
+    const re = new RegExp(`\\b${city.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+    if (re.test(lower)) {
+      resolvedCity  = city.charAt(0).toUpperCase() + city.slice(1);
+      resolvedState = cityToStateMap[city];
+      break;
+    }
+  }
+  // Fallback: look for a bare 2-letter state code (e.g. "WA", "IL")
+  if (!resolvedState) {
+    const words = lower.split(/[\s,.;:()\[\]{}<>"']+/);
+    for (const word of words) {
+      const upper = word.toUpperCase();
+      if (KNOWN_STATE_CODES.has(upper)) {
+        // Avoid flagging "OR" / "IN" unless it looks like a deliberate state mention
+        const ambiguous = ['OR', 'IN', 'ME', 'HI', 'OK', 'AS', 'DE', 'ND', 'SD', 'MT', 'ID'];
+        const isUppercaseInOriginal = query.includes(upper);
+        if (ambiguous.includes(upper) && !isUppercaseInOriginal) continue;
+
+        resolvedState = upper;
+        break;
+      }
+    }
+  }
+  if (resolvedCity)  slots.city  = resolvedCity;
+  if (resolvedState) slots.state = resolvedState;
+  // ── 3. Name (last resort — extracted only when no other slot was found) ────
+  const explicitName = query.match(
+    /(?:(?:my name is|i'm called|call me)\s+)([A-Z][a-z]{1,14})/i,
+  );
+  if (explicitName) {
+    const candidate = explicitName[1];
+    if (!NOT_NAMES.has(candidate.toLowerCase())) slots.name = candidate;
+  } else if (!slots.age && !slots.state && !slots.city) {
+    // Treat a single bare word as a name only if nothing else was found
+    const words = query.trim().split(/\s+/);
+    if (words.length === 1 && /^[A-Za-z]{2,15}$/.test(words[0])) {
+      const w = words[0].toLowerCase();
+      if (!NOT_NAMES.has(w)) {
+        slots.name = words[0].charAt(0).toUpperCase() + words[0].slice(1).toLowerCase();
+      }
+    }
+  }
+  return slots;
+}
+// ============================================================================
+// Mapped Entity Controller (Entity Extraction + Out-of-Catalog Detection)
+// ============================================================================
+/**
+ * Combines slot extraction with intent analysis and a catalog membership check.
+ * This is the single entry point the chat route calls — it must never invoke
+ * the LLM; all logic here is deterministic regex / lookup.
+ */
+export interface MappedEntities {
+  /** Demographic / location slots extracted from the user's message. */
+  slots: UserSlots;
+  /** High-level intent classification. */
+  intent: IntentType;
+  /** Benefit type keywords found in the message (e.g. ['dental', 'vision']). */
+  benefitTypes: string[];
+  /**
+   * True when the message mentions a benefit that is explicitly NOT offered
+   * by AmeriVet. The route layer should intercept and return a polite decline
+   * before calling any LLM or router.
+   */
+  isAboutBenefitNotInCatalog: boolean;
+}
+/** Benefits AmeriVet does NOT offer — used for the out-of-catalog guard. */
+const OUT_OF_CATALOG_PATTERNS = [
+  /\bpet\s+insurance\b/i,
+  /\blegal\s+(insurance|plan|coverage)\b/i,
+  /\bid\s+(theft|protection)\b/i,
+  /\bidentity\s+(theft|protection)\b/i,
+  /\bgym\s+(membership|reimbursement|benefit)\b/i,
+  /\bwellness\s+reimbursement\b/i,
+  /\bstudent\s+loan\s+repayment\b/i,
+  /\blong.?term\s+care\b/i,
+  /\bcancer.?only\s+plan\b/i,
+];
+/**
+ * Deterministically extracts all relevant entities from a single user message:
+ * demographic slots (for the state machine), intent, benefit keywords, and a
+ * catalog-membership flag — all without calling the LLM.
+ */
+export function extractAndMapEntities(query: string): MappedEntities {
+  const slots   = extractUserSlots(query);
+  const profile = analyzeQuery(query);
+
+  const benefitTypes = profile.entities
+    .filter(e => e.type === 'benefit_type')
+    .map(e => e.value.toLowerCase());
+
+  const isAboutBenefitNotInCatalog = OUT_OF_CATALOG_PATTERNS.some(re => re.test(query));
+
+  return {
+    slots,
+    intent: profile.intent,
+    benefitTypes,
+    isAboutBenefitNotInCatalog,
   };
 }
 

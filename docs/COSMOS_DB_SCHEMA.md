@@ -174,7 +174,7 @@ interface Chunk {
   docId: string;                 // Foreign key to documents
   companyId: string;
   content: string;               // Text chunk
-  embedding: number[];           // 1536-dim vector (text-embedding-ada-002)
+  embedding: number[];           // 3072-dim vector (text-embedding-3-large)
   metadata: {
     sectionPath: string;         // "Benefits > Medical > PPO Plans"
     sectionHeaders: string[];

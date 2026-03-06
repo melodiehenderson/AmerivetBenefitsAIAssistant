@@ -30,7 +30,7 @@ export const POST = requireCompanyAdmin(async (request: NextRequest) => {
     const tenantId = request.headers.get('x-company-id');
 
     if (!userId || !tenantId) {
-      logger.securityEvent('Unauthorized document upload request', {
+      logger.warn('Unauthorized document upload request', {
         userAgent: request.headers.get('user-agent'),
       });
       return new NextResponse('Unauthorized', { status: 401 });
@@ -62,7 +62,7 @@ export const POST = requireCompanyAdmin(async (request: NextRequest) => {
 
     if (!validationResult.success) {
       return new NextResponse(
-        JSON.stringify({ error: 'Invalid request data', details: validationResult.error.errors }),
+        JSON.stringify({ error: 'Invalid request data', details: validationResult.error.issues }),
         { status: 400, headers: { 'Content-Type': 'application/json' } }
       );
     }
