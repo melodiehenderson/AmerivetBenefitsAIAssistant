@@ -153,6 +153,12 @@ export default function SubdomainChatPage() {
         
         if (response.ok) {
           const data = await response.json();
+          if (data?.metadata?.intercept || data?.tier) {
+            console.debug('[QA ROUTING]', {
+              tier: data.tier,
+              intercept: data?.metadata?.intercept ?? null,
+            });
+          }
           if (data.sessionContext) {
             setCachedContext({
               userName: data.sessionContext.userName,
@@ -303,6 +309,12 @@ export default function SubdomainChatPage() {
       }
 
       const data = await response.json();
+      if (data?.metadata?.intercept || data?.tier) {
+        console.debug('[QA ROUTING]', {
+          tier: data.tier,
+          intercept: data?.metadata?.intercept ?? null,
+        });
+      }
       
       // SERVERLESS RESILIENCE: Cache session context from response
       if (data.sessionContext) {
