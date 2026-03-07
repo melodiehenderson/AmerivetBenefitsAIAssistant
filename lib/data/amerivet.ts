@@ -196,8 +196,8 @@ export const amerivetBenefits2024_2025: AmerivetBenefitsCatalog = {
       name: 'Kaiser Standard HMO',
       provider: 'Kaiser',
       type: 'medical',
-      description: 'California HMO plan with low copays and integrated care.',
-      regionalAvailability: ['California'],
+      description: 'HMO plan with low copays and integrated care available in California, Washington, and Oregon.',
+      regionalAvailability: ['California', 'Washington', 'Oregon'],
       premiums: {
         employee: { monthly: 142.17, biweekly: biweekly(142.17) },
         employer: { monthly: 515.0, biweekly: biweekly(515.0) },
@@ -212,7 +212,7 @@ export const amerivetBenefits2024_2025: AmerivetBenefitsCatalog = {
         deductible: 1000,
         outOfPocketMax: 4500,
         coinsurance: 0.1,
-        description: 'Integrated HMO with Kaiser facilities across California.',
+        description: 'Integrated HMO with Kaiser facilities across California, Washington, and Oregon.',
       },
       coverage: {
         deductibles: {
@@ -236,7 +236,7 @@ export const amerivetBenefits2024_2025: AmerivetBenefitsCatalog = {
       ],
       limitations: [
         'No out-of-network coverage except emergencies',
-        'Available only in California service areas',
+        'Available only in California, Washington, and Oregon service areas',
       ],
       eligibility: {
         employeeType: 'full-time',
@@ -502,9 +502,30 @@ export function getPlanById(planId: string): BenefitPlan | undefined {
   return allPlans.find(plan => plan.id === planId);
 }
 
+const STATE_ABBREV_TO_NAME: Record<string, string> = {
+  AL: 'Alabama', AK: 'Alaska', AZ: 'Arizona', AR: 'Arkansas',
+  CA: 'California', CO: 'Colorado', CT: 'Connecticut', DE: 'Delaware',
+  FL: 'Florida', GA: 'Georgia', HI: 'Hawaii', ID: 'Idaho',
+  IL: 'Illinois', IN: 'Indiana', IA: 'Iowa', KS: 'Kansas',
+  KY: 'Kentucky', LA: 'Louisiana', ME: 'Maine', MD: 'Maryland',
+  MA: 'Massachusetts', MI: 'Michigan', MN: 'Minnesota', MS: 'Mississippi',
+  MO: 'Missouri', MT: 'Montana', NE: 'Nebraska', NV: 'Nevada',
+  NH: 'New Hampshire', NJ: 'New Jersey', NM: 'New Mexico', NY: 'New York',
+  NC: 'North Carolina', ND: 'North Dakota', OH: 'Ohio', OK: 'Oklahoma',
+  OR: 'Oregon', PA: 'Pennsylvania', RI: 'Rhode Island', SC: 'South Carolina',
+  SD: 'South Dakota', TN: 'Tennessee', TX: 'Texas', UT: 'Utah',
+  VT: 'Vermont', VA: 'Virginia', WA: 'Washington', WV: 'West Virginia',
+  WI: 'Wisconsin', WY: 'Wyoming', DC: 'District of Columbia',
+};
+
 export function getPlansByRegion(region: string): BenefitPlan[] {
   const normalizedRegion = region.toLowerCase();
-  const directMatches = amerivetBenefits2024_2025.regionalPlans[region] ?? [];
+  // Expand 2-letter abbreviation to full state name for regionalPlans key lookup
+  const expandedName = STATE_ABBREV_TO_NAME[region.toUpperCase()] ?? region;
+  const directMatches =
+    amerivetBenefits2024_2025.regionalPlans[region] ??
+    amerivetBenefits2024_2025.regionalPlans[expandedName] ??
+    [];
   return allPlans.filter(plan => {
     if (directMatches.includes(plan.id)) {
       return true;
@@ -515,7 +536,8 @@ export function getPlansByRegion(region: string): BenefitPlan[] {
       return true;
     }
 
-    return regions.includes(normalizedRegion);
+    // Match against the raw region code or the expanded full state name
+    return regions.includes(normalizedRegion) || regions.includes(expandedName.toLowerCase());
   });
 }
 

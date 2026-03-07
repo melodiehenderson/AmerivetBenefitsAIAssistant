@@ -321,7 +321,7 @@ export function compareMaternityCosts(coverageTier: string, userState?: string |
   let msg = `Maternity Cost Comparison (${coverageTier}):\n\n`;
   msg += `Assumptions: Typical maternity care costs ~$10,000 (prenatal visits, delivery, postnatal care).\n\n`;
 
-  // Filter Kaiser for non-California users (Issue 5 fix)
+  // Filter Kaiser for users outside CA/WA/OR (Issue 5 fix)
   const stateName = userState ? (STATE_CODE_TO_NAME[userState.toUpperCase()] || userState) : null;
   const plans = amerivetBenefits2024_2025.medicalPlans.filter((p) => {
     if (stateName && p.provider.toLowerCase().includes('kaiser')) {

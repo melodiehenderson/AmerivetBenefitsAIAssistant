@@ -109,6 +109,9 @@ export default function SubdomainChatPage() {
     currentTopic?: string;
     askedForDemographics?: boolean;
     selectedPlan?: string;
+    noPricingMode?: boolean;
+    coverageTierLock?: string | null;
+    dataConfirmed?: boolean;
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const quickPrompts = [
@@ -327,6 +330,10 @@ export default function SubdomainChatPage() {
           currentTopic: data.sessionContext.currentTopic,
           askedForDemographics: data.sessionContext.askedForDemographics,
           selectedPlan: data.sessionContext.selectedPlan,
+          // Persist preference flags so they survive serverless restarts
+          noPricingMode: data.sessionContext.noPricingMode ?? false,
+          coverageTierLock: data.sessionContext.coverageTierLock ?? null,
+          dataConfirmed: data.sessionContext.dataConfirmed ?? false,
         });
       }
       

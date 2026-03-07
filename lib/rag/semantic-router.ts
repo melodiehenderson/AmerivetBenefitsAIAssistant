@@ -164,7 +164,8 @@ export function routeIntent(query: string): RouterResult {
 
     const hasCoverageTierCue = /(employee\s*\+\s*(?:child|children|spouse|family)|employee\s*only|per\s*pay(?:check|period)|per\s*pay\b)/i.test(query);
     const hasVoluntaryCue = /(accident|critical illness|hospital indemnity|supplemental|voluntary|ad&d)/i.test(query);
-    const hasMedicalCue = /(ppo|hmo|hdhp|hsa|kaiser|medical|health)/i.test(query);
+    // Use word boundaries so "healthcare" does not false-match the 'health' stem
+    const hasMedicalCue = /\b(ppo|hmo|hdhp|hsa|kaiser|medical|health)\b/i.test(query);
 
     if (bestBenefit && bestBenefitScore >= 2) {
       winningCategory = bestBenefit;
