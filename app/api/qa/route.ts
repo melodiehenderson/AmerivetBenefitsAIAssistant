@@ -2795,16 +2795,25 @@ Remember: answer ONLY from the IMMUTABLE CATALOG. Do NOT ask for name, age, or s
     logger.info(`[REQ:${reqId}][STEP-9a LLM-DONE] ${llmMs}ms rawLen=${completion.content.length}`);
 
     let answer = completion.content.trim();
-    answer = extractReasonedResponse(answer, true); // extract [RESPONSE], log [REASONING] debug trace
-    answer = stripThoughtBlock(answer, true);        // strip any residual <thought> blocks
-    answer = enforceMonthlyFirstFormat(answer);
-    answer = validatePricingFormat(answer);
-
-    // Normalize pricing mentions to monthly-first canonical form and enforce state consistency
+    // Strict/minimal output pipeline
+    answer = extractReasonedResponse(answer, true); // [RESPONSE] extraction + trace
+    answer = stripThoughtBlock(answer, true);       // Remove <thought> blocks + trace
+    answer = enforceMonthlyFirstFormat(answer);     // Normalize pricing
+    answer = validatePricingFormat(answer);         // Remove hedging, markdown, internal prompts
+    answer = cleanResponseText(answer);             // Remove repeated phrases/sentences
+    answer = answer.replace(/\n{3,}/g, '\n\n').trim(); // Remove excessive newlines
+    // Remove boilerplate/disclaimer paragraphs (strict minimal)
+    answer = answer.replace(/\n?\s*For live support or additional assistance.*?\n/gi, '');
+    answer = answer.replace(/\n?\s*Would you like to explore a different benefit category\?\s*/gi, '');
+    answer = answer.replace(/\n?\s*Would you like to:\s*-.*?\n/gi, '');
+    answer = answer.replace(/\n?\s*Which benefit would you like to explore first\?.*?\n/gi, '');
+    answer = answer.replace(/\n?\s*Is there anything else I can help you with\?\s*/gi, '');
+    // Tracing hook: log final minimal output
+    logger.info(`[TRACE-STRICT-MINIMAL] Final output: ${answer.slice(0, 600)}`);
+    // Normalize pricing/state consistency
     try {
       answer = pricingUtils.normalizePricingInText(answer, session.payPeriods || 26);
       answer = pricingUtils.ensureStateConsistency(answer, session.userState || null);
-      answer = cleanResponseText(answer);  // Remove repeated phrases and duplicate sentences
     } catch (e) {
       logger.warn('[QA] Pricing normalization failed:', e);
     }
@@ -2934,10 +2943,19 @@ Answer directly from the IMMUTABLE CATALOG. Name the plan. State the exact figur
           { role: 'user', content: retryMsg }
         ], { temperature: 0.05 });
         let retryAnswer = retryCompletion.content.trim();
+        // Strict/minimal output pipeline for retry
         retryAnswer = extractReasonedResponse(retryAnswer, false);
         retryAnswer = stripThoughtBlock(retryAnswer, false);
         retryAnswer = enforceMonthlyFirstFormat(retryAnswer);
         retryAnswer = validatePricingFormat(retryAnswer);
+        retryAnswer = cleanResponseText(retryAnswer);
+        retryAnswer = retryAnswer.replace(/\n{3,}/g, '\n\n').trim();
+        retryAnswer = retryAnswer.replace(/\n?\s*For live support or additional assistance.*?\n/gi, '');
+        retryAnswer = retryAnswer.replace(/\n?\s*Would you like to explore a different benefit category\?\s*/gi, '');
+        retryAnswer = retryAnswer.replace(/\n?\s*Would you like to:\s*-.*?\n/gi, '');
+        retryAnswer = retryAnswer.replace(/\n?\s*Which benefit would you like to explore first\?.*?\n/gi, '');
+        retryAnswer = retryAnswer.replace(/\n?\s*Is there anything else I can help you with\?\s*/gi, '');
+        logger.info(`[TRACE-STRICT-MINIMAL-RETRY] Final output: ${retryAnswer.slice(0, 600)}`);
         try {
           retryAnswer = pricingUtils.normalizePricingInText(retryAnswer, session.payPeriods || 26);
           retryAnswer = cleanResponseText(retryAnswer);

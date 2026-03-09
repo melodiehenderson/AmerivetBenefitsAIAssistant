@@ -110,72 +110,59 @@ describe('Kaiser geography — Fix 30 (regionalAvailability + state-code expansi
     const plans = getPlansByRegion('TX');
     expect(plans.some(p => p.provider.toLowerCase().includes('kaiser'))).toBe(false);
   });
-
   it('FL user does NOT get Kaiser', () => {
     const plans = getPlansByRegion('FL');
     expect(plans.some(p => p.provider.toLowerCase().includes('kaiser'))).toBe(false);
   });
-
   it('OH user does NOT get Kaiser', () => {
     const plans = getPlansByRegion('OH');
     expect(plans.some(p => p.provider.toLowerCase().includes('kaiser'))).toBe(false);
   });
-
   it('all states get BCBSTX medical plans (nationwide)', () => {
     for (const state of ['TX', 'FL', 'NY', 'CA', 'WA', 'OR', 'GA', 'IL']) {
       const plans = getPlansByRegion(state);
       expect(plans.some(p => p.provider.toLowerCase().includes('bcbstx') && p.type === 'medical')).toBe(true);
     }
   });
-
   it('full state name "Washington" also returns Kaiser', () => {
     const plans = getPlansByRegion('Washington');
     expect(plans.some(p => p.provider.toLowerCase().includes('kaiser'))).toBe(true);
   });
-
   it('full state name "Oregon" also returns Kaiser', () => {
     const plans = getPlansByRegion('Oregon');
     expect(plans.some(p => p.provider.toLowerCase().includes('kaiser'))).toBe(true);
   });
 });
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Kaiser in compareMaternityCosts (Fix 30 downstream)
 // ─────────────────────────────────────────────────────────────────────────────
-
 describe('compareMaternityCosts Kaiser inclusion — Fix 30', () => {
   it('WA user: Kaiser included in maternity comparison', () => {
     const result = compareMaternityCosts('Employee Only', 'WA');
     expect(result.toLowerCase()).toMatch(/kaiser/);
   });
-
   it('OR user: Kaiser included in maternity comparison', () => {
     const result = compareMaternityCosts('Employee Only', 'OR');
     expect(result.toLowerCase()).toMatch(/kaiser/);
   });
-
   it('CA user: Kaiser included in maternity comparison', () => {
     const result = compareMaternityCosts('Employee Only', 'CA');
     expect(result.toLowerCase()).toMatch(/kaiser/);
   });
-
   it('TX user: Kaiser plan data excluded from maternity comparison', () => {
     const result = compareMaternityCosts('Employee Only', 'TX');
     // The footer always mentions "kaiser only in certain regions" as context;
     // verify the Kaiser *plan row* is absent (plan name: "Kaiser Standard HMO")
     expect(result).not.toMatch(/Kaiser Standard HMO/);
   });
-
   it('FL user: Kaiser plan data excluded from maternity comparison', () => {
     const result = compareMaternityCosts('Employee Only', 'FL');
     expect(result).not.toMatch(/Kaiser Standard HMO/);
   });
 });
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Kaiser in estimateCostProjection (Fix 30 downstream)
 // ─────────────────────────────────────────────────────────────────────────────
-
 describe('estimateCostProjection Kaiser inclusion — Fix 30', () => {
   it('WA user: Kaiser included in cost projection', () => {
     const result = estimateCostProjection({ coverageTier: 'Employee Only', usage: 'moderate', state: 'WA' });
@@ -191,17 +178,14 @@ describe('estimateCostProjection Kaiser inclusion — Fix 30', () => {
     const result = estimateCostProjection({ coverageTier: 'Employee Only', usage: 'moderate', state: 'CA' });
     expect(result.toLowerCase()).toMatch(/kaiser/);
   });
-
   it('TX user: Kaiser excluded from cost projection', () => {
     const result = estimateCostProjection({ coverageTier: 'Employee Only', usage: 'moderate', state: 'TX' });
     expect(result.toLowerCase()).not.toMatch(/kaiser/);
   });
 });
-
 // ─────────────────────────────────────────────────────────────────────────────
 // noPricingMode — stripPricingDetails completeness
 // ─────────────────────────────────────────────────────────────────────────────
-
 describe('stripPricingDetails — noPricingMode enforcement', () => {
   const dollarCases = [
     '$142.17/month',
