@@ -116,48 +116,21 @@ export function WelcomeVideoModal() {
           </button>
 
           {/* Video */}
-          <video
-            ref={videoRef}
+          <iframe
             src={VIDEO_URL}
+            width="100%"
+            height="400"
+            allow="autoplay"
+            allowFullScreen
             className="w-full h-auto max-h-[70vh] rounded-lg"
-            muted={isMuted}
-            playsInline
-            onPlay={() => setIsPlaying(true)}
-            onPause={() => setIsPlaying(false)}
-            onTimeUpdate={handleTimeUpdate}
-            onEnded={handleVideoEnded}
-            autoPlay
-          />
+            title="Welcome Video"
+            style={{ borderRadius: '8px', background: 'black' }}
+          ></iframe>
 
           {/* Controls */}
           <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent">
-            {/* Progress bar */}
-            <div
-              ref={containerRef}
-              className="w-full h-1 bg-white/30 rounded-full cursor-pointer mb-4 group"
-              onClick={handleProgressClick}
-            >
-              <div
-                className="h-full bg-blue-500 rounded-full relative transition-all"
-                style={{ width: `${progress}%` }}
-              >
-                <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-blue-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity" />
-              </div>
-            </div>
-
-            {/* Control buttons */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                {/* Play/Pause */}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={togglePlayPause}
-                  className="text-white hover:bg-white/20"
-                >
-                  {isPlaying ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
-                </Button>
-
                 {/* Mute/Unmute */}
                 <Button
                   variant="ghost"
@@ -178,7 +151,6 @@ export function WelcomeVideoModal() {
                   {playbackSpeed}x
                 </Button>
               </div>
-
               {/* "Welcome" label */}
               <div className="text-white text-sm font-medium">
                 Welcome to Amerivet Benefits

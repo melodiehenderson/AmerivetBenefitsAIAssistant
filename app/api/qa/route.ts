@@ -1514,7 +1514,7 @@ export async function POST(req: NextRequest) {
       const msg = `AmeriVet does not offer a standalone "PPO" medical plan. Your medical plans — Standard HSA and Enhanced HSA (both through BCBS of Texas) — use a nationwide PPO network for provider access, but they are structured as HDHP/HSA plans.\n\nWould you like to see a comparison of the Standard HSA vs. Enhanced HSA?`;
       session.lastBotMessage = msg;
       await updateSession(sessionId, session);
-      return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'ppo-clarification' } });
+      return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'ppo-clarification', retrievalScore: 1.0, confidence: 'High' } });
     }
     if (intent.asksPPOPlan && (!session.userState || KAISER_STATES.has((session.userState || '').toUpperCase()))) {
       logger.info(`[REQ:${reqId}][STEP-5 INTERCEPT] PPO-CLARIFICATION (Kaiser-state or unknown)`);
@@ -1522,7 +1522,7 @@ export async function POST(req: NextRequest) {
       const msg = `AmeriVet does not offer a standalone "PPO" medical plan. The Standard HSA and Enhanced HSA (BCBS of Texas) use a nationwide PPO network, but they are HDHP/HSA plans — not a traditional PPO.${kaiserNote}\n\nWould you like to compare the available medical plans?`;
       session.lastBotMessage = msg;
       await updateSession(sessionId, session);
-      return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'ppo-clarification' } });
+      return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'ppo-clarification', retrievalScore: 1.0, confidence: 'High' } });
     }
 
     // RULE 4: KAISER IN NON-KAISER STATE — user explicitly asks about Kaiser when not in CA/WA/OR
@@ -1535,7 +1535,7 @@ export async function POST(req: NextRequest) {
       const plainMsg = toPlainAssistantText(msg);
       session.lastBotMessage = plainMsg;
       await updateSession(sessionId, session);
-      return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'kaiser-redirect-non-eligible-state' } });
+      return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'kaiser-redirect-non-eligible-state', retrievalScore: 1.0, confidence: 'High' } });
     }
 
     // Save session if state-based flags changed
