@@ -1,3 +1,9 @@
+# Environment files with secrets
+.env.local
+.env.prod
+.env.vercel.local
+.env*.local
+
 # Sync .project/sourceTexts/ folder (source text files)
 
 # Don't sync user-specific SQLite databases
