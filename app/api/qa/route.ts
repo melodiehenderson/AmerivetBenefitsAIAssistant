@@ -15,6 +15,8 @@ import {
   type PipelineResult,
   type ValidationResult
 } from '@/lib/rag/validation-pipeline';
+import { detectTextualHallucination } from '@/lib/rag/validation';
+import { pipelineLogger, createTrace } from '@/lib/services/pipeline-logger';
 import {
   routeIntent,
   checkStateGate,
@@ -23,6 +25,7 @@ import {
   type RouterResult
 } from '@/lib/rag/semantic-router';
 import pricingUtils from '@/lib/rag/pricing-utils';
+import { classifyQueryIntent, getIntentHint, type QueryIntent } from '@/lib/rag/query-intent-classifier';
 import { amerivetBenefits2024_2025, getCatalogForPrompt } from '@/lib/data/amerivet';
 
 export const dynamic = 'force-dynamic';
@@ -440,6 +443,11 @@ function shouldUseCategoryExplorationIntercept(query: string, lowerQuery: string
 
   // Let nuanced requests go to RAG.
   if (/\b(compare|difference|recommend|best|which|should\s+i|for\s+me|my\s+situation|if\s+|because|while|calculate|estimate|project|scenario|qle|fmla|std)\b/i.test(lowerQuery)) {
+    return false;
+  }
+
+  // Yes/no questions, factual lookups, and advisory questions need RAG, not a canned overview.
+  if (/\b(do\s+we\s+have|is\s+there|does\s+it|are\s+there|who\s+is|which\s+company|what\s+carrier|what\s+provider|how\s+much\s+should|how\s+much\s+do\s+i\s+need|how\s+much\s+life|do\s+i\s+have|am\s+i\s+covered|i\s+thought)\b/i.test(lowerQuery)) {
     return false;
   }
 
@@ -1006,6 +1014,143 @@ Answer directly, accurately, and ONLY from the catalog above.`;
 }
 
 // ============================================================================
+// 2b-HELPER. SHORT CATEGORY ANSWERS (yes/no, factual lookups)
+// ============================================================================
+// Returns a concise deterministic answer for yes/no and factual-lookup intents
+// so the bot doesn't dump a full overview for every question.
+
+function buildShortCategoryAnswer(
+  queryLower: string,
+  intent: 'yes_no' | 'factual_lookup',
+  session: Session,
+): string | null {
+  const catalog = amerivetBenefits2024_2025;
+
+  // ── LIFE INSURANCE ─────────────────────────────────────────────────────────
+  if (/\b(life\s*(?:insurance)?(?!\s*event)|life\b)/i.test(queryLower) && !/qualifying\s+life/i.test(queryLower)) {
+    if (intent === 'yes_no') {
+      // "do we have permanent/whole life?" → yes, Allstate
+      if (/\b(permanent|whole\s*life|cash\s*value)\b/i.test(queryLower)) {
+        return 'Yes — AmeriVet offers Allstate Whole Life, which is permanent life insurance that builds cash value over time. Rates are locked at your enrollment age and the policy is portable if you leave AmeriVet.';
+      }
+      // "do we have term life?" → yes, Unum
+      if (/\b(term\s*life|voluntary\s*life)\b/i.test(queryLower)) {
+        return 'Yes — AmeriVet offers Unum Voluntary Term Life. You can elect 1x to 5x your salary (up to $500,000), with a guaranteed issue amount of up to $150,000 during open enrollment. Spouse and dependent child coverage is also available.';
+      }
+      // "do we have life insurance?" (generic) → yes, three options
+      return 'Yes — AmeriVet offers three life insurance options: UNUM Basic Life & AD&D ($25,000, employer-paid at $0 cost to you), UNUM Voluntary Term Life (1x–5x salary, age-banded pricing), and Allstate Whole Life (permanent coverage with cash value). Would you like details on any of these?';
+    }
+    if (intent === 'factual_lookup') {
+      // "who provides/covers life insurance?" → carrier names
+      if (/\b(who\s+(?:is|provides|covers|carries|offers|underwrites)|which\s+(?:company|carrier|provider))\b/i.test(queryLower)) {
+        return 'Life insurance at AmeriVet is provided by two carriers: UNUM handles Basic Life & AD&D and Voluntary Term Life, while Allstate provides Whole Life (permanent) coverage.';
+      }
+      // "what is the basic life coverage amount?"
+      if (/\b(basic|employer[\s-]?paid|free|automatic)\b/i.test(queryLower)) {
+        return 'UNUM Basic Life & AD&D provides $25,000 of coverage, fully paid by AmeriVet at $0 cost to you. All benefits-eligible employees are automatically enrolled.';
+      }
+      // "what is the guaranteed issue amount?"
+      if (/\b(guaranteed\s+issue|no\s+medical|without\s+(?:medical|health)\s+questions?)\b/i.test(queryLower)) {
+        return 'Guaranteed Issue for UNUM Voluntary Term Life is up to $150,000 during open enrollment — no medical questions required below that amount.';
+      }
+    }
+  }
+
+  // ── DENTAL ─────────────────────────────────────────────────────────────────
+  if (/\b(dental)\b/i.test(queryLower)) {
+    if (intent === 'yes_no') {
+      return `Yes — AmeriVet offers a dental plan: ${catalog.dentalPlan.name} through ${catalog.dentalPlan.provider}. Preventive care (cleanings, exams, X-rays) is covered at 100%.`;
+    }
+    if (intent === 'factual_lookup') {
+      if (/\b(who\s+(?:is|provides|covers|carries)|which\s+(?:company|carrier|provider))\b/i.test(queryLower)) {
+        return `Dental coverage at AmeriVet is provided by ${catalog.dentalPlan.provider} — specifically the ${catalog.dentalPlan.name} plan.`;
+      }
+    }
+  }
+
+  // ── VISION ─────────────────────────────────────────────────────────────────
+  if (/\b(vision|eye)\b/i.test(queryLower)) {
+    if (intent === 'yes_no') {
+      return `Yes — AmeriVet offers a vision plan: ${catalog.visionPlan.name} through ${catalog.visionPlan.provider}. Includes eye exams, frames allowance, contact lenses, and LASIK discounts.`;
+    }
+    if (intent === 'factual_lookup') {
+      if (/\b(who\s+(?:is|provides|covers|carries)|which\s+(?:company|carrier|provider))\b/i.test(queryLower)) {
+        return `Vision coverage at AmeriVet is provided by ${catalog.visionPlan.provider} — the ${catalog.visionPlan.name} plan.`;
+      }
+    }
+  }
+
+  // ── DISABILITY ─────────────────────────────────────────────────────────────
+  if (/\b(disability|ltd)\b/i.test(queryLower)) {
+    if (intent === 'yes_no') {
+      return 'Yes — AmeriVet offers both Short-Term Disability (STD) and Long-Term Disability (LTD) through UNUM. STD covers up to 13 weeks at 60% of weekly salary; LTD kicks in after 90 days and continues up to age 65.';
+    }
+    if (intent === 'factual_lookup') {
+      if (/\b(who\s+(?:is|provides|covers|carries)|which\s+(?:company|carrier|provider))\b/i.test(queryLower)) {
+        return 'Both Short-Term and Long-Term Disability at AmeriVet are provided by UNUM.';
+      }
+    }
+  }
+
+  // ── CRITICAL ILLNESS / ACCIDENT ────────────────────────────────────────────
+  if (/\b(critical\s*illness|accident|ad&d|supplemental)\b/i.test(queryLower)) {
+    if (intent === 'yes_no') {
+      if (/\b(critical\s*illness)\b/i.test(queryLower)) {
+        return 'Yes — AmeriVet offers Critical Illness insurance through Allstate. It provides a lump-sum cash benefit ($10,000–$30,000) if you are diagnosed with a covered condition such as heart attack, stroke, or cancer.';
+      }
+      if (/\b(accident|ad&d)\b/i.test(queryLower)) {
+        return 'Yes — AmeriVet offers Accident insurance through Allstate. It pays cash benefits for covered accidents including fractures, dislocations, burns, initial treatment, hospitalization, and rehab.';
+      }
+      return 'Yes — AmeriVet offers both Critical Illness and Accident/AD&D insurance through Allstate.';
+    }
+    if (intent === 'factual_lookup') {
+      if (/\b(who\s+(?:is|provides|covers|carries)|which\s+(?:company|carrier|provider))\b/i.test(queryLower)) {
+        return 'Critical Illness and Accident/AD&D coverage at AmeriVet are both provided by Allstate.';
+      }
+    }
+  }
+
+  // ── HSA/FSA ────────────────────────────────────────────────────────────────
+  if (/\b(hsa|fsa|flexible\s*spending|health\s*savings)\b/i.test(queryLower)) {
+    if (intent === 'yes_no') {
+      if (/\bhsa\b/i.test(queryLower)) {
+        return `Yes — AmeriVet offers a Health Savings Account (HSA) with an employer contribution of $${catalog.specialCoverage.hsa.employerContribution}/year. It is available when you enroll in either the Standard HSA or Enhanced HSA medical plan.`;
+      }
+      if (/\bfsa\b/i.test(queryLower)) {
+        return `Yes — AmeriVet offers a Flexible Spending Account (FSA) with a maximum contribution of $${catalog.specialCoverage.fsa.maximumContribution.toLocaleString()}/year. Note: you cannot have both a general FSA and an HSA simultaneously.`;
+      }
+      return `Yes — AmeriVet offers both an HSA (with $${catalog.specialCoverage.hsa.employerContribution}/year employer contribution) and an FSA (up to $${catalog.specialCoverage.fsa.maximumContribution.toLocaleString()}/year). Note: you cannot have both a general FSA and an HSA simultaneously.`;
+    }
+  }
+
+  // ── MEDICAL ────────────────────────────────────────────────────────────────
+  if (/\b(medical|health\s*(?:care|insurance|plan|coverage)?)\b/i.test(queryLower)) {
+    const userState = session.userState || '';
+    const isKaiserEligible = KAISER_STATES.has(userState.toUpperCase());
+    if (intent === 'yes_no') {
+      if (/\b(kaiser|hmo)\b/i.test(queryLower)) {
+        if (isKaiserEligible) {
+          return `Yes — Kaiser HMO is available in your state (${userState}). AmeriVet offers the Kaiser Standard HMO for employees in CA, WA, and OR.`;
+        }
+        if (userState) {
+          return `Kaiser HMO is only available in CA, WA, and OR — it is not available in ${userState}. Your medical options are the Standard HSA and Enhanced HSA plans through BCBSTX.`;
+        }
+        return 'Kaiser HMO is available in CA, WA, and OR only. Let me know your state and I can confirm your options.';
+      }
+      const planCount = isKaiserEligible ? 'three' : 'two';
+      return `Yes — AmeriVet offers ${planCount} medical plan${isKaiserEligible ? 's' : 's'}: Standard HSA and Enhanced HSA through BCBSTX${isKaiserEligible ? ', plus Kaiser Standard HMO' : ''}. Both HSA plans use a nationwide PPO network.`;
+    }
+    if (intent === 'factual_lookup') {
+      if (/\b(who\s+(?:is|provides|covers|carries)|which\s+(?:company|carrier|provider)|network)\b/i.test(queryLower)) {
+        return `Medical coverage at AmeriVet is provided by BCBSTX (Blue Cross Blue Shield of Texas) with a nationwide PPO network.${isKaiserEligible ? ' Kaiser HMO is also available in your state.' : ''}`;
+      }
+    }
+  }
+
+  return null; // No short answer matched — fall through to full overview
+}
+
+// ============================================================================
 // 2b. CATEGORY EXPLORATION RESPONSE BUILDER (Deterministic)
 // ============================================================================
 // Returns a rich deterministic overview when user asks about a benefit category.
@@ -1029,11 +1174,28 @@ function buildCategoryExplorationResponse(
 
   // Detect if this is a category exploration (not a specific calculation/comparison already handled)
   // Skip if user is asking for very specific things handled by other intercepts
-  if (/per[\s-]*pay(?:check|period)?|deduct(?:ion|ed)|enroll\s+in\s+all|total\s+cost|how\s+much\s+would|maternity|pregnan|orthodont|braces|recommend|which\s+plan\s+should|qle|qualifying\s+life\s+event|how\s+many\s+days|deadline|window|fmla|short\s*[- ]?term\s+disability|pre-?existing|clause|can\s+i|d(?:ifference|ppo)\s*(?:vs?\.?|versus|between|and|compared)|compare|explain\s*(?:the)?\s*difference|dhmo/i.test(queryLower)) {
+  if (/per[\s-]*pay(?:check|period)?|deduct(?:ion|ed)|enroll\s+in\s+all|total\s+cost|how\s+much\s+would|maternity|pregnan|orthodont|braces|qle|qualifying\s+life\s+event|how\s+many\s+days|deadline|window|fmla|short\s*[- ]?term\s+disability|pre-?existing|clause|dhmo/i.test(queryLower)) {
     return null; // Let the specialized intercepts handle these
   }
 
   const catalog = amerivetBenefits2024_2025;
+
+  // ── INTENT-BASED SUB-ROUTING ──────────────────────────────────────────────
+  // For non-exploratory intents, return a concise answer or fall through to RAG
+  // instead of always dumping the full category overview template.
+  const { intent: responseIntent } = classifyQueryIntent(queryLower, session.currentTopic);
+
+  // Advisory, comparison, and cost-lookup intents need the LLM — skip template
+  if (responseIntent === 'advisory' || responseIntent === 'comparison' || responseIntent === 'cost_lookup') {
+    return null; // Fall through to RAG + LLM for personalized/comparative/cost answers
+  }
+
+  // ── YES/NO and FACTUAL_LOOKUP: short deterministic answers ──────────────
+  if (responseIntent === 'yes_no' || responseIntent === 'factual_lookup') {
+    const shortAnswer = buildShortCategoryAnswer(queryLower, responseIntent, session);
+    if (shortAnswer !== null) return finalize(shortAnswer);
+    // If no short answer matched, fall through to the full overview below
+  }
 
   // GENERAL OVERVIEW — "what are my options?", "what benefits do I have?", "what's available?"
   // Fires when NO specific category is mentioned but user is asking broadly
@@ -1379,6 +1541,10 @@ export async function POST(req: NextRequest) {
 
     const session = await getOrCreateSession(sessionId);
     session.turn = (session.turn ?? 0) + 1;
+
+    // ── Pipeline trace: begin ───────────────────────────────────────────────
+    const pipelineTrace = createTrace(reqId, sessionId, query, session);
+
     logger.info(`[REQ:${reqId}][STEP-1 SESSION] Turn=${session.turn} Name=${session.userName||'?'} Age=${session.userAge||'?'} State=${session.userState||'?'} DataConfirmed=${!!session.dataConfirmed} NoPricing=${!!session.noPricingMode}`);
     
     // SERVERLESS RESILIENCE: Restore session from client context if backend lost it
@@ -2776,6 +2942,11 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
         : '';
 
     // User message with retrieval context and current question
+    // Classify query intent for response-shape routing
+    const { intent: queryResponseIntent, confidence: intentConfidence } = classifyQueryIntent(query, session.currentTopic);
+    const intentHintText = getIntentHint(queryResponseIntent);
+    logger.info(`[REQ:${reqId}][STEP-8e INTENT] responseIntent=${queryResponseIntent} confidence=${intentConfidence.toFixed(2)}`);
+
     // Build the strict state header to inject into every user message (re-enforcement)
     const stateEnforcement = session.userState
       ? (KAISER_STATES.has(session.userState.toUpperCase())
@@ -2784,6 +2955,8 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
       : `STATE: Unknown — do not reference regional plan availability.`;
 
     const userMessage = `${stateEnforcement}
+
+${intentHintText}
 
 ▶ EXACT QUESTION TO ANSWER: "${query}"
    Read this carefully. Answer SPECIFICALLY what is being asked — do NOT default to a
@@ -2931,6 +3104,20 @@ Remember: answer ONLY from the IMMUTABLE CATALOG. Do NOT ask for name, age, or s
       answer = answer.replace(PPO_MEDICAL_HALLUCINATION, 'Standard HSA/Enhanced HSA (PPO network)');
     }
 
+    // POST-PROCESSING: ALLSTATE WHOLE LIFE HALLUCINATION GUARD
+    // The catalog has NO specific coverage amounts for Allstate Whole Life (age-banded/placeholder).
+    // Strip any invented coverage ranges (e.g., "$20,000–$100,000") or age guarantees (e.g., "until age 95").
+    const WHOLE_LIFE_FAKE_AMOUNTS = /(?:allstate|whole\s*life)[^.]*?\$[\d,]+\s*(?:[-–—to]+\s*\$[\d,]+)?[^.]*\./gi;
+    if (WHOLE_LIFE_FAKE_AMOUNTS.test(answer)) {
+      logger.warn('[WHOLE-LIFE-GUARD] Stripped hallucinated Allstate Whole Life coverage amounts');
+      answer = answer.replace(WHOLE_LIFE_FAKE_AMOUNTS, 'Allstate Whole Life coverage amounts are age-banded — visit the enrollment portal for your personalized rate.');
+    }
+    const WHOLE_LIFE_AGE_GUARANTEE = /(?:allstate|whole\s*life)[^.]*(?:guaranteed\s+(?:until|to)\s+age\s+\d+|until\s+age\s+\d+)[^.]*\./gi;
+    if (WHOLE_LIFE_AGE_GUARANTEE.test(answer)) {
+      logger.warn('[WHOLE-LIFE-GUARD] Stripped hallucinated Allstate age guarantee');
+      answer = answer.replace(WHOLE_LIFE_AGE_GUARANTEE, 'Allstate Whole Life is permanent coverage that does not expire as long as premiums are paid. Rates are locked at your enrollment age.');
+    }
+
     // POST-PROCESSING: NO-PRICING ENFORCEMENT — strip all $ and cost lines if noPricingMode
     // Check BOTH session.noPricingMode (from previous turns) AND intent.noPricing (current turn)
     // so the rule is bulletproof even if the session was not yet persisted.
@@ -2952,6 +3139,19 @@ Remember: answer ONLY from the IMMUTABLE CATALOG. Do NOT ask for name, age, or s
     if (groundingWarnings.length) {
       logger.warn(`[GROUNDING-AUDIT] ${groundingWarnings.length} ungrounded amount(s) corrected: ${groundingWarnings.join(', ')}`);
       answer = auditedAnswer;
+    }
+
+    // ── TEXTUAL HALLUCINATION AUDIT: detect fabricated policy details ───────────────
+    const { hasHallucination, matches: hallucinationMatches } = detectTextualHallucination(answer);
+    if (hasHallucination) {
+      logger.warn(`[HALLUCINATION-AUDIT] ${hallucinationMatches.length} fabricated detail(s) detected: ${hallucinationMatches.map(m => m.label).join(', ')}`);
+      // Strip sentences containing hallucinated content
+      for (const { matched } of hallucinationMatches) {
+        const escaped = matched.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        // Remove the entire sentence containing the hallucination
+        answer = answer.replace(new RegExp(`[^.!?\\n]*${escaped}[^.!?\\n]*[.!?]?\\s*`, 'gi'), '');
+      }
+      answer = answer.replace(/\n{3,}/g, '\n\n').trim();
     }
 
     let finalGenQuality = scoreGenerationQuality(query, answer);
@@ -3055,6 +3255,40 @@ Answer directly from the IMMUTABLE CATALOG. Name the plan. State the exact figur
     await updateSession(sessionId, session);
     logger.info(`[REQ:${reqId}][STEP-12 DONE] RAG path → ${answer.length} chars, totalTime=${Date.now()-t0}ms, tier=${confidenceTier}`);
 
+    // ── Pipeline trace: finalize and log (non-blocking) ─────────────────────
+    pipelineTrace.intent = { detected: queryResponseIntent, confidence: intentConfidence };
+    pipelineTrace.retrieval = {
+      chunksReturned: result.chunks?.length || 0,
+      topScore: parseFloat(topScore.toFixed(3)),
+      latencyMs: 0, // filled earlier if tRetrieval was tracked
+      method: 'hybrid',
+      category: category || null,
+    };
+    pipelineTrace.gate = {
+      passed: result.gatePass !== false,
+      topScore: result.gateTopScore ?? 0,
+      chunkCount: result.chunks?.length || 0,
+      failReason: result.gateFailReason,
+    };
+    pipelineTrace.llm = {
+      model: 'gpt-4.1-mini',
+      promptTokens: completion.usage?.promptTokens ?? 0,
+      completionTokens: completion.usage?.completionTokens ?? 0,
+      latencyMs: llmMs,
+      temperature: 0.15,
+    };
+    pipelineTrace.response = {
+      type: 'generated',
+      citationsStripped: 0,
+      hallucinationsDetected: hallucinationMatches.length,
+      groundingWarnings: groundingWarnings.length,
+      length: answer.length,
+    };
+    pipelineTrace.totalLatencyMs = Date.now() - t0;
+    pipelineTrace.coverageTier = session.coverageTierLock ?? extractCoverageFromQuery(query);
+    // Fire-and-forget — never block the response
+    pipelineLogger.log(pipelineTrace).catch(() => {});
+
     return NextResponse.json({
       answer,
       tier: 'L2',
@@ -3081,6 +3315,10 @@ Answer directly from the IMMUTABLE CATALOG. Name the plan. State the exact figur
           confidence: routerResult.confidence,
           triggersHSACrossSell: routerResult.triggersHSACrossSell,
           requiresAgeBand: routerResult.requiresAgeBand
+        },
+        queryIntent: {
+          intent: queryResponseIntent,
+          confidence: intentConfidence,
         },
         validation: {
           retrieval: pipelineResult.retrieval,

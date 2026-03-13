@@ -619,6 +619,48 @@ export function detectSpeculation(response: string): {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Textual Hallucination Detection
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Patterns that indicate the LLM is fabricating specific policy details
+ * from general insurance knowledge rather than from the AmeriVet catalog.
+ * These claims do NOT appear anywhere in amerivet.ts.
+ */
+const HALLUCINATION_PATTERNS: Array<{ pattern: RegExp; label: string }> = [
+  { pattern: /guaranteed until age \d+/i, label: 'fabricated age guarantee' },
+  { pattern: /premiums? (?:are )?guaranteed (?:for life|until|through|to age)/i, label: 'fabricated premium guarantee' },
+  { pattern: /\$\d+k?\s*(?:to|[-–])\s*\$?\d+k?\s*(?:whole life|death benefit|face (?:value|amount))/i, label: 'fabricated coverage amount range' },
+  { pattern: /accelerated death benefit/i, label: 'fabricated rider (not in catalog)' },
+  { pattern: /waiver of premium/i, label: 'fabricated rider (not in catalog)' },
+  { pattern: /living (?:benefit|needs?) rider/i, label: 'fabricated rider (not in catalog)' },
+  { pattern: /\bchildren'?s?\s+(?:term\s+)?rider/i, label: 'fabricated rider (not in catalog)' },
+  { pattern: /\b(?:10|15|20|25|30)\s*[-–]?\s*year\s+term/i, label: 'fabricated term length (not in catalog)' },
+  { pattern: /conversion (?:privilege|option|period)/i, label: 'fabricated conversion details' },
+];
+
+/**
+ * Detect textual hallucination patterns in LLM responses.
+ * These are fabricated policy details that aren't in the AmeriVet catalog
+ * but sound plausible because the LLM has general insurance knowledge.
+ */
+export function detectTextualHallucination(response: string): {
+  hasHallucination: boolean;
+  matches: Array<{ label: string; matched: string }>;
+} {
+  const matches: Array<{ label: string; matched: string }> = [];
+
+  for (const { pattern, label } of HALLUCINATION_PATTERNS) {
+    const m = response.match(pattern);
+    if (m) {
+      matches.push({ label, matched: m[0] });
+    }
+  }
+
+  return { hasHallucination: matches.length > 0, matches };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Exports
 // ─────────────────────────────────────────────────────────────────────────────
 
