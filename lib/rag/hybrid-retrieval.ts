@@ -13,6 +13,20 @@ import { SearchClient, AzureKeyCredential } from "@azure/search-documents";
 import type { Chunk, RetrievalContext, RetrievalResult, HybridSearchConfig } from "../../types/rag";
 import { isVitest } from '@/lib/ai/runtime';
 import { logger } from '@/lib/logger';
+import { countTokens } from '@/lib/utils/tokenCount';
+
+// ============================================================================
+// Retrieval Gate Configuration
+// ============================================================================
+const GATE_MIN_CHUNKS = 2;        // Minimum chunks required to proceed
+const GATE_MIN_TOP_SCORE = 0.60;  // Minimum top chunk RRF score
+const GATE_CHUNK_THRESHOLD = 0.45; // Filter chunks below this score
+
+export interface RetrievalGateResult {
+  gatePass: boolean;
+  failReason?: 'LOW_SCORE' | 'INSUFFICIENT_CHUNKS';
+  topScore: number;
+}
 
 // ============================================================================
 // Query Expansion Maps (Keyword → Related Terms)
@@ -23,8 +37,15 @@ const QUERY_EXPANSION_MAP: Record<string, string[]> = {
   vision: ["eye", "glasses", "contacts", "optometrist", "lens", "exam", "frames"],
   life: ["death benefit", "beneficiary", "term life", "whole life", "AD&D", "accidental death"],
   disability: ["STD", "LTD", "short term", "long term", "income protection", "wages"],
-  hsa: ["health savings", "FSA", "flexible spending", "tax-free", "contribution"],
+  hsa: ["health savings account", "HSA contribution", "pre-tax health", "FSA", "flexible spending", "tax-free"],
   voluntary: ["critical illness", "accident", "hospital indemnity", "supplemental", "injury"],
+  // Insurance-specific synonym expansions for BM25 recall
+  deductible: ["annual deductible", "deductible amount", "out of pocket before insurance"],
+  copay: ["copayment", "co-pay", "visit cost", "office visit fee"],
+  kaiser: ["Kaiser Permanente", "Kaiser HMO", "Kaiser plan"],
+  premium: ["monthly premium", "paycheck deduction", "plan cost per month"],
+  oop: ["out of pocket maximum", "out-of-pocket max", "annual maximum"],
+  pcp: ["primary care physician", "primary care provider", "family doctor"],
 };
 
 // ============================================================================
@@ -230,7 +251,13 @@ function ensureSearchClient(): any | null {
   const endpoint = process.env.AZURE_SEARCH_ENDPOINT?.trim();
   const apiKey = (process.env.AZURE_SEARCH_API_KEY || process.env.AZURE_SEARCH_ADMIN_KEY)?.trim();
   // Production index locked to chunks_prod_v1 (499 docs). Do NOT use chunks_prod_v2 (3 test docs).
-  const indexName = (process.env.AZURE_SEARCH_INDEX || process.env.AZURE_SEARCH_INDEX_NAME || "chunks_prod_v1").trim();
+  const indexName = (process.env.AZURE_SEARCH_INDEX
+    ?? process.env.AZURE_SEARCH_INDEX_NAME
+    ?? "chunks_prod_v1").trim();
+
+  if (indexName === "chunks_prod_v2") {
+    console.error("CRITICAL: chunks_prod_v2 has only 3 test docs — check env config");
+  }
 
   // DIAGNOSTIC: Log which index we're actually using
   logger.debug(`[SEARCH] Initializing client with index: ${indexName}`);
@@ -297,12 +324,12 @@ function buildODataFilter(context: RetrievalContext, options: ODataFilterOptions
     filters.push(`(dept eq '${dept}' or dept eq 'All')`);
   }
   // Optional filters (disabled by default because current index schema may not include these fields).
-  if (includeState && (context as any).state) {
-    const state = escapeODataValue(String((context as any).state).trim());
+  if (includeState && context.state) {
+    const state = escapeODataValue(context.state.trim());
     filters.push(`(state eq '${state}' or state eq 'National')`);
   }
-  if (includeCategory && (context as any).category) {
-    const category = escapeODataValue(String((context as any).category).trim());
+  if (includeCategory && context.category) {
+    const category = escapeODataValue(context.category.trim());
     filters.push(`category eq '${category}'`);
   }
   
@@ -321,12 +348,13 @@ async function searchWithFilterFallback(
   // physically cannot return documents tagged for other states.
   // e.g., User in MI → filter: (state eq 'MI' or state eq 'National')
   // This prevents "Mississippi vs Michigan" cross-state leakage at the retrieval layer.
-  const hasStateFilter = !!(context as any).state && (context as any).state !== 'National';
+  // FIX: State filtering is now ALWAYS enabled when context.state is available (not just when explicitly requested)
+  const hasStateFilter = !!context.state && context.state !== 'National';
   const fullFilter = buildODataFilter(context, {
     includeCategory: true,
-    includeState: hasStateFilter,
+    includeState: hasStateFilter,  // Enable state filter when state is known
   });
-  logger.debug(`[L2-FILTER] ${logPrefix} filter="${fullFilter}" hasState=${hasStateFilter}`);
+  logger.debug(`[L2-FILTER] ${logPrefix} filter="${fullFilter}" hasState=${hasStateFilter} state=${context.state || 'unknown'}`);
   try {
     return await client.search(query, { ...baseOptions, filter: fullFilter });
   } catch (error) {
@@ -432,7 +460,7 @@ export async function retrieveVectorTopK(
       position: 0,
       windowStart: 0,
       windowEnd: s.chunk.text.length,
-      metadata: { tokenCount: Math.ceil(s.chunk.text.length / 4), vectorScore: s.score },
+      metadata: { tokenCount: countTokens(s.chunk.text), vectorScore: s.score },
       createdAt: new Date(),
     }));
   }
@@ -493,7 +521,7 @@ export async function retrieveVectorTopK(
         windowStart: 0,
         windowEnd: result.document.content.length,
         metadata: {
-          tokenCount: Math.ceil(result.document.content.length / 4),
+          tokenCount: countTokens(result.document.content),
           vectorScore: result.score,
           ...parseMetadata(result.document.metadata),
         },
@@ -555,7 +583,7 @@ export async function retrieveBM25TopK(
       position: 0,
       windowStart: 0,
       windowEnd: s.chunk.text.length,
-      metadata: { tokenCount: Math.ceil(s.chunk.text.length / 4), bm25Score: s.score },
+      metadata: { tokenCount: countTokens(s.chunk.text), bm25Score: s.score },
       createdAt: new Date(),
       score: s.score, // Overall relevance score for confidence gate
     }));
@@ -605,7 +633,7 @@ export async function retrieveBM25TopK(
         windowStart: 0,
         windowEnd: result.document.content.length,
         metadata: {
-          tokenCount: metadata.tokenCount || Math.ceil(result.document.content.length / 4),
+          tokenCount: metadata.tokenCount || countTokens(result.document.content),
           bm25Score: result.score,
           ...metadata,
         },
@@ -773,7 +801,7 @@ export async function hybridRetrieve(
   // A. Detect intent category via keyword short-circuiting
   const detectedCategory = detectIntentCategory(query);
   if (detectedCategory && !context.category) {
-    (context as any).category = detectedCategory;
+    context.category = detectedCategory;
     logger.debug(`[RAG] Intent short-circuit: forcing category="${detectedCategory}"`);
   }
 
@@ -782,7 +810,7 @@ export async function hybridRetrieve(
   // document category. This prevents carrier hallucination from medical plan chunks.
   const SUPPORT_SERVICE_PATTERN = /\b(rightway|right\s*way|care\s*navigator|telehealth|telemedicine|health\s*advocacy|nurse\s*line|second\s*opinion|patient\s*advocate|darwin|health\s*navigator)\b/i;
   if (SUPPORT_SERVICE_PATTERN.test(query) && !context.category) {
-    (context as any).category = 'Support';
+    context.category = 'Support';
     logger.debug(`[RAG] Carrier routing: support service query detected → category='Support'`);
   }
   
@@ -806,17 +834,15 @@ export async function hybridRetrieve(
   };
 
   try {
-    // Execute hybrid search with ENHANCED query (expanded + context-injected)
-    const vectorResultsOrError = await Promise.resolve(
-      retrieveVectorTopK(enhancedQuery, context, cfg.vectorK)
-    );
-
-    const vectorResults = await vectorResultsOrError;
-    
-    // Execute BM25 search with ENHANCED query
-    const bm25Results = cfg.bm25K > 0
-      ? await retrieveBM25TopK(enhancedQuery, context, cfg.bm25K)
-      : [];
+    // Execute hybrid search
+    // PARALLEL EXECUTION: Run vector and BM25 searches concurrently to reduce latency
+    // NOTE: Vector search uses original query for clean semantic embedding.
+    //       BM25 uses expanded+enhanced query for better keyword recall.
+    const vectorQuery = injectUserContext(query, context); // original query + user context only
+    const [vectorResults, bm25Results] = await Promise.all([
+      retrieveVectorTopK(vectorQuery, context, cfg.vectorK),
+      cfg.bm25K > 0 ? retrieveBM25TopK(enhancedQuery, context, cfg.bm25K) : Promise.resolve([])
+    ]);
 
     logger.debug(`[RAG] v=${vectorResults.length} b=${bm25Results.length} (hybrid: vector + BM25)`);
     logger.debug(`[SEARCH] ResultsFound=${vectorResults.length + bm25Results.length} (vector=${vectorResults.length}, bm25=${bm25Results.length})`);
@@ -903,6 +929,27 @@ export async function hybridRetrieve(
       finalChunks = filterChunksByCategory(guardedFinal, context.category);
     }
 
+    // ========================================================================
+    // GATE 2: Pre-LLM Retrieval Quality Check
+    // Reject weak retrieval BEFORE it reaches GPT-4 to prevent hallucination
+    // ========================================================================
+    let gateResult: RetrievalGateResult;
+    const topScore = finalChunks.length > 0 ? (finalChunks[0].metadata?.rrfScore ?? 0) : 0;
+
+    if (finalChunks.length < GATE_MIN_CHUNKS) {
+      gateResult = { gatePass: false, failReason: 'INSUFFICIENT_CHUNKS', topScore };
+      logger.warn(`[RAG Gate2] FAILED: Only ${finalChunks.length} chunks (need ${GATE_MIN_CHUNKS})`);
+    } else if (topScore < GATE_MIN_TOP_SCORE) {
+      gateResult = { gatePass: false, failReason: 'LOW_SCORE', topScore };
+      logger.warn(`[RAG Gate2] FAILED: Top score ${topScore.toFixed(3)} < ${GATE_MIN_TOP_SCORE}`);
+    } else {
+      // Filter out low-quality chunks to prevent context pollution
+      const qualityChunks = finalChunks.filter(c => (c.metadata?.rrfScore ?? 0) >= GATE_CHUNK_THRESHOLD);
+      finalChunks = qualityChunks.length >= GATE_MIN_CHUNKS ? qualityChunks : finalChunks;
+      gateResult = { gatePass: true, topScore };
+      logger.debug(`[RAG Gate2] PASSED: ${finalChunks.length} quality chunks, topScore=${topScore.toFixed(3)}`);
+    }
+
     return {
       chunks: finalChunks,
       method: "hybrid",
@@ -919,6 +966,10 @@ export async function hybridRetrieve(
       droppedPlanYearFilter,
       bm25WideSweep,
       expansionPhases,
+      // Gate 2 result fields
+      gatePass: gateResult.gatePass,
+      gateFailReason: gateResult.failReason,
+      gateTopScore: gateResult.topScore,
     };
   } catch (error) {
     logger.error("Hybrid retrieval failed:", error);
@@ -950,7 +1001,7 @@ export function buildContext(
     }
 
     // Check token budget
-    const chunkTokens = chunk.metadata.tokenCount || Math.ceil(chunk.content.length / 4);
+    const chunkTokens = chunk.metadata.tokenCount || countTokens(chunk.content);
     if (tokenCount + chunkTokens > maxTokens) {
       break;
     }

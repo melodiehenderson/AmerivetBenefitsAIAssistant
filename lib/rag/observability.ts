@@ -35,8 +35,8 @@ const ENABLE_APP_INSIGHTS = process.env.ENABLE_APP_INSIGHTS === 'true' || proces
 // Token pricing (per 1M tokens) - Update with current Azure OpenAI pricing
 const TOKEN_PRICING = {
   L1: {
-    prompt: 0.15,      // gpt-4o-mini: $0.15/1M input tokens
-    completion: 0.60,  // gpt-4o-mini: $0.60/1M output tokens
+    prompt: 0.15,      // gpt-4.1-mini: $0.15/1M input tokens
+    completion: 0.60,  // gpt-4.1-mini: $0.60/1M output tokens
   },
   L2: {
     prompt: 10.00,     // gpt-4-turbo: $10/1M input tokens

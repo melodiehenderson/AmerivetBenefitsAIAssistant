@@ -139,7 +139,7 @@ export class RAGChatRouter {
 
       let llmResponse = await hybridLLMRouter.createChatCompletion({
         messages,
-        model: process.env.SMART_ROUTER_MODEL || 'gpt-4o-mini',
+        model: process.env.SMART_ROUTER_MODEL || 'gpt-4.1-mini',
         temperature: 0.3
       });
 
@@ -172,7 +172,7 @@ export class RAGChatRouter {
         ];
         const retryResponse = await hybridLLMRouter.createChatCompletion({
           messages: retryMessages,
-          model: process.env.SMART_ROUTER_MODEL || 'gpt-4o-mini',
+          model: process.env.SMART_ROUTER_MODEL || 'gpt-4.1-mini',
           temperature: 0.15, // lower temp → more conservative on the correction
         });
         // Re-verify once; if still failing, pass through with a warning rather than looping.
@@ -243,7 +243,7 @@ export class RAGChatRouter {
 
       const llmResponse = await hybridLLMRouter.createChatCompletion({
         messages,
-        model: process.env.SMART_ROUTER_MODEL || 'gpt-4o-mini',
+        model: process.env.SMART_ROUTER_MODEL || 'gpt-4.1-mini',
         temperature: 0.3
       });
 

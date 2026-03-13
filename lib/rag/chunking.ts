@@ -36,11 +36,11 @@ import type {
 
 const DEFAULT_CHUNKING_CONFIG: ChunkingConfig = {
   windowSize: 1000,          // Target chunk size in tokens
-  stride: 150,               // Overlap between chunks (15%)
+  stride: 200,               // Overlap between chunks (20%)
   preserveHeaders: true,     // Keep section headers with chunks
   minChunkSize: 100,         // Minimum viable chunk size
   maxChunkSize: 1500,        // Maximum chunk size
-  overlapTokens: 150,        // Explicit overlap (matches stride)
+  overlapTokens: 200,        // Explicit overlap (matches stride)
 };
 
 const EMBEDDING_BATCH_SIZE = 16;  // Batch embeddings for efficiency
@@ -59,8 +59,14 @@ const MAX_RETRIES = 3;
  * - Use cl100k_base encoding for GPT-4/GPT-3.5
  */
 function estimateTokenCount(text: string): number {
-  // Heuristic: 1 token ≈ 4 characters for English text
-  return Math.ceil(text.length / 4);
+  // Real token counting via tiktoken (cl100k_base / GPT-4 encoding)
+  try {
+    const { countTokens } = require('@/lib/utils/tokenCount');
+    return countTokens(text);
+  } catch {
+    // Fallback heuristic if tokenizer fails to load
+    return Math.ceil(text.length / 4);
+  }
 }
 
 /**
@@ -282,6 +288,39 @@ function detectSections(text: string): Section[] {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Sentence Boundary Detection
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Find the nearest sentence boundary near a target token position.
+ * Looks within a window around targetPos for sentence-ending punctuation
+ * and returns the best split point to avoid mid-sentence breaks.
+ */
+function findSentenceBoundary(tokens: string[], targetPos: number, windowSize = 50): number {
+  const text = detokenize(tokens);
+  // Approximate character position from token position
+  const charPerToken = text.length / tokens.length;
+  const targetCharPos = Math.round(targetPos * charPerToken);
+
+  const searchStart = Math.max(0, targetCharPos - windowSize);
+  const searchEnd = Math.min(text.length, targetCharPos + windowSize);
+  const searchRegion = text.slice(searchStart, searchEnd);
+
+  const sentenceEnders = /[.!?]\s+/g;
+  let lastBoundary = targetPos; // fallback to original position
+  let match;
+  while ((match = sentenceEnders.exec(searchRegion)) !== null) {
+    const absoluteCharPos = searchStart + match.index + match[0].length;
+    // Convert character position back to approximate token position
+    const approxTokenPos = Math.round(absoluteCharPos / charPerToken);
+    if (approxTokenPos <= targetPos + 20) {
+      lastBoundary = approxTokenPos;
+    }
+  }
+  return Math.max(1, Math.min(lastBoundary, tokens.length));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Sliding Window Chunking
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -315,10 +354,14 @@ export function chunkText(
   let position = 0;
 
   while (position < tokens.length) {
-    const windowEnd = Math.min(position + cfg.windowSize, tokens.length);
+    // Find sentence boundary near the target window end to avoid mid-sentence splits
+    const rawEnd = Math.min(position + cfg.windowSize, tokens.length);
+    const windowEnd = rawEnd >= tokens.length
+      ? rawEnd
+      : findSentenceBoundary(tokens, rawEnd);
     const chunkTokens = tokens.slice(position, windowEnd);
-    const chunkText = detokenize(chunkTokens);
-    const tokenCount = estimateTokenCount(chunkText);
+    const chunkContent = detokenize(chunkTokens);
+    const tokenCount = estimateTokenCount(chunkContent);
 
     // Skip chunks that are too small (unless it's the last chunk)
     if (tokenCount < cfg.minChunkSize && windowEnd < tokens.length) {
@@ -327,7 +370,7 @@ export function chunkText(
     }
 
     chunks.push({
-      content: chunkText,
+      content: chunkContent,
       tokenCount,
       windowStart: position,
       windowEnd,

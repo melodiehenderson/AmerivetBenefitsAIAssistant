@@ -851,6 +851,8 @@ You MUST structure every response exactly as shown below:
   - NEVER ask for the user's name, age, or state — you already have them.
   - NEVER include [Source N] or [Doc N] citation markers in responses.
   - For "Is [service] available in [state]?": check CARRIER-LOCK and STATE-LOCK first. If not in catalog, use MISSING-DATA rule.
+  - NEVER speculate or fill gaps with general knowledge. If the retrieved context does not clearly answer the question, respond: "I don't have that specific information. Please check ${ENROLLMENT_PORTAL_URL} or call AmeriVet HR at ${HR_PHONE}." Do NOT attempt to construct an answer from assumptions.
+  - NEVER repeat the same word or phrase in a sequence (e.g., "California and California" is invalid).
 </Negative_Constraints>
 
 You answer ONLY from the IMMUTABLE CATALOG below. You DO NOT process enrollments.
@@ -922,6 +924,15 @@ Kaiser is available ONLY in: California (CA), Washington (WA), Oregon (OR).
 Re-statement of zero-tolerance rule: if user's state is NOT in that list, Kaiser
 must NEVER appear in your response — not in plan lists, not in comparisons,
 not in "not available" notes. Omit it entirely.
+
+CRITICAL - KAISER KNOWLEDGE CONTAMINATION GUARD:
+Kaiser Permanente is available to AmeriVet employees in CA, WA, and OR — all three states.
+Do NOT use your general knowledge about Kaiser's real-world coverage areas.
+Your training data may say Kaiser is "California-based" — IGNORE that for AmeriVet.
+If you cannot find Kaiser availability information in the provided context,
+say: "Please contact AmeriVet HR at ${HR_PHONE} to confirm Kaiser availability."
+NEVER state Kaiser is "only available in California" — that is INCORRECT for AmeriVet.
+Kaiser serves AmeriVet employees in California, Washington, AND Oregon.
 
 ═══════════════════════════════════════════════════════════════════════════
 PPO CLARIFICATION (CRITICAL — prevents hallucination)
@@ -2571,7 +2582,30 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
     const tRetrieval = Date.now();
     let result = await hybridRetrieve(retrievalQuery, context);
     logger.info(`[REQ:${reqId}][STEP-8a RETRIEVAL] ${result.chunks?.length||0} chunks in ${Date.now()-tRetrieval}ms`);
-    
+
+    // ========================================================================
+    // GATE 2: Pre-LLM Retrieval Quality Check
+    // If retrieval quality is too low, short-circuit before GPT-4 call to prevent hallucination
+    // ========================================================================
+    if (result.gatePass === false) {
+      logger.warn(`[REQ:${reqId}][GATE2 FAIL] ${result.gateFailReason}, topScore=${result.gateTopScore?.toFixed(3)}`);
+      const fallbackMsg = `I don't have enough information to answer that accurately. Please contact the AmeriVet benefits team at ${HR_PHONE} or visit the enrollment portal at ${ENROLLMENT_PORTAL_URL} for assistance.`;
+      const plainFallback = toPlainAssistantText(fallbackMsg);
+      session.lastBotMessage = plainFallback;
+      await updateSession(sessionId, session);
+      return NextResponse.json({
+        answer: plainFallback,
+        tier: 'L1',
+        sessionContext: buildSessionContext(session),
+        metadata: {
+          gatePass: false,
+          gateFailReason: result.gateFailReason,
+          gateTopScore: result.gateTopScore,
+          escalated: true
+        }
+      });
+    }
+
     // 3. RUN VALIDATION PIPELINE (3 Gates)
     // ========================================================================
     // Gate 1: Retrieval Validation (RRF scores)

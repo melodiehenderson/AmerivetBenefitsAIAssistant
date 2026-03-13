@@ -1,8 +1,27 @@
 # Environment files with secrets
+.env
+.env.*
+!.env.example
 .env.local
 .env.prod
-.env.vercel.local
+.env.vercel
+.env.vercel.*
 .env*.local
+
+# Vercel local config (contains pulled secrets)
+.vercel/.env*.local
+.vercel/.env.production.local
+
+# Credentials / key files — never commit
+*.pem
+*.key
+*.pfx
+*.p12
+*.jks
+*credentials*.json
+
+# Sensitive documentation
+docs/credentials-handover.md
 
 # Sync .project/sourceTexts/ folder (source text files)
 
@@ -48,6 +67,9 @@ copilot-messages.log
 *.img
 *.vhd
 *.vmdk
+
+# Next.js build output
+.next/
 
 # System files
 .DS_Store

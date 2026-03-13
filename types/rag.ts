@@ -243,6 +243,10 @@ export interface RetrievalResult {
     chunks: number;
     distinctDocs: number;
   }>;                                        // Ordered list of expansion phases with resulting counts
+  // Gate 2: Pre-LLM quality check results
+  gatePass?: boolean;                        // Whether retrieval passed quality gate
+  gateFailReason?: 'LOW_SCORE' | 'INSUFFICIENT_CHUNKS';  // Reason for gate failure
+  gateTopScore?: number;                     // Top chunk score for diagnostics
 }
 
 export interface HybridSearchConfig {
@@ -329,7 +333,7 @@ export interface TierConfig {
 
 export const TIER_CONFIGS: Record<Tier, TierConfig> = {
   L1: {
-    model: "gpt-4o-mini",
+    model: "gpt-4.1-mini",
     maxTokens: 1200,
     contextTokens: 800,
     temperature: 0.2,

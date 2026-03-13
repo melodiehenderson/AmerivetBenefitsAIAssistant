@@ -148,7 +148,7 @@ export class SmartChatRouter {
 
       const response = await hybridLLMRouter.createChatCompletion({
         messages,
-        model: process.env.SMART_ROUTER_MODEL || 'gpt-4o-mini',
+        model: process.env.SMART_ROUTER_MODEL || 'gpt-4.1-mini',
         temperature: 0.3
       });
 

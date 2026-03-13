@@ -22,6 +22,13 @@ import {
   compareMaternityCosts,
   estimateCostProjection,
 } from '../../lib/rag/pricing-utils';
+import {
+  computeRecallAtK,
+  computeMRR,
+  checkMustContain,
+  checkMustNotContain,
+  runOfflineEvalSuite,
+} from './metrics';
 
 // ─── Dataset loading ─────────────────────────────────────────────────────────
 
@@ -34,6 +41,11 @@ interface EvalCase {
   must_contain: string[];
   must_not_contain: string[];
   expected_behavior: string;
+  // Ground truth fields (Batch 4)
+  expectedAnswer?: string;
+  mustContain?: string[];
+  mustNotContain?: string[];
+  expectedChunkIds?: string[];
 }
 
 function loadDataset(): EvalCase[] {
@@ -223,5 +235,100 @@ describe('Eval dataset integrity', () => {
       c => c.must_contain.length === 0 && c.must_not_contain.length === 0
     );
     expect(noAssertions.map(c => c.id)).toEqual([]);
+  });
+
+  it('all cases now have expectedAnswer ground truth', () => {
+    const withGroundTruth = dataset.filter(c => c.expectedAnswer && c.expectedAnswer.length > 0);
+    expect(withGroundTruth.length).toBe(dataset.length);
+  });
+});
+
+// ─── Metrics unit tests ────────────────────────────────────────────────────
+
+describe('Eval metrics: Recall@K', () => {
+  it('perfect recall: all expected chunks in top-K', () => {
+    expect(computeRecallAtK(['a', 'b'], [{ id: 'a' }, { id: 'b' }, { id: 'c' }], 5)).toBe(1.0);
+  });
+
+  it('partial recall: 1 of 2 expected chunks in top-K', () => {
+    expect(computeRecallAtK(['a', 'b'], [{ id: 'a' }, { id: 'c' }, { id: 'd' }], 5)).toBe(0.5);
+  });
+
+  it('zero recall: no expected chunks in top-K', () => {
+    expect(computeRecallAtK(['a', 'b'], [{ id: 'c' }, { id: 'd' }], 5)).toBe(0);
+  });
+
+  it('K truncation: expected chunk exists but beyond K', () => {
+    expect(computeRecallAtK(['b'], [{ id: 'a' }, { id: 'b' }], 1)).toBe(0);
+  });
+
+  it('empty expectedChunkIds returns 1.0', () => {
+    expect(computeRecallAtK([], [{ id: 'a' }], 5)).toBe(1.0);
+  });
+});
+
+describe('Eval metrics: MRR', () => {
+  it('MRR = 1.0 when first result is relevant', () => {
+    expect(computeMRR(['a'], [{ id: 'a' }, { id: 'b' }])).toBe(1.0);
+  });
+
+  it('MRR = 0.5 when second result is relevant', () => {
+    expect(computeMRR(['b'], [{ id: 'a' }, { id: 'b' }])).toBe(0.5);
+  });
+
+  it('MRR = 0 when no result is relevant', () => {
+    expect(computeMRR(['c'], [{ id: 'a' }, { id: 'b' }])).toBe(0);
+  });
+
+  it('empty expectedChunkIds returns 1.0', () => {
+    expect(computeMRR([], [{ id: 'a' }])).toBe(1.0);
+  });
+});
+
+describe('Eval metrics: mustContain/mustNotContain', () => {
+  it('mustContain passes when all phrases present', () => {
+    const result = checkMustContain('Kaiser is available in CA, WA, OR', ['Kaiser', 'CA', 'WA', 'OR']);
+    expect(result.pass).toBe(true);
+    expect(result.failed).toEqual([]);
+  });
+
+  it('mustContain fails when phrase missing', () => {
+    const result = checkMustContain('Kaiser is available in CA', ['Kaiser', 'WA']);
+    expect(result.pass).toBe(false);
+    expect(result.failed).toEqual(['WA']);
+  });
+
+  it('mustNotContain passes when no forbidden phrases present', () => {
+    const result = checkMustNotContain('Your plans are Standard HSA and Enhanced HSA', ['Kaiser', 'Source 1']);
+    expect(result.pass).toBe(true);
+  });
+
+  it('mustNotContain fails when forbidden phrase present', () => {
+    const result = checkMustNotContain('Source 1 says Kaiser is available', ['Source 1', 'DHMO']);
+    expect(result.pass).toBe(false);
+    expect(result.failed).toEqual(['Source 1']);
+  });
+});
+
+describe('Eval metrics: runOfflineEvalSuite', () => {
+  it('computes aggregate metrics from ground truth responses', () => {
+    const cases = [
+      { id: 'T-001', question: 'Test Q1', mustContain: ['Kaiser', 'WA'], mustNotContain: ['Source 1'] },
+      { id: 'T-002', question: 'Test Q2', mustContain: ['BCBSTX'], mustNotContain: ['Kaiser'] },
+    ];
+    const responses = new Map([
+      ['T-001', 'Kaiser is available in WA and OR.'],
+      ['T-002', 'Your plan is BCBSTX Standard HSA.'],
+    ]);
+    const chunks = new Map<string, Array<{ id: string }>>([
+      ['T-001', [{ id: 'c1' }, { id: 'c2' }]],
+      ['T-002', [{ id: 'c3' }]],
+    ]);
+
+    const report = runOfflineEvalSuite(cases, responses, chunks);
+
+    expect(report.totalCases).toBe(2);
+    expect(report.mustContainPassRate).toBe(1.0);
+    expect(report.mustNotContainPassRate).toBe(1.0);
   });
 });

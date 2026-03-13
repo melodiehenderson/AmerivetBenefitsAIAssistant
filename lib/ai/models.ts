@@ -30,10 +30,13 @@ export const chatModelMap = Object.fromEntries(chatModels.map(m => [m.id, m]));
 export const embeddingModels = {
   'text-embedding-3-large': {
     name: 'Text Embedding 3 Large',
-    dimensions: 1536,
+    dimensions: 3072,  // text-embedding-3-large produces 3072-dimensional vectors
     costPerToken: 0.0000001
   }
 };
+
+// Expected embedding dimensions for validation
+export const EXPECTED_EMBEDDING_DIMS = 3072;
 
 // Model list for UI selection
 export const CHAT_MODELS = [

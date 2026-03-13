@@ -5,9 +5,9 @@ import { z } from 'zod';
 
 // Model configurations with cost estimates (per 1M tokens)
 const MODEL_CONFIGS = {
-  'gpt-4o-mini': {
+  'gpt-4.1-mini': {
     provider: azure,
-    model: process.env.AZURE_OPENAI_CHAT_DEPLOYMENT || 'gpt-4o-mini',
+    model: process.env.AZURE_OPENAI_CHAT_DEPLOYMENT || 'gpt-4.1-mini',
     costPer1MInput: 0.5,
     costPer1MOutput: 1.5,
     maxTokens: 16385,
@@ -38,12 +38,12 @@ type QueryComplexity = z.infer<typeof QueryComplexitySchema>;
 // Routing rules based on complexity and cost optimization
 const ROUTING_RULES = {
   simple: {
-    primary: 'gpt-4o-mini',
-    fallback: 'gpt-4o-mini',
+    primary: 'gpt-4.1-mini',
+    fallback: 'gpt-4.1-mini',
     threshold: 0.8, // 80% of simple queries go to flash
   },
   moderate: {
-    primary: 'gpt-4o-mini',
+    primary: 'gpt-4.1-mini',
     fallback: 'gpt-4o',
     threshold: 0.6, // 60% of moderate queries go to flash
   },
@@ -91,7 +91,7 @@ Respond with JSON matching this schema:
 
       // Use streamObject from AI SDK for structured analysis
       const { object } = await streamObject({
-        model: azure(process.env.AZURE_OPENAI_CHAT_DEPLOYMENT || 'gpt-4o-mini'),
+        model: azure(process.env.AZURE_OPENAI_CHAT_DEPLOYMENT || 'gpt-4.1-mini'),
         prompt: analysisPrompt,
         schema: QueryComplexitySchema,
       });
@@ -149,7 +149,7 @@ Respond with JSON matching this schema:
     
     if (category === 'faq' && level === 'simple') {
       return {
-        model: 'gpt-4o-mini',
+        model: 'gpt-4.1-mini',
         reason: 'Simple FAQ query',
       };
     }

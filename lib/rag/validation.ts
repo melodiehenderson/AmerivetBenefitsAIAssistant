@@ -38,7 +38,7 @@ import {
 // Configuration
 // ─────────────────────────────────────────────────────────────────────────────
 
-const GROUNDING_THRESHOLD = 0.65; // 65% of response tokens must be grounded (adjusted from 70% for better coverage)
+const GROUNDING_THRESHOLD = 0.70; // 70% of response tokens must be grounded
 const MIN_CITATION_LENGTH = 20; // Minimum characters for a valid citation
 const PII_REDACTION_ENABLED = true;
 
@@ -450,6 +450,15 @@ export async function validateResponse(
     );
   }
 
+  // Step 3.5: Speculation Detection
+  const speculation = detectSpeculation(response);
+  if (speculation.hasSpeculation) {
+    errors.push(
+      `Speculative language detected: ${speculation.matches.length} patterns found`
+    );
+    requiresEscalation = true; // Speculative answers should be escalated or retried
+  }
+
   // Step 4: Determine Overall Validity
   const valid = errors.length === 0 || (piiDetection.hasPII && errors.length === 1);
   // Valid if no errors OR only PII detected (since we redact it)
@@ -574,6 +583,39 @@ export function formatValidationReport(result: ValidationResult): string {
   }
   
   return lines.join('\n');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Speculation Detection
+// ─────────────────────────────────────────────────────────────────────────────
+
+const SPECULATION_PATTERNS = [
+  /\bI think\b/i,
+  /\bI believe\b/i,
+  /\bprobably\b/i,
+  /\btypically\b/i,
+  /\bgenerally\b/i,
+  /\bin most cases\b/i,
+  /\busually\b/i,
+  /\bI would assume\b/i,
+  /\bI'm not sure\b/i,
+  /\bI'm not certain\b/i,
+  /\bit's likely\b/i,
+  /\bmight be available\b/i,
+];
+
+/**
+ * Detect speculative/hedging language in LLM responses.
+ * Insurance/benefits answers must be factual, not speculative.
+ */
+export function detectSpeculation(response: string): {
+  hasSpeculation: boolean;
+  matches: string[];
+} {
+  const matches = SPECULATION_PATTERNS
+    .filter(p => p.test(response))
+    .map(p => p.toString());
+  return { hasSpeculation: matches.length > 0, matches };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

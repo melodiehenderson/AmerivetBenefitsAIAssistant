@@ -33,15 +33,25 @@ export function shouldAppendTransition(content: string, session: Session): boole
   return Date.now() - lastTimestamp > 45_000;
 }
 
-// Strip citation tags like [Source 1], [1], [Doc 3] from user-facing output
+// Strip citation tags like [Source 1], [1], [Doc 3], (Source 1) from user-facing output
 export function stripCitations(text: string): string {
   let result = text;
   // Remove [Source X], [Doc X], [Document X] patterns
   result = result.replace(/\[(?:Source|Doc|Document)\s*\d+\]/gi, '');
   // Remove standalone [1], [2], etc.
   result = result.replace(/\[\d+\]/g, '');
-  // Remove (Source: ...) patterns
+  // Remove [ref] [ref1] patterns
+  result = result.replace(/\[ref\s*\d*\]/gi, '');
+  // Remove (Source: ...) patterns with colon
   result = result.replace(/\(Source:[^)]+\)/gi, '');
+  // Remove (Source N) patterns without colon (Bug fix: catches "(Source 1)" format)
+  result = result.replace(/\(Source\s*\d+\)/gi, '');
+  // Remove (doc. 1) or (doc 2) patterns
+  result = result.replace(/\(doc\.?\s*\d+\)/gi, '');
+  // Remove superscript numbers ¹²³⁴⁵
+  result = result.replace(/[¹²³⁴⁵]/g, '');
+  // Remove "according to document/source/chunk N" phrases
+  result = result.replace(/according to (?:document|source|chunk)\s*\d*/gi, '');
   // Clean up double spaces left behind
   result = result.replace(/  +/g, ' ');
   return result.trim();
@@ -296,20 +306,25 @@ export function removeRepeatedPhrases(text: string): string {
   // Pattern: match repeated words/phrases separated by commas or "and"
   // "Indiana, Indiana, and Indiana" → "Indiana"
   // "California, California, California" → "California"
-  
+
   let result = text;
-  
+
   // Find sequences like "word, word, and word" or "word, word, word"
   result = result.replace(/\b(\w+(\s+\w+)?)(,\s+\1)+(,?\s+and\s+\1)?\b/gi, '$1');
-  
-  // Also handle "X and X and X" patterns
+
+  // Handle "X and X and X" patterns (2+ and-repeats)
   result = result.replace(/\b(\w+(\s+\w+)?)\s+and\s+\1(\s+and\s+\1)+\b/gi, '$1');
-  
+
+  // Bug fix: Handle simple "X and X" pattern (single repetition with "and")
+  // e.g., "California and California" → "California"
+  result = result.replace(/\b(\w+)\s+and\s+\1\b/gi, '$1');
+
   return result;
 }
 
 export function cleanResponseText(text: string): string {
   let result = text;
+  result = stripCitations(result);            // Remove citation artifacts like (Source 1)
   result = removeDuplicateSentences(result);  // Remove duplicate sentences first
   result = removeRepeatedPhrases(result);      // Then remove repeated phrases
   return result;
