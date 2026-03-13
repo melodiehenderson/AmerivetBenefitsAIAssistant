@@ -2485,6 +2485,32 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
     }
 
     // ========================================================================
+    // FIRST-PASS: DETERMINISTIC SHORT ANSWERS (yes/no + factual lookups)
+    // ========================================================================
+    // Intercepts "do we have X?", "who provides X?", "is X available?" queries
+    // BEFORE they reach RAG or the LLM. Returns catalog-grounded answers
+    // instantly — no hallucination possible.
+    {
+      const { intent: firstPassIntent } = classifyQueryIntent(lowerQuery, session.currentTopic);
+      if (firstPassIntent === 'yes_no' || firstPassIntent === 'factual_lookup') {
+        const shortAnswer = buildShortCategoryAnswer(lowerQuery, firstPassIntent, session);
+        if (shortAnswer !== null) {
+          logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] FIRST-PASS-SHORT-ANSWER: intent=${firstPassIntent}`);
+          session.currentTopic = normalizeBenefitCategory(lowerQuery) || session.currentTopic;
+          const plainShort = toPlainAssistantText(shortAnswer);
+          session.lastBotMessage = plainShort;
+          await updateSession(sessionId, session);
+          pipelineTrace.intent = { detected: firstPassIntent, confidence: 0.85 };
+          pipelineTrace.response = { type: 'intercept', interceptName: 'first-pass-short-answer', citationsStripped: 0, hallucinationsDetected: 0, groundingWarnings: 0, length: plainShort.length };
+          pipelineTrace.totalLatencyMs = Date.now() - new Date(pipelineTrace.timestamp).getTime();
+          pipelineTrace.success = true;
+          pipelineLogger.log(pipelineTrace).catch(() => {});
+          return NextResponse.json({ answer: plainShort, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'first-pass-short-answer', intent: firstPassIntent } });
+        }
+      }
+    }
+
+    // ========================================================================
     // CATEGORY EXPLORATION INTERCEPT (Deterministic — no RAG needed)
     // ========================================================================
     // When user says "medical", "dental", "life insurance", "vision", etc.
