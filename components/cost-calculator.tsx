@@ -14,7 +14,8 @@ import {
 import { DollarSign, AlertCircle } from 'lucide-react';
 import { amerivetBenefits2024_2025, type BenefitTier } from '@/lib/data/amerivet';
 
-// Regional availability is defined by the catalog (e.g., Kaiser may be region-limited)
+// Kaiser is available in CA, WA, OR only — must match amerivet.ts regionalAvailability
+const KAISER_STATES = ['CA', 'WA', 'OR'] as const;
 
 // All US states for dropdown
 const US_STATES = [
@@ -65,7 +66,8 @@ export function CostCalculator() {
   const [surgeries, setSurgeries] = useState(0);
   const [planCosts, setPlanCosts] = useState<PlanCost[]>([]);
 
-  const region = userState === 'CA' ? 'California' : 'nationwide';
+  const STATE_TO_REGION: Record<string, string> = { CA: 'California', WA: 'Washington', OR: 'Oregon' };
+  const region = STATE_TO_REGION[userState] ?? 'nationwide';
   const availablePlans = amerivetBenefits2024_2025.medicalPlans.filter((p) =>
     p.regionalAvailability.includes('nationwide') ||
     p.regionalAvailability.includes(region)
@@ -134,7 +136,7 @@ export function CostCalculator() {
               <select className="mt-1 w-full rounded border p-2" value={userState} onChange={(e) => {
                 setUserState(e.target.value);
                 // Reset plan if Kaiser selected but not available in new state
-                if (/kaiser/i.test(plan) && e.target.value !== 'CA') {
+                if (/kaiser/i.test(plan) && !KAISER_STATES.includes(e.target.value as typeof KAISER_STATES[number])) {
                   setPlan(amerivetBenefits2024_2025.medicalPlans[0]?.name || 'Standard HSA');
                 }
               }}>
