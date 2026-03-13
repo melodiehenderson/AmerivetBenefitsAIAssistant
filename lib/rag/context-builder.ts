@@ -3,6 +3,7 @@
  */
 
 import type { Chunk } from '@/types/rag';
+import { countTokens } from '@/lib/utils/tokenCount';
 
 /**
  * Build a formatted context string from retrieved chunks
@@ -53,9 +54,14 @@ export function buildRAGContext(
 
   let context = contextParts.join('');
 
-  // Truncate if too long
-  if (context.length > maxLength) {
-    context = context.substring(0, maxLength) + '\n... (truncated)';
+  // Truncate if exceeds token budget (maxLength treated as max tokens)
+  const maxTokens = maxLength; // treat maxLength as token budget
+  if (countTokens(context) > maxTokens) {
+    // Trim parts from the end until within budget
+    while (contextParts.length > 0 && countTokens(contextParts.join('')) > maxTokens) {
+      contextParts.pop();
+    }
+    context = contextParts.join('') + '\n... (truncated)';
   }
 
   return context;

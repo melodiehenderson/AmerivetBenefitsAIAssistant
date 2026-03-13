@@ -9,6 +9,7 @@ import { logger } from '@/lib/logger';
 import { v4 as uuidv4 } from 'uuid';
 import { rateLimiters } from '@/lib/middleware/rate-limit';
 import { DEFAULT_COMPANY_ID, DOCUMENT_CATEGORIES } from '@/lib/config';
+import { scrubPII } from '@/lib/utils/sanitize';
 
 export const POST = requireCompanyAdmin(async (request: NextRequest) => {
   try {
@@ -70,7 +71,7 @@ export const POST = requireCompanyAdmin(async (request: NextRequest) => {
     const repositories = await getRepositories();
     const document = {
       id: documentId,
-      title: file.name.replace(/\.[^/.]+$/, ''),
+      title: scrubPII(file.name.replace(/\.[^/.]+$/, '')),
       fileName: file.name,
       fileSize: file.size,
       fileType: file.type,

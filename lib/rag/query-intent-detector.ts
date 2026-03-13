@@ -36,10 +36,38 @@ const AVAILABILITY_KEYWORDS = ['options', 'available', 'plans', 'choose from', '
 const PROCESS_KEYWORDS = ['enroll', 'enrollment', 'deadline', 'sign up', 'register', 'open enrollment', 'effective date', 'when can'];
 
 /**
- * Detect query intent and extract key information
+ * Extract state and plan context from conversation history.
+ * Used to carry forward context for follow-up questions.
  */
-export function detectQueryIntent(query: string): QueryIntent {
-  const lowerQuery = query.toLowerCase();
+export function extractContextFromHistory(history: Array<{role: string, content: string}>): {
+  state?: string;
+  planType?: string;
+} {
+  const combined = history.map(m => m.content).join(' ');
+  const stateMatch = combined.match(/\b(TX|CA|WA|OR|Texas|California|Washington|Oregon)\b/i);
+  const planMatch = combined.match(/\b(Kaiser|BCBS|BlueCross|HSA|PPO|HMO|HDHP)\b/i);
+  return {
+    state: stateMatch?.[1],
+    planType: planMatch?.[1]
+  };
+}
+
+/**
+ * Detect query intent and extract key information.
+ * Optionally accepts conversation history to inject context from prior turns.
+ */
+export function detectQueryIntent(
+  query: string,
+  conversationHistory?: Array<{role: string, content: string}>
+): QueryIntent {
+  // Inject context from conversation history if current query lacks state info
+  let enhancedQuery = query;
+  const historyContext = extractContextFromHistory(conversationHistory ?? []);
+  if (historyContext.state && !query.match(/\b(TX|CA|WA|OR)\b/i)) {
+    enhancedQuery = `${query} in ${historyContext.state}`;
+  }
+
+  const lowerQuery = enhancedQuery.toLowerCase();
   const words = lowerQuery.split(/\s+/);
   
   let type: IntentType = 'general';

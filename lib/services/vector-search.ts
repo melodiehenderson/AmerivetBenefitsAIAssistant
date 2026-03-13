@@ -3,6 +3,8 @@
 import { ChromaClient } from 'chromadb';
 import { OpenAI } from 'openai';
 import { logger } from '@/lib/logger';
+import { scrubPII } from '@/lib/utils/sanitize';
+import { createHash } from 'crypto';
 
 interface VectorSearchResult {
   content: string;
@@ -78,18 +80,39 @@ export class VectorSearchService {
         return;
       }
 
+      // Scrub PII before embedding and storage
+      const scrubbedContent = scrubPII(content);
+
+      // Duplicate detection via SHA-256 content hash
+      const contentHash = createHash('sha256').update(scrubbedContent).digest('hex');
+      try {
+        const existing = await this.collection.get({
+          where: { contentHash },
+          limit: 1,
+        });
+        if (existing && existing.ids && existing.ids.length > 0) {
+          logger.warn(`[Ingestion] Duplicate detected for hash ${contentHash}, skipping`, { existingId: existing.ids[0] });
+          return;
+        }
+      } catch {
+        // If metadata filtering is unsupported, proceed with insertion
+      }
+
       // Generate embedding
-      const embedding = await this.generateEmbedding(content);
-      
+      const embedding = await this.generateEmbedding(scrubbedContent);
+
+      // Store hash in metadata for future dedup checks
+      const metadataWithHash = { ...metadata, contentHash };
+
       // Add to collection
       await this.collection.add({
         ids: [metadata.id || `doc_${Date.now()}`],
         embeddings: [embedding],
-        documents: [content],
-        metadatas: [metadata],
+        documents: [scrubbedContent],
+        metadatas: [metadataWithHash],
       });
 
-      logger.info('Document added to vector store', { id: metadata.id });
+      logger.info('Document added to vector store', { id: metadata.id, contentHash });
     } catch (error) {
       logger.error('Failed to add document to vector store', { error });
     }
@@ -108,10 +131,11 @@ export class VectorSearchService {
       const metadatas: any[] = [];
 
       for (const doc of documents) {
-        const embedding = await this.generateEmbedding(doc.content);
+        const scrubbedContent = scrubPII(doc.content);
+        const embedding = await this.generateEmbedding(scrubbedContent);
         ids.push(doc.metadata.id || `doc_${Date.now()}_${Math.random()}`);
         embeddings.push(embedding);
-        contents.push(doc.content);
+        contents.push(scrubbedContent);
         metadatas.push(doc.metadata);
       }
 

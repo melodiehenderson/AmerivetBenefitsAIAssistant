@@ -28,8 +28,8 @@ export interface ModelConfig {
  * Based on Microsoft Learn documentation
  */
 export const MODEL_PRICING: Record<string, ModelConfig> = {
-  'gpt-4o-mini': {
-    model: 'gpt-4o-mini',
+  'gpt-4.1-mini': {
+    model: 'gpt-4.1-mini',
     costPerMTokenIn: 0.15,
     costPerMTokenOut: 0.60,
     qualityScore: 0.75,
@@ -118,9 +118,9 @@ export function getModelForPhase2(
   strategy: MigrationStrategy = DEFAULT_MIGRATION_STRATEGY,
   useABTestTreatment?: boolean
 ): string {
-  // L1: No change (gpt-4o-mini - already cheap)
+  // L1: No change (gpt-4.1-mini - already cheap)
   if (tier === 'L1') {
-    return process.env.AZURE_OPENAI_DEPLOYMENT_L1 || 'gpt-4o-mini';
+    return process.env.AZURE_OPENAI_DEPLOYMENT_L1 || 'gpt-4.1-mini';
   }
 
   // L2: Apply A/B test if enabled
@@ -148,7 +148,7 @@ export function getModelForPhase2(
     return process.env.AZURE_OPENAI_DEPLOYMENT_L3 || 'gpt-4';
   }
 
-  return 'gpt-4o-mini'; // Fallback
+  return 'gpt-4.1-mini'; // Fallback
 }
 
 /**

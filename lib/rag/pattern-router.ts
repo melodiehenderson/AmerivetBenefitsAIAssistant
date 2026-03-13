@@ -19,13 +19,13 @@ import { getModelForPhase2, shouldUseTreatmentModel } from "./model-migration";
 
 /**
  * Tier configurations with Phase 2 model migration defaults
- * - L1: gpt-4o-mini (no change)
+ * - L1: gpt-4.1-mini (no change)
  * - L2: gpt-4-turbo (20% A/B test to gpt-3.5-turbo)
  * - L3: gpt-4-turbo (migrated from gpt-4, -60% cost)
  */
 export const TIER_CONFIGS: Record<Tier, TierConfig> = {
   L1: {
-    model: process.env.AZURE_OPENAI_DEPLOYMENT_L1 || "gpt-4o-mini",
+    model: process.env.AZURE_OPENAI_DEPLOYMENT_L1 || "gpt-4.1-mini",
     maxTokens: 1200,
     contextTokens: 800,
     temperature: 0.2,

@@ -15,6 +15,8 @@ import {
   type PipelineResult,
   type ValidationResult
 } from '@/lib/rag/validation-pipeline';
+import { detectTextualHallucination } from '@/lib/rag/validation';
+import { pipelineLogger, createTrace } from '@/lib/services/pipeline-logger';
 import {
   routeIntent,
   checkStateGate,
@@ -23,6 +25,7 @@ import {
   type RouterResult
 } from '@/lib/rag/semantic-router';
 import pricingUtils from '@/lib/rag/pricing-utils';
+import { classifyQueryIntent, getIntentHint, type QueryIntent } from '@/lib/rag/query-intent-classifier';
 import { amerivetBenefits2024_2025, getCatalogForPrompt } from '@/lib/data/amerivet';
 
 export const dynamic = 'force-dynamic';
@@ -196,15 +199,17 @@ function classifyInput(msg: string) {
   // D. NO-PRICING INTENT — "no pricing", "no rates", "coverage only", "features only"
   //    When detected, ALL downstream logic must suppress $ signs and cost tables.
   //    Covers: "don't include pricing", "do not include any pricing", "no dollar signs", "without costs"
+  //    Also covers: "not asking about pricing", "don't tell me prices", "skip the price", "just features"
   //    NOTE: Trailing \b removed on partial-word patterns (pric→pricing, cost→costs, etc.)
-  const noPricing = /(?:\bno\s*pric|\bno\s*rates?\b|\bno\s*costs?\b|\bno\s*dollar|\bcoverage\s*only\b|\bfeatures?\s*only\b|\bwithout\s*(?:any\s*)?(?:pric|cost|dollar|rate)|\bskip\s*pric|(?:\bdon'?t|\bdo\s+not)\s*(?:show|include|need|list|mention)\s*(?:any\s*)?(?:the\s*)?(?:cost|pric|rate|premium|dollar))/i.test(clean);
+  const noPricing = /(?:\bno\s*pric|\bno\s*rates?\b|\bno\s*costs?\b|\bno\s*dollar|\bcoverage\s*only\b|\bfeatures?\s*only\b|\bwithout\s*(?:any\s*)?(?:pric|cost|dollar|rate)|\bskip\s*(?:the\s*)?pric|(?:\bdon'?t|\bdo\s+not)\s*(?:show|tell|include|need|list|mention|give|use|add|display|put)\s*(?:me\s*)?(?:any\s*)?(?:the\s*)?(?:cost|pric|rate|premium|dollar)|\bnot\s+(?:asking|looking)\s+(?:about|for)\s+(?:any\s*)?(?:the\s*)?(?:pric|rate|cost)|\bjust\s+(?:the\s*)?(?:feature|coverage|detail|difference|plan|option|benefit)|\bno\s*\$|\bno\s+price|\bignore\s*(?:the\s*)?(?:pric|cost|rate)|\bforget\s*(?:the\s*)?(?:pric|cost|rate))/i.test(clean);
 
-  // E. FAMILY TIER DETECTION — "Spouse and 3 children", "family of 5", "wife and kids"
+  // E. FAMILY TIER DETECTION — "Spouse and 3 children", "family of 5", "wife and kids", "a spouse and 3 kids"
   //    Automatically locks subsequent responses to Employee + Family tier.
-  const familyTierSignal = /\b(spouse\s*(?:and|\+|&)\s*(?:\d+\s*)?child|family\s*of\s*[3-9]|wife\s*and\s*(?:\d+\s*)?kid|husband\s*and\s*(?:\d+\s*)?kid|partner\s*and\s*(?:\d+\s*)?child|(?:my|our)\s*(?:whole\s*)?family|spouse.*children|children.*spouse)\b/i.test(clean);
+  const familyTierSignal = /\b(spouse\s*(?:and|\+|&)\s*(?:\d+\s*)?(?:child|kid)|family\s*of\s*[3-9]|wife\s*and\s*(?:\d+\s*)?kid|husband\s*and\s*(?:\d+\s*)?kid|partner\s*and\s*(?:\d+\s*)?child|(?:my|our)\s*(?:whole\s*)?family|spouse.*children|children.*spouse|have\s+(?:a\s+)?spouse\s+and\s+(?:\d+\s*)?(?:child|kid)|(?:\d+)\s*kids?\s*(?:and|with)\s*(?:a\s+)?spouse|spouse.*(?:\d+)\s*kids?)\b/i.test(clean);
 
   // F. PPO PLAN REQUEST — user explicitly asks for "the PPO plan" (does not exist)
-  const asksPPOPlan = /\b(?:ppo\s*plan|the\s*ppo|ppo\s*option|ppo\s*medical|medical\s*ppo)\b/i.test(clean) && !/dental/i.test(clean);
+  // Exclude: comparison queries like "compare X vs the PPO" should not trigger the PPO-CLARIFICATION intercept
+  const asksPPOPlan = /\b(?:ppo\s*plan|the\s*ppo|ppo\s*option|ppo\s*medical|medical\s*ppo)\b/i.test(clean) && !/dental/i.test(clean) && !/\b(?:compare|vs\.?|versus|between|both|vs\s|and\s+the\s+ppo)\b/i.test(clean);
 
   return { isContinuation, isTopic, isDemographics, hasAge, hasState, foundState, stateCode: extractedState.code, noPricing, familyTierSignal, asksPPOPlan };
 }
@@ -398,8 +403,9 @@ const L1_FAQ: L1FAQEntry[] = [
     answer: () => `The AmeriVet benefits enrollment portal is Workday: ${ENROLLMENT_PORTAL_URL}\n\nYou can also call HR at ${HR_PHONE} for guided enrollment support.`,
   },
   {
-    // Rightway — explicit negative answer
-    patterns: [/\b(what\s*is\s*rightway|rightway\s*(app|service|number|contact|available|offer)|is\s*rightway|does\s*amerivet\s*(use|have|offer)\s*rightway)\b/i],
+    // Rightway — explicit negative answer (AmeriVet does NOT use Rightway)
+    // Catch-all: ANY mention of "rightway" in a query gets this definitive answer.
+    patterns: [/\brightway\b/i],
     answer: () => `Rightway is not an AmeriVet benefits resource and is not part of the AmeriVet benefits package.\n\nFor benefits navigation support, please contact AmeriVet HR/Benefits at ${HR_PHONE} or visit ${ENROLLMENT_PORTAL_URL}.`,
   },
   {
@@ -431,35 +437,17 @@ function checkL1FAQ(query: string, session: any): string | null {
   return null;
 }
 
-function shouldUseL1StaticFaq(query: string, lowerQuery: string, intentDomain: IntentDomain): boolean {
-  // Keep policy and longer conversational requests in the RAG path.
-  if (intentDomain === 'policy') return false;
-  if (query.length > 160) return false;
-
-  // If the user is asking for analysis/comparison/advice, prefer conversational generation.
-  if (/\b(compare|difference|recommend|best|which|should\s+i|for\s+me|my\s+situation|based\s+on|if\s+i|calculate|estimate|scenario|why|walk\s+me\s+through)\b/i.test(lowerQuery)) {
-    return false;
-  }
-
-  // Allow only clearly static FAQ intents.
-  if (/\b(hr|human\s*resources|workday|enrollment\s*portal|portal\s*link|portal\s*url|rightway|receptionist|staff\s*directory|office\s*staff)\b/i.test(lowerQuery)) {
-    return true;
-  }
-
-  // Keep strict Kaiser availability checks deterministic.
-  if (/\bkaiser\b/i.test(lowerQuery) && /\b(in|for|available|offer|state|california|washington|oregon|texas|florida|ohio|michigan|new\s*york)\b/i.test(lowerQuery)) {
-    return true;
-  }
-
-  return false;
-}
-
 function shouldUseCategoryExplorationIntercept(query: string, lowerQuery: string, intentDomain: IntentDomain): boolean {
   if (intentDomain === 'policy') return false;
   if (query.length > 90) return false;
 
   // Let nuanced requests go to RAG.
   if (/\b(compare|difference|recommend|best|which|should\s+i|for\s+me|my\s+situation|if\s+|because|while|calculate|estimate|project|scenario|qle|fmla|std)\b/i.test(lowerQuery)) {
+    return false;
+  }
+
+  // Yes/no questions, factual lookups, and advisory questions need RAG, not a canned overview.
+  if (/\b(do\s+we\s+have|is\s+there|does\s+it|are\s+there|who\s+is|which\s+company|what\s+carrier|what\s+provider|how\s+much\s+should|how\s+much\s+do\s+i\s+need|how\s+much\s+life|do\s+i\s+have|am\s+i\s+covered|i\s+thought)\b/i.test(lowerQuery)) {
     return false;
   }
 
@@ -871,6 +859,8 @@ You MUST structure every response exactly as shown below:
   - NEVER ask for the user's name, age, or state — you already have them.
   - NEVER include [Source N] or [Doc N] citation markers in responses.
   - For "Is [service] available in [state]?": check CARRIER-LOCK and STATE-LOCK first. If not in catalog, use MISSING-DATA rule.
+  - NEVER speculate or fill gaps with general knowledge. If the retrieved context does not clearly answer the question, respond: "I don't have that specific information. Please check ${ENROLLMENT_PORTAL_URL} or call AmeriVet HR at ${HR_PHONE}." Do NOT attempt to construct an answer from assumptions.
+  - NEVER repeat the same word or phrase in a sequence (e.g., "California and California" is invalid).
 </Negative_Constraints>
 
 You answer ONLY from the IMMUTABLE CATALOG below. You DO NOT process enrollments.
@@ -915,10 +905,11 @@ Voluntary Term Life    : Unum — age-banded, 1×-5× salary up to $500k, GI $15
 Whole Life (permanent) : Allstate — age-banded, cash value, portable
 Disability (STD/LTD)   : Unum (age-banded)
 Critical Illness       : Allstate (age-banded)
-Accident/AD&D vol.     : Unum (age-banded)
+Accident/AD&D vol.     : Allstate (age-banded)
 
 If a carrier or plan name NOT listed above appears in retrieval context, IGNORE IT.
 NEVER attribute term life to Allstate. NEVER attribute whole/permanent life to Unum.
+NEVER attribute voluntary Accident or Critical Illness to Unum — those are Allstate.
 
 ═══════════════════════════════════════════════════════════════════════════
 LIFE INSURANCE — 20/80 SPLIT GUIDANCE
@@ -941,6 +932,15 @@ Kaiser is available ONLY in: California (CA), Washington (WA), Oregon (OR).
 Re-statement of zero-tolerance rule: if user's state is NOT in that list, Kaiser
 must NEVER appear in your response — not in plan lists, not in comparisons,
 not in "not available" notes. Omit it entirely.
+
+CRITICAL - KAISER KNOWLEDGE CONTAMINATION GUARD:
+Kaiser Permanente is available to AmeriVet employees in CA, WA, and OR — all three states.
+Do NOT use your general knowledge about Kaiser's real-world coverage areas.
+Your training data may say Kaiser is "California-based" — IGNORE that for AmeriVet.
+If you cannot find Kaiser availability information in the provided context,
+say: "Please contact AmeriVet HR at ${HR_PHONE} to confirm Kaiser availability."
+NEVER state Kaiser is "only available in California" — that is INCORRECT for AmeriVet.
+Kaiser serves AmeriVet employees in California, Washington, AND Oregon.
 
 ═══════════════════════════════════════════════════════════════════════════
 PPO CLARIFICATION (CRITICAL — prevents hallucination)
@@ -1014,6 +1014,143 @@ Answer directly, accurately, and ONLY from the catalog above.`;
 }
 
 // ============================================================================
+// 2b-HELPER. SHORT CATEGORY ANSWERS (yes/no, factual lookups)
+// ============================================================================
+// Returns a concise deterministic answer for yes/no and factual-lookup intents
+// so the bot doesn't dump a full overview for every question.
+
+function buildShortCategoryAnswer(
+  queryLower: string,
+  intent: 'yes_no' | 'factual_lookup',
+  session: Session,
+): string | null {
+  const catalog = amerivetBenefits2024_2025;
+
+  // ── LIFE INSURANCE ─────────────────────────────────────────────────────────
+  if (/\b(life\s*(?:insurance)?(?!\s*event)|life\b)/i.test(queryLower) && !/qualifying\s+life/i.test(queryLower)) {
+    if (intent === 'yes_no') {
+      // "do we have permanent/whole life?" → yes, Allstate
+      if (/\b(permanent|whole\s*life|cash\s*value)\b/i.test(queryLower)) {
+        return 'Yes — AmeriVet offers Allstate Whole Life, which is permanent life insurance that builds cash value over time. Rates are locked at your enrollment age and the policy is portable if you leave AmeriVet.';
+      }
+      // "do we have term life?" → yes, Unum
+      if (/\b(term\s*life|voluntary\s*life)\b/i.test(queryLower)) {
+        return 'Yes — AmeriVet offers Unum Voluntary Term Life. You can elect 1x to 5x your salary (up to $500,000), with a guaranteed issue amount of up to $150,000 during open enrollment. Spouse and dependent child coverage is also available.';
+      }
+      // "do we have life insurance?" (generic) → yes, three options
+      return 'Yes — AmeriVet offers three life insurance options: UNUM Basic Life & AD&D ($25,000, employer-paid at $0 cost to you), UNUM Voluntary Term Life (1x–5x salary, age-banded pricing), and Allstate Whole Life (permanent coverage with cash value). Would you like details on any of these?';
+    }
+    if (intent === 'factual_lookup') {
+      // "who provides/covers life insurance?" → carrier names
+      if (/\b(who\s+(?:is|provides|covers|carries|offers|underwrites)|which\s+(?:company|carrier|provider))\b/i.test(queryLower)) {
+        return 'Life insurance at AmeriVet is provided by two carriers: UNUM handles Basic Life & AD&D and Voluntary Term Life, while Allstate provides Whole Life (permanent) coverage.';
+      }
+      // "what is the basic life coverage amount?"
+      if (/\b(basic|employer[\s-]?paid|free|automatic)\b/i.test(queryLower)) {
+        return 'UNUM Basic Life & AD&D provides $25,000 of coverage, fully paid by AmeriVet at $0 cost to you. All benefits-eligible employees are automatically enrolled.';
+      }
+      // "what is the guaranteed issue amount?"
+      if (/\b(guaranteed\s+issue|no\s+medical|without\s+(?:medical|health)\s+questions?)\b/i.test(queryLower)) {
+        return 'Guaranteed Issue for UNUM Voluntary Term Life is up to $150,000 during open enrollment — no medical questions required below that amount.';
+      }
+    }
+  }
+
+  // ── DENTAL ─────────────────────────────────────────────────────────────────
+  if (/\b(dental)\b/i.test(queryLower)) {
+    if (intent === 'yes_no') {
+      return `Yes — AmeriVet offers a dental plan: ${catalog.dentalPlan.name} through ${catalog.dentalPlan.provider}. Preventive care (cleanings, exams, X-rays) is covered at 100%.`;
+    }
+    if (intent === 'factual_lookup') {
+      if (/\b(who\s+(?:is|provides|covers|carries)|which\s+(?:company|carrier|provider))\b/i.test(queryLower)) {
+        return `Dental coverage at AmeriVet is provided by ${catalog.dentalPlan.provider} — specifically the ${catalog.dentalPlan.name} plan.`;
+      }
+    }
+  }
+
+  // ── VISION ─────────────────────────────────────────────────────────────────
+  if (/\b(vision|eye)\b/i.test(queryLower)) {
+    if (intent === 'yes_no') {
+      return `Yes — AmeriVet offers a vision plan: ${catalog.visionPlan.name} through ${catalog.visionPlan.provider}. Includes eye exams, frames allowance, contact lenses, and LASIK discounts.`;
+    }
+    if (intent === 'factual_lookup') {
+      if (/\b(who\s+(?:is|provides|covers|carries)|which\s+(?:company|carrier|provider))\b/i.test(queryLower)) {
+        return `Vision coverage at AmeriVet is provided by ${catalog.visionPlan.provider} — the ${catalog.visionPlan.name} plan.`;
+      }
+    }
+  }
+
+  // ── DISABILITY ─────────────────────────────────────────────────────────────
+  if (/\b(disability|ltd)\b/i.test(queryLower)) {
+    if (intent === 'yes_no') {
+      return 'Yes — AmeriVet offers both Short-Term Disability (STD) and Long-Term Disability (LTD) through UNUM. STD covers up to 13 weeks at 60% of weekly salary; LTD kicks in after 90 days and continues up to age 65.';
+    }
+    if (intent === 'factual_lookup') {
+      if (/\b(who\s+(?:is|provides|covers|carries)|which\s+(?:company|carrier|provider))\b/i.test(queryLower)) {
+        return 'Both Short-Term and Long-Term Disability at AmeriVet are provided by UNUM.';
+      }
+    }
+  }
+
+  // ── CRITICAL ILLNESS / ACCIDENT ────────────────────────────────────────────
+  if (/\b(critical\s*illness|accident|ad&d|supplemental)\b/i.test(queryLower)) {
+    if (intent === 'yes_no') {
+      if (/\b(critical\s*illness)\b/i.test(queryLower)) {
+        return 'Yes — AmeriVet offers Critical Illness insurance through Allstate. It provides a lump-sum cash benefit ($10,000–$30,000) if you are diagnosed with a covered condition such as heart attack, stroke, or cancer.';
+      }
+      if (/\b(accident|ad&d)\b/i.test(queryLower)) {
+        return 'Yes — AmeriVet offers Accident insurance through Allstate. It pays cash benefits for covered accidents including fractures, dislocations, burns, initial treatment, hospitalization, and rehab.';
+      }
+      return 'Yes — AmeriVet offers both Critical Illness and Accident/AD&D insurance through Allstate.';
+    }
+    if (intent === 'factual_lookup') {
+      if (/\b(who\s+(?:is|provides|covers|carries)|which\s+(?:company|carrier|provider))\b/i.test(queryLower)) {
+        return 'Critical Illness and Accident/AD&D coverage at AmeriVet are both provided by Allstate.';
+      }
+    }
+  }
+
+  // ── HSA/FSA ────────────────────────────────────────────────────────────────
+  if (/\b(hsa|fsa|flexible\s*spending|health\s*savings)\b/i.test(queryLower)) {
+    if (intent === 'yes_no') {
+      if (/\bhsa\b/i.test(queryLower)) {
+        return `Yes — AmeriVet offers a Health Savings Account (HSA) with an employer contribution of $${catalog.specialCoverage.hsa.employerContribution}/year. It is available when you enroll in either the Standard HSA or Enhanced HSA medical plan.`;
+      }
+      if (/\bfsa\b/i.test(queryLower)) {
+        return `Yes — AmeriVet offers a Flexible Spending Account (FSA) with a maximum contribution of $${catalog.specialCoverage.fsa.maximumContribution.toLocaleString()}/year. Note: you cannot have both a general FSA and an HSA simultaneously.`;
+      }
+      return `Yes — AmeriVet offers both an HSA (with $${catalog.specialCoverage.hsa.employerContribution}/year employer contribution) and an FSA (up to $${catalog.specialCoverage.fsa.maximumContribution.toLocaleString()}/year). Note: you cannot have both a general FSA and an HSA simultaneously.`;
+    }
+  }
+
+  // ── MEDICAL ────────────────────────────────────────────────────────────────
+  if (/\b(medical|health\s*(?:care|insurance|plan|coverage)?)\b/i.test(queryLower)) {
+    const userState = session.userState || '';
+    const isKaiserEligible = KAISER_STATES.has(userState.toUpperCase());
+    if (intent === 'yes_no') {
+      if (/\b(kaiser|hmo)\b/i.test(queryLower)) {
+        if (isKaiserEligible) {
+          return `Yes — Kaiser HMO is available in your state (${userState}). AmeriVet offers the Kaiser Standard HMO for employees in CA, WA, and OR.`;
+        }
+        if (userState) {
+          return `Kaiser HMO is only available in CA, WA, and OR — it is not available in ${userState}. Your medical options are the Standard HSA and Enhanced HSA plans through BCBSTX.`;
+        }
+        return 'Kaiser HMO is available in CA, WA, and OR only. Let me know your state and I can confirm your options.';
+      }
+      const planCount = isKaiserEligible ? 'three' : 'two';
+      return `Yes — AmeriVet offers ${planCount} medical plan${isKaiserEligible ? 's' : 's'}: Standard HSA and Enhanced HSA through BCBSTX${isKaiserEligible ? ', plus Kaiser Standard HMO' : ''}. Both HSA plans use a nationwide PPO network.`;
+    }
+    if (intent === 'factual_lookup') {
+      if (/\b(who\s+(?:is|provides|covers|carries)|which\s+(?:company|carrier|provider)|network)\b/i.test(queryLower)) {
+        return `Medical coverage at AmeriVet is provided by BCBSTX (Blue Cross Blue Shield of Texas) with a nationwide PPO network.${isKaiserEligible ? ' Kaiser HMO is also available in your state.' : ''}`;
+      }
+    }
+  }
+
+  return null; // No short answer matched — fall through to full overview
+}
+
+// ============================================================================
 // 2b. CATEGORY EXPLORATION RESPONSE BUILDER (Deterministic)
 // ============================================================================
 // Returns a rich deterministic overview when user asks about a benefit category.
@@ -1037,11 +1174,28 @@ function buildCategoryExplorationResponse(
 
   // Detect if this is a category exploration (not a specific calculation/comparison already handled)
   // Skip if user is asking for very specific things handled by other intercepts
-  if (/per[\s-]*pay(?:check|period)?|deduct(?:ion|ed)|enroll\s+in\s+all|total\s+cost|how\s+much\s+would|maternity|pregnan|orthodont|braces|recommend|which\s+plan\s+should|qle|qualifying\s+life\s+event|how\s+many\s+days|deadline|window|fmla|short\s*[- ]?term\s+disability|pre-?existing|clause|can\s+i|d(?:ifference|ppo)\s*(?:vs?\.?|versus|between|and|compared)|compare|explain\s*(?:the)?\s*difference|dhmo/i.test(queryLower)) {
+  if (/per[\s-]*pay(?:check|period)?|deduct(?:ion|ed)|enroll\s+in\s+all|total\s+cost|how\s+much\s+would|maternity|pregnan|orthodont|braces|qle|qualifying\s+life\s+event|how\s+many\s+days|deadline|window|fmla|short\s*[- ]?term\s+disability|pre-?existing|clause|dhmo/i.test(queryLower)) {
     return null; // Let the specialized intercepts handle these
   }
 
   const catalog = amerivetBenefits2024_2025;
+
+  // ── INTENT-BASED SUB-ROUTING ──────────────────────────────────────────────
+  // For non-exploratory intents, return a concise answer or fall through to RAG
+  // instead of always dumping the full category overview template.
+  const { intent: responseIntent } = classifyQueryIntent(queryLower, session.currentTopic);
+
+  // Advisory, comparison, and cost-lookup intents need the LLM — skip template
+  if (responseIntent === 'advisory' || responseIntent === 'comparison' || responseIntent === 'cost_lookup') {
+    return null; // Fall through to RAG + LLM for personalized/comparative/cost answers
+  }
+
+  // ── YES/NO and FACTUAL_LOOKUP: short deterministic answers ──────────────
+  if (responseIntent === 'yes_no' || responseIntent === 'factual_lookup') {
+    const shortAnswer = buildShortCategoryAnswer(queryLower, responseIntent, session);
+    if (shortAnswer !== null) return finalize(shortAnswer);
+    // If no short answer matched, fall through to the full overview below
+  }
 
   // GENERAL OVERVIEW — "what are my options?", "what benefits do I have?", "what's available?"
   // Fires when NO specific category is mentioned but user is asking broadly
@@ -1102,7 +1256,7 @@ function buildCategoryExplorationResponse(
 
       response += `**${plan.name}** (${plan.provider})`;
       if (plan.regionalAvailability.includes('California')) {
-        response += ` — California only`;
+        response += ` — CA/WA/OR only`;
       }
       response += `\n`;
       response += `- Premium (${tierLabel}): **$${monthly.toFixed(2)}/month**\n`;
@@ -1271,7 +1425,7 @@ function buildCategoryExplorationResponse(
 
     response += `Would you like to:\n- Learn how HSA vs. FSA compares for your situation?\n- Explore another benefit category?`;
 
-    return response;
+    return finalize(response);
   }
 
   return null;
@@ -1287,6 +1441,8 @@ function buildSessionContext(session: Session) {
     userState: session.userState || null,
     hasCollectedName: session.hasCollectedName || false,
     dataConfirmed: session.dataConfirmed || false,
+    noPricingMode: session.noPricingMode || false,
+    coverageTierLock: session.coverageTierLock || null,
     decisionsTracker: session.decisionsTracker || {},
     completedTopics: session.completedTopics || [],
     lifeEvents: session.lifeEvents || [],
@@ -1385,6 +1541,10 @@ export async function POST(req: NextRequest) {
 
     const session = await getOrCreateSession(sessionId);
     session.turn = (session.turn ?? 0) + 1;
+
+    // ── Pipeline trace: begin ───────────────────────────────────────────────
+    const pipelineTrace = createTrace(reqId, sessionId, query, session);
+
     logger.info(`[REQ:${reqId}][STEP-1 SESSION] Turn=${session.turn} Name=${session.userName||'?'} Age=${session.userAge||'?'} State=${session.userState||'?'} DataConfirmed=${!!session.dataConfirmed} NoPricing=${!!session.noPricingMode}`);
     
     // SERVERLESS RESILIENCE: Restore session from client context if backend lost it
@@ -1404,7 +1564,26 @@ export async function POST(req: NextRequest) {
         session.userState = clientContext.userState;
         logger.debug(`[QA] Restored userState from client context`);
       }
-      if (session.userName && session.userAge && session.userState) {
+      // Sanitize string "undefined"/"null" values that can appear if client persisted bad state.
+      // Must run HERE — before any KAISER_STATES.has(session.userState) checks downstream.
+      if (session.userState === 'undefined' || session.userState === 'null') {
+        session.userState = null;
+        logger.warn('[QA] Null-ing invalid userState string "undefined"/"null" from client context');
+      }
+      // Restore persistent preference flags so they survive serverless restarts
+      if (clientContext.noPricingMode && !session.noPricingMode) {
+        session.noPricingMode = true;
+        logger.debug(`[QA] Restored noPricingMode from client context`);
+      }
+      if (clientContext.coverageTierLock && !session.coverageTierLock) {
+        session.coverageTierLock = clientContext.coverageTierLock;
+        logger.debug(`[QA] Restored coverageTierLock from client context: ${clientContext.coverageTierLock}`);
+      }
+      if (clientContext.dataConfirmed && !session.dataConfirmed) {
+        session.dataConfirmed = true;
+        session.step = 'active_chat';
+        logger.debug(`[QA] Restored dataConfirmed from client context`);
+      } else if (session.userName && session.userAge && session.userState) {
         // NOTE: Do NOT set dataConfirmed here. Let the normal flow at line ~1085
         // handle it so the deterministic ALL_BENEFITS_MENU is shown to the user.
         // Setting dataConfirmed here causes the LLM to generate a hallucinated menu.
@@ -1501,6 +1680,8 @@ export async function POST(req: NextRequest) {
     if (/\b(show\s*pric|include\s*cost|with\s*pric|add\s*pric|show\s*rates?|include\s*rates?)\b/i.test(query.toLowerCase())) {
       session.noPricingMode = false;
       logger.info(`[REQ:${reqId}][STEP-4 RULE] NO-PRICING deactivated (user wants pricing)`);
+      // Persist immediately so the unlock survives even if RAG returns no-chunks
+      await updateSession(sessionId, session);
     }
 
     // RULE 3: PPO PLAN CLARIFICATION — user asks for "the PPO plan" (medical)
@@ -1510,7 +1691,7 @@ export async function POST(req: NextRequest) {
       const msg = `AmeriVet does not offer a standalone "PPO" medical plan. Your medical plans — Standard HSA and Enhanced HSA (both through BCBS of Texas) — use a nationwide PPO network for provider access, but they are structured as HDHP/HSA plans.\n\nWould you like to see a comparison of the Standard HSA vs. Enhanced HSA?`;
       session.lastBotMessage = msg;
       await updateSession(sessionId, session);
-      return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'ppo-clarification' } });
+      return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'ppo-clarification', retrievalScore: 1.0, confidence: 'High' } });
     }
     if (intent.asksPPOPlan && (!session.userState || KAISER_STATES.has((session.userState || '').toUpperCase()))) {
       logger.info(`[REQ:${reqId}][STEP-5 INTERCEPT] PPO-CLARIFICATION (Kaiser-state or unknown)`);
@@ -1518,7 +1699,7 @@ export async function POST(req: NextRequest) {
       const msg = `AmeriVet does not offer a standalone "PPO" medical plan. The Standard HSA and Enhanced HSA (BCBS of Texas) use a nationwide PPO network, but they are HDHP/HSA plans — not a traditional PPO.${kaiserNote}\n\nWould you like to compare the available medical plans?`;
       session.lastBotMessage = msg;
       await updateSession(sessionId, session);
-      return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'ppo-clarification' } });
+      return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'ppo-clarification', retrievalScore: 1.0, confidence: 'High' } });
     }
 
     // RULE 4: KAISER IN NON-KAISER STATE — user explicitly asks about Kaiser when not in CA/WA/OR
@@ -1531,7 +1712,7 @@ export async function POST(req: NextRequest) {
       const plainMsg = toPlainAssistantText(msg);
       session.lastBotMessage = plainMsg;
       await updateSession(sessionId, session);
-      return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'kaiser-redirect-non-eligible-state' } });
+      return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'kaiser-redirect-non-eligible-state', retrievalScore: 1.0, confidence: 'High' } });
     }
 
     // Save session if state-based flags changed
@@ -1657,11 +1838,12 @@ export async function POST(req: NextRequest) {
     const intentDomain = detectIntentDomain(lowerQuery);
 
     // ========================================================================
-    // INTERCEPT: L1 STATIC FAQ CACHE (strict static intents only)
+    // INTERCEPT: L1 STATIC FAQ CACHE (always run — no gate, specific patterns only)
     // ========================================================================
-    const l1Answer = shouldUseL1StaticFaq(query, lowerQuery, intentDomain)
-      ? checkL1FAQ(query, session)
-      : null;
+    // Run checkL1FAQ unconditionally so Rightway, HR, portal queries are ALWAYS
+    // caught before reaching any downstream logic. The L1_FAQ patterns are
+    // sufficiently specific that false positives are not a concern.
+    const l1Answer = checkL1FAQ(query, session);
     if (l1Answer) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] L1-STATIC-FAQ matched → returning cached answer (${l1Answer.length} chars)`);
       session.lastBotMessage = l1Answer;
@@ -1855,7 +2037,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
     const allstateTermQuestion = /\b(allstate)\b/i.test(lowerQuery) && /\b(term\s+life)\b/i.test(lowerQuery);
     if (allstateTermQuestion) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] CARRIER-CORRECTION-TERM-LIFE`);
-      const msg = `CORRECTION: For AmeriVet plans, Term Life is through UNUM, not Allstate. Allstate is used for Whole Life (permanent, cash-value) only.\n\nIf you want Term Life pricing, it is age-banded and personalized in Workday; I can help with coverage options and enrollment steps.`;
+      const msg = `Quick carrier correction: AmeriVet's **Term Life** insurance is provided by **UNUM** — not Allstate. Allstate covers only **Whole Life** (permanent, cash-value) for AmeriVet employees.\n\nHere's the full life insurance lineup:\n- **UNUM Basic Life & AD&D** — $25,000 employer-paid, $0 cost to you\n- **UNUM Voluntary Term Life** — employee can elect 1x–5x salary (age-banded pricing; add spouse/child coverage available)\n- **Allstate Whole Life** — permanent coverage with cash-value accumulation; employee-paid\n\nTerm Life pricing through UNUM is age-banded and set during enrollment in Workday. Would you like to know the coverage multiples available, or how to add a spouse/dependent to your Term Life?`;
       const plainMsg = session.noPricingMode ? stripPricingDetails(toPlainAssistantText(msg)) : toPlainAssistantText(msg);
       session.lastBotMessage = plainMsg;
       await updateSession(sessionId, session);
@@ -1931,14 +2113,18 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
     if (recommendRequested && singleHealthy) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] RECOMMEND-SINGLE`);
       const rows = pricingUtils.buildPerPaycheckBreakdown('Employee Only', session.payPeriods || 26);
-      // Filter to medical-only and exclude Kaiser for non-CA users
+      // Filter to medical-only and exclude Kaiser for states outside CA/WA/OR
       const medRows = rows.filter(r => !/dental|vision/i.test(r.plan) && r.provider !== 'VSP');
-      const filtered = session.userState && session.userState.toUpperCase() !== 'CA'
+      const filtered = session.userState && !KAISER_STATES.has(session.userState.toUpperCase())
         ? medRows.filter(r => !/kaiser/i.test(r.plan))
         : medRows;
         let msg = `Great question! For a single, healthy individual, here are your medical plan options (Employee Only):\n\n`;
         for (const r of filtered) {
-        msg += `- **${r.plan}**: $${pricingUtils.formatMoney(r.perMonth)}/month ($${pricingUtils.formatMoney(r.annually)}/year)\n`;
+          if (!session.noPricingMode) {
+            msg += `- **${r.plan}**: $${pricingUtils.formatMoney(r.perMonth)}/month ($${pricingUtils.formatMoney(r.annually)}/year)\n`;
+          } else {
+            msg += `- **${r.plan}**\n`;
+          }
         }
         msg += `\nFor a single, healthy employee with low expected usage, **Standard HSA** is often a strong choice because it has the lowest premium and is HSA-eligible. If you expect more usage (or want a lower deductible), **Enhanced HSA** typically provides better cost protection at a higher premium.`;
         if (filtered.some(r => /kaiser/i.test(r.plan))) {
@@ -1948,6 +2134,84 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
         session.lastBotMessage = msg;
         await updateSession(sessionId, session);
         return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'recommend-single' } });
+    }
+
+    // CUSTOM INTERCEPT: Two-plan side-by-side comparison (deterministic)
+    // Catches "compare Standard HSA vs Enhanced HSA", "Standard HSA vs PPO", "HSA vs HMO"
+    // Returns both plans in a markdown table using canonical pricing data
+    const twoPlanCompare = (() => {
+      const compareSignal = /\b(?:compare|vs\.?|versus|side\s*by\s*side|difference\s+between|between)\b/i.test(lowerQuery);
+      if (!compareSignal) return null;
+      const knownPlans: { key: string; label: string; regex: RegExp }[] = [
+        { key: 'standard hsa', label: 'Standard HSA', regex: /\bstandard\s*hsa\b/i },
+        { key: 'enhanced hsa', label: 'Enhanced HSA', regex: /\benhanced\s*hsa\b/i },
+        { key: 'kaiser',       label: 'Kaiser Standard HMO', regex: /\bkaiser\b/i },
+      ];
+      const matched = knownPlans.filter(p => p.regex.test(lowerQuery));
+      if (matched.length >= 2) return matched.slice(0, 2);
+      // Also handle "standard hsa vs ppo" / "the ppo" (PPO = Enhanced HSA in AmeriVet context)
+      // and implicit "compare the two plans" / "compare both plans" when standard hsa is mentioned
+      if (matched.length === 1 && /\b(?:ppo|hmo|enhanced|both\s+plans?|the\s+other|the\s+two)\b/i.test(lowerQuery)) {
+        const other = knownPlans.find(p => !p.regex.test(lowerQuery) && p.key !== 'kaiser');
+        if (other) return [matched[0], other];
+      }
+      // Implicit: "the two medical plans" or "both hsa plans" — no specific plan named
+      if (matched.length === 0 && /\b(?:both\s+(?:medical\s+)?plans?|two\s+(?:medical\s+)?plans?|both\s+hsa|two\s+hsa|medical\s+plans?.*compare|compare.*medical\s+plans?)\b/i.test(lowerQuery)) {
+        return [knownPlans[0], knownPlans[1]]; // Standard HSA vs Enhanced HSA
+      }
+      return null;
+    })();
+    if (twoPlanCompare) {
+      logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] TWO-PLAN-COMPARE: ${twoPlanCompare.map(p => p.label).join(' vs ')}`);
+      // Prefer the tier set by RULE 1 in this turn (familyTierSignal) over the locked session value,
+      // because the user may have stated family size in the same message as the comparison request.
+      const coverageTier = (intent.familyTierSignal ? 'Employee + Family' : null) || session.coverageTierLock || extractCoverageFromQuery(query);
+      const payPeriods = session.payPeriods || 26;
+      const rows = pricingUtils.buildPerPaycheckBreakdown(coverageTier, payPeriods);
+      const findRow = (planKey: string) => rows.find((r: { plan: string }) => {
+        const rLow = r.plan.toLowerCase();
+        return planKey.split(' ').every((w: string) => rLow.includes(w));
+      });
+      const row1 = findRow(twoPlanCompare[0].key);
+      const row2 = findRow(twoPlanCompare[1].key);
+      if (!row1 || !row2) {
+        // Rows not found — log and fall through to LLM rather than silently producing nothing
+        logger.warn(`[REQ:${reqId}][STEP-7 INTERCEPT] TWO-PLAN-COMPARE rows not found: row1=${!!row1} row2=${!!row2} — falling through to LLM`);
+      } else {
+        // Filter Kaiser for non-Kaiser states (CA, WA, OR)
+        const hasKaiser = twoPlanCompare.some(p => p.key === 'kaiser');
+        if (hasKaiser && session.userState && !KAISER_STATES.has(session.userState.toUpperCase())) {
+          const msg = `Kaiser Standard HMO is only available in California, Washington, and Oregon. Since you're in ${session.userState}, your medical options are **Standard HSA** and **Enhanced HSA**. Would you like to compare those two instead?`;
+          session.lastBotMessage = msg;
+          await updateSession(sessionId, session);
+          return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'two-plan-compare-kaiser-unavailable' } });
+        }
+        let msg = `Here's a side-by-side comparison for **${coverageTier}** coverage:\n\n`;
+        if (!session.noPricingMode) {
+          msg += `| | **${row1.plan}** | **${row2.plan}** |\n`;
+          msg += `|---|---|---|\n`;
+          msg += `| Monthly premium | $${pricingUtils.formatMoney(row1.perMonth)} | $${pricingUtils.formatMoney(row2.perMonth)} |\n`;
+          msg += `| Per paycheck (${payPeriods}/yr) | $${pricingUtils.formatMoney(row1.perPaycheck)} | $${pricingUtils.formatMoney(row2.perPaycheck)} |\n`;
+          msg += `| Annual premium | $${pricingUtils.formatMoney(row1.annually)} | $${pricingUtils.formatMoney(row2.annually)} |\n`;
+        } else {
+          msg += `| | **${row1.plan}** | **${row2.plan}** |\n`;
+          msg += `|---|---|---|\n`;
+          msg += `| Network type | HDHP (HSA-eligible) | Enhanced PPO |\n`;
+          msg += `| Deductible | Higher deductible | Lower deductible |\n`;
+          msg += `| Out-of-pocket max | Lower after deductible | Higher cap |\n`;
+        }
+        msg += `\n**Key differences:**\n`;
+        msg += `- **Standard HSA** pairs with a Health Savings Account (HSA) — pre-tax savings you control.\n`;
+        msg += `- **Enhanced HSA** has lower deductibles and richer coverage, better for frequent healthcare users.\n`;
+        if (!session.noPricingMode) {
+          const diff = Math.abs(row2.perMonth - row1.perMonth);
+          msg += `- Premium difference: **$${pricingUtils.formatMoney(diff)}/month** for ${row2.perMonth > row1.perMonth ? row2.plan + ' costs more' : row1.plan + ' costs more'}.\n`;
+        }
+        msg += `\nWould you like a total annual cost estimate factoring in expected healthcare usage?`;
+        session.lastBotMessage = msg;
+        await updateSession(sessionId, session);
+        return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'two-plan-compare' } });
+      }
     }
 
     // CUSTOM INTERCEPT: Direct plan pricing lookup (deterministic)
@@ -1968,17 +2232,22 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
         return rLow.includes(targetPlan) || targetPlan.split(' ').every((w: string) => rLow.includes(w));
       });
       if (matchedRow) {
-        // Filter Kaiser for non-CA users
-        if (/kaiser/i.test(matchedRow.plan) && session.userState && session.userState.toUpperCase() !== 'CA') {
-          const msg = `Kaiser Standard HMO is only available in California. Since you're in ${session.userState}, your medical plan options are **Standard HSA** and **Enhanced HSA**. Would you like pricing for those?`;
+        // Filter Kaiser for states outside CA/WA/OR
+        if (/kaiser/i.test(matchedRow.plan) && session.userState && !KAISER_STATES.has(session.userState.toUpperCase())) {
+          const msg = `Kaiser Standard HMO is only available in California, Washington, and Oregon. Since you're in ${session.userState}, your medical plan options are **Standard HSA** and **Enhanced HSA**. Would you like pricing for those?`;
           session.lastBotMessage = msg;
           await updateSession(sessionId, session);
           return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'plan-pricing-kaiser-unavailable' } });
         }
-        let msg = `Here's the pricing for **${matchedRow.plan}** (${coverageTier}):\n\n`;
-        msg += `- **$${pricingUtils.formatMoney(matchedRow.perMonth)}/month** ($${pricingUtils.formatMoney(matchedRow.annually)}/year)\n`;
-        msg += `- Per paycheck (${payPeriods} pay periods): $${pricingUtils.formatMoney(matchedRow.perPaycheck)}\n`;
-        msg += `\nWould you like to compare this with other plans, or see pricing for a different coverage tier?`;
+        let msg;
+        if (session.noPricingMode) {
+          msg = `Here are the coverage details for **${matchedRow.plan}** (${coverageTier}). Pricing is currently off — say "show pricing" to re-enable cost display.\n\nWould you like to compare this plan with others, or see a different coverage tier?`;
+        } else {
+          msg = `Here's the pricing for **${matchedRow.plan}** (${coverageTier}):\n\n`;
+          msg += `- **$${pricingUtils.formatMoney(matchedRow.perMonth)}/month** ($${pricingUtils.formatMoney(matchedRow.annually)}/year)\n`;
+          msg += `- Per paycheck (${payPeriods} pay periods): $${pricingUtils.formatMoney(matchedRow.perPaycheck)}\n`;
+          msg += `\nWould you like to compare this with other plans, or see pricing for a different coverage tier?`;
+        }
         session.lastBotMessage = msg;
         await updateSession(sessionId, session);
         return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'plan-pricing' } });
@@ -1997,17 +2266,29 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
       const payPeriods = session.payPeriods || 26;
       const rows = pricingUtils.buildPerPaycheckBreakdown(coverageTier, payPeriods);
       const medRows = rows.filter(r => !/dental|vision/i.test(r.plan) && r.provider !== 'VSP');
-      const filtered = session.userState && session.userState.toUpperCase() !== 'CA'
+      const filtered = session.userState && !KAISER_STATES.has(session.userState.toUpperCase())
         ? medRows.filter(r => !/kaiser/i.test(r.plan))
         : medRows;
-      let msg = `Here are the available medical plans for the ${coverageTier} tier:\n\n`;
-      for (const r of filtered) {
-        msg += `- ${r.plan} (${r.provider}): $${pricingUtils.formatMoney(r.perMonth)}/month ($${pricingUtils.formatMoney(r.annually)}/year)\n`;
+      let msg;
+      if (session.noPricingMode) {
+        msg = `Here are the available medical plans for the ${coverageTier} tier:\n\n`;
+        for (const r of filtered) {
+          msg += `- **${r.plan}** (${r.provider})\n`;
+        }
+        if (filtered.length < medRows.length) {
+          msg += `\nNote: Kaiser Standard HMO is available only in California, Washington, and Oregon.\n`;
+        }
+        msg += `\nWould you like more detail on any plan, a different coverage tier, or to move on to Dental/Vision?`;
+      } else {
+        msg = `Here are the available medical plans for the ${coverageTier} tier:\n\n`;
+        for (const r of filtered) {
+          msg += `- ${r.plan} (${r.provider}): $${pricingUtils.formatMoney(r.perMonth)}/month ($${pricingUtils.formatMoney(r.annually)}/year)\n`;
+        }
+        if (filtered.length < medRows.length) {
+          msg += `\nNote: Kaiser Standard HMO is available only in California, Washington, and Oregon.\n`;
+        }
+        msg += `\nWould you like more detail on any plan, a different coverage tier, or to move on to Dental/Vision?`;
       }
-      if (filtered.length < medRows.length) {
-        msg += `\nNote: Kaiser Standard HMO is available only in California.\n`;
-      }
-      msg += `\nWould you like more detail on any plan, a different coverage tier, or to move on to Dental/Vision?`;
       const plainMsg = toPlainAssistantText(msg);
       session.lastBotMessage = plainMsg;
       await updateSession(sessionId, session);
@@ -2024,7 +2305,11 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
       let msg = `Here's a savings-focused recommendation for your tax-advantaged benefit options:\n\n`;
       msg += `**Health Savings Account (HSA) Plans:**\n`;
       for (const r of hsaPlans) {
-        msg += `- **${r.plan}**: $${pricingUtils.formatMoney(r.perMonth)}/month ($${pricingUtils.formatMoney(r.annually)}/year)\n`;
+        if (!session.noPricingMode) {
+          msg += `- **${r.plan}**: $${pricingUtils.formatMoney(r.perMonth)}/month ($${pricingUtils.formatMoney(r.annually)}/year)\n`;
+        } else {
+          msg += `- **${r.plan}**\n`;
+        }
       }
       msg += `\nHSA Tax Advantages:\n`;
       msg += `- Contributions are deducted pre-tax from your paycheck, lowering your taxable income\n`;
@@ -2054,8 +2339,8 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
         const coverageTier = lowerQuery.includes('family') || /family\s*(?:of)?\s*\d|family\d/i.test(lowerQuery) ? 'Employee + Family' : (lowerQuery.includes('child') ? 'Employee + Child(ren)' : 'Employee Only');
         const networkMatch = lowerQuery.match(/kaiser|ppo|hsa|hmo/i);
         const network = networkMatch ? networkMatch[0] : undefined;
-        const msg = pricingUtils.estimateCostProjection({ coverageTier, usage, network, state: session.userState || undefined, age: session.userAge || undefined });
-        const plainMsg = toPlainAssistantText(msg);
+        const rawMsg = pricingUtils.estimateCostProjection({ coverageTier, usage, network, state: session.userState || undefined, age: session.userAge || undefined });
+        const plainMsg = session.noPricingMode ? stripPricingDetails(toPlainAssistantText(rawMsg)) : toPlainAssistantText(rawMsg);
         session.lastBotMessage = plainMsg;
         await updateSession(sessionId, session);
         return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'cost-model' } });
@@ -2098,14 +2383,17 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
     }
 
     const maternityRequested = intentDomain !== 'policy' && /maternity|baby|pregnan|birth|deliver/i.test(lowerQuery);
-    const maternityFlowRequested = maternityRequested && !qleFilingOrderRequested;
+    // Guard: if the query is REALLY a leave-pay / STD salary question, let stdLeavePayQuestion handle it above.
+    // maternityFlowRequested should only fire for pure maternity COST questions, not salary/leave pay math.
+    const hasStdPaySignals = /\b(salary|paid|income|60%|sixty\s*percent|how\s+much\s+(?:will|do|would)\s+i|week\s*\d+|6th\s+week|sixth\s+week|std|short\s*[- ]?term\s+disability|leave\s+pay|maternity\s+pay|get\s+paid|paychec?k)\b/i.test(lowerQuery);
+    const maternityFlowRequested = maternityRequested && !qleFilingOrderRequested && !hasStdPaySignals;
     if (maternityFlowRequested) {
         logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] MATERNITY-FLOW`);
         const coverageTier = lowerQuery.includes('family') ? 'Employee + Family'
             : lowerQuery.includes('employee only') ? 'Employee Only'
             : 'Employee + Child(ren)'; // sensible default for maternity
-        const msg = pricingUtils.compareMaternityCosts(coverageTier, session.userState || null);
-        const plainMsg = toPlainAssistantText(msg);
+        const rawMsg = pricingUtils.compareMaternityCosts(coverageTier, session.userState || null);
+        const plainMsg = session.noPricingMode ? stripPricingDetails(toPlainAssistantText(rawMsg)) : toPlainAssistantText(rawMsg);
         session.lastBotMessage = plainMsg;
         await updateSession(sessionId, session);
         return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'maternity' } });
@@ -2124,12 +2412,14 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
       msg += `- **Out-of-pocket max**: $${pricingUtils.formatMoney(dental.outOfPocketMax)}\n`;
       msg += `- **Waiting period**: 6 months for major services\n`;
       msg += `- **Network**: Nationwide PPO\n`;
-      msg += `\n**Monthly premiums:**\n`;
-      msg += `- Employee Only: $${pricingUtils.formatMoney(dental.tiers.employeeOnly)}\n`;
-      msg += `- Employee + Child(ren): $${pricingUtils.formatMoney(dental.tiers.employeeChildren)}\n`;
-      msg += `- Employee + Family: $${pricingUtils.formatMoney(dental.tiers.employeeFamily)}\n`;
+      if (!session.noPricingMode) {
+        msg += `\n**Monthly premiums:**\n`;
+        msg += `- Employee Only: $${pricingUtils.formatMoney(dental.tiers.employeeOnly)}\n`;
+        msg += `- Employee + Child(ren): $${pricingUtils.formatMoney(dental.tiers.employeeChildren)}\n`;
+        msg += `- Employee + Family: $${pricingUtils.formatMoney(dental.tiers.employeeFamily)}\n`;
+      }
       msg += `\nOrthodontic coverage typically applies to both children and adults. For the full Dental Summary with age limits and lifetime maximums, check in Workday: ${ENROLLMENT_PORTAL_URL}`;
-        const plainMsg = toPlainAssistantText(msg);
+        const plainMsg = session.noPricingMode ? stripPricingDetails(toPlainAssistantText(msg)) : toPlainAssistantText(msg);
         session.lastBotMessage = plainMsg;
         await updateSession(sessionId, session);
         return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'orthodontics' } });
@@ -2150,8 +2440,9 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
         msg = `Important clarification: AmeriVet does **not** offer a DHMO (Dental Health Maintenance Organization) plan. Your dental benefit is the **${dental.name}** through ${dental.provider}.\n\n`;
         msg += `Here's what the ${dental.name} provides:\n`;
       } else {
-        msg = `AmeriVet offers one dental plan: the **${dental.name}** (${dental.provider}). There is no DHMO option — only the DPPO.\n\n`;
-        msg += `Here's what it includes:\n`;
+        // User asked about dental plans without mentioning DHMO — give a straight overview
+        msg = `AmeriVet offers one dental plan: the **${dental.name}** (${dental.provider}).\n\n`;
+        msg += `Here's what it covers:\n`;
       }
       msg += `- Preventive care (cleanings, exams, X-rays): Covered at 100%\n`;
       msg += `- Basic services (fillings, extractions): 80/20 coinsurance\n`;
@@ -2310,8 +2601,8 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
       const low = q.toLowerCase();
       // Employee + Family (including natural language like "family of 4", "family plan", "spouse and children")
       if (/employee\s*\+?\s*family|family\s*(of|plan|coverage)|family\s*\d|for\s*(my|the|our)\s*family/i.test(low)) return 'Employee + Family';
-      // Family tier from "spouse and N children" or "wife and kids" patterns
-      if (/spouse\s*(?:and|\+|&)\s*(?:\d+\s*)?child|wife\s*and\s*(?:\d+\s*)?kid|husband\s*and\s*(?:\d+\s*)?kid|partner\s*and\s*(?:\d+\s*)?child|children.*spouse|spouse.*children/i.test(low)) return 'Employee + Family';
+      // Family tier from "spouse and N children/kids" or "wife and kids" patterns
+      if (/spouse\s*(?:and|\+|&)\s*(?:\d+\s*)?(?:child|kid)|wife\s*and\s*(?:\d+\s*)?kid|husband\s*and\s*(?:\d+\s*)?kid|partner\s*and\s*(?:\d+\s*)?child|children.*spouse|spouse.*children|have\s+(?:a\s+)?spouse\s+and\s+(?:\d+\s*)?(?:child|kid)|(?:\d+)\s*kids?.*spouse|spouse.*(?:\d+)\s*kids?/i.test(low)) return 'Employee + Family';
       // Employee + Spouse
       if (/employee\s*\+?\s*spouse|spouse|husband|wife|partner/i.test(low)) return 'Employee + Spouse';
       // Employee + Child(ren) (including "child coverage", "for my kid(s)")
@@ -2337,9 +2628,14 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
 
       if (monthlyFromSelections > 0) {
         // User has confirmed plan selections — use them
-        const perPay = Number(((monthlyFromSelections * 12) / payPeriods).toFixed(2));
-        const annual = Number((monthlyFromSelections * 12).toFixed(2));
-        const msg = `Based on your selected benefits, estimated deductions are $${pricingUtils.formatMoney(perPay)} per paycheck ($${pricingUtils.formatMoney(monthlyFromSelections)}/month, $${pricingUtils.formatMoney(annual)}/year).\n\nThis includes only the plan premiums I can calculate from your saved selections. For exact deductions during enrollment (and any age-banded voluntary benefits), confirm in Workday: ${ENROLLMENT_PORTAL_URL}`;
+        let msg: string;
+        if (session.noPricingMode) {
+          msg = `Your selected benefits are confirmed. Pricing is currently off — say "show pricing" to see deduction amounts. For exact deductions during enrollment, visit Workday: ${ENROLLMENT_PORTAL_URL}`;
+        } else {
+          const perPay = Number(((monthlyFromSelections * 12) / payPeriods).toFixed(2));
+          const annual = Number((monthlyFromSelections * 12).toFixed(2));
+          msg = `Based on your selected benefits, estimated deductions are $${pricingUtils.formatMoney(perPay)} per paycheck ($${pricingUtils.formatMoney(monthlyFromSelections)}/month, $${pricingUtils.formatMoney(annual)}/year).\n\nThis includes only the plan premiums I can calculate from your saved selections. For exact deductions during enrollment (and any age-banded voluntary benefits), confirm in Workday: ${ENROLLMENT_PORTAL_URL}`;
+        }
         const plainMsg = toPlainAssistantText(msg);
         session.lastBotMessage = plainMsg;
         await updateSession(sessionId, session);
@@ -2350,7 +2646,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
       // Users can only enroll in ONE medical plan, so show a range (cheapest → most expensive)
       const allRows = pricingUtils.buildPerPaycheckBreakdown(coverageTier, payPeriods);
       // Filter region-limited plans if we know the user's state
-      const regionFiltered = session.userState && session.userState.toUpperCase() !== 'CA'
+      const regionFiltered = session.userState && !KAISER_STATES.has(session.userState.toUpperCase())
         ? allRows.filter(r => !/kaiser/i.test(r.plan))
         : allRows;
 
@@ -2367,21 +2663,35 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
       const minPerPay = Number(((minMonthly * 12) / payPeriods).toFixed(2));
       const maxPerPay = Number(((maxMonthly * 12) / payPeriods).toFixed(2));
 
-      let msg = `Great question! You can only enroll in **one** medical plan, so your total deduction depends on which one you choose. Here's the range for all benefits at the **${coverageTier}** tier:\n\n`;
-      msg += `**Estimated total: $${pricingUtils.formatMoney(minPerPay)} – $${pricingUtils.formatMoney(maxPerPay)} per paycheck** ($${pricingUtils.formatMoney(minMonthly)} – $${pricingUtils.formatMoney(maxMonthly)}/month)\n\n`;
-      msg += `**Medical options (choose one):**\n`;
-      for (const r of medicalRows) {
-        msg += `- ${r.plan}: $${pricingUtils.formatMoney(r.perPaycheck)} per paycheck ($${pricingUtils.formatMoney(r.perMonth)}/month)\n`;
+      let msg: string;
+      if (session.noPricingMode) {
+        msg = `You can only enroll in **one** medical plan. Here are your options at the **${coverageTier}** tier (pricing hidden — say "show pricing" to re-enable):\n\n`;
+        msg += `**Medical options (choose one):**\n`;
+        for (const r of medicalRows) {
+          msg += `- **${r.plan}** (${r.provider})\n`;
+        }
+        msg += `\n**Plus these standard benefits:**\n`;
+        for (const r of nonMedicalRows) {
+          msg += `- **${r.plan}** (${r.provider})\n`;
+        }
+        msg += `\nFor exact deductions during enrollment, visit Workday: ${ENROLLMENT_PORTAL_URL}`;
+      } else {
+        msg = `Great question! You can only enroll in **one** medical plan, so your total deduction depends on which one you choose. Here's the range for all benefits at the **${coverageTier}** tier:\n\n`;
+        msg += `**Estimated total: $${pricingUtils.formatMoney(minPerPay)} – $${pricingUtils.formatMoney(maxPerPay)} per paycheck** ($${pricingUtils.formatMoney(minMonthly)} – $${pricingUtils.formatMoney(maxMonthly)}/month)\n\n`;
+        msg += `**Medical options (choose one):**\n`;
+        for (const r of medicalRows) {
+          msg += `- ${r.plan}: $${pricingUtils.formatMoney(r.perPaycheck)} per paycheck ($${pricingUtils.formatMoney(r.perMonth)}/month)\n`;
+        }
+        msg += `\n**Plus these standard benefits:**\n`;
+        for (const r of nonMedicalRows) {
+          msg += `- ${r.plan}: $${pricingUtils.formatMoney(r.perPaycheck)} per paycheck ($${pricingUtils.formatMoney(r.perMonth)}/month)\n`;
+        }
+        msg += `\n**Important:** Voluntary benefits (Life/Disability/Critical Illness/Accident) are age-banded and not included above. Check Workday for your personalized voluntary rates.\n`;
+        if (!session.userState) {
+          msg += `\nNote: Some plans are region-limited (for example, Kaiser availability depends on your state). If you share your state, I can filter to only the plans available to you.\n`;
+        }
+        msg += `\nFor your exact payroll deductions during enrollment, please verify in Workday: ${ENROLLMENT_PORTAL_URL}`;
       }
-      msg += `\n**Plus these standard benefits:**\n`;
-      for (const r of nonMedicalRows) {
-        msg += `- ${r.plan}: $${pricingUtils.formatMoney(r.perPaycheck)} per paycheck ($${pricingUtils.formatMoney(r.perMonth)}/month)\n`;
-      }
-      msg += `\n**Important:** Voluntary benefits (Life/Disability/Critical Illness/Accident) are age-banded and not included above. Check Workday for your personalized voluntary rates.\n`;
-      if (!session.userState) {
-        msg += `\nNote: Some plans are region-limited (for example, Kaiser availability depends on your state). If you share your state, I can filter to only the plans available to you.\n`;
-      }
-      msg += `\nFor your exact payroll deductions during enrollment, please verify in Workday: ${ENROLLMENT_PORTAL_URL}`;
       const plainMsg = toPlainAssistantText(msg);
       session.lastBotMessage = plainMsg;
       await updateSession(sessionId, session);
@@ -2399,14 +2709,22 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
       const medicalOnly = wantsNonMedical ? rows : rows.filter(r => !/dental|vision/i.test(r.plan) && r.provider !== 'VSP');
 
       // Hide region-limited plans if we know the user's state doesn't support them.
-      const filtered = session.userState && session.userState.toUpperCase() !== 'CA'
+      const filtered = session.userState && !KAISER_STATES.has(session.userState.toUpperCase())
         ? medicalOnly.filter(r => !/kaiser/i.test(r.plan))
         : medicalOnly;
 
       const benefitLabel = wantsNonMedical ? 'benefit' : 'medical plan';
-      let msg = `Here are the estimated **${benefitLabel}** premiums for **${coverageTier}** (based on ${payPeriods} pay periods/year):\n`;
-      for (const r of filtered) {
-        msg += `- ${r.plan}: $${pricingUtils.formatMoney(r.perPaycheck)} per paycheck ($${pricingUtils.formatMoney(r.perMonth)}/month, $${pricingUtils.formatMoney(r.annually)}/year)\n`;
+      let msg;
+      if (session.noPricingMode) {
+        msg = `Here are the available **${benefitLabel}s** for **${coverageTier}** coverage. Pricing is currently off — say "show pricing" to re-enable cost display.\n`;
+        for (const r of filtered) {
+          msg += `- **${r.plan}** (${r.provider})\n`;
+        }
+      } else {
+        msg = `Here are the estimated **${benefitLabel}** premiums for **${coverageTier}** (based on ${payPeriods} pay periods/year):\n`;
+        for (const r of filtered) {
+          msg += `- ${r.plan}: $${pricingUtils.formatMoney(r.perPaycheck)} per paycheck ($${pricingUtils.formatMoney(r.perMonth)}/month, $${pricingUtils.formatMoney(r.annually)}/year)\n`;
+        }
       }
 
       if (!session.userState) {
@@ -2430,7 +2748,30 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
     const tRetrieval = Date.now();
     let result = await hybridRetrieve(retrievalQuery, context);
     logger.info(`[REQ:${reqId}][STEP-8a RETRIEVAL] ${result.chunks?.length||0} chunks in ${Date.now()-tRetrieval}ms`);
-    
+
+    // ========================================================================
+    // GATE 2: Pre-LLM Retrieval Quality Check
+    // If retrieval quality is too low, short-circuit before GPT-4 call to prevent hallucination
+    // ========================================================================
+    if (result.gatePass === false) {
+      logger.warn(`[REQ:${reqId}][GATE2 FAIL] ${result.gateFailReason}, topScore=${result.gateTopScore?.toFixed(3)}`);
+      const fallbackMsg = `I don't have enough information to answer that accurately. Please contact the AmeriVet benefits team at ${HR_PHONE} or visit the enrollment portal at ${ENROLLMENT_PORTAL_URL} for assistance.`;
+      const plainFallback = toPlainAssistantText(fallbackMsg);
+      session.lastBotMessage = plainFallback;
+      await updateSession(sessionId, session);
+      return NextResponse.json({
+        answer: plainFallback,
+        tier: 'L1',
+        sessionContext: buildSessionContext(session),
+        metadata: {
+          gatePass: false,
+          gateFailReason: result.gateFailReason,
+          gateTopScore: result.gateTopScore,
+          escalated: true
+        }
+      });
+    }
+
     // 3. RUN VALIDATION PIPELINE (3 Gates)
     // ========================================================================
     // Gate 1: Retrieval Validation (RRF scores)
@@ -2463,8 +2804,9 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
       // Dropping the filter can return unrelated voluntary/accident docs and confuse pricing.
       if (category && explicitCategoryRequested) {
         logger.debug('[PIPELINE] Explicit category requested; trying deterministic fallback before dead-end');
-        // Try deterministic fallback FIRST instead of a dead-end message
-        const deterministicFallback = buildCategoryExplorationResponse(category.toLowerCase(), session, extractCoverageFromQuery(query));
+        // IMPORTANT: pass the full lowerQuery (not category.toLowerCase()) so buildCategoryExplorationResponse
+        // can evaluate exclusion patterns (e.g. "dhmo", "compare") and check noPricingMode context correctly.
+        const deterministicFallback = buildCategoryExplorationResponse(lowerQuery, session, extractCoverageFromQuery(query));
         if (deterministicFallback) {
           const plainDeterministicFallback = toPlainAssistantText(deterministicFallback);
           session.lastBotMessage = plainDeterministicFallback;
@@ -2507,6 +2849,8 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
             ? `I'm ready! What topic should we cover first? Available benefits include: ${ALL_BENEFITS_SHORT}`
             : "I checked our benefits documents, but I couldn't find any information matching that request. Could you try rephrasing or specify which benefit you're asking about?";
         const plainMsg = toPlainAssistantText(msg);
+        session.lastBotMessage = plainMsg;
+        await updateSession(sessionId, session);
         return NextResponse.json({ 
           answer: plainMsg, 
             sessionContext: buildSessionContext(session),
@@ -2582,8 +2926,8 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
       : '';
 
     // NO-PRICING MODE: If user requested "no pricing" / "coverage only", instruct LLM accordingly
-    const noPricingHint = session.noPricingMode
-        ? `\nIMPORTANT: The user has requested NO PRICING information. Do NOT include any dollar amounts, cost tables, premium figures, or $ signs. Focus exclusively on plan features, deductibles, coinsurance percentages, coverage details, and network information.`
+    const noPricingHint = (session.noPricingMode || intent.noPricing)
+        ? `\n╔════════════════════════════════════════════════════════════════╗\n║ MANDATORY — NO PRICING MODE ACTIVE                            ║\n║ The user explicitly said "no pricing/no dollar signs".        ║\n║ You MUST NOT include ANY:                                     ║\n║   • Dollar amounts ($X.XX)  • Cost tables  • Premiums         ║\n║   • Rates  • Per-paycheck figures  • Annual costs             ║\n║ Focus ONLY on: features, deductibles, coinsurance %, networks ║\n╚════════════════════════════════════════════════════════════════╝`
         : '';
 
     // TIER LOCK HINT: If session has a locked tier, inform LLM
@@ -2598,6 +2942,11 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
         : '';
 
     // User message with retrieval context and current question
+    // Classify query intent for response-shape routing
+    const { intent: queryResponseIntent, confidence: intentConfidence } = classifyQueryIntent(query, session.currentTopic);
+    const intentHintText = getIntentHint(queryResponseIntent);
+    logger.info(`[REQ:${reqId}][STEP-8e INTENT] responseIntent=${queryResponseIntent} confidence=${intentConfidence.toFixed(2)}`);
+
     // Build the strict state header to inject into every user message (re-enforcement)
     const stateEnforcement = session.userState
       ? (KAISER_STATES.has(session.userState.toUpperCase())
@@ -2606,6 +2955,13 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
       : `STATE: Unknown — do not reference regional plan availability.`;
 
     const userMessage = `${stateEnforcement}
+
+${intentHintText}
+
+▶ EXACT QUESTION TO ANSWER: "${query}"
+   Read this carefully. Answer SPECIFICALLY what is being asked — do NOT default to a
+   general category overview unless the user asks for one. If the user asks about a
+   contact/navigation service not in AmeriVet's package, say so clearly.
 
 RETRIEVAL CONTEXT (supplementary — catalog in system prompt is authoritative):
 ${contextText}
@@ -2646,16 +3002,25 @@ Remember: answer ONLY from the IMMUTABLE CATALOG. Do NOT ask for name, age, or s
     logger.info(`[REQ:${reqId}][STEP-9a LLM-DONE] ${llmMs}ms rawLen=${completion.content.length}`);
 
     let answer = completion.content.trim();
-    answer = extractReasonedResponse(answer, true); // extract [RESPONSE], log [REASONING] debug trace
-    answer = stripThoughtBlock(answer, true);        // strip any residual <thought> blocks
-    answer = enforceMonthlyFirstFormat(answer);
-    answer = validatePricingFormat(answer);
-
-    // Normalize pricing mentions to monthly-first canonical form and enforce state consistency
+    // Strict/minimal output pipeline
+    answer = extractReasonedResponse(answer, true); // [RESPONSE] extraction + trace
+    answer = stripThoughtBlock(answer, true);       // Remove <thought> blocks + trace
+    answer = enforceMonthlyFirstFormat(answer);     // Normalize pricing
+    answer = validatePricingFormat(answer);         // Remove hedging, markdown, internal prompts
+    answer = cleanResponseText(answer);             // Remove repeated phrases/sentences
+    answer = answer.replace(/\n{3,}/g, '\n\n').trim(); // Remove excessive newlines
+    // Remove boilerplate/disclaimer paragraphs (strict minimal)
+    answer = answer.replace(/\n?\s*For live support or additional assistance.*?\n/gi, '');
+    answer = answer.replace(/\n?\s*Would you like to explore a different benefit category\?\s*/gi, '');
+    answer = answer.replace(/\n?\s*Would you like to:\s*-.*?\n/gi, '');
+    answer = answer.replace(/\n?\s*Which benefit would you like to explore first\?.*?\n/gi, '');
+    answer = answer.replace(/\n?\s*Is there anything else I can help you with\?\s*/gi, '');
+    // Tracing hook: log final minimal output
+    logger.info(`[TRACE-STRICT-MINIMAL] Final output: ${answer.slice(0, 600)}`);
+    // Normalize pricing/state consistency
     try {
       answer = pricingUtils.normalizePricingInText(answer, session.payPeriods || 26);
       answer = pricingUtils.ensureStateConsistency(answer, session.userState || null);
-      answer = cleanResponseText(answer);  // Remove repeated phrases and duplicate sentences
     } catch (e) {
       logger.warn('[QA] Pricing normalization failed:', e);
     }
@@ -2698,13 +3063,15 @@ Remember: answer ONLY from the IMMUTABLE CATALOG. Do NOT ask for name, age, or s
     answer = applyBrandonRule(answer, routerResult);
 
     // POST-PROCESSING: CARRIER INTEGRITY GUARD (Deterministic)
-    // — Allstate = Whole Life only. Never attribute term life to Allstate.
-    // — UNUM = Basic/Voluntary Term Life only. Never attribute whole life to Unum.
-    // — BCBSTX = Medical/Dental. Never attribute life insurance to BCBSTX.
+    // — Allstate = Whole Life (permanent), Accident Insurance, Critical Illness ONLY.
+    // — UNUM = Basic Life & AD&D (employer-paid), Voluntary Term Life, STD, LTD ONLY.
+    // — BCBSTX = Medical/Dental. Never attribute life/accident/critical to BCBSTX.
     // — Never mention "Rightway" (already handled above).
     const CARRIER_MISATTRIBUTION_RULES: Array<{ pattern: RegExp; fix: string }> = [
       { pattern: /allstate\s+(?:voluntary\s+)?term\s+life/gi, fix: 'Unum Voluntary Term Life' },
       { pattern: /unum\s+whole\s+life/gi, fix: 'Allstate Whole Life' },
+      { pattern: /unum\s+(?:voluntary\s+)?accident(?:\s+insurance)?/gi, fix: 'Allstate Accident Insurance' },
+      { pattern: /unum\s+critical\s+illness/gi, fix: 'Allstate Critical Illness' },
       { pattern: /bcbstx?\s+(?:life|disability|accident|critical)/gi, fix: '' }, // strip entirely
     ];
     for (const rule of CARRIER_MISATTRIBUTION_RULES) {
@@ -2721,6 +3088,14 @@ Remember: answer ONLY from the IMMUTABLE CATALOG. Do NOT ask for name, age, or s
       }
     }
 
+    // POST-PROCESSING: DHMO HALLUCINATION GUARD
+    // AmeriVet has NO DHMO plan. If LLM output mentions DHMO as if it exists, correct it.
+    const DHMO_HALLUCINATION = /\b(?:dental\s+hmo|dhmo\s+plan|the\s+dhmo|dhmo\s+(?:option|coverage|premium|cost|rate|provider))\b/gi;
+    if (DHMO_HALLUCINATION.test(answer)) {
+      logger.warn('[DHMO-GUARD] Stripped hallucinated DHMO plan reference');
+      answer = answer.replace(DHMO_HALLUCINATION, 'BCBSTX Dental PPO (the only dental plan)');
+    }
+
     // POST-PROCESSING: PPO HALLUCINATION GUARD
     // If the answer mentions a "PPO" medical plan (not dental PPO), strip or correct it
     const PPO_MEDICAL_HALLUCINATION = /\b(?:BCBSTX?\s+PPO|PPO\s+(?:Standard|plan|medical)|medical\s+PPO)\b/gi;
@@ -2729,8 +3104,24 @@ Remember: answer ONLY from the IMMUTABLE CATALOG. Do NOT ask for name, age, or s
       answer = answer.replace(PPO_MEDICAL_HALLUCINATION, 'Standard HSA/Enhanced HSA (PPO network)');
     }
 
+    // POST-PROCESSING: ALLSTATE WHOLE LIFE HALLUCINATION GUARD
+    // The catalog has NO specific coverage amounts for Allstate Whole Life (age-banded/placeholder).
+    // Strip any invented coverage ranges (e.g., "$20,000–$100,000") or age guarantees (e.g., "until age 95").
+    const WHOLE_LIFE_FAKE_AMOUNTS = /(?:allstate|whole\s*life)[^.]*?\$[\d,]+\s*(?:[-–—to]+\s*\$[\d,]+)?[^.]*\./gi;
+    if (WHOLE_LIFE_FAKE_AMOUNTS.test(answer)) {
+      logger.warn('[WHOLE-LIFE-GUARD] Stripped hallucinated Allstate Whole Life coverage amounts');
+      answer = answer.replace(WHOLE_LIFE_FAKE_AMOUNTS, 'Allstate Whole Life coverage amounts are age-banded — visit the enrollment portal for your personalized rate.');
+    }
+    const WHOLE_LIFE_AGE_GUARANTEE = /(?:allstate|whole\s*life)[^.]*(?:guaranteed\s+(?:until|to)\s+age\s+\d+|until\s+age\s+\d+)[^.]*\./gi;
+    if (WHOLE_LIFE_AGE_GUARANTEE.test(answer)) {
+      logger.warn('[WHOLE-LIFE-GUARD] Stripped hallucinated Allstate age guarantee');
+      answer = answer.replace(WHOLE_LIFE_AGE_GUARANTEE, 'Allstate Whole Life is permanent coverage that does not expire as long as premiums are paid. Rates are locked at your enrollment age.');
+    }
+
     // POST-PROCESSING: NO-PRICING ENFORCEMENT — strip all $ and cost lines if noPricingMode
-    if (session.noPricingMode) {
+    // Check BOTH session.noPricingMode (from previous turns) AND intent.noPricing (current turn)
+    // so the rule is bulletproof even if the session was not yet persisted.
+    if (session.noPricingMode || intent.noPricing) {
       // Remove lines containing dollar amounts
       answer = answer.split('\n').filter(line => !/\$\d/.test(line)).join('\n');
       // Remove inline dollar mentions
@@ -2748,6 +3139,19 @@ Remember: answer ONLY from the IMMUTABLE CATALOG. Do NOT ask for name, age, or s
     if (groundingWarnings.length) {
       logger.warn(`[GROUNDING-AUDIT] ${groundingWarnings.length} ungrounded amount(s) corrected: ${groundingWarnings.join(', ')}`);
       answer = auditedAnswer;
+    }
+
+    // ── TEXTUAL HALLUCINATION AUDIT: detect fabricated policy details ───────────────
+    const { hasHallucination, matches: hallucinationMatches } = detectTextualHallucination(answer);
+    if (hasHallucination) {
+      logger.warn(`[HALLUCINATION-AUDIT] ${hallucinationMatches.length} fabricated detail(s) detected: ${hallucinationMatches.map(m => m.label).join(', ')}`);
+      // Strip sentences containing hallucinated content
+      for (const { matched } of hallucinationMatches) {
+        const escaped = matched.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        // Remove the entire sentence containing the hallucination
+        answer = answer.replace(new RegExp(`[^.!?\\n]*${escaped}[^.!?\\n]*[.!?]?\\s*`, 'gi'), '');
+      }
+      answer = answer.replace(/\n{3,}/g, '\n\n').trim();
     }
 
     let finalGenQuality = scoreGenerationQuality(query, answer);
@@ -2773,16 +3177,26 @@ Answer directly from the IMMUTABLE CATALOG. Name the plan. State the exact figur
           { role: 'user', content: retryMsg }
         ], { temperature: 0.05 });
         let retryAnswer = retryCompletion.content.trim();
+        // Strict/minimal output pipeline for retry
         retryAnswer = extractReasonedResponse(retryAnswer, false);
         retryAnswer = stripThoughtBlock(retryAnswer, false);
         retryAnswer = enforceMonthlyFirstFormat(retryAnswer);
         retryAnswer = validatePricingFormat(retryAnswer);
+        retryAnswer = cleanResponseText(retryAnswer);
+        retryAnswer = retryAnswer.replace(/\n{3,}/g, '\n\n').trim();
+        retryAnswer = retryAnswer.replace(/\n?\s*For live support or additional assistance.*?\n/gi, '');
+        retryAnswer = retryAnswer.replace(/\n?\s*Would you like to explore a different benefit category\?\s*/gi, '');
+        retryAnswer = retryAnswer.replace(/\n?\s*Would you like to:\s*-.*?\n/gi, '');
+        retryAnswer = retryAnswer.replace(/\n?\s*Which benefit would you like to explore first\?.*?\n/gi, '');
+        retryAnswer = retryAnswer.replace(/\n?\s*Is there anything else I can help you with\?\s*/gi, '');
+        logger.info(`[TRACE-STRICT-MINIMAL-RETRY] Final output: ${retryAnswer.slice(0, 600)}`);
         try {
           retryAnswer = pricingUtils.normalizePricingInText(retryAnswer, session.payPeriods || 26);
           retryAnswer = cleanResponseText(retryAnswer);
         } catch { /* non-fatal */ }
-        if (session.noPricingMode) {
+        if (session.noPricingMode || intent.noPricing) {
           retryAnswer = retryAnswer.split('\n').filter(line => !/\$\d/.test(line)).join('\n');
+          retryAnswer = retryAnswer.replace(/\$[\d,]+\.?\d{0,2}(?:\/(?:month|year|mo|yr|paycheck|pay period|bi-?weekly?))?/gi, '[see portal for pricing]');
         }
         retryAnswer = toPlainAssistantText(retryAnswer);
         // Apply grounding audit to retry too
@@ -2841,6 +3255,40 @@ Answer directly from the IMMUTABLE CATALOG. Name the plan. State the exact figur
     await updateSession(sessionId, session);
     logger.info(`[REQ:${reqId}][STEP-12 DONE] RAG path → ${answer.length} chars, totalTime=${Date.now()-t0}ms, tier=${confidenceTier}`);
 
+    // ── Pipeline trace: finalize and log (non-blocking) ─────────────────────
+    pipelineTrace.intent = { detected: queryResponseIntent, confidence: intentConfidence };
+    pipelineTrace.retrieval = {
+      chunksReturned: result.chunks?.length || 0,
+      topScore: parseFloat(topScore.toFixed(3)),
+      latencyMs: 0, // filled earlier if tRetrieval was tracked
+      method: 'hybrid',
+      category: category || null,
+    };
+    pipelineTrace.gate = {
+      passed: result.gatePass !== false,
+      topScore: result.gateTopScore ?? 0,
+      chunkCount: result.chunks?.length || 0,
+      failReason: result.gateFailReason,
+    };
+    pipelineTrace.llm = {
+      model: 'gpt-4.1-mini',
+      promptTokens: completion.usage?.promptTokens ?? 0,
+      completionTokens: completion.usage?.completionTokens ?? 0,
+      latencyMs: llmMs,
+      temperature: 0.15,
+    };
+    pipelineTrace.response = {
+      type: 'generated',
+      citationsStripped: 0,
+      hallucinationsDetected: hallucinationMatches.length,
+      groundingWarnings: groundingWarnings.length,
+      length: answer.length,
+    };
+    pipelineTrace.totalLatencyMs = Date.now() - t0;
+    pipelineTrace.coverageTier = session.coverageTierLock ?? extractCoverageFromQuery(query);
+    // Fire-and-forget — never block the response
+    pipelineLogger.log(pipelineTrace).catch(() => {});
+
     return NextResponse.json({
       answer,
       tier: 'L2',
@@ -2867,6 +3315,10 @@ Answer directly from the IMMUTABLE CATALOG. Name the plan. State the exact figur
           confidence: routerResult.confidence,
           triggersHSACrossSell: routerResult.triggersHSACrossSell,
           requiresAgeBand: routerResult.requiresAgeBand
+        },
+        queryIntent: {
+          intent: queryResponseIntent,
+          confidence: intentConfidence,
         },
         validation: {
           retrieval: pipelineResult.retrieval,

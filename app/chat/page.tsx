@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic';
 import { useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import { marked } from 'marked';
+import { WelcomeVideoModal } from '@/components/welcome-video-modal';
 
 interface Message {
   id: string;
@@ -32,6 +33,15 @@ function ChatPageContent() {
   React.useEffect(() => {
     setIsMounted(true);
   }, []);
+
+  // Show welcome video modal only once per user
+  React.useEffect(() => {
+    const hasWatched = searchParams?.get('watched');
+    if (!hasWatched) {
+      // Show welcome video modal
+      setShowPersonalize(true);
+    }
+  }, [searchParams]);
 
   // Seed chat and open personalization from URL (e.g., /chat?seed=...&personalize=true)
   React.useEffect(() => {
@@ -144,6 +154,7 @@ function ChatPageContent() {
 
   return (
     <div className="flex flex-col h-screen">
+      <WelcomeVideoModal />
       {/* Chat Header */}
       <div className="border-b p-4 bg-white shrink-0">
         <div className="flex items-center space-x-3">

@@ -1,5 +1,6 @@
 import type OpenAI from 'openai';
 import { logger } from '@/lib/logger';
+import { EXPECTED_EMBEDDING_DIMS } from '@/lib/ai/models';
 
 let openaiClient: OpenAI | null = null;
 
@@ -46,7 +47,17 @@ export async function generateEmbedding(text: string): Promise<number[]> {
       model: deployment,
       input: truncatedText,
     });
-    return result.data?.[0]?.embedding || [];
+    const embedding = result.data?.[0]?.embedding;
+
+    // Validate embedding dimensions
+    if (!embedding || embedding.length === 0) {
+      throw new Error('Empty embedding returned from API');
+    }
+    if (embedding.length !== EXPECTED_EMBEDDING_DIMS) {
+      logger.warn(`Embedding dimension mismatch: expected ${EXPECTED_EMBEDDING_DIMS}, got ${embedding.length}`);
+    }
+
+    return embedding;
   } catch (error) {
     logger.error('Azure OpenAI embedding error:', error);
     throw new Error('Failed to generate embedding');

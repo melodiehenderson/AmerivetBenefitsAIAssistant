@@ -266,3 +266,40 @@ describe('Pillar Verification — Response Verifier', () => {
     expect(result.action).toBe('refuse');
   });
 });
+
+// =============================================================================
+// Test E: calculateSTDBenefit — deterministic math (IRS / UNUM STD)
+// =============================================================================
+import { calculateSTDBenefit, formatSTDBenefit } from '@/lib/utils/pricing';
+
+describe('Deterministic Decision Layer — STD Benefit Calculator', () => {
+  it('calculates $5,000/month at 60% correctly', () => {
+    const result = calculateSTDBenefit(5000);
+    expect(result.monthlySalary).toBe(5000);
+    expect(result.weeklySalary).toBe(1154.73);
+    expect(result.weeklyBenefit).toBe(692.84);
+    expect(result.monthlyBenefit).toBe(3000);
+    expect(result.percentage).toBe(0.60);
+  });
+
+  it('handles custom percentage (70%)', () => {
+    const result = calculateSTDBenefit(5000, 0.70);
+    expect(result.weeklyBenefit).toBe(Math.round((5000 / 4.33) * 0.70 * 100) / 100);
+    expect(result.monthlyBenefit).toBe(3500);
+    expect(result.percentage).toBe(0.70);
+  });
+
+  it('formats output string with dollar amounts', () => {
+    const result = calculateSTDBenefit(5000);
+    const formatted = formatSTDBenefit(result);
+    expect(formatted).toContain('$1,154.73');
+    expect(formatted).toContain('$692.84');
+    expect(formatted).toContain('60%');
+  });
+
+  it('produces correct weekly salary formula ($M / 4.33)', () => {
+    const result = calculateSTDBenefit(8000);
+    // 8000 / 4.33 = 1847.57 (rounded to 2 dp)
+    expect(result.weeklySalary).toBe(Math.round((8000 / 4.33) * 100) / 100);
+  });
+});

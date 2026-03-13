@@ -62,8 +62,8 @@ export class HybridLLMService {
         gpt4: 8000,
       },
       temperature: {
-        gpt35: 0.7,
-        gpt4: 0.3,
+        gpt35: 0,  // Must be 0 for deterministic factual RAG answers
+        gpt4: 0,   // Must be 0 for deterministic factual RAG answers
       },
       costPerToken: {
         gpt35: {

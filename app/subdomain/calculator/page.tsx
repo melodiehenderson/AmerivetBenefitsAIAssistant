@@ -11,12 +11,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { amerivetBenefits2024_2025 } from '@/lib/data/amerivet';
 import { ArrowLeft, Calculator, DollarSign, Activity, Pill, Hospital, HeartPulse, AlertCircle } from 'lucide-react';
 import { Slider } from '@/components/ui/slider';
 import Image from 'next/image';
 
-// Kaiser is only available in these states
-const KAISER_STATES = ['CA', 'CO', 'DC', 'GA', 'HI', 'MD', 'OR', 'VA', 'WA'];
+// Kaiser is only available in these states (matches amerivet.ts regionalAvailability)
+const KAISER_STATES = ['CA', 'WA', 'OR'];
+
+// Plans from canonical catalog
+const catalogPlans = amerivetBenefits2024_2025.medicalPlans;
 
 // US States for dropdown
 const US_STATES = [
@@ -49,7 +53,7 @@ const COVERAGE_MULTIPLIERS: Record<string, number> = {
 
 export default function CalculatorPage() {
   const router = useRouter();
-  const [planType, setPlanType] = useState('hsa-high');
+  const [planType, setPlanType] = useState(catalogPlans[0]?.id ?? 'bcbstx-standard-hsa');
   const [coverage, setCoverage] = useState('employee-only');
   const [userState, setUserState] = useState('');
   const [salary, setSalary] = useState('60000');
@@ -69,20 +73,32 @@ export default function CalculatorPage() {
 
   // Reset plan if Kaiser selected but not available in new state
   useEffect(() => {
-    if (planType === 'kaiser-hmo' && !isKaiserAvailable) {
-      setPlanType('hsa-high');
+    if (planType === 'kaiser-standard-hmo' && !isKaiserAvailable) {
+      setPlanType(catalogPlans[0]?.id ?? 'bcbstx-standard-hsa');
     }
   }, [userState, isKaiserAvailable, planType]);
 
-  const pricing = {
-    'hsa-high': { label: 'HSA High Deductible', monthly: 250, copayVisit: 20, hospDay: 200, rx: 10, surgery: 500 },
-    'ppo-standard': { label: 'PPO Standard', monthly: 380, copayVisit: 25, hospDay: 150, rx: 12, surgery: 400 },
-    'ppo-premium': { label: 'PPO Premium', monthly: 520, copayVisit: 15, hospDay: 120, rx: 8, surgery: 300 },
-    'kaiser-hmo': { label: 'Kaiser HMO', monthly: 300, copayVisit: 15, hospDay: 100, rx: 8, surgery: 250 },
-  } as const;
+  // Build pricing from the canonical amerivet.ts catalog
+  const pricing = Object.fromEntries(
+    catalogPlans.map((p) => [
+      p.id,
+      {
+        label: p.name,
+        monthly: p.tiers.employeeOnly,
+        copayVisit: p.coverage?.copays?.primaryCare ?? 20,
+        hospDay: p.coverage?.deductibles?.individual
+          ? Math.round(p.coverage.deductibles.individual / 5)
+          : 200,
+        rx: p.coverage?.copays?.lenses ?? 10, // closest per-item cost proxy
+        surgery: p.benefits.outOfPocketMax
+          ? Math.round(p.benefits.outOfPocketMax / 13)
+          : 500,
+      },
+    ]),
+  ) as Record<string, { label: string; monthly: number; copayVisit: number; hospDay: number; rx: number; surgery: number }>;
 
   const calc = useMemo(() => {
-    const conf = pricing[planType as keyof typeof pricing];
+    const conf = pricing[planType] ?? pricing[catalogPlans[0]?.id ?? ''];
     const multiplier = COVERAGE_MULTIPLIERS[coverage] || 1;
     const premiumMonthly = conf.monthly * multiplier;
     const premiumAnnual = premiumMonthly * 12;
@@ -156,12 +172,18 @@ export default function CalculatorPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="hsa-high">HSA High Deductible - ${Math.round(pricing['hsa-high'].monthly * multiplier)}/month</SelectItem>
-                    <SelectItem value="ppo-standard">PPO Standard - ${Math.round(pricing['ppo-standard'].monthly * multiplier)}/month</SelectItem>
-                    <SelectItem value="ppo-premium">PPO Premium - ${Math.round(pricing['ppo-premium'].monthly * multiplier)}/month</SelectItem>
-                    {isKaiserAvailable && (
-                      <SelectItem value="kaiser-hmo">Kaiser HMO - ${Math.round(pricing['kaiser-hmo'].monthly * multiplier)}/month</SelectItem>
-                    )}
+                    {catalogPlans
+                      .filter((p) => {
+                        if (p.provider.toLowerCase().includes('kaiser')) {
+                          return isKaiserAvailable;
+                        }
+                        return true;
+                      })
+                      .map((p) => (
+                        <SelectItem key={p.id} value={p.id}>
+                          {p.name} - ${Math.round((pricing[p.id]?.monthly ?? p.tiers.employeeOnly) * multiplier)}/month
+                        </SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
                 {userState && !isKaiserAvailable && (
@@ -227,7 +249,7 @@ export default function CalculatorPage() {
             {/* Cost breakdown */}
             <Card className="border">
               <CardHeader>
-                <CardTitle className="text-lg">Cost Breakdown for {pricing[planType as keyof typeof pricing].label}</CardTitle>
+                <CardTitle className="text-lg">Cost Breakdown for {pricing[planType]?.label ?? planType}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

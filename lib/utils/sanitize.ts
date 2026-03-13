@@ -4,6 +4,19 @@ import { z } from 'zod';
  * Sanitization utilities to prevent injection attacks and XSS
  */
 
+/**
+ * Scrub PII (personally identifiable information) from text before embedding/storage.
+ * Replaces SSNs, emails, credit card numbers, and phone numbers with safe tokens.
+ */
+export function scrubPII(text: string): string {
+  return text
+    .replace(/\b\d{3}-\d{2}-\d{4}\b/g, '[SSN]')                              // SSN with dashes
+    .replace(/\b\d{9}\b/g, '[SSN]')                                            // SSN without dashes
+    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, '[EMAIL]')        // email
+    .replace(/\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b/g, '[CARD]')         // credit card
+    .replace(/\b\d{3}[\s.-]?\d{3}[\s.-]?\d{4}\b/g, '[PHONE]');                 // phone
+}
+
 // Maximum allowed lengths
 const MAX_CHAT_MESSAGE_LENGTH = 10000;
 const MAX_TITLE_LENGTH = 200;

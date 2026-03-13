@@ -24,7 +24,7 @@ class AzureOpenAIService {
         request.messages,
         {
           maxTokens: request.maxTokens || 1000,
-          temperature: request.temperature || 0.7
+          temperature: request.temperature ?? 0  // Default to 0 for deterministic factual answers
         }
       );
 

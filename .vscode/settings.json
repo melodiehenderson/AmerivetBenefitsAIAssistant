@@ -1,0 +1,15 @@
+{
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true,
+  "typescript.tsserver.experimental.enableProjectDiagnostics": false,
+  "typescript.tsserver.maxTsServerMemory": 4096,
+  "typescript.disableAutomaticTypeAcquisition": true,
+  "github.copilot.chat.virtualTools.threshold": 0,
+  "chat.tools.terminal.autoApprove": {
+    "npx tsc": true,
+    "ForEach-Object": true,
+    "git add": true,
+    "git commit": true,
+    "npx playwright": true
+  }
+}

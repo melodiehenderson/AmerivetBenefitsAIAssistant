@@ -348,7 +348,7 @@ class SuperAdminService {
       },
       aiSettings: {
         provider: 'openai',
-        model: 'gpt-4o-mini',
+        model: 'gpt-4.1-mini',
         maxTokensPerRequest: 1000,
         rateLimitPerMinute: 60,
       },

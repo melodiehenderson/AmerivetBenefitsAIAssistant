@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from './ui/button';
+import { amerivetBenefits2024_2025, type BenefitPlan } from '@/lib/data/amerivet';
 
 interface Plan {
   id: string;
@@ -24,66 +25,34 @@ interface Plan {
   provider: string;
 }
 
+function catalogPlanToComparisonPlan(p: BenefitPlan): Plan {
+  return {
+    id: p.id,
+    name: p.name,
+    premium: p.tiers.employeeOnly,
+    deductible: p.benefits.deductible,
+    outOfPocketMax: p.benefits.outOfPocketMax,
+    type: p.type,
+    category: p.type === 'medical'
+      ? (p.provider.toLowerCase().includes('kaiser') ? 'HMO' : 'HSA')
+      : p.type.toUpperCase(),
+    provider: p.provider,
+  };
+}
+
 export function PlanComparison() {
   const [allPlans, setAllPlans] = useState<Plan[]>([]);
   const [selectedPlanIds, setSelectedPlanIds] = useState<string[]>([]);
   const [comparison, setComparison] = useState<Plan[]>([]);
 
   useEffect(() => {
-    // In a real application, you would fetch these plans from an API
-    const mockPlans: Plan[] = [
-      {
-        id: '1',
-        name: 'Gold PPO',
-        premium: 500,
-        deductible: 1000,
-        outOfPocketMax: 5000,
-        type: 'health',
-        category: 'PPO',
-        provider: 'Blue Cross',
-      },
-      {
-        id: '2',
-        name: 'Silver HMO',
-        premium: 350,
-        deductible: 2500,
-        outOfPocketMax: 7000,
-        type: 'health',
-        category: 'HMO',
-        provider: 'Kaiser',
-      },
-      {
-        id: '3',
-        name: 'Bronze HDHP',
-        premium: 250,
-        deductible: 5000,
-        outOfPocketMax: 8000,
-        type: 'health',
-        category: 'HDHP',
-        provider: 'Aetna',
-      },
-      {
-        id: '4',
-        name: 'Vision Basic',
-        premium: 20,
-        deductible: 50,
-        outOfPocketMax: 200,
-        type: 'vision',
-        category: 'PPO',
-        provider: 'VSP',
-      },
-      {
-        id: '5',
-        name: 'Dental Premier',
-        premium: 45,
-        deductible: 100,
-        outOfPocketMax: 1500,
-        type: 'dental',
-        category: 'PPO',
-        provider: 'Delta Dental',
-      },
+    const catalog = amerivetBenefits2024_2025;
+    const plans: Plan[] = [
+      ...catalog.medicalPlans.map(catalogPlanToComparisonPlan),
+      catalogPlanToComparisonPlan(catalog.dentalPlan),
+      catalogPlanToComparisonPlan(catalog.visionPlan),
     ];
-    setAllPlans(mockPlans);
+    setAllPlans(plans);
   }, []);
 
   const handleSelectPlan = (planId: string) => {

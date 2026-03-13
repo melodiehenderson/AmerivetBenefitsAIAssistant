@@ -39,7 +39,7 @@ export class HybridAIService {
   ): Promise<ChatResponse> {
     try {
       const response = await this.openai.chat.completions.create({
-        model: options?.model || 'gpt-4o-mini', // Cost-effective model
+        model: options?.model || 'gpt-4.1-mini', // Cost-effective model
         messages,
         max_tokens: options?.maxTokens || 500,
         temperature: options?.temperature || 0.7,

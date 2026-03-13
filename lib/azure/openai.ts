@@ -44,6 +44,8 @@ export class AzureOpenAIService {
   ): Promise<string> {
     const client = await this.ensureClient();
     const openaiConfig = getOpenAIConfig();
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30_000);
     try {
       const {
         maxTokens = 1000,
@@ -54,21 +56,25 @@ export class AzureOpenAIService {
         stop = []
       } = options;
 
-      const response = await client.chat.completions.create({
-        model: (getOpenAIConfig()).deploymentName || 'gpt-3.5-turbo',
-        messages: [
-          {
-            role: 'user',
-            content: prompt
-          }
-        ],
-        max_tokens: maxTokens,
-        temperature,
-        top_p: topP,
-        frequency_penalty: frequencyPenalty,
-        presence_penalty: presencePenalty,
-        stop
-      });
+      const response = await client.chat.completions.create(
+        {
+          model: (getOpenAIConfig()).deploymentName || 'gpt-3.5-turbo',
+          messages: [
+            {
+              role: 'user',
+              content: prompt
+            }
+          ],
+          max_tokens: maxTokens,
+          temperature,
+          top_p: topP,
+          frequency_penalty: frequencyPenalty,
+          presence_penalty: presencePenalty,
+          stop
+        },
+        { signal: controller.signal }
+      );
+      clearTimeout(timeoutId);
 
       const content = response.choices[0]?.message?.content || '';
       const usage = response.usage;
@@ -80,7 +86,11 @@ export class AzureOpenAIService {
       }, 'Text generated successfully');
 
       return content;
-    } catch (error) {
+    } catch (error: any) {
+      clearTimeout(timeoutId);
+      if (error?.name === 'AbortError') {
+        throw new Error('LLM_TIMEOUT: OpenAI request exceeded 30 seconds');
+      }
       log.error('Failed to generate text', error as Error, {  
         promptLength: prompt.length,
         options
@@ -108,6 +118,8 @@ export class AzureOpenAIService {
     };
   }> {
     const client = await this.ensureClient();
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30_000);
     try {
       const {
         maxTokens = 1000,
@@ -118,16 +130,20 @@ export class AzureOpenAIService {
         stop = []
       } = options;
 
-      const response = await client.chat.completions.create({
-        model: (getOpenAIConfig()).deploymentName || 'gpt-3.5-turbo',
-        messages: messages,
-        max_tokens: maxTokens,
-        temperature,
-        top_p: topP,
-        frequency_penalty: frequencyPenalty,
-        presence_penalty: presencePenalty,
-        stop
-      });
+      const response = await client.chat.completions.create(
+        {
+          model: (getOpenAIConfig()).deploymentName || 'gpt-3.5-turbo',
+          messages: messages,
+          max_tokens: maxTokens,
+          temperature,
+          top_p: topP,
+          frequency_penalty: frequencyPenalty,
+          presence_penalty: presencePenalty,
+          stop
+        },
+        { signal: controller.signal }
+      );
+      clearTimeout(timeoutId);
 
       const content = response.choices[0]?.message?.content;
       if (!content) {
@@ -154,8 +170,12 @@ export class AzureOpenAIService {
           totalTokens: (usage as any).totalTokens || (usage as any).total_tokens || 0
         }
       };
-    } catch (error) {
-      log.error('Failed to generate chat completion', error as Error, {  
+    } catch (error: any) {
+      clearTimeout(timeoutId);
+      if (error?.name === 'AbortError') {
+        throw new Error('LLM_TIMEOUT: OpenAI request exceeded 30 seconds');
+      }
+      log.error('Failed to generate chat completion', error as Error, {
         messageCount: messages.length,
         options
         });

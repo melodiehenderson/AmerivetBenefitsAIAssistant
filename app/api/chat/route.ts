@@ -829,6 +829,8 @@ Which of these would you like to learn about next?`
     const L3_CARRIER_RULES: Array<{ pattern: RegExp; fix: string }> = [
       { pattern: /allstate\s+(?:voluntary\s+)?term\s+life/gi, fix: 'Unum Voluntary Term Life' },
       { pattern: /unum\s+whole\s+life/gi, fix: 'Allstate Whole Life' },
+      { pattern: /unum\s+(?:voluntary\s+)?accident(?:\s+insurance)?/gi, fix: 'Allstate Accident Insurance' }, // Fix 31 — Accident = Allstate only
+      { pattern: /unum\s+critical\s+illness/gi, fix: 'Allstate Critical Illness' },                          // Fix 31 — Critical Illness = Allstate only
       { pattern: /bcbstx?\s+(?:life|disability|accident|critical)/gi, fix: '' }, // strip entirely
     ];
     for (const rule of L3_CARRIER_RULES) {
