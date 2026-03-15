@@ -2493,7 +2493,14 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
     {
       const { intent: firstPassIntent } = classifyQueryIntent(lowerQuery, session.currentTopic);
       if (firstPassIntent === 'yes_no' || firstPassIntent === 'factual_lookup') {
-        const shortAnswer = buildShortCategoryAnswer(lowerQuery, firstPassIntent, session);
+        let shortAnswer = buildShortCategoryAnswer(lowerQuery, firstPassIntent, session);
+        // Retry with session topic injected for context-free follow-ups
+        // e.g. "who is this coverage with?" + currentTopic="life insurance"
+        //   → "life insurance who is this coverage with?" → matches carrier lookup
+        if (shortAnswer === null && session.currentTopic) {
+          const topicAugmented = `${session.currentTopic} ${lowerQuery}`;
+          shortAnswer = buildShortCategoryAnswer(topicAugmented.toLowerCase(), firstPassIntent, session);
+        }
         if (shortAnswer !== null) {
           logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] FIRST-PASS-SHORT-ANSWER: intent=${firstPassIntent}`);
           session.currentTopic = normalizeBenefitCategory(lowerQuery) || session.currentTopic;
