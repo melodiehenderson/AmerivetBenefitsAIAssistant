@@ -4,10 +4,11 @@ import { hybridRetrieve } from '@/lib/rag/hybrid-retrieval';
 import { azureOpenAIService } from '@/lib/azure/openai';
 import type { RetrievalContext, Chunk } from '@/types/rag';
 import { getOrCreateSession, updateSession, type Session } from '@/lib/rag/session-store';
-import { 
-  validatePricingFormat, 
+import {
+  validatePricingFormat,
   enforceMonthlyFirstFormat,
-  cleanResponseText
+  cleanResponseText,
+  stripInternalPrompts
 } from '@/lib/rag/response-utils';
 import {
   runValidationPipeline,
@@ -439,10 +440,13 @@ function checkL1FAQ(query: string, session: any): string | null {
 
 function shouldUseCategoryExplorationIntercept(query: string, lowerQuery: string, intentDomain: IntentDomain): boolean {
   if (intentDomain === 'policy') return false;
-  if (query.length > 90) return false;
+  // Raise the character limit — users often embed category mentions in natural
+  // sentences (e.g. "okay what about dental insurance, what is available to me there").
+  // 150 chars accommodates conversational phrasing while still excluding multi-paragraph queries.
+  if (query.length > 150) return false;
 
   // Let nuanced requests go to RAG.
-  if (/\b(compare|difference|recommend|best|which|should\s+i|for\s+me|my\s+situation|if\s+|because|while|calculate|estimate|project|scenario|qle|fmla|std)\b/i.test(lowerQuery)) {
+  if (/\b(compare|difference|recommend|best|should\s+i|for\s+me|my\s+situation|if\s+|because|while|calculate|estimate|project|scenario|qle|fmla|std)\b/i.test(lowerQuery)) {
     return false;
   }
 
@@ -452,10 +456,21 @@ function shouldUseCategoryExplorationIntercept(query: string, lowerQuery: string
   }
 
   const trimmed = query.trim();
+  // Exact single-category mention: "medical", "dental", "life insurance", etc.
   const directCategory = /^(medical|dental|vision|life(?:\s+insurance)?|disability|hsa|fsa|critical(?:\s+illness)?|accident|supplemental|benefits|benefits\s+overview|overview|what\s+benefits\s+do\s+i\s+have|what\s+are\s+my\s+options|show\s+me\s+benefits)$/i;
+  // Light exploration phrasing: "tell me about dental", "show me medical", etc.
   const lightExplore = /^(tell\s+me\s+about|show\s+me|overview\s+of|explain)\s+(medical|dental|vision|life(?:\s+insurance)?|disability|hsa|fsa|critical(?:\s+illness)?|accident|supplemental|benefits)\b/i;
+  // Conversational exploration: "what about dental", "let's look at medical",
+  // "what is available for life insurance", "I want to know about dental", etc.
+  // These are NOT comparison/recommendation requests — just category exploration.
+  // Allow 0-2 filler words between "let's" and the verb (e.g. "let's just talk about",
+  // "let's now go over", "let's quickly explore") so conversational topic-switches are caught.
+  const conversationalExplore = /\b(?:what\s+about|let'?s\s+(?:\w+\s+){0,2}(?:look\s+at|talk\s+about|go\s+(?:over|through)|explore|discuss|review|see)|what(?:'s|\s+is)\s+available\s+(?:for|in|under|with)|i\s+want\s+to\s+(?:know|learn|see|hear)\s+about|how\s+about|talk\s+about|interested\s+in)\s+(?:the\s+)?(?:my\s+)?(medical|dental|vision|life(?:\s+insurance)?|disability|hsa|fsa|critical(?:\s+illness)?|accident|supplemental|benefits)\b/i;
+  // "what is available" / "what do I have" paired with a category keyword anywhere in the query
+  const availableWithCategory = /\b(?:what(?:'s|\s+is)\s+available|what\s+(?:do\s+)?(?:i|we)\s+(?:have|get)|what\s+(?:options?|plans?|choices?)\s+(?:are|do))\b/i.test(lowerQuery)
+    && /\b(medical|dental|vision|life(?:\s+insurance)?|disability|hsa|fsa|critical(?:\s+illness)?|accident|supplemental)\b/i.test(lowerQuery);
 
-  return directCategory.test(trimmed) || lightExplore.test(trimmed);
+  return directCategory.test(trimmed) || lightExplore.test(trimmed) || conversationalExplore.test(trimmed) || availableWithCategory;
 }
 
 function shouldUsePlanPricingIntercept(query: string, lowerQuery: string): boolean {
@@ -1298,7 +1313,17 @@ function buildCategoryExplorationResponse(
     response += `- Annual maximum: $${plan.benefits.outOfPocketMax?.toLocaleString() ?? '1,500'}\n`;
     response += `- Orthodontia: $${plan.coverage?.copays?.orthodontia ?? 500} copay (with coverage)\n`;
     response += `- Network: Nationwide PPO\n\n`;
-    response += `Would you like to:\n- See pricing for a different coverage tier?\n- Learn more about orthodontia coverage?\n- Explore another benefit like Vision or Medical?`;
+
+    // Stay on-topic: help the user evaluate dental before offering to switch topics.
+    // If they already selected a medical plan, show combined cost context.
+    const medicalSelection = session.decisionsTracker?.['Medical'];
+    const selectedMedical = medicalSelection && (typeof medicalSelection === 'string' ? medicalSelection : medicalSelection?.status === 'selected' ? medicalSelection.value : null);
+    if (selectedMedical && !noPricingMode) {
+      const medMonthly = pricingUtils.monthlyPremiumForPlan(String(selectedMedical), tierLabel) ?? 0;
+      const combinedMonthly = medMonthly + monthly;
+      response += `Paired with your selected medical plan (${selectedMedical}), your combined monthly cost for medical + dental would be $${combinedMonthly.toFixed(2)}/month.\n\n`;
+    }
+    response += `Does this look like the right fit, or would you like more details? I can:\n- Explain orthodontia or other coverage in more detail\n- Show pricing for a different coverage tier\n- Help you decide if this plan meets your needs`;
 
     return finalize(response);
   }
@@ -1317,7 +1342,7 @@ function buildCategoryExplorationResponse(
     response += `- LASIK discounts available\n`;
     response += `- Lenses: $${plan.coverage?.copays?.lenses ?? 25} copay\n`;
     response += `- Network: VSP nationwide\n\n`;
-    response += `Would you like to:\n- See pricing for a different coverage tier?\n- Explore another benefit like Medical or Dental?`;
+    response += `Does this plan look right for you? I can:\n- Show pricing for a different coverage tier\n- Explain any coverage detail in more depth\n- Help you decide if vision coverage fits your needs`;
 
     return finalize(response);
   }
@@ -1347,7 +1372,7 @@ function buildCategoryExplorationResponse(
 
     response += `Pro tip: Many advisors recommend an 80/20 split — about 80% of your coverage in affordable Voluntary Term Life (Unum) for maximum protection, and 20% in Whole Life (Allstate) to build a permanent cash-value foundation that stays with you regardless of employment. The employer-paid Basic Life ($25K) is your starting base on top of that.\n\n`;
 
-    response += `Would you like to:\n- Learn more about any specific life insurance option?\n- Explore other benefits like Medical or Dental?`;
+    response += `Would you like to:\n- Learn more about any specific life insurance option?\n- See age-banded pricing for Voluntary Term or Whole Life?\n- Understand how to choose the right coverage amount?`;
 
     return finalize(response);
   }
@@ -2472,8 +2497,16 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
     // Catches short follow-ups like "difference", "more", "details", "explain"
     // and uses session.currentTopic to provide a context-aware response.
     const isShortFollowUp = query.trim().length < 30 && /^(difference|more|details|explain|tell me more|what'?s the difference|go on|elaborate|how so|why|which one|more info|more details|expand|break it down)$/i.test(query.trim());
-    if (isShortFollowUp && session.currentTopic) {
-      logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] CONTINUATION-HANDLER: topic=${session.currentTopic}`);
+
+    // Extended follow-up: user asks about "difference" / "what is available" / "options"
+    // without mentioning a specific category, but session.currentTopic is set.
+    // E.g. "I want to know the difference in the plans available" while currentTopic=Medical.
+    const hasNoCategoryKeyword = !/\b(medical|dental|vision|life|disability|hsa|fsa|critical|accident|supplemental)\b/i.test(lowerQuery);
+    const isTopicContinuation = hasNoCategoryKeyword && query.trim().length < 120 &&
+      /\b(difference|what(?:'s|\s+is)\s+available|what\s+(?:options?|plans?|choices?)|what\s+(?:do\s+)?(?:i|we)\s+(?:have|get)|available\s+to\s+me|what\s+(?:are|is)\s+(?:the|my)\s+(?:options?|plans?|choices?)|tell\s+me\s+(?:about\s+)?(?:the\s+)?(?:plans?|options?)|just\s+want\s+to\s+know|want\s+to\s+(?:know|see|understand))\b/i.test(lowerQuery);
+
+    if ((isShortFollowUp || isTopicContinuation) && session.currentTopic) {
+      logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] CONTINUATION-HANDLER: topic=${session.currentTopic}, short=${isShortFollowUp}, topicCont=${isTopicContinuation}`);
       // Re-route to category exploration with the current topic
       const topicResponse = buildCategoryExplorationResponse(session.currentTopic.toLowerCase(), session, extractCoverageFromQuery(query));
       if (topicResponse) {
@@ -2788,6 +2821,24 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
     // ========================================================================
     if (result.gatePass === false) {
       logger.warn(`[REQ:${reqId}][GATE2 FAIL] ${result.gateFailReason}, topScore=${result.gateTopScore?.toFixed(3)}`);
+
+      // COMPARISON FALLBACK: before dead-ending, check if this is a compare/options
+      // query with a known topic — buildCategoryExplorationResponse can handle it
+      // deterministically without RAG. E.g. "what's the difference between the plans
+      // available?" while currentTopic="Medical" gives a full medical overview.
+      const hasCompareIntent = /\bdifference|compare|available|options\b/i.test(query);
+      if (hasCompareIntent && session?.currentTopic) {
+        const topicQuery = `${session.currentTopic} ${query}`.toLowerCase();
+        const compareFallback = buildCategoryExplorationResponse(topicQuery, session, extractCoverageFromQuery(query));
+        if (compareFallback) {
+          const plainCompareFallback = toPlainAssistantText(compareFallback);
+          session.lastBotMessage = plainCompareFallback;
+          await updateSession(sessionId, session);
+          logger.info(`[REQ:${reqId}][GATE2 COMPARE-FALLBACK] Served deterministic response for topic=${session.currentTopic}`);
+          return NextResponse.json({ answer: plainCompareFallback, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { gatePass: false, compareFallback: true } });
+        }
+      }
+
       const fallbackMsg = `I don't have enough information to answer that accurately. Please contact the AmeriVet benefits team at ${HR_PHONE} or visit the enrollment portal at ${ENROLLMENT_PORTAL_URL} for assistance.`;
       const plainFallback = toPlainAssistantText(fallbackMsg);
       session.lastBotMessage = plainFallback;
@@ -2877,8 +2928,29 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
     
     // CASE B: No results at all
     if (!result.chunks?.length) {
-        logger.warn(`[REQ:${reqId}][STEP-8d] NO CHUNKS → returning empty result message`);
-        const msg = intent.isContinuation 
+        logger.warn(`[REQ:${reqId}][STEP-8d] NO CHUNKS → attempting deterministic category fallback`);
+
+        // Last-ditch safety net: if the query mentions a recognizable benefit category,
+        // return the deterministic category exploration response instead of a dead-end.
+        // Pass the category keyword directly (not lowerQuery, which may contain exclusion
+        // words like "difference") so buildCategoryExplorationResponse can find the template.
+        const detectedCategory = normalizeBenefitCategory(lowerQuery);
+        const categoryKeyword = detectedCategory !== lowerQuery.charAt(0).toUpperCase() + lowerQuery.slice(1)
+          ? detectedCategory.toLowerCase()
+          : null;
+        if (categoryKeyword) {
+          const deterministicFallbackB = buildCategoryExplorationResponse(categoryKeyword, session, extractCoverageFromQuery(query));
+          if (deterministicFallbackB) {
+            logger.info(`[REQ:${reqId}][STEP-8d] Deterministic fallback hit for category: ${detectedCategory}`);
+            session.currentTopic = detectedCategory;
+            const plainFallback = toPlainAssistantText(deterministicFallbackB);
+            session.lastBotMessage = plainFallback;
+            await updateSession(sessionId, session);
+            return NextResponse.json({ answer: plainFallback, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'zero-chunk-category-fallback', category: detectedCategory } });
+          }
+        }
+
+        const msg = intent.isContinuation
             ? `I'm ready! What topic should we cover first? Available benefits include: ${ALL_BENEFITS_SHORT}`
             : "I checked our benefits documents, but I couldn't find any information matching that request. Could you try rephrasing or specify which benefit you're asking about?";
         const plainMsg = toPlainAssistantText(msg);
@@ -3041,6 +3113,7 @@ Remember: answer ONLY from the IMMUTABLE CATALOG. Do NOT ask for name, age, or s
     answer = enforceMonthlyFirstFormat(answer);     // Normalize pricing
     answer = validatePricingFormat(answer);         // Remove hedging, markdown, internal prompts
     answer = cleanResponseText(answer);             // Remove repeated phrases/sentences
+    answer = stripInternalPrompts(answer);           // Strip leaked internal reminders/instructions
     answer = answer.replace(/\n{3,}/g, '\n\n').trim(); // Remove excessive newlines
     // Remove boilerplate/disclaimer paragraphs (strict minimal)
     answer = answer.replace(/\n?\s*For live support or additional assistance.*?\n/gi, '');
@@ -3216,6 +3289,7 @@ Answer directly from the IMMUTABLE CATALOG. Name the plan. State the exact figur
         retryAnswer = enforceMonthlyFirstFormat(retryAnswer);
         retryAnswer = validatePricingFormat(retryAnswer);
         retryAnswer = cleanResponseText(retryAnswer);
+        retryAnswer = stripInternalPrompts(retryAnswer);
         retryAnswer = retryAnswer.replace(/\n{3,}/g, '\n\n').trim();
         retryAnswer = retryAnswer.replace(/\n?\s*For live support or additional assistance.*?\n/gi, '');
         retryAnswer = retryAnswer.replace(/\n?\s*Would you like to explore a different benefit category\?\s*/gi, '');
