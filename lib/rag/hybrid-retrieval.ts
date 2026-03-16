@@ -350,9 +350,15 @@ async function searchWithFilterFallback(
   // This prevents "Mississippi vs Michigan" cross-state leakage at the retrieval layer.
   // FIX: State filtering is now ALWAYS enabled when context.state is available (not just when explicitly requested)
   const hasStateFilter = !!context.state && context.state !== 'National';
+  // chunks_prod_v1 index only has filterable fields: company_id, doc_id, chunk_index.
+  // There is no category, state, benefit_year, or dept field in the schema.
+  // Sending those in the OData filter causes a schema error on every first request.
+  // Category filtering is handled post-retrieval by filterChunksByCategory().
   const fullFilter = buildODataFilter(context, {
-    includeCategory: true,
-    includeState: hasStateFilter,  // Enable state filter when state is known
+    includeCategory: false,
+    includeState: false,
+    includePlanYear: false,
+    includeDept: false,
   });
   logger.debug(`[L2-FILTER] ${logPrefix} filter="${fullFilter}" hasState=${hasStateFilter} state=${context.state || 'unknown'}`);
   try {
