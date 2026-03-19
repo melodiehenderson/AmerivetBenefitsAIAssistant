@@ -1552,7 +1552,9 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     parsedBody = body;
     // Accept optional context from frontend as fallback for serverless session loss
-    const { query, companyId, sessionId, context: clientContext } = body;
+    const { query: rawQuery, companyId, sessionId, context: clientContext } = body;
+    // Sanitize query — strip trailing/leading quotes and whitespace
+    const query = rawQuery?.trim().replace(/^["'\u201c\u201d]+|["'\u201c\u201d]+$/g, '').trim();
     const reqId = sessionId ? sessionId.substring(0, 8) : Math.random().toString(36).slice(2, 10);
     const t0 = Date.now();
     
@@ -2168,8 +2170,8 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
       const compareSignal = /\b(?:compare|vs\.?|versus|side\s*by\s*side|difference\s+between|between)\b/i.test(lowerQuery);
       if (!compareSignal) return null;
       const knownPlans: { key: string; label: string; regex: RegExp }[] = [
-        { key: 'standard hsa', label: 'Standard HSA', regex: /\bstandard\s*hsa\b/i },
-        { key: 'enhanced hsa', label: 'Enhanced HSA', regex: /\benhanced\s*hsa\b/i },
+        { key: 'standard hsa', label: 'Standard HSA', regex: /\bstandard\s*(?:hsa)?\b/i },
+        { key: 'enhanced hsa', label: 'Enhanced HSA', regex: /\benhanced\s*(?:hsa)?\b/i },
         { key: 'kaiser',       label: 'Kaiser Standard HMO', regex: /\bkaiser\b/i },
       ];
       const matched = knownPlans.filter(p => p.regex.test(lowerQuery));
@@ -2180,8 +2182,8 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
         const other = knownPlans.find(p => !p.regex.test(lowerQuery) && p.key !== 'kaiser');
         if (other) return [matched[0], other];
       }
-      // Implicit: "the two medical plans" or "both hsa plans" — no specific plan named
-      if (matched.length === 0 && /\b(?:both\s+(?:medical\s+)?plans?|two\s+(?:medical\s+)?plans?|both\s+hsa|two\s+hsa|medical\s+plans?.*compare|compare.*medical\s+plans?)\b/i.test(lowerQuery)) {
+      // Implicit: "the two medical plans" or "both hsa plans" or "standard vs enhanced" — no specific plan named
+      if (matched.length === 0 && /\b(?:both\s+(?:medical\s+)?plans?|two\s+(?:medical\s+)?plans?|both\s+hsa|two\s+hsa|medical\s+plans?.*compare|compare.*medical\s+plans?|standard.*enhanced|enhanced.*standard)\b/i.test(lowerQuery)) {
         return [knownPlans[0], knownPlans[1]]; // Standard HSA vs Enhanced HSA
       }
       return null;
