@@ -19,8 +19,8 @@ import { countTokens } from '@/lib/utils/tokenCount';
 // Retrieval Gate Configuration
 // ============================================================================
 const GATE_MIN_CHUNKS = 1;        // Minimum chunks required to proceed (relaxed from 2)
-const GATE_MIN_TOP_SCORE = 0.35;  // Minimum top chunk RRF score (relaxed from 0.60)
-const GATE_CHUNK_THRESHOLD = 0.25; // Filter chunks below this score (relaxed from 0.45)
+const GATE_MIN_TOP_SCORE = 0.005;  // Minimum top chunk RRF score (relaxed from 0.60)
+const GATE_CHUNK_THRESHOLD = 0.003; // Filter chunks below this score (relaxed from 0.45)
 
 export interface RetrievalGateResult {
   gatePass: boolean;
