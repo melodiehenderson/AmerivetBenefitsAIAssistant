@@ -795,6 +795,7 @@ STATE-LOCK: ${kaiserRule}
 CARRIER-LOCK:
 - Medical: BCBSTX Standard HSA & Enhanced HSA${kaiserEligible ? ', Kaiser HMO' : ''} (PPO network, but HDHP plans)
 - Dental: BCBSTX Dental PPO | Vision: VSP
+- When asked about any benefit (dental, vision, medical, life, disability, HSA), answer immediately with full details from the catalog. Never ask clarifying questions before answering. Provide the answer first, then offer follow-up options at the end.
 - Life: Unum (Basic $25k employer-paid, Voluntary Term) + Allstate (Whole Life)
 - Disability: Unum | Critical Illness/Accident: Allstate
 - NEVER cross these assignments. Term life = Unum. Whole life = Allstate.
@@ -2793,7 +2794,7 @@ Remember: answer ONLY from the IMMUTABLE CATALOG. Do NOT ask for name, age, or s
 
     // POST-PROCESSING: PPO HALLUCINATION GUARD
     // If the answer mentions a "PPO" medical plan (not dental PPO), strip or correct it
-    const PPO_MEDICAL_HALLUCINATION = /\b(?:BCBSTX?\s+PPO|PPO\s+(?:Standard|plan|medical)|medical\s+PPO)\b/gi;
+    const PPO_MEDICAL_HALLUCINATION = /\b(?:BCBSTX?\s+(?:medical\s+)?PPO(?!\s+dental|\s+Dental)|PPO\s+(?:Standard|plan|medical)|medical\s+PPO)\b/gi;
     if (PPO_MEDICAL_HALLUCINATION.test(answer) && !/dental\s+ppo/i.test(answer.match(PPO_MEDICAL_HALLUCINATION)?.[0] || '')) {
       logger.warn('[PPO-GUARD] Stripped hallucinated PPO medical plan reference');
       answer = answer.replace(PPO_MEDICAL_HALLUCINATION, 'Standard HSA/Enhanced HSA (PPO network)');
