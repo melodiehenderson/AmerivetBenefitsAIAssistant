@@ -410,12 +410,10 @@ const L1_FAQ: L1FAQEntry[] = [
     answer: () => `Rightway is not an AmeriVet benefits resource and is not part of the AmeriVet benefits package.\n\nFor benefits navigation support, please contact AmeriVet HR/Benefits at ${HR_PHONE} or visit ${ENROLLMENT_PORTAL_URL}.`,
   },
   {
-    // Kaiser in non-Kaiser states (hard negative)
-    patterns: [/\b(kaiser.*(?:michigan|ohio|florida|texas|georgia|illinois|new\s*york|pennsylvania|arizona|nevada|colorado|north\s*carolina|virginia|minnesota|indiana|wisconsin|tennessee|missouri|maryland|iowa|kentucky|oklahoma|connecticut|utah|kansas|arkansas|mississippi|alabama|louisiana|west\s*virginia|idaho|nebraska|new\s*mexico|maine|south\s*carolina|north\s*dakota|south\s*dakota|alaska|vermont|wyoming|montana|hawaii|delaware|new\s*hampshire|rhode\s*island)|(?:michigan|ohio|florida|texas|georgia|illinois|new\s*york|pennsylvania|arizona|nevada|colorado|north\s*carolina|virginia|minnesota|indiana|wisconsin|tennessee|missouri|maryland|iowa|kentucky|oklahoma|connecticut|utah|kansas|arkansas|mississippi|alabama|louisiana|west\s*virginia|idaho|nebraska|new\s*mexico|maine|south\s*carolina|north\s*dakota|south\s*dakota|alaska|vermont|wyoming|montana|hawaii|delaware|new\s*hampshire|rhode\s*island).*kaiser)\b/i],
-    answer: (session: any) => {
-      const state = session.userState || 'your state';
-      return `Kaiser Permanente is not available in ${state}. Kaiser HMO is only offered in California (CA), Washington (WA), and Oregon (OR) through AmeriVet.\n\nIn ${state}, your medical plan options are Standard HSA and Enhanced HSA (both through BCBS of Texas, nationwide PPO network). Would you like to compare those?`;
-    },
+   // Kaiser availability question — any phrasing asking where Kaiser is available
+  patterns: [/\bkaiser\b.*\b(only|available|states?|where|which\s+states?|limited|regions?)\b|\b(only|available|states?|where|which\s+states?|limited|regions?)\b.*\bkaiser\b/i],
+  answer: () => `Kaiser HMO is only available in California (CA), Washington (WA), and Oregon (OR) through AmeriVet. It is not available in any other state. In all other states, your medical options are Standard HSA and Enhanced HSA (both through BCBS of Texas, nationwide PPO network).`,
+},
   },
   {
     // Missing internal personnel data (Detroit office dental receptionist style questions)
@@ -667,8 +665,7 @@ export function auditDollarGrounding(
   const warnings: string[] = [];
   const chunkText = chunks.map(c => c.content).join(' ');
   // Sentences with computation language are exempt from the grounding check
-  const mathSentenceRe = /÷|×|4\.33|weekly\s+(?:pay|benefit|base)|std\s+(?:pay|benefit|weekly)|60%\s+of|salary.*(?:÷|×|\/\s*4)/i;
-
+  const mathSentenceRe = /÷|×|4\.33|weekly\s+(?:pay|benefit|base)|std\s+(?:pay|benefit|weekly)|60%\s+of|salary.*(?:÷|×|\/\s*4)|annually|per\s+year|annual\s+(?:premium|cost|total)/i;
   // Split on sentence-ending punctuation, preserving the delimiter
   const sentences = answer.split(/(?<=[.!?\n])\s+/);
   const audited = sentences.map(sentence => {
@@ -2003,16 +2000,24 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
     const hasStdPaySignals = /\b(salary|paid|income|60%|sixty\s*percent|how\s+much\s+(?:will|do|would)\s+i|week\s*\d+|6th\s+week|sixth\s+week|std|short\s*[- ]?term\s+disability|leave\s+pay|maternity\s+pay|get\s+paid|paychec?k)\b/i.test(lowerQuery);
     const maternityFlowRequested = maternityRequested && !qleFilingOrderRequested && !hasStdPaySignals;
     if (maternityFlowRequested) {
-        logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] MATERNITY-FLOW`);
-        const coverageTier = lowerQuery.includes('family') ? 'Employee + Family'
-            : lowerQuery.includes('employee only') ? 'Employee Only'
-            : 'Employee + Child(ren)'; // sensible default for maternity
-        const rawMsg = pricingUtils.compareMaternityCosts(coverageTier, session.userState || null);
-        const plainMsg = session.noPricingMode ? stripPricingDetails(toPlainAssistantText(rawMsg)) : toPlainAssistantText(rawMsg);
-        session.lastBotMessage = plainMsg;
-        await updateSession(sessionId, session);
-        return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'maternity' } });
-    }
+  logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] MATERNITY-FLOW`);
+  // If noPricingMode is active, the deterministic function produces empty plan
+  // sections after stripPricingDetails removes all $ lines — fall through to LLM.
+  if (session.noPricingMode) {
+    logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] MATERNITY-FLOW: noPricingMode active → falling through to LLM`);
+    // fall through to RAG + LLM pipeline
+  } else {
+    const coverageTier = lowerQuery.includes('family') ? 'Employee + Family'
+      : lowerQuery.includes('employee only') ? 'Employee Only'
+      : 'Employee + Child(ren)';
+    const rawMsg = pricingUtils.compareMaternityCosts(coverageTier, session.userState || null);
+    const plainMsg = toPlainAssistantText(rawMsg);
+    session.lastBotMessage = plainMsg;
+    await updateSession(sessionId, session);
+    return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'maternity' } });
+  }
+}
+
 
     // CUSTOM INTERCEPT: Orthodontics/braces direct answer (deterministic)
     // Uses canonical dental plan data — no LLM hallucination possible
