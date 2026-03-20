@@ -737,7 +737,7 @@ export function detectIntentDomain(lowerQuery: string): IntentDomain {
 // 2. SYSTEM PROMPT — "ABSOLUTE TRUTH" (Data-Sovereign Benefits Engine)
 // ============================================================================
 function buildSystemPrompt(session: any): string {
-  // === Decisions context ===
+  // === Session context ===
   const decisions = session.decisionsTracker || {};
   const decisionEntries = Object.entries(decisions);
   const decisionsText = decisionEntries.length > 0
@@ -746,286 +746,99 @@ function buildSystemPrompt(session: any): string {
         return `- ${cat}: ${entry.status === 'selected' ? entry.value || 'Selected' : 'Declined'}`;
       }).join('\n')
     : 'None yet';
-
-  // === Remaining benefits ===
   const remaining = getRemainingBenefits(decisions);
   const remainingText = remaining.length > 0 ? remaining.join(', ') : 'All categories explored';
 
-  // === Kaiser eligibility — STRICT IMMUTABLE RULE ===
+  // === Kaiser eligibility ===
   const userState = session.userState || '';
   const kaiserEligible = KAISER_STATES.has(userState.toUpperCase());
-  const strictStateRule = userState
+  const kaiserRule = userState
     ? (kaiserEligible
-      ? `STRICT RULE — KAISER AVAILABLE: User is confirmed in ${userState}. Kaiser HMO IS available. Include Kaiser in all medical comparisons for this user.`
-      : `STRICT RULE — KAISER FORBIDDEN: User is in ${userState}. Kaiser HMO is NOT available in ${userState}. Do NOT mention Kaiser to this user in any form — not even to say it is unavailable in their state. Compare ONLY Standard HSA and Enhanced HSA. Programmatically exclude all CA/OR/WA-only plan data from your response.`)
-    : `STRICT RULE — STATE UNKNOWN: Do not reference Kaiser or regional plan availability until the user provides their state.`;
+      ? `Kaiser HMO IS available in ${userState}. Include Kaiser in medical comparisons.`
+      : `Kaiser HMO is NOT available in ${userState}. NEVER mention Kaiser — not even to say unavailable.`)
+    : `State unknown. Do not reference Kaiser or regional plan availability.`;
 
-  // === Catalog injection (state-filtered, immutable) ===
+  // === Catalog injection (state-filtered) ===
   const catalog = getCatalogForPrompt(userState || null);
 
-  // === Policy Reasoning Mode block (multi-life-event scenario) ===
-  const policyReasoningModeBlock = session.policyReasoningMode
-    ? `
-═══════════════════════════════════════════════════════════════════════════
-POLICY REASONING MODE — ACTIVE (do NOT open with pricing tables)
-═══════════════════════════════════════════════════════════════════════════
-The user is navigating multiple simultaneous life events.
-- Lead with eligibility rules, QLE windows, and filing sequence.
-- Do NOT open with a pricing table or premium dollars on your FIRST response.
-- Once the user confirms their current state and family size, you may present
-  cost context as a follow-up.`
+  // === Dynamic mode blocks ===
+  const policyModeHint = session.policyReasoningMode
+    ? `\n**POLICY MODE ACTIVE**: Lead with eligibility rules/QLE windows, not pricing tables.`
+    : '';
+  const noPricingHint = session.noPricingMode
+    ? `\n**NO PRICING MODE**: Do NOT include $ amounts, premiums, or cost tables. Coverage/rules only.`
     : '';
 
-  const costFormattingBlock = session.noPricingMode
-    ? `
-═══════════════════════════════════════════════════════════════════════════
-HARD CONSTRAINT — NO PRICING MODE (MANDATORY)
-═══════════════════════════════════════════════════════════════════════════
-The user has forbidden pricing output.
-- Do NOT include dollar signs ($), premium values, per-paycheck figures, monthly/yearly totals
-- Do NOT render pricing tables or cost comparisons
-- Provide coverage/rules/process guidance only`
-    : `
-═══════════════════════════════════════════════════════════════════════════
-COST FORMATTING
-═══════════════════════════════════════════════════════════════════════════
-- Always show: "$X.XX/month" — monthly is the canonical unit
-- Show biweekly/per-paycheck ONLY when user explicitly asks "per paycheck", "per check", "bi-weekly", or "each paycheck"
-- NEVER include biweekly or annual amounts unless the user specifically requests them
-- For age-banded products (Vol. Life, Disability, Critical Illness, Accident):
-  say "This is age-rated — log in at ${ENROLLMENT_PORTAL_URL} for your personalized rate."
-- Round to 2 decimal places. Use exact catalog numbers.`;
+  return `<Session>
+  Name: ${session.userName || 'Guest'} | State: ${userState || 'Unknown'} | Age: ${session.userAge || 'Unknown'}
+  Salary: ${session.userSalary ? '$' + session.userSalary.toLocaleString() + '/month' : 'Unknown'}
+  Topic: ${session.currentTopic || 'General Benefits'} | Turn: ${session.turn || 1}
+  Decisions: ${decisionsText}
+  Remaining: ${remainingText}
+</Session>
 
-  // Build the state status label for Session_Metadata
-  const stateStatus = session.userState
-    ? session.userState
-    : session.context?.stateUpdatedAt
-      ? `${session.context.stateUpdatedAt}` // fallback
-      : 'Unknown';
+<Role>AmeriVet Senior Benefits Advisor — data-sovereign, zero-hallucination</Role>
 
-  return `<Session_Metadata>
-  User: ${session.userName || 'Guest'}, State: ${stateStatus || 'Unknown'}, Age: ${session.userAge || 'Unknown'}
-  Salary: ${session.userSalary ? '$' + session.userSalary.toLocaleString() + '/month (confirmed — use for all STD math)' : 'Not yet collected'}
-  Topic: ${session.currentTopic || 'General Benefits'}, Turn: ${session.turn || 1}
-  NoPricingMode: ${session.noPricingMode ? 'YES' : 'NO'}, PolicyReasoningMode: ${session.policyReasoningMode ? 'YES' : 'NO'}
-</Session_Metadata>
+<Reasoning>
+Before answering:
+1. **Self-Ask**: Identify hidden sub-questions (FSA type? IRS eligibility? STD math?)
+2. **CoT**: Step through policy rules. Math: Monthly ÷ 4.33 = Weekly; Weekly × 0.60 = STD pay
+3. **ReAct**: If data needed, search IMMUTABLE CATALOG below. Never fabricate.
 
-<Role>AmeriVet Principal Benefits Consultant — DETERMINISTIC information engine</Role>
+Output format:
+[REASONING]: Sub-questions → CoT steps → ReAct observations
+[RESPONSE]: Final conversational answer (no [Source N] citations, no <thought> tags)
+</Reasoning>
 
-<Reasoning_Protocol>
-### TECHNIQUE 1 — SELF-ASK (Decomposition)
-Before answering, identify ALL hidden sub-questions inside the user's message:
-- What type of FSA does the spouse have? (general-purpose BLOCKS HSA; limited-purpose does not)
-- Is the user asking about IRS eligibility, plan pricing, OR leave/STD pay? Each is a SEPARATE answer.
-- Does the query include salary data that requires STD math? (Monthly ÷ 4.33 × 0.60 = weekly pay)
-- What is the confirmed state? Kaiser is ONLY CA/WA/OR — never mention it otherwise.
+<Critical_Rules>
+STATE-LOCK: ${kaiserRule}
+CARRIER-LOCK:
+- Medical: BCBSTX Standard HSA & Enhanced HSA${kaiserEligible ? ', Kaiser HMO' : ''} (PPO network, but HDHP plans)
+- Dental: BCBSTX Dental PPO | Vision: VSP
+- Life: Unum (Basic $25k employer-paid, Voluntary Term) + Allstate (Whole Life)
+- Disability: Unum | Critical Illness/Accident: Allstate
+- NEVER cross these assignments. Term life = Unum. Whole life = Allstate.
 
-### TECHNIQUE 2 — CHAIN OF THOUGHT (Policy + Math)
-Work step-by-step before writing your answer:
-- Step 1: Read Session_Metadata → confirmed Name, Age, State. NEVER re-ask these.
-- Step 2: List ALL benefit categories the query touches (may be more than one).
-- Step 3: For each category, extract the EXACT rule or figure from the IMMUTABLE CATALOG.
-- Step 4: Math formula: Monthly salary ÷ 4.33 = Weekly; Weekly × 0.60 = UNUM STD weekly pay.
-- Step 5: Check eligibility blockers: spouse FSA type, state restrictions, pre-existing clauses.
+NO-HALLUCINATION:
+- Every dollar amount, plan name, carrier MUST appear verbatim in IMMUTABLE CATALOG
+- If not in catalog: "Check ${ENROLLMENT_PORTAL_URL} or call HR at ${HR_PHONE}"
+- Age-banded products: "Log in at ${ENROLLMENT_PORTAL_URL} for your personalized rate"
 
-### TECHNIQUE 3 — ReAct (Reasoning + Acting)
-Iterate until all sub-questions are answered:
-- Thought: "I need the UNUM STD elimination period to answer the week-6 pay question."
-- Action: Search IMMUTABLE CATALOG for "Short-Term Disability elimination period".
-- Observation: Found "7-day (2-week) elimination; 60% of pre-disability earnings; benefit begins Week 3."
-- Thought: "Week 6 is inside the STD benefit window → I can calculate exact pay."
+FORBIDDEN:
+- Rightway — NOT an AmeriVet resource
+- Phone (305) 851-7310 — NOT an AmeriVet number
+- Medical "PPO plan" — no standalone PPO exists. Standard/Enhanced HSA use PPO network.
+- DHMO dental — AmeriVet only offers BCBSTX Dental PPO
 
-### OPERATIONAL CONSTRAINTS
-- Zero Hallucination: If a benefit is not in the IMMUTABLE CATALOG, trigger REFUSAL_MANDATE.
-- Immutable Context: Name, Age, State are CONFIRMED in Session_Metadata. Never re-ask.
-- Normalization: Premiums must be monthly. Never mix bi-weekly/annual unless explicitly requested.
-- Compound Queries: If the message asks TWO separate questions (e.g. IRS conflict AND STD pay),
-  answer BOTH sequentially — do NOT silently drop one.
+NO-LOOP: You have Name=${session.userName || '?'}, Age=${session.userAge || '?'}, State=${userState || '?'}. NEVER re-ask.
 
-### MANDATORY OUTPUT FORMAT
-You MUST structure every response exactly as shown below:
+COST FORMAT (when pricing allowed):
+- Always show: "$X.XX/month" — monthly is canonical
+- Biweekly/annual ONLY if explicitly requested
+- Round to 2 decimal places, use exact catalog numbers
+${policyModeHint}${noPricingHint}
+</Critical_Rules>
 
-[REASONING]:
-• Sub-questions: <list hidden variables you must resolve>
-→ CoT: <step-by-step logic for policy rules and math>
-→ ReAct: <any retrieval action and observation if data point needed>
+<Life_Insurance_Guidance>
+Three layers: Basic $25k (Unum, employer-paid) + Voluntary Term (Unum) + Whole Life (Allstate)
+Pro tip: 80% Voluntary Term for protection, 20% Whole Life for permanent cash value.
+</Life_Insurance_Guidance>
 
-[RESPONSE]:
-<final conversational answer — plain prose, no [Source N] citations, no <thought> tags>
-</Reasoning_Protocol>
+<Response_Style>
+- Professional conversational prose. Lead with the key finding.
+- Bullets only for: ordered steps, tier comparisons, feature lists
+- One follow-up suggestion at end: specific, not generic "Is there anything else?"
+  Good: "Want me to compare the deductible for your family size?"
+  Bad: "Is there anything else I can help with?"
+- Life events: One sentence empathy, then pivot to actionable answer
+</Response_Style>
 
-<Constraints>
-  <Rule id="STATE-LOCK" priority="CRITICAL">${strictStateRule}</Rule>
-  <Rule id="DATA-SOVEREIGNTY">Every dollar amount, plan name, carrier name, and feature MUST appear verbatim in the IMMUTABLE CATALOG. Never fabricate, extrapolate, or approximate.</Rule>
-  <Rule id="KAISER-ZERO-TOLERANCE">Kaiser HMO is available ONLY in CA, WA, OR. If user state is NOT one of those, Kaiser must NEVER appear in your response — not in plan lists, not in comparisons, not in any form.</Rule>
-  <Rule id="CARRIER-LOCK">Medical: BCBSTX Standard HSA and Enhanced HSA only (plus Kaiser if CA/WA/OR). Dental: BCBSTX DPPO. Vision: VSP. Life: Unum (Basic + Voluntary Term), Allstate (Whole Life). Disability: Unum. Critical Illness/Accident: Allstate. NEVER cross these assignments.</Rule>
-  <Rule id="NO-RIGHTWAY">Rightway is NOT an AmeriVet resource. If mentioned, say: "Rightway is not part of the AmeriVet benefits package." Never describe Rightway services.</Rule>
-  <Rule id="NO-PPO-MEDICAL">AmeriVet has NO standalone PPO medical plan. Standard HSA and Enhanced HSA USE a PPO network but are HDHP/HSA plans. Never invent a plan called "BCBSTX PPO" or "PPO Standard".</Rule>
-  <Rule id="NO-LOOP">You already have Name=${session.userName || '?'}, Age=${session.userAge || '?'}, State=${session.userState || '?'}. NEVER ask for these again.</Rule>
-  <Rule id="MISSING-DATA">If the catalog does not contain an exact answer, say: "I don't have that specific information for AmeriVet. Please check ${ENROLLMENT_PORTAL_URL} or call HR at ${HR_PHONE}."</Rule>
-</Constraints>
-
-
-
-<Negative_Constraints>
-  - NEVER guess prices. If a price is not in the catalog, say "check Workday for your personalized rate".
-  - NEVER mention a carrier not in the CARRIER-LOCK rule.
-  - NEVER show [Source N] or [Doc N] citation artifacts.
-  - NEVER ask for the user's name, age, or state — you already have them.
-  - NEVER include [Source N] or [Doc N] citation markers in responses.
-  - For "Is [service] available in [state]?": check CARRIER-LOCK and STATE-LOCK first. If not in catalog, use MISSING-DATA rule.
-  - NEVER speculate or fill gaps with general knowledge. If the retrieved context does not clearly answer the question, respond: "I don't have that specific information. Please check ${ENROLLMENT_PORTAL_URL} or call AmeriVet HR at ${HR_PHONE}." Do NOT attempt to construct an answer from assumptions.
-  - NEVER repeat the same word or phrase in a sequence (e.g., "California and California" is invalid).
-</Negative_Constraints>
-
-You answer ONLY from the IMMUTABLE CATALOG below. You DO NOT process enrollments.
-
-═══════════════════════════════════════════════════════════════════════════
-DATA SOVEREIGNTY — MANDATORY
-═══════════════════════════════════════════════════════════════════════════
-Every dollar amount, plan name, carrier name, and feature you state MUST appear
-verbatim in the IMMUTABLE CATALOG below. If the catalog does not contain an
-answer, respond: "I don't have that specific information. Please check the
-enrollment portal at ${ENROLLMENT_PORTAL_URL} or call AmeriVet HR at ${HR_PHONE}."
-NEVER fabricate, extrapolate, or approximate. Zero tolerance for hallucination.
-
-═══════════════════════════════════════════════════════════════════════════
-USER STATE (already collected — NEVER re-ask)
-═══════════════════════════════════════════════════════════════════════════
-Name  : ${session.userName || 'Guest'}
-Age   : ${session.userAge || 'Unknown'}
-State : ${session.userState || 'Unknown'}
-Current Topic : ${session.currentTopic || 'None'}
-Decisions so far:
-${decisionsText}
-Still to explore: ${remainingText}
-
-═══════════════════════════════════════════════════════════════════════════
-NO-LOOP RULE (CRITICAL)
-═══════════════════════════════════════════════════════════════════════════
-You already know Name=${session.userName || '?'}, Age=${session.userAge || '?'}, State=${session.userState || '?'}.
-DO NOT ask for name, age, state, or location under ANY circumstance.
-DO NOT ask "what state are you in?" or "how old are you?" — you have these values.
-If a value is still "Unknown" or "?", skip it gracefully — DO NOT interrogate the user.
-If user says "go ahead", "continue", "yes", proceed with the current topic: ${session.currentTopic || 'general benefits'}.
-
-═══════════════════════════════════════════════════════════════════════════
-CARRIER LOCKDOWN (STRICT — zero exceptions)
-═══════════════════════════════════════════════════════════════════════════
-Medical : BCBS of Texas Standard HSA & Enhanced HSA (HDHP plans using a nationwide PPO *network* — there is NO standalone "PPO" plan)${kaiserEligible ? ', Kaiser Permanente Standard HMO (WA/CA/OR only)' : ''}
-Dental  : BCBS of Texas Dental PPO (DPPO)
-Vision  : VSP (Vision Plus)
-Basic Life & AD&D      : Unum — employer-paid $25,000 flat, $0 to employee
-Voluntary Term Life    : Unum — age-banded, 1×-5× salary up to $500k, GI $150k
-Whole Life (permanent) : Allstate — age-banded, cash value, portable
-Disability (STD/LTD)   : Unum (age-banded)
-Critical Illness       : Allstate (age-banded)
-Accident/AD&D vol.     : Allstate (age-banded)
-
-If a carrier or plan name NOT listed above appears in retrieval context, IGNORE IT.
-NEVER attribute term life to Allstate. NEVER attribute whole/permanent life to Unum.
-NEVER attribute voluntary Accident or Critical Illness to Unum — those are Allstate.
-
-═══════════════════════════════════════════════════════════════════════════
-LIFE INSURANCE — 20/80 SPLIT GUIDANCE
-═══════════════════════════════════════════════════════════════════════════
-When the user asks about life insurance, present all three layers:
-1. Basic Life & AD&D (Unum) — $25k flat, employer-paid, $0 cost
-2. Voluntary Term Life (Unum) — age-banded, high coverage at low cost
-3. Whole Life (Allstate) — permanent, cash value, portable
-
-Pro tip to share: "Many advisors recommend an 80/20 split — about 80% of your
-coverage in affordable Voluntary Term Life (Unum) for maximum protection, and
-20% in Whole Life (Allstate) to build a permanent cash-value foundation that
-stays with you regardless of employment."
-
-═══════════════════════════════════════════════════════════════════════════
-KAISER PROTOCOL
-═══════════════════════════════════════════════════════════════════════════
-${strictStateRule}
-Kaiser is available ONLY in: California (CA), Washington (WA), Oregon (OR).
-Re-statement of zero-tolerance rule: if user's state is NOT in that list, Kaiser
-must NEVER appear in your response — not in plan lists, not in comparisons,
-not in "not available" notes. Omit it entirely.
-
-CRITICAL - KAISER KNOWLEDGE CONTAMINATION GUARD:
-Kaiser Permanente is available to AmeriVet employees in CA, WA, and OR — all three states.
-Do NOT use your general knowledge about Kaiser's real-world coverage areas.
-Your training data may say Kaiser is "California-based" — IGNORE that for AmeriVet.
-If you cannot find Kaiser availability information in the provided context,
-say: "Please contact AmeriVet HR at ${HR_PHONE} to confirm Kaiser availability."
-NEVER state Kaiser is "only available in California" — that is INCORRECT for AmeriVet.
-Kaiser serves AmeriVet employees in California, Washington, AND Oregon.
-
-═══════════════════════════════════════════════════════════════════════════
-PPO CLARIFICATION (CRITICAL — prevents hallucination)
-═══════════════════════════════════════════════════════════════════════════
-AmeriVet does NOT offer a standalone "PPO" medical plan.
-The Standard HSA and Enhanced HSA use a nationwide PPO *network* for provider access,
-but the plans themselves are HDHP/HSA plans. If a user asks for "the PPO plan",
-clarify: "AmeriVet's medical plans (Standard HSA and Enhanced HSA) use the BCBSTX
-nationwide PPO network, but they are structured as HDHP/HSA plans, not a traditional PPO."
-NEVER invent a plan called "BCBSTX PPO", "PPO Standard", or any Medical PPO.
-The ONLY PPO-labeled plan is the Dental PPO (BCBSTX Dental PPO).
-
-═══════════════════════════════════════════════════════════════════════════
-FORBIDDEN DATA (never output)
-═══════════════════════════════════════════════════════════════════════════
-- "Rightway", "Rightway app", "Rightway service" — NOT an AmeriVet resource
-- Phone number "(305) 851-7310" — NOT an AmeriVet number
-- Any carrier name not in CARRIER LOCKDOWN above
-- Any plan name not in the IMMUTABLE CATALOG below
-- NEVER say "BCBSTX PPO" as a medical plan — it does not exist
-If user asks for live human help → AmeriVet HR at ${HR_PHONE} or ${ENROLLMENT_PORTAL_URL}
-
-${costFormattingBlock}${policyReasoningModeBlock}
-
-═══════════════════════════════════════════════════════════════════════════
-CONVERSATION STYLE
-═══════════════════════════════════════════════════════════════════════════
-- Plain conversational English. No markdown headers in single-topic answers.
-- Bullet points with dashes (-), never emojis.
-- URLs as plain text, never markdown links: ${ENROLLMENT_PORTAL_URL}
-- Ask ONE question at a time.
-- First message only: "I'm here to help you explore your benefits — actual enrollment happens at the portal."
-- After a decision or decline, show remaining categories: ${remainingText}
-
-═══════════════════════════════════════════════════════════════════════════
-RESPONSE STYLE — L3 ADVISOR MODE
-═══════════════════════════════════════════════════════════════════════════
-You are a senior human benefits advisor, not a search engine. Match tone to context:
-
-NARRATIVE (life events, math, comparisons):
-- Write professional conversational paragraphs. "Because you are in ${userState || 'your state'}, your medical options are Standard HSA and Enhanced HSA. Since your salary is $X/month, your STD benefit during weeks 3–8 would be exactly $Y/week via UNUM."
-- Explain the WHY. "This matters because the IRS treats a general-purpose FSA as incompatible with an HSA — so your spouse's FSA must be addressed before you open one."
-- Lead with the highest-priority risk before showing any costs.
-
-EMPATHY (use when a life event is detected — one sentence only, then pivot):
-- Pregnancy / new baby: "Planning for a new baby is a big deal — let's make sure your coverage is exactly right."
-- Marriage QLE: "Congratulations — you have a 30-day window to update your coverage, so let's move quickly."
-- Disability / leave: "I know this timing is stressful. Here is exactly what your income protection looks like..."
-- DO NOT dwell on empathy; pivot immediately to the actionable answer.
-
-NEXT-BEST-ACTION (end EVERY substantive answer with exactly one follow-up suggestion):
-- Make it specific, not generic. NOT "Is there anything else?" BUT:
-  "Should we calculate your total out-of-pocket cost for the hospital stay next?"
-  "Would you like to compare the Enhanced HSA deductible vs. Standard HSA for your family size?"
-  "Want me to walk through the QLE filing order for marriage and pregnancy together?"
-
-BULLET CONSTRAINT:
-- Bullets ONLY for: ordered steps, side-by-side tier tables, feature-by-feature lists.
-- NEVER open a life-event or calculation response with bullets — use a paragraph first.
-
-${session.lastBotMessage ? `═══════════════════════════════════════════════════════════════════════════
-PREVIOUS BOT MESSAGE (for continuity):
-"${session.lastBotMessage}"` : ''}
-
-═══════════════════════════════════════════════════════════════════════════
-IMMUTABLE CATALOG (source of truth — state-filtered for ${userState || 'all states'})
-═══════════════════════════════════════════════════════════════════════════
+${session.lastBotMessage ? `<Previous_Response>"${session.lastBotMessage.slice(0, 300)}${session.lastBotMessage.length > 300 ? '...' : ''}"</Previous_Response>\n` : ''}
+<IMMUTABLE_CATALOG STATE="${userState || 'ALL'}">
 ${catalog}
+</IMMUTABLE_CATALOG>
 
-Answer directly, accurately, and ONLY from the catalog above.`;
+Answer directly, accurately, ONLY from the catalog above. When asked about any benefit, retrieve from the catalog and answer directly — do not say you cannot answer if the information is in the catalog. Generate follow-up suggestions only from: compare plans, explore different benefit, see pricing for different tier. Never suggest looking up age-banded rates — always say to visit enrollment portal.`;
 }
 
 // ============================================================================
@@ -1041,130 +854,63 @@ function buildShortCategoryAnswer(
 ): string | null {
   const catalog = amerivetBenefits2024_2025;
 
-  // ── LIFE INSURANCE ─────────────────────────────────────────────────────────
+  // ── LIFE INSURANCE: Route to RAG + LLM (templates removed) ─────────────────
+  // REFACTOR: Life insurance queries route to LLM for richer, follow-up-capable answers.
+  // Carrier lock rules in system prompt + post-processing corrections ensure accuracy.
   if (/\b(life\s*(?:insurance)?(?!\s*event)|life\b)/i.test(queryLower) && !/qualifying\s+life/i.test(queryLower)) {
-    if (intent === 'yes_no') {
-      // "do we have permanent/whole life?" → yes, Allstate
-      if (/\b(permanent|whole\s*life|cash\s*value)\b/i.test(queryLower)) {
-        return 'Yes — AmeriVet offers Allstate Whole Life, which is permanent life insurance that builds cash value over time. Rates are locked at your enrollment age and the policy is portable if you leave AmeriVet.';
-      }
-      // "do we have term life?" → yes, Unum
-      if (/\b(term\s*life|voluntary\s*life)\b/i.test(queryLower)) {
-        return 'Yes — AmeriVet offers Unum Voluntary Term Life. You can elect 1x to 5x your salary (up to $500,000), with a guaranteed issue amount of up to $150,000 during open enrollment. Spouse and dependent child coverage is also available.';
-      }
-      // "do we have life insurance?" (generic) → yes, three options
-      return 'Yes — AmeriVet offers three life insurance options: UNUM Basic Life & AD&D ($25,000, employer-paid at $0 cost to you), UNUM Voluntary Term Life (1x–5x salary, age-banded pricing), and Allstate Whole Life (permanent coverage with cash value). Would you like details on any of these?';
-    }
-    if (intent === 'factual_lookup') {
-      // "who provides/covers life insurance?" → carrier names
-      if (/\b(who\s+(?:is|provides|covers|carries|offers|underwrites)|which\s+(?:company|carrier|provider))\b/i.test(queryLower)) {
-        return 'Life insurance at AmeriVet is provided by two carriers: UNUM handles Basic Life & AD&D and Voluntary Term Life, while Allstate provides Whole Life (permanent) coverage.';
-      }
-      // "what is the basic life coverage amount?"
-      if (/\b(basic|employer[\s-]?paid|free|automatic)\b/i.test(queryLower)) {
-        return 'UNUM Basic Life & AD&D provides $25,000 of coverage, fully paid by AmeriVet at $0 cost to you. All benefits-eligible employees are automatically enrolled.';
-      }
-      // "what is the guaranteed issue amount?"
-      if (/\b(guaranteed\s+issue|no\s+medical|without\s+(?:medical|health)\s+questions?)\b/i.test(queryLower)) {
-        return 'Guaranteed Issue for UNUM Voluntary Term Life is up to $150,000 during open enrollment — no medical questions required below that amount.';
-      }
-    }
+    return null; // Fall through to RAG + LLM pipeline
   }
 
-  // ── DENTAL ─────────────────────────────────────────────────────────────────
+  // ── DENTAL: Route to RAG + LLM (templates removed) ──────────────────────────
+  // REFACTOR: Dental yes/no and factual queries now route to LLM for richer answers
   if (/\b(dental)\b/i.test(queryLower)) {
-    if (intent === 'yes_no') {
-      return `Yes — AmeriVet offers a dental plan: ${catalog.dentalPlan.name} through ${catalog.dentalPlan.provider}. Preventive care (cleanings, exams, X-rays) is covered at 100%.`;
-    }
-    if (intent === 'factual_lookup') {
-      if (/\b(who\s+(?:is|provides|covers|carries)|which\s+(?:company|carrier|provider))\b/i.test(queryLower)) {
-        return `Dental coverage at AmeriVet is provided by ${catalog.dentalPlan.provider} — specifically the ${catalog.dentalPlan.name} plan.`;
-      }
-    }
+    return null; // Fall through to RAG + LLM pipeline
   }
 
-  // ── VISION ─────────────────────────────────────────────────────────────────
+  // ── VISION: Route to RAG + LLM (templates removed) ──────────────────────────
   if (/\b(vision|eye)\b/i.test(queryLower)) {
-    if (intent === 'yes_no') {
-      return `Yes — AmeriVet offers a vision plan: ${catalog.visionPlan.name} through ${catalog.visionPlan.provider}. Includes eye exams, frames allowance, contact lenses, and LASIK discounts.`;
-    }
-    if (intent === 'factual_lookup') {
-      if (/\b(who\s+(?:is|provides|covers|carries)|which\s+(?:company|carrier|provider))\b/i.test(queryLower)) {
-        return `Vision coverage at AmeriVet is provided by ${catalog.visionPlan.provider} — the ${catalog.visionPlan.name} plan.`;
-      }
-    }
+    return null; // Fall through to RAG + LLM pipeline
   }
 
-  // ── DISABILITY ─────────────────────────────────────────────────────────────
+  // ── DISABILITY: Route to RAG + LLM (templates removed) ──────────────────────
   if (/\b(disability|ltd)\b/i.test(queryLower)) {
-    if (intent === 'yes_no') {
-      return 'Yes — AmeriVet offers both Short-Term Disability (STD) and Long-Term Disability (LTD) through UNUM. STD covers up to 13 weeks at 60% of weekly salary; LTD kicks in after 90 days and continues up to age 65.';
-    }
-    if (intent === 'factual_lookup') {
-      if (/\b(who\s+(?:is|provides|covers|carries)|which\s+(?:company|carrier|provider))\b/i.test(queryLower)) {
-        return 'Both Short-Term and Long-Term Disability at AmeriVet are provided by UNUM.';
-      }
-    }
+    return null; // Fall through to RAG + LLM pipeline
   }
 
-  // ── CRITICAL ILLNESS / ACCIDENT ────────────────────────────────────────────
+  // ── CRITICAL ILLNESS / ACCIDENT: Route to RAG + LLM (templates removed) ─────
   if (/\b(critical\s*illness|accident|ad&d|supplemental)\b/i.test(queryLower)) {
-    if (intent === 'yes_no') {
-      if (/\b(critical\s*illness)\b/i.test(queryLower)) {
-        return 'Yes — AmeriVet offers Critical Illness insurance through Allstate. It provides a lump-sum cash benefit ($10,000–$30,000) if you are diagnosed with a covered condition such as heart attack, stroke, or cancer.';
-      }
-      if (/\b(accident|ad&d)\b/i.test(queryLower)) {
-        return 'Yes — AmeriVet offers Accident insurance through Allstate. It pays cash benefits for covered accidents including fractures, dislocations, burns, initial treatment, hospitalization, and rehab.';
-      }
-      return 'Yes — AmeriVet offers both Critical Illness and Accident/AD&D insurance through Allstate.';
-    }
-    if (intent === 'factual_lookup') {
-      if (/\b(who\s+(?:is|provides|covers|carries)|which\s+(?:company|carrier|provider))\b/i.test(queryLower)) {
-        return 'Critical Illness and Accident/AD&D coverage at AmeriVet are both provided by Allstate.';
-      }
-    }
+    return null; // Fall through to RAG + LLM pipeline
   }
 
   // ── HSA/FSA ────────────────────────────────────────────────────────────────
+  // KEEP: IRS rule enforcement for ineligible expenses (hard rule, not LLM reasoning)
   if (/\b(hsa|fsa|flexible\s*spending|health\s*savings)\b/i.test(queryLower)) {
-    // Check if asking about ineligible expenses (pets, cosmetic, gym, etc.)
     const ineligibleExpensePattern = /\b(dog|cat|pet|animal|vet|veterinary|cosmetic|gym|fitness|massage|spa|teeth\s*whitening|supplements|vitamins)\b/i;
     if (ineligibleExpensePattern.test(queryLower)) {
       return `No — HSA funds cannot be used for ${ineligibleExpensePattern.exec(queryLower)?.[0] || 'that expense'}. HSA-eligible expenses are limited to qualified medical expenses for yourself, your spouse, and tax dependents as defined by the IRS. Pet/veterinary expenses, cosmetic procedures, gym memberships, and general wellness items are not eligible. For a full list of eligible expenses, see IRS Publication 502 or contact your HSA administrator.`;
     }
-    if (intent === 'yes_no') {
-      if (/\bhsa\b/i.test(queryLower)) {
-        return `Yes — AmeriVet offers a Health Savings Account (HSA) with an employer contribution of $${catalog.specialCoverage.hsa.employerContribution}/year. It is available when you enroll in either the Standard HSA or Enhanced HSA medical plan.`;
-      }
-      if (/\bfsa\b/i.test(queryLower)) {
-        return `Yes — AmeriVet offers a Flexible Spending Account (FSA) with a maximum contribution of $${catalog.specialCoverage.fsa.maximumContribution.toLocaleString()}/year. Note: you cannot have both a general FSA and an HSA simultaneously.`;
-      }
-      return `Yes — AmeriVet offers both an HSA (with $${catalog.specialCoverage.hsa.employerContribution}/year employer contribution) and an FSA (up to $${catalog.specialCoverage.fsa.maximumContribution.toLocaleString()}/year). Note: you cannot have both a general FSA and an HSA simultaneously.`;
-    }
+    // Other HSA/FSA queries route to LLM for richer answers
+    return null;
   }
 
   // ── MEDICAL ────────────────────────────────────────────────────────────────
+  // KEEP: Kaiser geographic guard (hard rule - state check must happen before LLM)
   if (/\b(medical|health\s*(?:care|insurance|plan|coverage)?)\b/i.test(queryLower)) {
     const userState = session.userState || '';
     const isKaiserEligible = KAISER_STATES.has(userState.toUpperCase());
-    if (intent === 'yes_no') {
-      if (/\b(kaiser|hmo)\b/i.test(queryLower)) {
-        if (isKaiserEligible) {
-          return `Yes — Kaiser HMO is available in your state (${userState}). AmeriVet offers the Kaiser Standard HMO for employees in CA, WA, and OR.`;
-        }
-        if (userState) {
-          return `Kaiser HMO is only available in CA, WA, and OR — it is not available in ${userState}. Your medical options are the Standard HSA and Enhanced HSA plans through BCBSTX.`;
-        }
-        return 'Kaiser HMO is available in CA, WA, and OR only. Let me know your state and I can confirm your options.';
+
+    // Kaiser state check - KEEP this hard rule
+    if (/\b(kaiser|hmo)\b/i.test(queryLower)) {
+      if (isKaiserEligible) {
+        return `Yes — Kaiser HMO is available in your state (${userState}). AmeriVet offers the Kaiser Standard HMO for employees in CA, WA, and OR.`;
       }
-      const planCount = isKaiserEligible ? 'three' : 'two';
-      return `Yes — AmeriVet offers ${planCount} medical plan${isKaiserEligible ? 's' : 's'}: Standard HSA and Enhanced HSA through BCBSTX${isKaiserEligible ? ', plus Kaiser Standard HMO' : ''}. Both HSA plans use a nationwide PPO network.`;
-    }
-    if (intent === 'factual_lookup') {
-      if (/\b(who\s+(?:is|provides|covers|carries)|which\s+(?:company|carrier|provider)|network)\b/i.test(queryLower)) {
-        return `Medical coverage at AmeriVet is provided by BCBSTX (Blue Cross Blue Shield of Texas) with a nationwide PPO network.${isKaiserEligible ? ' Kaiser HMO is also available in your state.' : ''}`;
+      if (userState) {
+        return `Kaiser HMO is only available in CA, WA, and OR — it is not available in ${userState}. Your medical options are the Standard HSA and Enhanced HSA plans through BCBSTX.`;
       }
+      return 'Kaiser HMO is available in CA, WA, and OR only. Let me know your state and I can confirm your options.';
     }
+    // Other medical queries route to LLM
+    return null;
   }
 
   return null; // No short answer matched — fall through to full overview
@@ -1219,243 +965,79 @@ function buildCategoryExplorationResponse(
 
   // GENERAL OVERVIEW — "what are my options?", "what benefits do I have?", "what's available?"
   // Fires when NO specific category is mentioned but user is asking broadly
+  // ═══════════════════════════════════════════════════════════════════════════
+  // GENERAL OVERVIEW: Route to RAG + LLM instead of template
+  // ═══════════════════════════════════════════════════════════════════════════
+  // REFACTOR: "What benefits do I have?" queries now go through RAG + LLM.
+  // The LLM can provide a personalized overview with state-aware filtering
+  // and handle natural follow-ups like "tell me more about the first one".
+  // ═══════════════════════════════════════════════════════════════════════════
   const isGeneralOverview = /\b(what\s+(?:are|is)\s+(?:my|the|our)\s+(?:option|benefit|plan|coverage|package)|what(?:'s| is)\s+available|what\s+(?:do\s+)?(?:i|we)\s+(?:have|get)|(?:show|tell|give)\s+me\s+(?:my|the|all)\s+(?:option|benefit|plan)|overview\s+of\s+(?:my|the|all)|all\s+(?:my\s+)?(?:benefit|option|plan)|what\s+(?:can|should)\s+i\s+(?:get|choose|enroll|sign\s+up)|benefits?\s+(?:overview|summary|lineup|offerings?))\b/i.test(queryLower)
     && !/\b(medical|dental|vision|life|disability|hsa|fsa|critical|accident|supplemental)\b/i.test(queryLower);
 
   if (isGeneralOverview) {
-    const userName = session.userName || '';
-    const greeting = userName ? `Great question, ${userName}! ` : '';
-    const stateNote = isKaiserEligible
-      ? ' (including Kaiser HMO, which is available in your state!)'
-      : '';
-
-    let response = `${greeting}Here's everything available to you as an AmeriVet employee${stateNote}:\n\n`;
-
-    // Medical plans summary
-    const medPlans = catalog.medicalPlans.filter(p => isKaiserEligible || !p.regionalAvailability.includes('California'));
-    const medNames = medPlans.map(p => `${p.name} (${p.provider})`).join(', ');
-    response += `**Medical** — ${medNames}\n`;
-
-    // Dental
-    response += `**Dental** — ${catalog.dentalPlan.name} (${catalog.dentalPlan.provider})\n`;
-
-    // Vision
-    response += `**Vision** — ${catalog.visionPlan.name} (${catalog.visionPlan.provider})\n`;
-
-    // Life Insurance
-    response += `**Life Insurance** — UNUM Basic Life (employer-paid), UNUM Voluntary Term Life, Allstate Whole Life\n`;
-
-    // Disability
-    response += `**Disability** — Short-Term (UNUM) and Long-Term (UNUM)\n`;
-
-    // Supplemental
-    response += `**Critical Illness** — Allstate\n`;
-    response += `**Accident/AD&D** — Allstate\n`;
-
-    // Tax-advantaged
-    response += `**HSA/FSA** — Health Savings Account, Flexible Spending Account, Commuter Benefits\n\n`;
-
-    response += `Which benefit would you like to explore first? I can give you plan details, pricing, and help you decide what's right for your situation.`;
-
-    return finalize(response);
+    return null; // Fall through to RAG + LLM pipeline
   }
 
-  // MEDICAL exploration
+  // ═══════════════════════════════════════════════════════════════════════════
+  // MEDICAL: Route to RAG + LLM instead of template
+  // ═══════════════════════════════════════════════════════════════════════════
+  // REFACTOR: Medical queries now go through hybridRetrieve() + LLM pipeline.
+  // The system prompt contains the full catalog from getCatalogForPrompt() with
+  // Kaiser geographic guard and carrier lock rules. This enables follow-up
+  // questions like "what does the deductible cover?" that templates couldn't handle.
+  // ═══════════════════════════════════════════════════════════════════════════
   if (/\b(medical|health\s*(?:care|insurance|plan|coverage)?)\b/i.test(queryLower)) {
-    const plans = catalog.medicalPlans.filter(p =>
-      isKaiserEligible || !p.regionalAvailability.includes('California')
-    );
-
-    let response = `Here's an overview of the medical plans available to you:\n\n`;
-
-    for (const plan of plans) {
-      const monthly = plan.tiers[tierKey];
-      const ded = plan.coverage?.deductibles;
-      const coins = plan.coverage?.coinsurance;
-      const copays = plan.coverage?.copays;
-
-      response += `**${plan.name}** (${plan.provider})`;
-      if (plan.regionalAvailability.includes('California')) {
-        response += ` — CA/WA/OR only`;
-      }
-      response += `\n`;
-      response += `- Premium (${tierLabel}): **$${monthly.toFixed(2)}/month**\n`;
-      response += `- Deductible: $${ded?.individual?.toLocaleString() ?? plan.benefits.deductible.toLocaleString()} individual / $${ded?.family?.toLocaleString() ?? (plan.benefits.deductible * 2).toLocaleString()} family\n`;
-      response += `- Out-of-Pocket Max: $${plan.benefits.outOfPocketMax.toLocaleString()}\n`;
-      response += `- Coinsurance: ${Math.round((coins?.inNetwork ?? plan.benefits.coinsurance) * 100)}% in-network\n`;
-      if (copays) {
-        const copayParts: string[] = [];
-        if (copays.primaryCare !== undefined) copayParts.push(`PCP $${copays.primaryCare}`);
-        if (copays.specialist !== undefined) copayParts.push(`Specialist $${copays.specialist}`);
-        if (copayParts.length > 0) response += `- Copays: ${copayParts.join(', ')}\n`;
-      }
-      response += `- Key features: ${plan.features.slice(0, 3).join(', ')}\n\n`;
-    }
-
-    // Only mention Kaiser availability if user is NOT in a Kaiser state (and we know their state)
-    // Per Kaiser Protocol: don't mention Kaiser at all to non-eligible users
-    // (Kaiser plans are already filtered out of the list above)
-
-    response += `Would you like to:\n- Compare two specific plans in detail?\n- See pricing for a different coverage tier (e.g., Employee + Family)?\n- Explore another benefit like Dental or Vision?`;
-
-    return finalize(response);
+    return null; // Fall through to RAG + LLM pipeline
   }
 
-  // DENTAL exploration
+  // ═══════════════════════════════════════════════════════════════════════════
+  // DENTAL: Route to RAG + LLM instead of template
+  // ═══════════════════════════════════════════════════════════════════════════
+  // REFACTOR: Templates removed - dental queries now go through hybridRetrieve()
+  // + LLM pipeline. The system prompt contains the full catalog from
+  // getCatalogForPrompt(), so the LLM can answer any dental question accurately.
+  // This enables follow-up questions like "does dental cover implants?" that
+  // templates couldn't handle.
+  // ═══════════════════════════════════════════════════════════════════════════
   if (/\b(dental)\b/i.test(queryLower)) {
-    const plan = catalog.dentalPlan;
-    const monthly = plan.tiers[tierKey];
-    const ded = plan.coverage?.deductibles;
-    const coins = plan.coverage?.coinsurance;
-
-    let response = `Here's your dental plan overview:\n\n`;
-    response += `**${plan.name}** (${plan.provider})\n`;
-    response += `- Premium (${tierLabel}): **$${monthly.toFixed(2)}/month**\n`;
-    response += `- Deductible: $${ded?.individual ?? plan.benefits.deductible} individual / $${ded?.family ?? plan.benefits.deductible * 3} family\n`;
-    response += `- Preventive care: Covered at 100% (cleanings, exams, X-rays)\n`;
-    response += `- Basic services (fillings, extractions): ${coins?.basic !== undefined ? `${Math.round(coins.basic * 100)}% coinsurance` : '20% coinsurance'}\n`;
-    response += `- Major services (crowns, bridges): ${coins?.major !== undefined ? `${Math.round(coins.major * 100)}% coinsurance` : '50% coinsurance'}\n`;
-    response += `- Annual maximum: $${plan.benefits.outOfPocketMax?.toLocaleString() ?? '1,500'}\n`;
-    response += `- Orthodontia: $${plan.coverage?.copays?.orthodontia ?? 500} copay (with coverage)\n`;
-    response += `- Network: Nationwide PPO\n\n`;
-
-    // Stay on-topic: help the user evaluate dental before offering to switch topics.
-    // If they already selected a medical plan, show combined cost context.
-    const medicalSelection = session.decisionsTracker?.['Medical'];
-    const selectedMedical = medicalSelection && (typeof medicalSelection === 'string' ? medicalSelection : medicalSelection?.status === 'selected' ? medicalSelection.value : null);
-    if (selectedMedical && !noPricingMode) {
-      const medMonthly = pricingUtils.monthlyPremiumForPlan(String(selectedMedical), tierLabel) ?? 0;
-      const combinedMonthly = medMonthly + monthly;
-      response += `Paired with your selected medical plan (${selectedMedical}), your combined monthly cost for medical + dental would be $${combinedMonthly.toFixed(2)}/month.\n\n`;
-    }
-    response += `Does this look like the right fit, or would you like more details? I can:\n- Explain orthodontia or other coverage in more detail\n- Show pricing for a different coverage tier\n- Help you decide if this plan meets your needs`;
-
-    return finalize(response);
+    // Return null to fall through to RAG + LLM pipeline
+    return null;
   }
 
-  // VISION exploration
+  // ═══════════════════════════════════════════════════════════════════════════
+  // VISION: Route to RAG + LLM instead of template
+  // ═══════════════════════════════════════════════════════════════════════════
   if (/\b(vision|eye)\b/i.test(queryLower)) {
-    const plan = catalog.visionPlan;
-    const monthly = plan.tiers[tierKey];
-
-    let response = `Here's your vision plan overview:\n\n`;
-    response += `**${plan.name}** (${plan.provider})\n`;
-    response += `- Premium (${tierLabel}): **$${monthly.toFixed(2)}/month**\n`;
-    response += `- Eye exam: $${plan.coverage?.copays?.exam ?? 10} copay (covered every 12 months)\n`;
-    response += `- Frames: $200 allowance every 12 months\n`;
-    response += `- Contact lens allowance included\n`;
-    response += `- LASIK discounts available\n`;
-    response += `- Lenses: $${plan.coverage?.copays?.lenses ?? 25} copay\n`;
-    response += `- Network: VSP nationwide\n\n`;
-    response += `Does this plan look right for you? I can:\n- Show pricing for a different coverage tier\n- Explain any coverage detail in more depth\n- Help you decide if vision coverage fits your needs`;
-
-    return finalize(response);
+    return null; // Fall through to RAG + LLM pipeline
   }
 
-  // LIFE INSURANCE exploration
+  // ═══════════════════════════════════════════════════════════════════════════
+  // LIFE INSURANCE: Route to RAG + LLM instead of template
+  // ═══════════════════════════════════════════════════════════════════════════
   if (/\b(life\s*(?:insurance)?|life\b)\b/i.test(queryLower)) {
-    let response = `Here's an overview of the life insurance options available to you:\n\n`;
-
-    response += `**1. UNUM Basic Life & AD&D** (Employer-Paid)\n`;
-    response += `- Coverage: $25,000 flat benefit\n`;
-    response += `- Cost: **$0** — fully paid by AmeriVet\n`;
-    response += `- Includes Accidental Death & Dismemberment (AD&D)\n`;
-    response += `- All benefits-eligible employees are automatically enrolled\n\n`;
-
-    response += `**2. UNUM Voluntary Term Life**\n`;
-    response += `- Coverage: Additional term life insurance you can purchase\n`;
-    response += `- Options: 1x to 5x salary (up to $500,000)\n`;
-    response += `- Pricing: Age-banded (rates vary by age bracket)\n`;
-    response += `- Guaranteed Issue: Up to $150,000 without medical questions during open enrollment\n`;
-    response += `- Spouse and dependent child coverage also available\n\n`;
-
-    response += `**3. Allstate Whole Life**\n`;
-    response += `- Coverage: Permanent life insurance that builds cash value\n`;
-    response += `- Pricing: Age-banded (rates locked at enrollment age)\n`;
-    response += `- Portable: You keep it even if you leave AmeriVet\n`;
-    response += `- Cash value accumulates over time\n\n`;
-
-    response += `Pro tip: Many advisors recommend an 80/20 split — about 80% of your coverage in affordable Voluntary Term Life (Unum) for maximum protection, and 20% in Whole Life (Allstate) to build a permanent cash-value foundation that stays with you regardless of employment. The employer-paid Basic Life ($25K) is your starting base on top of that.\n\n`;
-
-    response += `Would you like to:\n- Learn more about any specific life insurance option?\n- See age-banded pricing for Voluntary Term or Whole Life?\n- Understand how to choose the right coverage amount?`;
-
-    return finalize(response);
+    return null; // Fall through to RAG + LLM pipeline
   }
 
-  // DISABILITY exploration
+  // ═══════════════════════════════════════════════════════════════════════════
+  // DISABILITY: Route to RAG + LLM instead of template
+  // ═══════════════════════════════════════════════════════════════════════════
   if (/\b(disability|std|ltd|short[\s-]*term|long[\s-]*term)\b/i.test(queryLower)) {
-    let response = `Here's an overview of the disability insurance options:\n\n`;
-
-    response += `**Short-Term Disability (STD)** — UNUM\n`;
-    response += `- Replaces a portion of income if you can't work due to illness/injury\n`;
-    response += `- Typical benefit: 60% of weekly salary\n`;
-    response += `- Waiting period: 7 days (illness) / 0 days (accident)\n`;
-    response += `- Benefit duration: Up to 13 weeks\n\n`;
-
-    response += `**Long-Term Disability (LTD)** — UNUM\n`;
-    response += `- Kicks in after STD benefits end\n`;
-    response += `- Typical benefit: 60% of monthly salary (up to $10,000/month)\n`;
-    response += `- Waiting period: 90 days\n`;
-    response += `- Benefit duration: Up to age 65 or Social Security Normal Retirement Age\n\n`;
-
-    response += `*Pricing for disability coverage is age-banded. For exact rates, please visit the enrollment portal at ${ENROLLMENT_PORTAL_URL} or contact HR at ${HR_PHONE}.*\n\n`;
-
-    response += `Would you like to explore a different benefit category?`;
-
-    return finalize(response);
+    return null; // Fall through to RAG + LLM pipeline
   }
 
-  // CRITICAL ILLNESS / ACCIDENT exploration
+  // ═══════════════════════════════════════════════════════════════════════════
+  // CRITICAL ILLNESS / ACCIDENT: Route to RAG + LLM instead of template
+  // ═══════════════════════════════════════════════════════════════════════════
   if (/\b(critical\s*illness|accident|ad&d|supplemental)\b/i.test(queryLower)) {
-    let response = `Here's an overview of supplemental coverage options:\n\n`;
-
-    response += `**Critical Illness Insurance** — Allstate\n`;
-    response += `- Lump-sum cash benefit if diagnosed with a covered condition\n`;
-    response += `- Covered conditions: Heart attack, stroke, cancer, organ transplant, and more\n`;
-    response += `- Benefit amounts: $10,000 to $30,000 (age-banded pricing)\n`;
-    response += `- Covers employee, spouse, and dependent children\n\n`;
-
-    response += `**Accident Insurance** — Allstate\n`;
-    response += `- Cash benefit for covered accidents (fractures, dislocations, burns, etc.)\n`;
-    response += `- Includes initial treatment, follow-up, hospitalization, and rehab\n`;
-    response += `- Works alongside your medical plan to offset out-of-pocket costs\n\n`;
-
-    response += `*Both are age-banded products. For exact rates, visit ${ENROLLMENT_PORTAL_URL} or call HR at ${HR_PHONE}.*\n\n`;
-
-    response += `Would you like to explore a different benefit category?`;
-
-    return finalize(response);
+    return null; // Fall through to RAG + LLM pipeline
   }
 
-  // HSA / FSA exploration
+  // ═══════════════════════════════════════════════════════════════════════════
+  // HSA / FSA: Route to RAG + LLM instead of template
+  // ═══════════════════════════════════════════════════════════════════════════
   if (/\b(hsa|fsa|flexible\s*spending|health\s*savings|tax[\s-]*(?:free|advantaged))\b/i.test(queryLower)) {
-    const hsa = catalog.specialCoverage.hsa;
-    const fsa = catalog.specialCoverage.fsa;
-
-    let response = `Here's an overview of your tax-advantaged savings accounts:\n\n`;
-
-    response += `**Health Savings Account (HSA)**\n`;
-    response += `- Available with: Standard HSA or Enhanced HSA medical plans\n`;
-    response += `- Employer contribution: **$${hsa.employerContribution}/year** (seeded by AmeriVet)\n`;
-    response += `- 2025 IRS limits: $4,300 (individual) / $8,550 (family)\n`;
-    response += `- Triple tax advantage: Tax-free contributions, growth, and withdrawals for medical expenses\n`;
-    response += `- Funds roll over year to year — no "use it or lose it"\n`;
-    response += `- Portable: You keep it if you leave AmeriVet\n\n`;
-
-    response += `**Flexible Spending Account (FSA)**\n`;
-    response += `- Maximum contribution: $${fsa.maximumContribution.toLocaleString()}/year\n`;
-    response += `- Pre-tax contributions reduce taxable income\n`;
-    response += `- Available for: Healthcare FSA, Dependent Care FSA, and Limited Purpose FSA\n`;
-    response += `- ⚠️ Use-it-or-lose-it: Funds must be used within the plan year\n`;
-    response += `- Cannot have both a general FSA and an HSA simultaneously\n\n`;
-
-    response += `**Commuter Benefits**\n`;
-    response += `- Monthly benefit: Up to $${catalog.specialCoverage.commuter.monthlyBenefit}/month pre-tax\n`;
-    response += `- Covers: Transit, parking, and qualified commuter expenses\n\n`;
-
-    response += `Would you like to:\n- Learn how HSA vs. FSA compares for your situation?\n- Explore another benefit category?`;
-
-    return finalize(response);
+    return null; // Fall through to RAG + LLM pipeline
   }
 
   return null;
