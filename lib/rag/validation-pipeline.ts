@@ -35,9 +35,9 @@ export interface PipelineResult {
 // ============================================================================
 
 const RETRIEVAL_THRESHOLDS = {
-  HIGH: 0.7,    // Confident match
-  MEDIUM: 0.4,  // Usable with disclaimer
-  LOW: 0.2,     // Trigger query expansion
+  HIGH: 0.02,   // Confident match for RRF
+  MEDIUM: 0.01, // Usable with disclaimer
+  LOW: 0.005,   // Trigger query expansion
 };
 
 export interface RetrievalValidationInput {
