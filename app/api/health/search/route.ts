@@ -64,14 +64,14 @@ export async function GET(req: NextRequest) {
       const queryStart = Date.now();
       const sampleResult = await client.search('benefits', { 
         top: 3,
-        select: ['id', 'company_id', 'content'],
+        select: ['chunk_id', 'company_id', 'content'],
         queryType: 'simple',
       });
       
       const docs = [];
       for await (const result of sampleResult.results) {
         docs.push({
-          id: result.document.id,
+          id: result.document.chunk_id,
           company_id: result.document.company_id,
           score: result.score,
           contentPreview: typeof result.document.content === 'string' 
@@ -135,14 +135,14 @@ export async function GET(req: NextRequest) {
       const filteredResult = await client.search('benefits', {
         top: 3,
         filter: "company_id eq 'amerivet'",
-        select: ['id', 'company_id'],
+        select: ['chunk_id', 'company_id'],
         queryType: 'simple',
       });
 
       const filteredDocs = [];
       for await (const result of filteredResult.results) {
         filteredDocs.push({
-          id: result.document.id,
+          id: result.document.chunk_id,
           company_id: result.document.company_id,
           score: result.score,
         });
