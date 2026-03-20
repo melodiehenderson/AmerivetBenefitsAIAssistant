@@ -1127,6 +1127,11 @@ function buildShortCategoryAnswer(
 
   // ── HSA/FSA ────────────────────────────────────────────────────────────────
   if (/\b(hsa|fsa|flexible\s*spending|health\s*savings)\b/i.test(queryLower)) {
+    // Check if asking about ineligible expenses (pets, cosmetic, gym, etc.)
+    const ineligibleExpensePattern = /\b(dog|cat|pet|animal|vet|veterinary|cosmetic|gym|fitness|massage|spa|teeth\s*whitening|supplements|vitamins)\b/i;
+    if (ineligibleExpensePattern.test(queryLower)) {
+      return `No — HSA funds cannot be used for ${ineligibleExpensePattern.exec(queryLower)?.[0] || 'that expense'}. HSA-eligible expenses are limited to qualified medical expenses for yourself, your spouse, and tax dependents as defined by the IRS. Pet/veterinary expenses, cosmetic procedures, gym memberships, and general wellness items are not eligible. For a full list of eligible expenses, see IRS Publication 502 or contact your HSA administrator.`;
+    }
     if (intent === 'yes_no') {
       if (/\bhsa\b/i.test(queryLower)) {
         return `Yes — AmeriVet offers a Health Savings Account (HSA) with an employer contribution of $${catalog.specialCoverage.hsa.employerContribution}/year. It is available when you enroll in either the Standard HSA or Enhanced HSA medical plan.`;
