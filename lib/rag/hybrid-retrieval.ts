@@ -18,9 +18,9 @@ import { countTokens } from '@/lib/utils/tokenCount';
 // ============================================================================
 // Retrieval Gate Configuration
 // ============================================================================
-const GATE_MIN_CHUNKS = 2;        // Minimum chunks required to proceed
-const GATE_MIN_TOP_SCORE = 0.60;  // Minimum top chunk RRF score
-const GATE_CHUNK_THRESHOLD = 0.45; // Filter chunks below this score
+const GATE_MIN_CHUNKS = 1;        // Minimum chunks required to proceed (relaxed from 2)
+const GATE_MIN_TOP_SCORE = 0.35;  // Minimum top chunk RRF score (relaxed from 0.60)
+const GATE_CHUNK_THRESHOLD = 0.25; // Filter chunks below this score (relaxed from 0.45)
 
 export interface RetrievalGateResult {
   gatePass: boolean;
@@ -348,8 +348,8 @@ async function searchWithFilterFallback(
   // physically cannot return documents tagged for other states.
   // e.g., User in MI → filter: (state eq 'MI' or state eq 'National')
   // This prevents "Mississippi vs Michigan" cross-state leakage at the retrieval layer.
-  // FIX: State filtering is now ALWAYS enabled when context.state is available (not just when explicitly requested)
   const hasStateFilter = !!context.state && context.state !== 'National';
+
   // chunks_prod_v1 index only has filterable fields: company_id, doc_id, chunk_index.
   // There is no category, state, benefit_year, or dept field in the schema.
   // Sending those in the OData filter causes a schema error on every first request.
@@ -357,10 +357,12 @@ async function searchWithFilterFallback(
   const fullFilter = buildODataFilter(context, {
     includeCategory: false,
     includeState: false,
-    includePlanYear: false,
+    includePlanYear: false,  // ← DO NOT CHANGE — field not in chunks_prod_v1 schema
     includeDept: false,
   });
+
   logger.debug(`[L2-FILTER] ${logPrefix} filter="${fullFilter}" hasState=${hasStateFilter} state=${context.state || 'unknown'}`);
+
   try {
     return await client.search(query, { ...baseOptions, filter: fullFilter });
   } catch (error) {
@@ -371,23 +373,40 @@ async function searchWithFilterFallback(
     const missingField = tryExtractMissingFilterField(error);
     const hasCategory = missingField?.toLowerCase().includes('category') || error?.toString().includes('category');
     const hasStateFieldMissing = missingField?.toLowerCase().includes('state') || error?.toString().toLowerCase().includes("'state'");
+    const hasPlanYearFieldMissing = missingField?.toLowerCase().includes('benefit_year') || error?.toString().toLowerCase().includes("'benefit_year'");
+    const hasDeptFieldMissing = missingField?.toLowerCase().includes('dept') || error?.toString().toLowerCase().includes("'dept'");
+
     logger.warn(
-      `${logPrefix} Filter error${missingField ? ` (missing: ${missingField})` : ""}; retrying with reduced filter. Original: "${fullFilter}"`
+      `${logPrefix} Filter error${missingField ? ` (missing: ${missingField})` : ""}; retrying with fallback filter. Original: "${fullFilter}"`
     );
 
     // Progressive fallback: first try without category, then without state, then minimal
     const minimalFilter = buildODataFilter(context, {
-      includePlanYear: false,
+      includePlanYear: false,  // ← DO NOT CHANGE — field not in chunks_prod_v1 schema
       includeDept: false,
       includeCategory: !hasCategory,
       includeState: hasStateFilter && !hasStateFieldMissing,
     });
 
     logger.warn(
-      `${logPrefix} Filter schema mismatch${missingField ? ` (missing: ${missingField})` : ""}; retrying with minimal filter. Original filter: "${fullFilter}"`
+      `${logPrefix} Schema error fallback${missingField ? ` (missing: ${missingField})` : ""}. Fallback filter: "${minimalFilter}"`
     );
 
-    return await client.search(query, { ...baseOptions, filter: minimalFilter });
+    // If fallback still has issues, try minimal company_id only filter
+    try {
+      return await client.search(query, { ...baseOptions, filter: minimalFilter });
+    } catch (fallbackError) {
+      if (!isLikelyODataFilterSchemaError(fallbackError)) {
+        throw fallbackError;
+      }
+
+      // Final fallback: company_id only (this should always work)
+      const minimalFilter = `company_id eq '${escapeODataValue(context.companyId)}'`;
+      logger.error(
+        `${logPrefix} Multiple filter failures. Using minimal filter: "${minimalFilter}"`
+      );
+      return await client.search(query, { ...baseOptions, filter: minimalFilter });
+    }
   }
 }
 
