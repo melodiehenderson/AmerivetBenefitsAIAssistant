@@ -12,6 +12,10 @@ const ADMIN_SESSIONS: Record<string, string> = {
 
 export function middleware(req: NextRequest) {
 	try {
+		// Block /api/debug endpoints in production
+		if (req.nextUrl.pathname.startsWith('/api/debug') && process.env.NODE_ENV === 'production') {
+			return new NextResponse(null, { status: 404 });
+		}
 		// Ensure the browser tab favicon is always the AmeriVet logo.
 		if (req.nextUrl.pathname === '/favicon.ico') {
 			return NextResponse.rewrite(new URL('/favicon.png', req.url));

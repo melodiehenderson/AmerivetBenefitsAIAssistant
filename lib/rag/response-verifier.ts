@@ -149,8 +149,13 @@ function checkRateAccuracy(response: string): string | null {
     if (plan.benefits?.outOfPocketMax) knownRates.push(plan.benefits.outOfPocketMax);
   }
   // Add special account rates
-  const { hsa, fsa, commuter } = amerivetBenefits2024_2025.specialCoverage;
-  knownRates.push(hsa.employerContribution, fsa.maximumContribution, commuter.monthlyBenefit);
+  const { hsa, commuter } = amerivetBenefits2024_2025.specialCoverage;
+  if (typeof hsa.employerContribution === 'number') {
+    knownRates.push(hsa.employerContribution);
+  } else {
+    knownRates.push(...Object.values(hsa.employerContribution));
+  }
+  knownRates.push(commuter.monthlyBenefit);
 
   // Extract dollar amounts with a frequency label from response
   const labelledRe = /\$([\d,]+\.?\d*)\s*\/(month|mo\b|yr|year)|bi-?weekly[^$]*\$([\d,]+\.?\d*)/gi;
