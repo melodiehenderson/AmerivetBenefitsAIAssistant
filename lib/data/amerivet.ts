@@ -66,11 +66,11 @@ export interface AmerivetBenefitsCatalog {
   specialCoverage: {
     hsa: {
       effectiveDate: string;
-      employerContribution: number;
+      employerContribution: number | Record<string, number>;
     };
-    fsa: {
+    hsa: {
       effectiveDate: string;
-      maximumContribution: number;
+      employerContribution: number | Record<string, number>;
     };
     commuter: {
       effectiveDate: string;
@@ -478,11 +478,21 @@ export const amerivetBenefits2024_2025: AmerivetBenefitsCatalog = {
   specialCoverage: {
     hsa: {
       effectiveDate: '2025-01-01',
-      employerContribution: 750,
+      employerContribution: {
+        "Employee Only": 750,
+        "Employee + Spouse": 1000,
+        "Employee + Child(ren)": 1000,
+        "Employee + Family": 1250,
+      },
     },
-    fsa: {
+    hsa: {
       effectiveDate: '2025-01-01',
-      maximumContribution: 3050,
+      employerContribution: {
+        "Employee Only": 750,
+        "Employee + Spouse": 1000,
+        "Employee + Child(ren)": 1000,
+        "Employee + Family": 1250, // This replaces the hallucinated $1,248
+      },
     },
     commuter: {
       effectiveDate: '2025-01-01',

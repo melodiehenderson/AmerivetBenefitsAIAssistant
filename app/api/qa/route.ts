@@ -736,16 +736,8 @@ export function detectIntentDomain(lowerQuery: string): IntentDomain {
 // 2. SYSTEM PROMPT — "ABSOLUTE TRUTH" (Data-Sovereign Benefits Engine)
 // ============================================================================
 function buildSystemPrompt(session: any): string {
-  // === IRS 2026 LIMITS injection ===
-  const irsBlock = `
-<IRS_2026_LIMITS lock="true">
-HSA Self-Only Limit: $${IRS_2026.HSA_SELF_ONLY}
-HSA Family Limit: $${IRS_2026.HSA_FAMILY}  
-HSA Catch-Up (age ${IRS_2026.HSA_CATCHUP_AGE}+): +$${IRS_2026.HSA_CATCHUP_ADDITIONAL}
-FSA Maximum: $${IRS_2026.FSA_GENERAL_MAX}
-FSA Rollover: $${IRS_2026.FSA_ROLLOVER_MAX}
-RULE: Use ONLY these numbers for IRS limits. Never use training knowledge.
-</IRS_2026_LIMITS>`;
+  // === ANNUAL STATUTORY LIMITS (IMMUTABLE) ===
+  const irsBlock = `\nANNUAL STATUTORY LIMITS (IMMUTABLE)\n-----------------------------------\nHSA Self-Only Limit: $${IRS_2026.HSA_SELF_ONLY}\nHSA Family Limit: $${IRS_2026.HSA_FAMILY}\nHSA Catch-Up (age ${IRS_2026.HSA_CATCHUP_AGE}+): +$${IRS_2026.HSA_CATCHUP_ADDITIONAL}\nFSA General Purpose Max: $${IRS_2026.FSA_GENERAL_MAX}\nFSA Limited Purpose Max: $${IRS_2026.FSA_LIMITED_MAX}\nFSA Rollover Max: $${IRS_2026.FSA_ROLLOVER_MAX}\nDependent Care FSA Max: $${IRS_2026.DEPENDENT_CARE_FSA_MAX}\nRULE: Use ONLY these numbers for IRS limits. Never use training knowledge.\n-----------------------------------\n\nIRS_2026 JSON:\n${JSON.stringify(IRS_2026, null, 2)}\n-----------------------------------`;
 
   // === Session context ===
   const decisions = session.decisionsTracker || {};
