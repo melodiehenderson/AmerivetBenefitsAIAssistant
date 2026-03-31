@@ -18,6 +18,8 @@ import {
 } from '@/lib/rag/validation-pipeline';
 import { detectTextualHallucination } from '@/lib/rag/validation';
 import { pipelineLogger, createTrace } from '@/lib/services/pipeline-logger';
+
+import { IRS_2026 } from '@/lib/data/irs-limits-2026';
 import {
   routeIntent,
   checkStateGate,
@@ -734,6 +736,17 @@ export function detectIntentDomain(lowerQuery: string): IntentDomain {
 // 2. SYSTEM PROMPT — "ABSOLUTE TRUTH" (Data-Sovereign Benefits Engine)
 // ============================================================================
 function buildSystemPrompt(session: any): string {
+  // === IRS 2026 LIMITS injection ===
+  const irsBlock = `
+<IRS_2026_LIMITS lock="true">
+HSA Self-Only Limit: $${IRS_2026.HSA_SELF_ONLY}
+HSA Family Limit: $${IRS_2026.HSA_FAMILY}  
+HSA Catch-Up (age ${IRS_2026.HSA_CATCHUP_AGE}+): +$${IRS_2026.HSA_CATCHUP_ADDITIONAL}
+FSA Maximum: $${IRS_2026.FSA_GENERAL_MAX}
+FSA Rollover: $${IRS_2026.FSA_ROLLOVER_MAX}
+RULE: Use ONLY these numbers for IRS limits. Never use training knowledge.
+</IRS_2026_LIMITS>`;
+
   // === Session context ===
   const decisions = session.decisionsTracker || {};
   const decisionEntries = Object.entries(decisions);
@@ -766,7 +779,8 @@ function buildSystemPrompt(session: any): string {
     ? `\n**NO PRICING MODE**: Do NOT include $ amounts, premiums, or cost tables. Coverage/rules only.`
     : '';
 
-  return `<Session>
+  return `${irsBlock}
+<Session>
   Name: ${session.userName || 'Guest'} | State: ${userState || 'Unknown'} | Age: ${session.userAge || 'Unknown'}
   Salary: ${session.userSalary ? '$' + session.userSalary.toLocaleString() + '/month' : 'Unknown'}
   Topic: ${session.currentTopic || 'General Benefits'} | Turn: ${session.turn || 1}
