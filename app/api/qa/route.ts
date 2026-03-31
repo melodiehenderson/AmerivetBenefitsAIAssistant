@@ -416,7 +416,6 @@ const L1_FAQ: L1FAQEntry[] = [
   patterns: [/\bkaiser\b.*\b(only|available|states?|where|which\s+states?|limited|regions?)\b|\b(only|available|states?|where|which\s+states?|limited|regions?)\b.*\bkaiser\b/i],
   answer: () => `Kaiser HMO is only available in California (CA), Washington (WA), and Oregon (OR) through AmeriVet. It is not available in any other state. In all other states, your medical options are Standard HSA and Enhanced HSA (both through BCBS of Texas, nationwide PPO network).`,
 },
-  },
   {
     // Missing internal personnel data (Detroit office dental receptionist style questions)
     patterns: [/\b(receptionist|office\s*(staff|personnel|directory)|name\s*of.*(?:dentist|doctor|office|staff)|staff\s*(name|list|directory)|who\s*is\s*(?:the|my)\s*(?:dentist|doctor|hr\s*rep|benefits\s*rep))\b/i],
