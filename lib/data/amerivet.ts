@@ -68,10 +68,6 @@ export interface AmerivetBenefitsCatalog {
       effectiveDate: string;
       employerContribution: number | Record<string, number>;
     };
-    hsa: {
-      effectiveDate: string;
-      employerContribution: number | Record<string, number>;
-    };
     commuter: {
       effectiveDate: string;
       monthlyBenefit: number;
@@ -485,21 +481,19 @@ export const amerivetBenefits2024_2025: AmerivetBenefitsCatalog = {
         "Employee + Family": 1250,
       },
     },
-    hsa: {
-      effectiveDate: '2025-01-01',
-      employerContribution: {
-        "Employee Only": 750,
-        "Employee + Spouse": 1000,
-        "Employee + Child(ren)": 1000,
-        "Employee + Family": 1250, // This replaces the hallucinated $1,248
-      },
-    },
     commuter: {
       effectiveDate: '2025-01-01',
       monthlyBenefit: 300,
     },
   },
 };
+
+
+// --- Zod validation for catalog integrity ---
+import { amerivetBenefitsCatalogSchema } from '@/lib/validation/benefit-catalog-schema';
+
+// Validate at runtime (throws if invalid)
+amerivetBenefitsCatalogSchema.parse(amerivetBenefits2024_2025);
 
 const allPlans = [
   ...amerivetBenefits2024_2025.medicalPlans,
@@ -681,7 +675,6 @@ export function getCatalogForPrompt(stateCode?: string | null): string {
   // ── Special Accounts ───────────────────────────────────────────────────────
   lines.push('── SPECIAL ACCOUNTS ────────────────────────────────────────────────────────');
   lines.push(`HSA: Employer contributes $${catalog.specialCoverage.hsa.employerContribution}/yr`);
-  lines.push(`FSA: Employee max $${catalog.specialCoverage.fsa.maximumContribution}/yr`);
   lines.push(`Commuter: $${catalog.specialCoverage.commuter.monthlyBenefit}/mo benefit`);
   lines.push('');
 
