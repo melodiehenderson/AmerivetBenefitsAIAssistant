@@ -17,6 +17,7 @@ import {
   type ValidationResult
 } from '@/lib/rag/validation-pipeline';
 import { detectTextualHallucination } from '@/lib/rag/validation';
+import { verifyNumericalIntegrity } from '@/lib/rag/grounding-audit';
 import { pipelineLogger, createTrace } from '@/lib/services/pipeline-logger';
 
 import { IRS_2026 } from '@/lib/data/irs-limits-2026';
@@ -30,6 +31,18 @@ import {
 import pricingUtils from '@/lib/rag/pricing-utils';
 import { classifyQueryIntent, getIntentHint, type QueryIntent } from '@/lib/rag/query-intent-classifier';
 import { amerivetBenefits2024_2025, getCatalogForPrompt } from '@/lib/data/amerivet';
+// Utility to extract all numbers from the AmeriVet catalog object
+function extractAllNumbers(obj: any): number[] {
+  const nums: number[] = [];
+  if (typeof obj === 'number') {
+    nums.push(obj);
+  } else if (Array.isArray(obj)) {
+    for (const v of obj) nums.push(...extractAllNumbers(v));
+  } else if (typeof obj === 'object' && obj !== null) {
+    for (const v of Object.values(obj)) nums.push(...extractAllNumbers(v));
+  }
+  return nums;
+}
 
 export const dynamic = 'force-dynamic';
 
@@ -418,7 +431,9 @@ const L1_FAQ: L1FAQEntry[] = [
 },
   {
     // Missing internal personnel data (Detroit office dental receptionist style questions)
-    patterns: [/\b(receptionist|office\s*(staff|personnel|directory)|name\s*of.*(?:dentist|doctor|office|staff)|staff\s*(name|list|directory)|who\s*is\s*(?:the|my)\s*(?:dentist|doctor|hr\s*rep|benefits\s*rep))\b/i],
+    patterns: [
+      /\b(receptionist|office\s*(staff|personnel|directory)|name\s*of.*(?:dentist|doctor|office|staff)|staff\s*(name|list|directory)|who\s*is\s*(?:the|my)\s*(?:dentist|doctor|hr\s*rep|benefits\s*rep))\b/i
+    ],
     answer: () => `I don't have that specific internal personnel data. For office-level contacts or staff directories, please reach out to AmeriVet HR at ${HR_PHONE}.`,
   },
 ];
@@ -2837,6 +2852,18 @@ Remember: answer ONLY from the IMMUTABLE CATALOG. Do NOT ask for name, age, or s
     }
 
     answer = toPlainAssistantText(answer);
+
+
+    // ── NUMERICAL INTEGRITY GUARD: catch hallucinated numbers not in catalog or IRS constants ──
+    const allowedValues = [
+      ...extractAllNumbers(amerivetBenefits2024_2025),
+      ...Object.values(IRS_2026)
+    ];
+    const hallucinations = verifyNumericalIntegrity(answer, allowedValues);
+    if (hallucinations.length > 0) {
+      logger.error(`[CRITICAL] Hallucination detected: ${hallucinations}`);
+      // Optionally redact or flag for audit dashboard here
+    }
 
     // ── GROUNDING AUDIT: verify every $X in the answer exists in the catalog ──────────
     // Sentences with STD math (÷ 4.33, weekly pay) are exempt — those are derived values.
