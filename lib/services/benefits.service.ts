@@ -473,8 +473,7 @@ export class BenefitsService {
       const specialCoverage = amerivetBenefits2024_2025.specialCoverage;
       
       logger.info({
-        hsaEffective: specialCoverage.hsa.effectiveDate,
-        fsaEffective: specialCoverage.fsa.effectiveDate
+        hsaEffective: specialCoverage.hsa.effectiveDate
       }, 'Special coverage info retrieved');
 
       return specialCoverage;
