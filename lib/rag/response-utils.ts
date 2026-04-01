@@ -190,13 +190,10 @@ export function stripInternalPrompts(text: string): string {
 
 // Regex-based validator to ensure monthly pricing is present when annual pricing appears
 export function validatePricingFormat(text: string): string {
-  // First strip markdown
-  let result = stripMarkdown(text);
+  // Strip internal prompts (but preserve markdown)
+  let result = stripInternalPrompts(text);
   
-  // Then strip internal prompts
-  result = stripInternalPrompts(result);
-  
-  // Strip approximate language from pricing
+  // Strip approximate language from pricing (preserves markdown)
   result = stripApproximateLanguage(result);
   
   // Detect annual pricing mentions such as "$4,800/year" or "$4,800 annually"
