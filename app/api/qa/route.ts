@@ -1701,7 +1701,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
       const knownPlans: { key: string; label: string; regex: RegExp }[] = [
         { key: 'standard hsa', label: 'Standard HSA', regex: /\bstandard\s*(?:hsa)?\b/i },
         { key: 'enhanced hsa', label: 'Enhanced HSA', regex: /\benhanced\s*(?:hsa)?\b/i },
-        { key: 'kaiser',       label: 'Kaiser Standard HMO', regex: /\bkaiser\b/i },
+        { key: 'kaiser',       label: 'Kaiser Standard HMO', regex: /\b(kaiser|hmo)\b/i },
       ];
       const matched = knownPlans.filter(p => p.regex.test(lowerQuery));
       if (matched.length >= 2) return matched.slice(0, 2);
