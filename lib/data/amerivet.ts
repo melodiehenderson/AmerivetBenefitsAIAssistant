@@ -192,8 +192,8 @@ export const amerivetBenefits2024_2025: AmerivetBenefitsCatalog = {
       name: 'Kaiser Standard HMO',
       provider: 'Kaiser',
       type: 'medical',
-      description: 'HMO plan with low copays and integrated care available in California, Washington, and Oregon.',
-      regionalAvailability: ['California', 'Washington', 'Oregon'],
+      description: 'HMO plan with low copays and integrated care available in California, Georgia, Washington, and Oregon.',
+      regionalAvailability: ['California', 'Georgia', 'Washington', 'Oregon'],
       premiums: {
         employee: { monthly: 142.17, biweekly: biweekly(142.17) },
         employer: { monthly: 515.0, biweekly: biweekly(515.0) },
@@ -208,7 +208,7 @@ export const amerivetBenefits2024_2025: AmerivetBenefitsCatalog = {
         deductible: 1000,
         outOfPocketMax: 4500,
         coinsurance: 0.1,
-        description: 'Integrated HMO with Kaiser facilities across California, Washington, and Oregon.',
+        description: 'Integrated HMO with Kaiser facilities across California, Georgia, Washington, and Oregon.',
       },
       coverage: {
         deductibles: {
@@ -232,7 +232,7 @@ export const amerivetBenefits2024_2025: AmerivetBenefitsCatalog = {
       ],
       limitations: [
         'No out-of-network coverage except emergencies',
-        'Available only in California, Washington, and Oregon service areas',
+        'Available only in California, Georgia, Washington, and Oregon service areas',
       ],
       eligibility: {
         employeeType: 'full-time',
@@ -451,6 +451,7 @@ export const amerivetBenefits2024_2025: AmerivetBenefitsCatalog = {
   ],
   regionalPlans: {
     California: ['kaiser-standard-hmo'],
+    Georgia: ['kaiser-standard-hmo'],
     Oregon: ['kaiser-standard-hmo'],
     Washington: ['kaiser-standard-hmo'],
     nationwide: ['bcbstx-standard-hsa', 'bcbstx-enhanced-hsa', 'bcbstx-dental', 'vsp-vision-plus', 'unum-basic-life', 'unum-voluntary-life', 'allstate-whole-life'],

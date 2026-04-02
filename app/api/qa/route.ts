@@ -95,7 +95,7 @@ const US_STATES_MAP: Record<string, string> = {
 const US_STATE_CODES = new Set(Object.values(US_STATES_MAP));
 
 // Kaiser HMO is ONLY available in these states — DO NOT show it anywhere else
-const KAISER_STATES = new Set(['CA', 'WA', 'OR']);
+const KAISER_STATES = new Set(['CA', 'GA', 'WA', 'OR']);
 
 // City -> State resolver: if user provides a city, resolve state automatically (No-Loop Rule)
 const CITY_TO_STATE: Record<string, string> = {
@@ -743,6 +743,13 @@ function scoreGenerationQuality(
 
 type IntentDomain = 'pricing' | 'policy' | 'general';
 
+type DigestedIntent = {
+  topic: string;
+  intent: string;
+  guardrail: string;
+  regionalCheck: string;
+};
+
 export function detectIntentDomain(lowerQuery: string): IntentDomain {
   const hasPolicy = /\b(can\s+i|am\s+i|eligible|qualif(?:y|ied)|how\s+many\s+days|deadline|window|qle|qualifying\s+life\s+event|special\s+enrollment|filing\s+order|what\s+order|step\s*by\s*step|fmla|std|short\s*[- ]?term\s+disability|pre-?existing|clause|deny|denied|deductible\s+reset|effective\s+date)\b/i.test(lowerQuery);
   const hasPricing = /\b(how\s+much|cost|price|premium|deduct(?:ed|ion)|per\s*pay(?:check|period)|monthly|annual|compare\s+cost|estimate|projection|oop|out\s+of\s+pocket)\b/i.test(lowerQuery);
@@ -750,6 +757,65 @@ export function detectIntentDomain(lowerQuery: string): IntentDomain {
   if (hasPolicy && !hasPricing) return 'policy';
   if (hasPricing) return 'pricing';
   return 'general';
+}
+
+function digestIntent(
+  query: string,
+  session: Session,
+  responseIntent: QueryIntent,
+  intentDomain: IntentDomain,
+): DigestedIntent {
+  const lower = query.toLowerCase();
+  const stateCode = (session.userState || '').toUpperCase();
+
+  let topic = getTopicLabel(query, session.currentTopic);
+  if (/\b(maternity|parental|fmla|std|leave|pregnan|birth|baby)\b/i.test(lower)) {
+    topic = 'Maternity Leave Timeline';
+  }
+
+  let intent = responseIntent.toUpperCase();
+  if (/\b(maternity|parental|fmla|std|leave)\b/i.test(lower)) {
+    intent = 'LEAVE_TIMELINE';
+  } else if (responseIntent === 'cost_lookup') {
+    intent = 'PLAN_COST_LOOKUP';
+  } else if (responseIntent === 'comparison') {
+    intent = 'PLAN_COMPARISON';
+  }
+
+  const guardrailParts: string[] = [];
+  if (intentDomain === 'policy' || intent === 'LEAVE_TIMELINE') {
+    guardrailParts.push('FOCUS ON: duration, eligibility, pay percentages, waiting periods, and filing order.');
+    guardrailParts.push('AVOID: plan premium comparisons and unrelated plan pricing.');
+  } else if (intent === 'PLAN_COMPARISON') {
+    guardrailParts.push('FOCUS ON: side-by-side differences with a markdown table.');
+    guardrailParts.push('AVOID: off-topic policy narration.');
+  } else if (intent === 'PLAN_COST_LOOKUP') {
+    guardrailParts.push('FOCUS ON: exact monthly amounts and requested tier only.');
+    guardrailParts.push('AVOID: broad overviews of unrelated plans.');
+  } else {
+    guardrailParts.push('FOCUS ON: the exact question and direct catalog-grounded answer.');
+    guardrailParts.push('AVOID: repeating the user question or generic filler intros.');
+  }
+
+  if (session.noPricingMode) {
+    guardrailParts.push('NO-PRICING MODE: never include dollar amounts.');
+  }
+
+  let regionalCheck = 'REGIONAL CHECK: apply state-locked medical availability rules before answering.';
+  if (stateCode === 'OR') {
+    regionalCheck = 'REGIONAL CHECK: Oregon is Kaiser-eligible. Include Kaiser in medical options/comparisons and show in table form.';
+  } else if (stateCode === 'GA') {
+    regionalCheck = 'REGIONAL CHECK: Georgia is Kaiser-eligible. Include Kaiser in medical options/comparisons and present the regional comparison in table form.';
+  } else if (stateCode) {
+    regionalCheck = `REGIONAL CHECK: ${stateCode} state lock applies. Only show region-eligible medical options.`;
+  }
+
+  return {
+    topic,
+    intent,
+    guardrail: guardrailParts.join(' '),
+    regionalCheck,
+  };
 }
 
 // ============================================================================
@@ -781,6 +847,8 @@ CRITICAL INSTRUCTIONS:
 1. NO PARROTING: Never repeat the user's question. Start your response immediately with the data or a 1-sentence summary in your own words.
 2. TABLE MANDATE: You are a table-generation engine. Use Markdown tables for all plan comparisons and feature lists. DO NOT use numbered prose.
 3. CONCISENESS: Max 3 sentences for any non-table text.
+4. STEP-BY-STEP ARCHITECTURE: Internally run Self-Ask -> CoT -> ReAct before finalizing the answer.
+5. REGIONAL MEDICAL CHECK: For state-specific medical options/comparisons, enforce regional availability in table form. Oregon and Georgia must include Kaiser as available; non-Kaiser states may show Kaiser as '⚠️ Not Covered' only when comparison clarity requires it.
 `;
   // === ANNUAL STATUTORY LIMITS (IMMUTABLE) ===
   const irsBlock = `\nANNUAL STATUTORY LIMITS (IMMUTABLE)\n-----------------------------------\nHSA Self-Only Limit: $${IRS_2026.HSA_SELF_ONLY}\nHSA Family Limit: $${IRS_2026.HSA_FAMILY}\nHSA Catch-Up (age ${IRS_2026.HSA_CATCHUP_AGE}+): +$${IRS_2026.HSA_CATCHUP_ADDITIONAL}\nFSA General Purpose Max: $${IRS_2026.FSA_GENERAL_MAX}\nFSA Limited Purpose Max: $${IRS_2026.FSA_LIMITED_MAX}\nFSA Rollover Max: $${IRS_2026.FSA_ROLLOVER_MAX}\nDependent Care FSA Max: $${IRS_2026.DEPENDENT_CARE_FSA_MAX}\nRULE: Use ONLY these numbers for IRS limits. Never use training knowledge.\n-----------------------------------\n\nIRS_2026 JSON:\n${JSON.stringify(IRS_2026, null, 2)}\n-----------------------------------`;
@@ -803,7 +871,7 @@ CRITICAL INSTRUCTIONS:
     const kaiserRule = userState
       ? (kaiserEligible
         ? `Kaiser HMO IS available in ${userState}. Include Kaiser in medical comparisons.`
-        : `Kaiser HMO is NOT available in ${userState}. NEVER mention Kaiser ΓÇö not even to say unavailable.`)
+        : `Kaiser HMO is NOT available in ${userState}. Exclude Kaiser from offered plans and pricing. If a regional comparison requires a Kaiser row, mark it as '⚠️ Not Covered'.`)
       : `State unknown. Do not reference Kaiser or regional plan availability.`;
   
     // === Catalog injection (state-filtered) ===
@@ -951,12 +1019,12 @@ function buildShortCategoryAnswer(
     // Kaiser state check - KEEP this hard rule
     if (/\b(kaiser|hmo)\b/i.test(queryLower)) {
       if (isKaiserEligible) {
-        return `Yes ΓÇö Kaiser HMO is available in your state (${userState}). AmeriVet offers the Kaiser Standard HMO for employees in CA, WA, and OR.`;
+        return `Yes ΓÇö Kaiser HMO is available in your state (${userState}). AmeriVet offers the Kaiser Standard HMO for employees in CA, GA, WA, and OR.`;
       }
       if (userState) {
-        return `Kaiser HMO is only available in CA, WA, and OR ΓÇö it is not available in ${userState}. Your medical options are the Standard HSA and Enhanced HSA plans through BCBSTX.`;
+        return `Kaiser HMO is only available in CA, GA, WA, and OR ΓÇö it is not available in ${userState}. Your medical options are the Standard HSA and Enhanced HSA plans through BCBSTX.`;
       }
-      return 'Kaiser HMO is available in CA, WA, and OR only. Let me know your state and I can confirm your options.';
+      return 'Kaiser HMO is available in CA, GA, WA, and OR only. Let me know your state and I can confirm your options.';
     }
 
     // Other medical queries route to LLM
@@ -1275,7 +1343,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'ppo-clarification', retrievalScore: 1.0, confidence: 'High' } });
     }
 
-    // RULE 4: KAISER IN NON-KAISER STATE ΓÇö user explicitly asks about Kaiser when not in CA/WA/OR
+    // RULE 4: KAISER IN NON-KAISER STATE ΓÇö user explicitly asks about Kaiser when not in CA/GA/WA/OR
     const asksKaiser = /\bkaiser\b/i.test(query);
     const userInNonKaiserState = !!session.userState && !KAISER_STATES.has(session.userState.toUpperCase());
     if (asksKaiser && userInNonKaiserState) {
@@ -1686,7 +1754,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
     if (recommendRequested && singleHealthy) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] RECOMMEND-SINGLE`);
       const rows = pricingUtils.buildPerPaycheckBreakdown('Employee Only', session.payPeriods || 26);
-      // Filter to medical-only and exclude Kaiser for states outside CA/WA/OR
+      // Filter to medical-only and exclude Kaiser for states outside CA/GA/WA/OR
       const medRows = rows.filter(r => !/dental|vision/i.test(r.plan) && r.provider !== 'VSP');
       const filtered = session.userState && !KAISER_STATES.has(session.userState.toUpperCase())
         ? medRows.filter(r => !/kaiser/i.test(r.plan))
@@ -1805,7 +1873,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
         return rLow.includes(targetPlan) || targetPlan.split(' ').every((w: string) => rLow.includes(w));
       });
       if (matchedRow) {
-        // Filter Kaiser for states outside CA/WA/OR
+        // Filter Kaiser for states outside CA/GA/WA/OR
         if (/kaiser/i.test(matchedRow.plan) && session.userState && !KAISER_STATES.has(session.userState.toUpperCase())) {
           const msg = `Kaiser Standard HMO is only available in California, Washington, and Oregon. Since you're in ${session.userState}, your medical plan options are **Standard HSA** and **Enhanced HSA**. Would you like pricing for those?`;
           session.lastBotMessage = msg;
@@ -2568,6 +2636,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
     // Classify query intent for response-shape routing
     const { intent: queryResponseIntent, confidence: intentConfidence } = classifyQueryIntent(query, session.currentTopic);
     const intentHintText = getIntentHint(queryResponseIntent);
+    const digestedIntent = digestIntent(query, session, queryResponseIntent, intentDomain);
     logger.info(`[REQ:${reqId}][STEP-8e INTENT] responseIntent=${queryResponseIntent} confidence=${intentConfidence.toFixed(2)}`);
 
     // Build the strict state header to inject into every user message (re-enforcement)
@@ -2577,7 +2646,12 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
         : `STATE LOCK [${session.userState}]: KAISER IS FORBIDDEN ΓÇö exclude it entirely. Do NOT mention Kaiser.`)
       : `STATE: Unknown ΓÇö do not reference regional plan availability.`;
 
-    const userMessage = `${stateEnforcement}
+    const userMessage = `Topic: ${digestedIntent.topic}
+  Intent: ${digestedIntent.intent}
+  Guardrail: ${digestedIntent.guardrail}
+  ${digestedIntent.regionalCheck}
+
+  ${stateEnforcement}
 
 ${intentHintText}
 
@@ -2620,7 +2694,7 @@ Remember: answer ONLY from the IMMUTABLE CATALOG. Do NOT ask for name, age, or s
     const completion = await azureOpenAIService.generateChatCompletion([
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userMessage }
-    ], { temperature: 0.15 });
+    ], { temperature: 0.2 });
     const llmMs = Date.now() - tLlm;
     logger.info(`[REQ:${reqId}][STEP-9a LLM-DONE] ${llmMs}ms rawLen=${completion.content.length}`);
 
@@ -2872,7 +2946,7 @@ Answer directly from the IMMUTABLE CATALOG. Name the plan. State the exact figur
         answerChars: answer.length,
         groundingWarnings: groundingWarnings.length,
       },
-      temperature: 0.15,
+      temperature: 0.2,
     });
     logger.debug(`[RAG] Final answer (${answer.length} chars) ΓÇö generation quality ${(finalGenQuality.score * 100).toFixed(0)}% | coverage ${(finalGenQuality.coverage * 100).toFixed(0)}% | specificity ${(finalGenQuality.specificity * 100).toFixed(0)}% | grounding warnings: ${groundingWarnings.length}`);
 
@@ -2912,7 +2986,7 @@ Answer directly from the IMMUTABLE CATALOG. Name the plan. State the exact figur
       promptTokens: completion.usage?.promptTokens ?? 0,
       completionTokens: completion.usage?.completionTokens ?? 0,
       latencyMs: llmMs,
-      temperature: 0.15,
+      temperature: 0.2,
     };
     pipelineTrace.response = {
       type: 'generated',

@@ -59,6 +59,8 @@ function PureMultimodalInput({
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { width } = useWindowSize();
+  const TEXTAREA_MIN_HEIGHT = 44;
+  const TEXTAREA_MAX_HEIGHT = 200;
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -69,13 +71,17 @@ function PureMultimodalInput({
   const adjustHeight = () => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = `${textareaRef.current.scrollHeight + 2}px`;
+      const nextHeight = Math.min(
+        textareaRef.current.scrollHeight + 2,
+        TEXTAREA_MAX_HEIGHT,
+      );
+      textareaRef.current.style.height = `${Math.max(nextHeight, TEXTAREA_MIN_HEIGHT)}px`;
     }
   };
 
   const resetHeight = () => {
     if (textareaRef.current) {
-      textareaRef.current.style.height = '46px'; // Match your min-height
+      textareaRef.current.style.height = `${TEXTAREA_MIN_HEIGHT}px`;
     }
   };
 
@@ -104,7 +110,7 @@ function PureMultimodalInput({
     const node = textareaRef.current;
     if (node) {
       node.style.height = 'auto';
-      const nextHeight = Math.min(node.scrollHeight + 2, 132);
+      const nextHeight = Math.min(node.scrollHeight + 2, TEXTAREA_MAX_HEIGHT);
       node.style.height = `${nextHeight}px`;
     }
   };
@@ -271,9 +277,9 @@ function PureMultimodalInput({
         rows={1}
         autoFocus
         style={{
-          minHeight: '46px',
-          maxHeight: '132px',
-          overflowY: textareaRef.current && textareaRef.current.scrollHeight > 132 ? 'auto' : 'hidden',
+          minHeight: `${TEXTAREA_MIN_HEIGHT}px`,
+          maxHeight: `${TEXTAREA_MAX_HEIGHT}px`,
+          overflowY: textareaRef.current && textareaRef.current.scrollHeight > TEXTAREA_MAX_HEIGHT ? 'auto' : 'hidden',
         }}
         onKeyDown={(event) => {
           if (
