@@ -1716,7 +1716,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
     // Catches "compare Standard HSA vs Enhanced HSA", "Standard HSA vs PPO", "HSA vs HMO"
     // Returns both plans in a markdown table using canonical pricing data
     const twoPlanCompare = (() => {
-      const compareSignal = /\b(?:compare|vs\.?|versus|side\s*by\s*side|difference\s+between|between)\b/i.test(lowerQuery);
+      const compareSignal = /\b(?:compare|vs\.?|versus|side\s*by\s*side|difference\s+between|compared\s+to)\b/i.test(lowerQuery) || (/\b(?:or)\b/i.test(lowerQuery) && /\b(?:hsa|hmo|ppo|dental|vision)\b/i.test(lowerQuery));
       if (!compareSignal) return null;
       const knownPlans: { key: string; label: string; regex: RegExp }[] = [
         { key: 'standard hsa', label: 'Standard HSA', regex: /\bstandard\s*(?:hsa)?\b/i },
