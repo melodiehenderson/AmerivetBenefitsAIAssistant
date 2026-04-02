@@ -885,12 +885,11 @@ Pro tip: 80% Voluntary Term for protection, 20% Whole Life for permanent cash va
 </Life_Insurance_Guidance>
 
 <Response_Style>
-- Professional conversational prose. Lead with the key finding.
-- Bullets only for: ordered steps, tier comparisons, feature lists
-- One follow-up suggestion at end: specific, not generic "Is there anything else?"
-  Good: "Want me to compare the deductible for your family size?"
-  Bad: "Is there anything else I can help with?"
-- Life events: One sentence empathy, then pivot to actionable answer
+- Use markdown tables for ALL plan data, features, premiums, deductibles.
+- Use bullet points for feature lists and steps.
+- Use bold for plan names and key figures.
+- Keep prose to 1-2 sentences max. Let the table carry the data.
+- One follow-up suggestion at end.
 </Response_Style>
 
 ${session.lastBotMessage ? `<Previous_Response>"${session.lastBotMessage.slice(0, 300)}${session.lastBotMessage.length > 300 ? '...' : ''}"</Previous_Response>\n` : ''}
