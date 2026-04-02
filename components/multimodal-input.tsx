@@ -75,8 +75,7 @@ function PureMultimodalInput({
 
   const resetHeight = () => {
     if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = '200px';
+      textareaRef.current.style.height = '46px'; // Match your min-height
     }
   };
 
@@ -102,7 +101,14 @@ function PureMultimodalInput({
 
   const handleInput = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(event.target.value);
-    adjustHeight();
+    const node = textareaRef.current;
+    if (node) {
+      node.style.height = 'auto'; // Reset height to calculate correctly
+      // Calculate height: scrollHeight is the content height
+      // 132px is approximately 5-6 lines depending on your line-height
+      const nextHeight = Math.min(node.scrollHeight + 2, 132);
+      node.style.height = `${nextHeight}px`;
+    }
   };
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -194,6 +200,10 @@ function PureMultimodalInput({
         logError('Error uploading files!', error);
       } finally {
         setUploadQueue([]);
+        // Reset file input
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
       }
     },
     [setAttachments],
@@ -208,86 +218,66 @@ function PureMultimodalInput({
   }, [status, scrollToBottom]);
 
   return (
-    <div className="relative w-full flex flex-col gap-4">
+    <div className={cx('w-full', className)}>
       <AnimatePresence>
         {!isAtBottom && (
           <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 10 }}
-            transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-            className="absolute left-1/2 bottom-28 -translate-x-1/2 z-50"
+            initial={{ y: 100, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 100, opacity: 0 }}
+            className="fixed bottom-24 right-4 z-50"
           >
             <Button
-              data-testid="scroll-to-bottom-button"
-              className="rounded-full"
               size="icon"
               variant="outline"
-              onClick={(event) => {
-                event.preventDefault();
-                scrollToBottom();
-              }}
+              className="rounded-full shadow-lg"
+              onClick={() => scrollToBottom()}
             >
               <ArrowDown />
             </Button>
           </motion.div>
         )}
       </AnimatePresence>
-
-      {messages.length === 0 &&
-        attachments.length === 0 &&
-        uploadQueue.length === 0 && (
+      <div className="relative">
+        <div className="absolute top-[-6rem] w-full">
           <SuggestedActions
+            messages={messages}
             sendMessage={sendMessage}
-            chatId={chatId}
-            selectedVisibilityType={selectedVisibilityType}
+            setInput={setInput}
           />
-        )}
-
-      <input
-        type="file"
-        className="fixed -top-4 -left-4 size-0.5 opacity-0 pointer-events-none"
-        ref={fileInputRef}
-        multiple
-        onChange={handleFileChange}
-        tabIndex={-1}
-      />
-
-      {(attachments.length > 0 || uploadQueue.length > 0) && (
-        <div
-          data-testid="attachments-preview"
-          className="flex flex-row gap-2 overflow-x-scroll items-end"
-        >
-          {attachments.map((attachment) => (
-            <PreviewAttachment key={attachment.url} attachment={attachment} />
-          ))}
-
-          {uploadQueue.map((filename) => (
-            <PreviewAttachment
-              key={filename}
-              attachment={{
-                url: '',
-                name: filename,
-                contentType: '',
-              }}
-              isUploading={true}
-            />
-          ))}
         </div>
-      )}
-
+      </div>
+      <div className="flex flex-row gap-2">
+        {attachments.map((attachment) => (
+          <PreviewAttachment key={attachment.url} attachment={attachment} />
+        ))}
+        {uploadQueue.map((name) => (
+          <PreviewAttachment
+            key={name}
+            attachment={{
+              name,
+              url: '',
+              contentType: '',
+            }}
+            isUploading
+          />
+        ))}
+      </div>
       <Textarea
         data-testid="multimodal-input"
         ref={textareaRef}
-        placeholder="Send a message..."
+        placeholder="Ask about your benefits..."
         value={input}
         onChange={handleInput}
-        className={cx(
-          'min-h-[120px] max-h-[calc(75dvh)] overflow-hidden resize-none rounded-2xl !text-base bg-muted pb-10 dark:border-zinc-700',
-          className,
-        )}
-        rows={4}
+        // Added scrollbar-hide or overflow-y-auto logic
+        className="w-full resize-none px-4 py-3 border rounded-lg focus:outline-none bg-transparent"
+        rows={1}
         autoFocus
+        style={{ 
+          minHeight: '46px', 
+          maxHeight: '132px', // Hard limit for the box
+          overflowY: textareaRef.current && textareaRef.current.scrollHeight > 132 ? 'auto' : 'hidden' 
+        }}
         onKeyDown={(event) => {
           if (
             event.key === 'Enter' &&
@@ -304,14 +294,19 @@ function PureMultimodalInput({
           }
         }}
       />
-
-      <div className="absolute bottom-0 p-2 w-fit flex flex-row justify-start">
-        <AttachmentsButton fileInputRef={fileInputRef} status={status} />
-      </div>
-
-      <div className="absolute bottom-0 right-0 p-2 w-fit flex flex-row justify-end">
-        {status === 'submitted' ? (
-          <StopButton stop={stop} setMessages={setMessages} />
+      <div className="absolute bottom-2 right-2 flex items-center">
+        {status === 'in_progress' ? (
+          <Button
+            data-testid="stop-button"
+            className="rounded-full p-1.5 h-fit border dark:border-zinc-600"
+            onClick={(event) => {
+              event.preventDefault();
+              stop();
+              setMessages((messages) => messages);
+            }}
+          >
+            <StopIcon size={14} />
+          </Button>
         ) : (
           <SendButton
             input={input}

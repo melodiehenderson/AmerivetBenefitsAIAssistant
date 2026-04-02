@@ -3,17 +3,18 @@ import { memo } from 'react';
 import type { UseChatHelpers } from '@ai-sdk/react';
 import type { VisibilityType } from './visibility-selector';
 import type { ChatMessage } from '@/lib/types';
+import type { UIMessage } from 'ai';
 
 interface SuggestedActionsProps {
-  chatId: string;
   sendMessage: UseChatHelpers<ChatMessage>['sendMessage'];
-  selectedVisibilityType: VisibilityType;
+  setInput: (input: string) => void;
+  messages: Array<UIMessage>;
 }
 
 function PureSuggestedActions({
-  chatId,
   sendMessage,
-  selectedVisibilityType,
+  setInput,
+  messages,
 }: SuggestedActionsProps) {
   const suggestedActions: never[] = [];
 
@@ -30,10 +31,7 @@ function PureSuggestedActions({
 export const SuggestedActions = memo(
   PureSuggestedActions,
   (prevProps, nextProps) => {
-    if (prevProps.chatId !== nextProps.chatId) return false;
-    if (prevProps.selectedVisibilityType !== nextProps.selectedVisibilityType)
-      return false;
-
+    if (prevProps.messages.length !== nextProps.messages.length) return false;
     return true;
   },
 );
