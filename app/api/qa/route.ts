@@ -56,7 +56,7 @@ function extractAllNumbers(obj: any): number[] {
 
 export const dynamic = 'force-dynamic';
 
-// Enrollment portal URL ΓÇö use env var to avoid hardcoding
+// Enrollment portal URL — use env var to avoid hardcoding
 const ENROLLMENT_PORTAL_URL = process.env.ENROLLMENT_PORTAL_URL || 'https://wd5.myworkday.com/amerivet/login.htmld';
 const HR_PHONE = process.env.HR_PHONE_NUMBER || '888-217-4728';
 
@@ -94,10 +94,10 @@ const US_STATES_MAP: Record<string, string> = {
 
 const US_STATE_CODES = new Set(Object.values(US_STATES_MAP));
 
-// Kaiser HMO is ONLY available in these states ΓÇö DO NOT show it anywhere else
+// Kaiser HMO is ONLY available in these states — DO NOT show it anywhere else
 const KAISER_STATES = new Set(['CA', 'WA', 'OR']);
 
-// City ΓåÆ State resolver: if user provides a city, resolve state automatically (No-Loop Rule)
+// City -> State resolver: if user provides a city, resolve state automatically (No-Loop Rule)
 const CITY_TO_STATE: Record<string, string> = {
   'chicago': 'IL', 'los angeles': 'CA', 'san francisco': 'CA', 'san diego': 'CA',
   'seattle': 'WA', 'portland': 'OR', 'houston': 'TX', 'dallas': 'TX', 'austin': 'TX',
@@ -149,8 +149,8 @@ export function extractStateCode(msg: string, hasAge: boolean): { code: string |
   // IMPORTANT: Do NOT include bare "in" here. It's too common and caused false positives
   // for the state code "IN" (Indiana) in normal sentences.
   const hasLocationCue = /\b(from|live|located|state)\b/i.test(original);
-  const agePlusState = original.match(/\b(1[8-9]|[2-9][0-9])\b\s*[,\-\/\s]+\s*([A-Za-z]{2})\b/);
-  const statePlusAge = original.match(/\b([A-Za-z]{2})\b\s*[,\-\/\s]+\s*\b(1[8-9]|[2-9][0-9])\b/);
+  const agePlusState = original.match(/\b(1[8-9]|[2-9][0-9])\b\s*[,-/\s]+\s*([A-Za-z]{2})\b/);
+  const statePlusAge = original.match(/\b([A-Za-z]{2})\b\s*[,-/\s]+\s*\b(1[8-9]|[2-9][0-9])\b/);
   const adjacentToken = (agePlusState?.[2] || statePlusAge?.[1] || null)?.trim();
 
   const rawTokens = original.split(/[\s,.;:()\[\]{}<>"']+/).filter(Boolean);
@@ -191,7 +191,7 @@ export function extractStateCode(msg: string, hasAge: boolean): { code: string |
     return { code: upper, token: cleaned };
   }
 
-  // 3) City name ΓåÆ State resolution (No-Loop Rule)
+  // 3) City name -> State resolution (No-Loop Rule)
   // If user says "I'm in Chicago" we resolve to IL without asking for state
   for (const [city, stateCode] of Object.entries(CITY_TO_STATE)) {
     const cityRe = new RegExp(`\\b${city.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
@@ -222,18 +222,18 @@ function classifyInput(msg: string) {
   
   const isDemographics = hasAge || hasState;
 
-  // D. NO-PRICING INTENT ΓÇö "no pricing", "no rates", "coverage only", "features only"
+  // D. NO-PRICING INTENT — "no pricing", "no rates", "coverage only", "features only"
   //    When detected, ALL downstream logic must suppress $ signs and cost tables.
   //    Covers: "don't include pricing", "do not include any pricing", "no dollar signs", "without costs"
   //    Also covers: "not asking about pricing", "don't tell me prices", "skip the price", "just features"
-  //    NOTE: Trailing \b removed on partial-word patterns (pricΓåÆpricing, costΓåÆcosts, etc.)
+  //    NOTE: Trailing \b removed on partial-word patterns (pric->pricing, cost->costs, etc.)
   const noPricing = /(?:\bno\s*pric|\bno\s*rates?\b|\bno\s*costs?\b|\bno\s*dollar|\bcoverage\s*only\b|\bfeatures?\s*only\b|\bwithout\s*(?:any\s*)?(?:pric|cost|dollar|rate)|\bskip\s*(?:the\s*)?pric|(?:\bdon'?t|\bdo\s+not)\s*(?:show|tell|include|need|list|mention|give|use|add|display|put)\s*(?:me\s*)?(?:any\s*)?(?:the\s*)?(?:cost|pric|rate|premium|dollar)|\bnot\s+(?:asking|looking)\s+(?:about|for)\s+(?:any\s*)?(?:the\s*)?(?:pric|rate|cost)|\bjust\s+(?:the\s*)?(?:feature|coverage|detail|difference|plan|option|benefit)|\bno\s*\$|\bno\s+price|\bignore\s*(?:the\s*)?(?:pric|cost|rate)|\bforget\s*(?:the\s*)?(?:pric|cost|rate))/i.test(clean);
 
-  // E. FAMILY TIER DETECTION ΓÇö "Spouse and 3 children", "family of 5", "wife and kids", "a spouse and 3 kids"
+  // E. FAMILY TIER DETECTION — "Spouse and 3 children", "family of 5", "wife and kids", "a spouse and 3 kids"
   //    Automatically locks subsequent responses to Employee + Family tier.
   const familyTierSignal = /\b(spouse\s*(?:and|\+|&)\s*(?:\d+\s*)?(?:child|kid)|family\s*of\s*[3-9]|wife\s*and\s*(?:\d+\s*)?kid|husband\s*and\s*(?:\d+\s*)?kid|partner\s*and\s*(?:\d+\s*)?child|(?:my|our)\s*(?:whole\s*)?family|spouse.*children|children.*spouse|have\s+(?:a\s+)?spouse\s+and\s+(?:\d+\s*)?(?:child|kid)|(?:\d+)\s*kids?\s*(?:and|with)\s*(?:a\s+)?spouse|spouse.*(?:\d+)\s*kids?)\b/i.test(clean);
 
-  // F. PPO PLAN REQUEST ΓÇö user explicitly asks for "the PPO plan" (does not exist)
+  // F. PPO PLAN REQUEST — user explicitly asks for "the PPO plan" (does not exist)
   // Exclude: comparison queries like "compare X vs the PPO" should not trigger the PPO-CLARIFICATION intercept
   const asksPPOPlan = /\b(?:ppo\s*plan|the\s*ppo|ppo\s*option|ppo\s*medical|medical\s*ppo)\b/i.test(clean) && !/dental/i.test(clean) && !/\b(?:compare|vs\.?|versus|between|both|vs\s|and\s+the\s+ppo)\b/i.test(clean);
 
@@ -296,11 +296,11 @@ function extractName(msg: string): string | null {
 const ALL_BENEFITS_SHORT = 'Medical, Dental, Vision, Life Insurance, Disability, Critical Illness, Accident/AD&D, and HSA/FSA';
 
 const ALL_BENEFITS_MENU = `Here are all the benefits available to you as an AmeriVet employee:
-- Medical (Standard HSA, Enhanced HSA ΓÇö BCBSTX nationwide PPO network; Kaiser HMO where available)
+- Medical (Standard HSA, Enhanced HSA — BCBSTX nationwide PPO network; Kaiser HMO where available)
 - Dental (BCBSTX Dental PPO)
 - Vision (VSP Vision Plus)
 - Life Insurance (Unum Basic, Unum Voluntary Term, Allstate Whole Life)
-- Disability (Short-Term and Long-Term ΓÇö Unum)
+- Disability (Short-Term and Long-Term — Unum)
 - Critical Illness (Allstate)
 - Accident/AD&D (Allstate)
 - HSA/FSA Accounts`;
@@ -401,7 +401,7 @@ function getRemainingBenefits(decisions: Record<string, any>): string[] {
 
 function toPlainAssistantText(text: string): string {
   return text
-    .replace(/[Γ£¿≡ƒÆí≡ƒôï≡ƒô¥≡ƒÄëΓä╣∩╕Å≡ƒæï≡ƒÿèΓÜá∩╕Å]/g, '')
+    .replace(/[]/g, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
@@ -425,13 +425,13 @@ const L1_FAQ: L1FAQEntry[] = [
     answer: () => `The AmeriVet benefits enrollment portal is Workday: ${ENROLLMENT_PORTAL_URL}\n\nYou can also call HR at ${HR_PHONE} for guided enrollment support.`,
   },
   {
-    // Rightway ΓÇö explicit negative answer (AmeriVet does NOT use Rightway)
+    // Rightway — explicit negative answer (AmeriVet does NOT use Rightway)
     // Catch-all: ANY mention of "rightway" in a query gets this definitive answer.
     patterns: [/\brightway\b/i],
     answer: () => `Rightway is not an AmeriVet benefits resource and is not part of the AmeriVet benefits package.\n\nFor benefits navigation support, please contact AmeriVet HR/Benefits at ${HR_PHONE} or visit ${ENROLLMENT_PORTAL_URL}.`,
   },
   {
-   // Kaiser availability question ΓÇö any phrasing asking where Kaiser is available
+   // Kaiser availability question — any phrasing asking where Kaiser is available
   patterns: [/\bkaiser\b.*\b(only|available|states?|where|which\s+states?|limited|regions?)\b|\b(only|available|states?|where|which\s+states?|limited|regions?)\b.*\bkaiser\b/i],
   answer: () => `Kaiser HMO is only available in California (CA), Washington (WA), and Oregon (OR) through AmeriVet. It is not available in any other state. In all other states, your medical options are Standard HSA and Enhanced HSA (both through BCBS of Texas, nationwide PPO network).`,
 },
@@ -460,7 +460,7 @@ function checkL1FAQ(query: string, session: any): string | null {
 
 function shouldUseCategoryExplorationIntercept(query: string, lowerQuery: string, intentDomain: IntentDomain): boolean {
   if (intentDomain === 'policy') return false;
-  // Raise the character limit ΓÇö users often embed category mentions in natural
+  // Raise the character limit — users often embed category mentions in natural
   // sentences (e.g. "okay what about dental insurance, what is available to me there").
   // 150 chars accommodates conversational phrasing while still excluding multi-paragraph queries.
   if (query.length > 150) return false;
@@ -482,7 +482,7 @@ function shouldUseCategoryExplorationIntercept(query: string, lowerQuery: string
   const lightExplore = /^(tell\s+me\s+about|show\s+me|overview\s+of|explain)\s+(medical|dental|vision|life(?:\s+insurance)?|disability|hsa|fsa|critical(?:\s+illness)?|accident|supplemental|benefits)\b/i;
   // Conversational exploration: "what about dental", "let's look at medical",
   // "what is available for life insurance", "I want to know about dental", etc.
-  // These are NOT comparison/recommendation requests ΓÇö just category exploration.
+  // These are NOT comparison/recommendation requests — just category exploration.
   // Allow 0-2 filler words between "let's" and the verb (e.g. "let's just talk about",
   // "let's now go over", "let's quickly explore") so conversational topic-switches are caught.
   const conversationalExplore = /\b(?:what\s+about|let'?s\s+(?:\w+\s+){0,2}(?:look\s+at|talk\s+about|go\s+(?:over|through)|explore|discuss|review|see)|what(?:'s|\s+is)\s+available\s+(?:for|in|under|with)|i\s+want\s+to\s+(?:know|learn|see|hear)\s+about|how\s+about|talk\s+about|interested\s+in)\s+(?:the\s+)?(?:my\s+)?(medical|dental|vision|life(?:\s+insurance)?|disability|hsa|fsa|critical(?:\s+illness)?|accident|supplemental|benefits)\b/i;
@@ -494,7 +494,7 @@ function shouldUseCategoryExplorationIntercept(query: string, lowerQuery: string
 }
 
 function shouldUsePlanPricingIntercept(query: string, lowerQuery: string): boolean {
-  // Long queries likely carry personal context ΓÇö prefer RAG + LLM.
+  // Long queries likely carry personal context — prefer RAG + LLM.
   if (query.length > 120) return false;
 
   // Personalised or contextual requests should go through the full pipeline.
@@ -502,21 +502,21 @@ function shouldUsePlanPricingIntercept(query: string, lowerQuery: string): boole
     return false;
   }
 
-  // Short + direct plan reference + pricing keyword ΓåÆ deterministic is safe.
+  // Short + direct plan reference + pricing keyword -> deterministic is safe.
   return true;
 }
 
 function shouldUseMedicalComparisonIntercept(query: string, lowerQuery: string, intentDomain: IntentDomain): boolean {
   if (intentDomain === 'policy') return false;
-  // Long queries likely include personal context ΓÇö prefer RAG + LLM.
+  // Long queries likely include personal context — prefer RAG + LLM.
   if (query.length > 120) return false;
 
-  // Any hint of personal context or recommendation intent ΓåÆ RAG.
+  // Any hint of personal context or recommendation intent -> RAG.
   if (/\b(my\s+(family|situation|state|needs?|usage|health|age)|for\s+me|for\s+my|if\s+i|what\s+should\s+i|which\s+is\s+better|recommend|best\s+for|based\s+on|given\s+|specific|i\s+have|i\s+am|scenario)\b/i.test(lowerQuery)) {
     return false;
   }
 
-  // Generic list/overview without personal context ΓåÆ deterministic is safe.
+  // Generic list/overview without personal context -> deterministic is safe.
   return true;
 }
 
@@ -551,11 +551,11 @@ export function extractReasonedResponse(rawText: string, debugLog = false): stri
     const afterTag = rawText.slice(responseIdx).replace(/\[RESPONSE\]\s*:?\s*/i, '');
     return afterTag.trim();
   }
-  return rawText; // model omitted tags ΓÇö return untouched
+  return rawText; // model omitted tags — return untouched
 }
 
 /**
- * Strip <thought>ΓÇª</thought> Chain-of-Thought blocks from LLM output.
+ * Strip <thought>…</thought> Chain-of-Thought blocks from LLM output.
  * The thought content is logged for debugging but NEVER shown to the user.
  * Exported so unit tests can verify stripping behaviour.
  */
@@ -576,7 +576,7 @@ export function stripThoughtBlock(text: string, debugLog = false): string {
 /**
  * Extract monthly salary (in dollars) from a free-text user message.
  * Handles: "$5,000/month" | "$5k/month" | "$60k/year" | "earn 5000 monthly" | "$60,000 annually"
- * Annual amounts are converted to monthly (├╖ 12, rounded).
+ * Annual amounts are converted to monthly (/ 12, rounded).
  * Returns null if no salary found or value is outside a plausible employee range.
  */
 export function extractSalaryFromMessage(msg: string): number | null {
@@ -625,7 +625,7 @@ function buildGroundedContext(chunks: Chunk[], rrfScores: number[]): { context: 
 
   for (let i = 0; i < chunks.length; i++) {
     const score = rrfScores[i] ?? 0;
-    if (score < scoreThreshold) continue; // low-relevance tail ΓÇö skip
+    if (score < scoreThreshold) continue; // low-relevance tail — skip
 
     const chunk = chunks[i];
     const fingerprint = chunk.content.slice(0, 120).trim();
@@ -634,7 +634,7 @@ function buildGroundedContext(chunks: Chunk[], rrfScores: number[]): { context: 
 
     const category = (chunk.metadata as any)?.category || '';
     const title    = chunk.title      || 'Benefit Document';
-    const section  = chunk.sectionPath ? ` ΓÇö ${chunk.sectionPath}` : '';
+    const section  = chunk.sectionPath ? ` — ${chunk.sectionPath}` : '';
     const header   = `BENEFIT DOCUMENT${category ? ` (${category})` : ''}: ${title}${section}`;
     const body     = chunk.content.length > MAX_CHARS_PER_CHUNK
       ? chunk.content.slice(0, MAX_CHARS_PER_CHUNK) + ' ...'
@@ -657,7 +657,7 @@ function buildGroundedContext(chunks: Chunk[], rrfScores: number[]): { context: 
 
 /**
  * Score how well the generated answer addresses the original query.
- * Returns a 0ΓÇô1 composite from three signals:  
+ * Returns a 0–1 composite from three signals:  
  *  - coverage: fraction of meaningful query tokens found in the answer
  *  - specificity: presence of plan names, dollar amounts, or carrier names
  *  - length: proportional penalty if answer is too short or too long
@@ -687,7 +687,7 @@ export function auditDollarGrounding(
   const warnings: string[] = [];
   const chunkText = chunks.map(c => c.content).join(' ');
   // Sentences with computation language are exempt from the grounding check
-  const mathSentenceRe = /├╖|├ù|4\.33|weekly\s+(?:pay|benefit|base)|std\s+(?:pay|benefit|weekly)|60%\s+of|salary.*(?:├╖|├ù|\/\s*4)|annually|per\s+year|annual\s+(?:premium|cost|total)/i;
+  const mathSentenceRe = /\/|\*|4\.33|weekly\s+(?:pay|benefit|base)|std\s+(?:pay|benefit|weekly)|60%\s+of|salary.*(?:\/|\*|\/\s*4)|annually|per\s+year|annual\s+(?:premium|cost|total)/i;
   // Split on sentence-ending punctuation, preserving the delimiter
   const sentences = answer.split(/(?<=[.!?\n])\s+/);
   const audited = sentences.map(sentence => {
@@ -753,7 +753,7 @@ export function detectIntentDomain(lowerQuery: string): IntentDomain {
 }
 
 // ============================================================================
-// 2. SYSTEM PROMPT ΓÇö "ABSOLUTE TRUTH" (Data-Sovereign Benefits Engine)
+// 2. SYSTEM PROMPT — "ABSOLUTE TRUTH" (Data-Sovereign Benefits Engine)
 // ============================================================================
 // BENEFIT_CONSTRAINTS constant to enforce structured output and persona.
 const BENEFIT_CONSTRAINTS = `
@@ -776,16 +776,12 @@ Senior Benefits Logic Engine. You are a data-to-table converter.
 `;
 
 function buildSystemPrompt(session: any): string {
-    // FORMATTING MANDATE (inject here)
-    const formattingDirective = `
-FORMATTING RULES (MANDATORY):
-1. TABLES: Use GFM markdown tables for ALL plan comparisons and feature lists.
-2. STRUCTURE: Use **Bold** for plan names and key figures. Use ### for section headers.
-3. LISTS: Use bullet points for features. Never use numbered prose like "1. Plan: detail".
-4. BREVITY: Max 3 sentences per paragraph.
-5. NO PARROT: Never restate the user's question.
+  const formattingDirective = `
+CRITICAL INSTRUCTIONS:
+1. NO PARROTING: Never repeat the user's question. Start your response immediately with the data or a 1-sentence summary in your own words.
+2. TABLE MANDATE: You are a table-generation engine. Use Markdown tables for all plan comparisons and feature lists. DO NOT use numbered prose.
+3. CONCISENESS: Max 3 sentences for any non-table text.
 `;
-    // You may want to inject this directive into the returned prompt string if not already present.
   // === ANNUAL STATUTORY LIMITS (IMMUTABLE) ===
   const irsBlock = `\nANNUAL STATUTORY LIMITS (IMMUTABLE)\n-----------------------------------\nHSA Self-Only Limit: $${IRS_2026.HSA_SELF_ONLY}\nHSA Family Limit: $${IRS_2026.HSA_FAMILY}\nHSA Catch-Up (age ${IRS_2026.HSA_CATCHUP_AGE}+): +$${IRS_2026.HSA_CATCHUP_ADDITIONAL}\nFSA General Purpose Max: $${IRS_2026.FSA_GENERAL_MAX}\nFSA Limited Purpose Max: $${IRS_2026.FSA_LIMITED_MAX}\nFSA Rollover Max: $${IRS_2026.FSA_ROLLOVER_MAX}\nDependent Care FSA Max: $${IRS_2026.DEPENDENT_CARE_FSA_MAX}\nRULE: Use ONLY these numbers for IRS limits. Never use training knowledge.\n-----------------------------------\n\nIRS_2026 JSON:\n${JSON.stringify(IRS_2026, null, 2)}\n-----------------------------------`;
 
@@ -826,7 +822,7 @@ FORMATTING RULES (MANDATORY):
     const notCoveredRule = `
   - **Not Covered Tagging**: If a feature or benefit is not available or a value is null/undefined in the catalog, you MUST represent it in any generated Markdown table with the specific string '⚠️ Not Covered'.`;
 
-  return `${formattingDirective}
+  return `
 ${irsBlock}
 <Session>
   Name: ${session.userName || 'Guest'} | State: ${userState || 'Unknown'} | Age: ${session.userAge || 'Unknown'}
@@ -836,16 +832,16 @@ ${irsBlock}
   Remaining: ${remainingText}
 </Session>
 
-<Role>AmeriVet Senior Benefits Advisor ΓÇö data-sovereign, zero-hallucination</Role>
+<Role>AmeriVet Senior Benefits Advisor — data-sovereign, zero-hallucination, expert in IRS rules for HSA/FSA conflicts.</Role>
 
 <Reasoning>
 Before answering:
-1. **Self-Ask**: Identify hidden sub-questions (FSA type? IRS eligibility? STD math?)
-2. **CoT**: Step through policy rules. Math: Monthly ├╖ 4.33 = Weekly; Weekly ├ù 0.60 = STD pay
-3. **ReAct**: If data needed, search IMMUTABLE CATALOG below. Never fabricate.
+1.  **Self-Ask**: Identify hidden sub-questions. For spousal insurance changes, the CRITICAL sub-question is the "HSA/FSA dual-enrollment conflict" (IRS Publication 969). Does the spouse's new plan have a general-purpose FSA? This is the #1 point to address. Other sub-questions: coordination of benefits, QLE opportunity.
+2.  **CoT**: Step through policy rules. Math: Monthly / 4.33 = Weekly; Weekly * 0.60 = STD pay
+3.  **ReAct**: If data needed, search IMMUTABLE CATALOG below. Never fabricate.
 
 Output format:
-[REASONING]: Sub-questions ΓåÆ CoT steps ΓåÆ ReAct observations
+[REASONING]: Sub-questions -> CoT steps -> ReAct observations
 [RESPONSE]: Final conversational answer (no [Source N] citations, no <thought> tags)
 </Reasoning>
 
@@ -865,15 +861,15 @@ NO-HALLUCINATION:
 - Age-banded products: "Log in at ${ENROLLMENT_PORTAL_URL} for your personalized rate"
 
 FORBIDDEN:
-- Rightway ΓÇö NOT an AmeriVet resource
-- Phone (305) 851-7310 ΓÇö NOT an AmeriVet number
-- Medical "PPO plan" ΓÇö no standalone PPO exists. Standard/Enhanced HSA use PPO network.
-- DHMO dental ΓÇö AmeriVet only offers BCBSTX Dental PPO
+- Rightway — NOT an AmeriVet resource
+- Phone (305) 851-7310 — NOT an AmeriVet number
+- Medical "PPO plan" — no standalone PPO exists. Standard/Enhanced HSA use PPO network.
+- DHMO dental — AmeriVet only offers BCBSTX Dental PPO
 
 NO-LOOP: You have Name=${session.userName || '?'}, Age=${session.userAge || '?'}, State=${userState || '?'}. NEVER re-ask.
 
 COST FORMAT (when pricing allowed):
-- Always show: "$X.XX/month" ΓÇö monthly is canonical
+- Always show: "$X.XX/month" — monthly is canonical
 - Biweekly/annual ONLY if explicitly requested
 - Round to 2 decimal places, use exact catalog numbers
 ${policyModeHint}${noPricingHint}
@@ -899,7 +895,9 @@ ${catalog}
 
 ${BENEFIT_CONSTRAINTS}
 
-Answer directly, accurately, ONLY from the catalog above. When asked about any benefit, retrieve from the catalog and answer directly ΓÇö do not say you cannot answer if the information is in the catalog. Generate follow-up suggestions only from: compare plans, explore different benefit, see pricing for different tier. Never suggest looking up age-banded rates ΓÇö always say to visit enrollment portal.`;
+Answer directly, accurately, ONLY from the catalog above. When asked about any benefit, retrieve from the catalog and answer directly ΓÇö do not say you cannot answer if the information is in the catalog. Generate follow-up suggestions only from: compare plans, explore different benefit, see pricing for different tier. Never suggest looking up age-banded rates ΓÇö always say to visit enrollment portal.
+
+${formattingDirective}`;
 }
 
 // ============================================================================
@@ -2006,47 +2004,6 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
         session.lastBotMessage = plainMsg;
         await updateSession(sessionId, session);
         return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'orthodontics' } });
-    }
-
-    // ========================================================================
-    // DENTAL DHMO CLARIFICATION INTERCEPT (Deterministic)
-    // ========================================================================
-    // AmeriVet does NOT offer a DHMO plan. Only BCBSTX Dental PPO (DPPO).
-    // If user asks about DHMO or compares DPPO vs DHMO, clarify and provide DPPO details.
-    const dentalDhmoAsked = /\bdhmo\b/i.test(lowerQuery);
-    const dentalComparisonAsked = /\b(?:d(?:ifference|ppo)\s*(?:vs?\.?|versus|between|and|compared)|compare.*dental|dental.*compare|explain.*difference.*dental|dental.*difference)\b/i.test(lowerQuery) && /\bdental\b/i.test(lowerQuery);
-    if (dentalDhmoAsked || dentalComparisonAsked) {
-      logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] DENTAL-DHMO-CLARIFICATION (dhmo=${dentalDhmoAsked} comparison=${dentalComparisonAsked})`);
-      const dental = pricingUtils.getDentalPlanDetails();
-      let msg = '';
-      if (dentalDhmoAsked) {
-        msg = `Important clarification: AmeriVet does **not** offer a DHMO (Dental Health Maintenance Organization) plan. Your dental benefit is the **${dental.name}** through ${dental.provider}.\n\n`;
-        msg += `Here's what the ${dental.name} provides:\n`;
-      } else {
-        // User asked about dental plans without mentioning DHMO ΓÇö give a straight overview
-        msg = `AmeriVet offers one dental plan: the **${dental.name}** (${dental.provider}).\n\n`;
-        msg += `Here's what it covers:\n`;
-      }
-      msg += `- Preventive care (cleanings, exams, X-rays): Covered at 100%\n`;
-      msg += `- Basic services (fillings, extractions): 80/20 coinsurance\n`;
-      msg += `- Major services (crowns, bridges): 50/50 coinsurance\n`;
-      msg += `- Orthodontia: $${dental.orthoCopay} copay\n`;
-      msg += `- Deductible: $${dental.deductible} individual / $${dental.familyDeductible} family\n`;
-      msg += `- Annual maximum: $${pricingUtils.formatMoney(dental.outOfPocketMax)}\n`;
-      msg += `- Network: Nationwide PPO ΓÇö you can see any dentist, but in-network saves more\n`;
-      if (!session.noPricingMode) {
-        msg += `\nMonthly premiums:\n`;
-        msg += `- Employee Only: $${pricingUtils.formatMoney(dental.tiers.employeeOnly)}/month\n`;
-        msg += `- Employee + Spouse: $${pricingUtils.formatMoney(dental.tiers.employeeSpouse)}/month\n`;
-        msg += `- Employee + Child(ren): $${pricingUtils.formatMoney(dental.tiers.employeeChildren)}/month\n`;
-        msg += `- Employee + Family: $${pricingUtils.formatMoney(dental.tiers.employeeFamily)}/month\n`;
-      }
-      msg += `\nWould you like to explore another benefit, or do you have questions about dental coverage details?`;
-      const plainMsg = session.noPricingMode ? stripPricingDetails(toPlainAssistantText(msg)) : toPlainAssistantText(msg);
-      session.currentTopic = 'Dental';
-      session.lastBotMessage = plainMsg;
-      await updateSession(sessionId, session);
-      return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'dental-dhmo-clarification' } });
     }
 
     // ========================================================================

@@ -103,9 +103,7 @@ function PureMultimodalInput({
     setInput(event.target.value);
     const node = textareaRef.current;
     if (node) {
-      node.style.height = 'auto'; // Reset height to calculate correctly
-      // Calculate height: scrollHeight is the content height
-      // 132px is approximately 5-6 lines depending on your line-height
+      node.style.height = 'auto';
       const nextHeight = Math.min(node.scrollHeight + 2, 132);
       node.style.height = `${nextHeight}px`;
     }
@@ -269,14 +267,13 @@ function PureMultimodalInput({
         placeholder="Ask about your benefits..."
         value={input}
         onChange={handleInput}
-        // Added scrollbar-hide or overflow-y-auto logic
-        className="w-full resize-none px-4 py-3 border rounded-lg focus:outline-none bg-transparent"
+        className="w-full resize-none overflow-y-auto px-4 py-3 border rounded-lg focus:outline-none bg-transparent"
         rows={1}
         autoFocus
-        style={{ 
-          minHeight: '46px', 
-          maxHeight: '132px', // Hard limit for the box
-          overflowY: textareaRef.current && textareaRef.current.scrollHeight > 132 ? 'auto' : 'hidden' 
+        style={{
+          minHeight: '46px',
+          maxHeight: '132px',
+          overflowY: textareaRef.current && textareaRef.current.scrollHeight > 132 ? 'auto' : 'hidden',
         }}
         onKeyDown={(event) => {
           if (
