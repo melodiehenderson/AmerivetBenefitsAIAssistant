@@ -633,7 +633,6 @@ export function shouldWarmupCache(
     case "hourly":
       return elapsed > 60 * 60 * 1000;
     case "daily":
-    case "daily":
       return elapsed > 24 * 60 * 60 * 1000;
     default:
       return false;
