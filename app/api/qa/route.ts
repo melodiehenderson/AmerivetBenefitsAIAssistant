@@ -29,6 +29,7 @@ import {
 import { detectTextualHallucination } from '@/lib/rag/validation';
 import { verifyNumericalIntegrity } from '@/lib/rag/grounding-audit';
 import { pipelineLogger, createTrace } from '@/lib/services/pipeline-logger';
+import { buildPersonaDirective, detectPersona, type ResponsePersona } from '@/lib/response-persona';
 
 import { IRS_2026 } from '@/lib/data/irs-limits-2026';
 import {
@@ -824,14 +825,14 @@ function digestIntent(
 // BENEFIT_CONSTRAINTS constant to enforce structured output and persona.
 const BENEFIT_CONSTRAINTS = `
 ## ROLE
-Senior Benefits Logic Engine. You are a data-to-table converter.
+Senior Benefits Advisor. Stay accurate and adapt the presentation to the user's intent and persona.
 
-## FORMATTING RULES (STRICT)
-1. **PARAGRAPH BAN**: You are forbidden from using bulleted lists or paragraphs to show plan details. 
-2. **TABLE MANDATE**: Use Markdown Tables (| Feature | Plan |) for all comparisons and plan overviews.
-3. **NO FLUFF**: Start your response immediately with the data. Do not say "Here is the information."
-4. **NOT COVERED**: Use '⚠️ Not Covered' for any null or missing catalog values.
-5. **FORCE TABLE**: You are forbidden from using paragraphs to describe plan features. If the user asks for a comparison or overview, you MUST output a Markdown table immediately.
+## FORMATTING RULES (ADAPTIVE)
+1. Use tables when they clarify comparisons, numeric tradeoffs, or plan differences.
+2. Use short narrative blocks when the user is asking for explanation, guidance, or reassurance.
+3. Start with the most useful answer, not a generic opener.
+4. Use '⚠️ Not Covered' for any null or missing catalog values.
+5. Keep structure aligned to the active persona and the user's intent.
 
 ## OUTPUT STRUCTURE
 [REASONING]: <Internal CoT>
@@ -841,15 +842,8 @@ Senior Benefits Logic Engine. You are a data-to-table converter.
 ...
 `;
 
-function buildSystemPrompt(session: any): string {
-  const formattingDirective = `
-CRITICAL INSTRUCTIONS:
-1. NO PARROTING: Never repeat the user's question. Start your response immediately with the data or a 1-sentence summary in your own words.
-2. TABLE MANDATE: You are a table-generation engine. Use Markdown tables for all plan comparisons and feature lists. DO NOT use numbered prose.
-3. CONCISENESS: Max 3 sentences for any non-table text.
-4. STEP-BY-STEP ARCHITECTURE: Internally run Self-Ask -> CoT -> ReAct before finalizing the answer.
-5. REGIONAL MEDICAL CHECK: For state-specific medical options/comparisons, enforce regional availability in table form. Oregon and Georgia must include Kaiser as available; non-Kaiser states may show Kaiser as '⚠️ Not Covered' only when comparison clarity requires it.
-`;
+function buildSystemPrompt(session: any, persona: ResponsePersona): string {
+  const formattingDirective = buildPersonaDirective(persona);
   // === ANNUAL STATUTORY LIMITS (IMMUTABLE) ===
   const irsBlock = `\nANNUAL STATUTORY LIMITS (IMMUTABLE)\n-----------------------------------\nHSA Self-Only Limit: $${IRS_2026.HSA_SELF_ONLY}\nHSA Family Limit: $${IRS_2026.HSA_FAMILY}\nHSA Catch-Up (age ${IRS_2026.HSA_CATCHUP_AGE}+): +$${IRS_2026.HSA_CATCHUP_ADDITIONAL}\nFSA General Purpose Max: $${IRS_2026.FSA_GENERAL_MAX}\nFSA Limited Purpose Max: $${IRS_2026.FSA_LIMITED_MAX}\nFSA Rollover Max: $${IRS_2026.FSA_ROLLOVER_MAX}\nDependent Care FSA Max: $${IRS_2026.DEPENDENT_CARE_FSA_MAX}\nRULE: Use ONLY these numbers for IRS limits. Never use training knowledge.\n-----------------------------------\n\nIRS_2026 JSON:\n${JSON.stringify(IRS_2026, null, 2)}\n-----------------------------------`;
 
@@ -949,11 +943,11 @@ Pro tip: 80% Voluntary Term for protection, 20% Whole Life for permanent cash va
 </Life_Insurance_Guidance>
 
 <Response_Style>
-- Use markdown tables for ALL plan data, features, premiums, deductibles.
-- Use bullet points for feature lists and steps.
-- Use bold for plan names and key figures.
-- Keep prose to 1-2 sentences max. Let the table carry the data.
-- One follow-up suggestion at end.
+- Match the active persona: narrative for explorer/guide, scannable for analyzer, step-by-step for urgent.
+- Use tables when comparing plans or numbers; otherwise prefer concise prose or short lists.
+- Keep the answer readable on first pass. Do not force a table if it makes the response worse.
+- Use bold sparingly for key figures or plan names.
+- One follow-up suggestion at end when it is helpful.
 </Response_Style>
 
 ${session.lastBotMessage ? `<Previous_Response>"${session.lastBotMessage.slice(0, 300)}${session.lastBotMessage.length > 300 ? '...' : ''}"</Previous_Response>\n` : ''}
@@ -2598,12 +2592,28 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
     // Score-filtered, deduplicated, token-budgeted context ΓÇö see buildGroundedContext() for rationale
     const { context: contextText, stats: ctxStats } = buildGroundedContext(result.chunks, result.scores?.rrf || []);
     
-    const systemPrompt = buildSystemPrompt(session);
-    
     // Build conversation history for context (last 2 exchanges)
     const recentHistory = (session.messages || []).slice(-4)
         .map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
         .join('\n');
+
+    const personaState = detectPersona(query, (session.messages || []).slice(-4).map(m => m.content), session.activePersona);
+    if (session.activePersona !== personaState.persona || !session.personaUpdatedAt) {
+      session.activePersona = personaState.persona;
+      session.personaUpdatedAt = Date.now();
+      session.personaHistory = [
+        ...(session.personaHistory || []),
+        {
+          persona: personaState.persona,
+          switchedAt: Date.now(),
+          reason: personaState.reason,
+          query,
+        },
+      ].slice(-6);
+      await updateSession(sessionId, session);
+    }
+
+    const systemPrompt = buildSystemPrompt(session, personaState.persona);
 
     // Confidence-based hint (minor ΓÇö the system prompt already enforces catalog-only answers)
     const confidenceHint = useDisclaimer
@@ -2648,6 +2658,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
 
     const userMessage = `Topic: ${digestedIntent.topic}
   Intent: ${digestedIntent.intent}
+  Persona: ${personaState.persona}
   Guardrail: ${digestedIntent.guardrail}
   ${digestedIntent.regionalCheck}
 
