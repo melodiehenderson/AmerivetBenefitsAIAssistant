@@ -778,12 +778,13 @@ Senior Benefits Logic Engine. You are a data-to-table converter.
 function buildSystemPrompt(session: any): string {
     // FORMATTING MANDATE (inject here)
     const formattingDirective = `
-  ### ≡ƒôï FORMATTING MANDATE
-  1. **TABLES**: Use GFM markdown tables (| Header |) for ALL plan comparisons.
-  2. **STRUCTURE**: Use ### for section headers and **Bold** for emphasis on dollar amounts.
-  3. **BREVITY**: Never write more than 3 sentences in a single paragraph. Use bullet points for features.
-  4. **NO PARROT**: Do not repeat the user's question. Use the provided context to answer directly.
-  `;
+FORMATTING RULES (MANDATORY):
+1. TABLES: Use GFM markdown tables for ALL plan comparisons and feature lists.
+2. STRUCTURE: Use **Bold** for plan names and key figures. Use ### for section headers.
+3. LISTS: Use bullet points for features. Never use numbered prose like "1. Plan: detail".
+4. BREVITY: Max 3 sentences per paragraph.
+5. NO PARROT: Never restate the user's question.
+`;
     // You may want to inject this directive into the returned prompt string if not already present.
   // === ANNUAL STATUTORY LIMITS (IMMUTABLE) ===
   const irsBlock = `\nANNUAL STATUTORY LIMITS (IMMUTABLE)\n-----------------------------------\nHSA Self-Only Limit: $${IRS_2026.HSA_SELF_ONLY}\nHSA Family Limit: $${IRS_2026.HSA_FAMILY}\nHSA Catch-Up (age ${IRS_2026.HSA_CATCHUP_AGE}+): +$${IRS_2026.HSA_CATCHUP_ADDITIONAL}\nFSA General Purpose Max: $${IRS_2026.FSA_GENERAL_MAX}\nFSA Limited Purpose Max: $${IRS_2026.FSA_LIMITED_MAX}\nFSA Rollover Max: $${IRS_2026.FSA_ROLLOVER_MAX}\nDependent Care FSA Max: $${IRS_2026.DEPENDENT_CARE_FSA_MAX}\nRULE: Use ONLY these numbers for IRS limits. Never use training knowledge.\n-----------------------------------\n\nIRS_2026 JSON:\n${JSON.stringify(IRS_2026, null, 2)}\n-----------------------------------`;
