@@ -765,6 +765,7 @@ Senior Benefits Logic Engine. You are a data-to-table converter.
 2. **TABLE MANDATE**: Use Markdown Tables (| Feature | Plan |) for all comparisons and plan overviews.
 3. **NO FLUFF**: Start your response immediately with the data. Do not say "Here is the information."
 4. **NOT COVERED**: Use '⚠️ Not Covered' for any null or missing catalog values.
+5. **FORCE TABLE**: You are forbidden from using paragraphs to describe plan features. If the user asks for a comparison or overview, you MUST output a Markdown table immediately.
 
 ## OUTPUT STRUCTURE
 [REASONING]: <Internal CoT>
@@ -777,7 +778,6 @@ Senior Benefits Logic Engine. You are a data-to-table converter.
 function buildSystemPrompt(session: any): string {
     // FORMATTING MANDATE (inject here)
     const formattingDirective = `
-  ${BENEFIT_CONSTRAINTS}
   ### ≡ƒôï FORMATTING MANDATE
   1. **TABLES**: Use GFM markdown tables (| Header |) for ALL plan comparisons.
   2. **STRUCTURE**: Use ### for section headers and **Bold** for emphasis on dollar amounts.
@@ -896,6 +896,8 @@ ${session.lastBotMessage ? `<Previous_Response>"${session.lastBotMessage.slice(0
 <IMMUTABLE_CATALOG STATE="${userState || 'ALL'}">
 ${catalog}
 </IMMUTABLE_CATALOG>
+
+${BENEFIT_CONSTRAINTS}
 
 Answer directly, accurately, ONLY from the catalog above. When asked about any benefit, retrieve from the catalog and answer directly ΓÇö do not say you cannot answer if the information is in the catalog. Generate follow-up suggestions only from: compare plans, explore different benefit, see pricing for different tier. Never suggest looking up age-banded rates ΓÇö always say to visit enrollment portal.`;
 }
