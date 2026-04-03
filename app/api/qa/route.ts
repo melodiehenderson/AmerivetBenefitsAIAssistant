@@ -400,9 +400,63 @@ function getRemainingBenefits(decisions: Record<string, any>): string[] {
   return allCategories.filter(c => !decisions[c]);
 }
 
+function normalizeMojibake(text: string): string {
+  const replacements: Array<[string, string]> = [
+    ['ΓÇö', '-'],
+    ['ΓÇô', '-'],
+    ['ΓÇÖ', "'"],
+    ['ΓÇ£', '"'],
+    ['ΓÇ¥', '"'],
+    ['ΓÇó', '-'],
+    ['ΓòÉ', ''],
+    ['ΓöÇ', ''],
+    ['Γû╢', ''],
+    ['ΓåÆ', '->'],
+    ['├╖', '/'],
+    ['├ù', 'x'],
+  ];
+
+  let out = text;
+  for (const [bad, good] of replacements) {
+    out = out.split(bad).join(good);
+  }
+  return out;
+}
+
+function isLikelyGarbledInput(query: string): boolean {
+  const normalized = query.toLowerCase().trim();
+  if (normalized.length < 24) return false;
+
+  const knownIntent = /\b(health|medical|dental|vision|life|hsa|fsa|kaiser|benefit|benefits|premium|cost|compare|plan|family|spouse|child|enroll|enrollment|workday|hr)\b/i.test(normalized);
+  if (knownIntent) return false;
+
+  const compact = normalized.replace(/\s+/g, '');
+  if (compact.length < 20) return false;
+
+  const alphaCount = (compact.match(/[a-z]/g) || []).length;
+  const punctCount = (compact.match(/[^a-z0-9]/g) || []).length;
+  const vowels = (compact.match(/[aeiou]/g) || []).length;
+  const vowelRatio = alphaCount > 0 ? vowels / alphaCount : 0;
+  const punctRatio = punctCount / Math.max(compact.length, 1);
+
+  const tokens = normalized.split(/\s+/).filter(t => t.length >= 4);
+  const noVowelTokens = tokens.filter(t => !/[aeiou]/.test(t)).length;
+  const weirdTokenRatio = tokens.length > 0 ? noVowelTokens / tokens.length : 0;
+
+  const keyboardMash = /(\w*[bcdfghjklmnpqrstvwxyz]{6,}\w*)/i.test(normalized);
+
+  return (
+    punctRatio > 0.22 ||
+    (vowelRatio < 0.24 && keyboardMash) ||
+    (tokens.length >= 4 && weirdTokenRatio >= 0.5)
+  );
+}
+
 function toPlainAssistantText(text: string): string {
-  return text
-    .replace(/[]/g, '')
+  const normalized = normalizeMojibake(text)
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '');
+
+  return normalized
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
@@ -1176,6 +1230,22 @@ export async function POST(req: NextRequest) {
 
     const session = await getOrCreateSession(sessionId);
     session.turn = (session.turn ?? 0) + 1;
+
+    if (isLikelyGarbledInput(query)) {
+      logger.info(`[REQ:${reqId}][STEP-1d GUARD] Garbled input detected`);
+      const nameRef = session.userName && session.userName !== 'Guest' ? session.userName : 'there';
+      const msg = toPlainAssistantText(
+        `I could not parse that message, ${nameRef}. Please rephrase in one sentence and tell me the benefit topic you want (medical, dental, vision, or life).`
+      );
+      session.lastBotMessage = msg;
+      await updateSession(sessionId, session);
+      return NextResponse.json({
+        answer: msg,
+        tier: 'L1',
+        sessionContext: buildSessionContext(session),
+        metadata: { intercept: 'garbled-input' },
+      });
+    }
 
     // ΓöÇΓöÇ Pipeline trace: begin ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
     const pipelineTrace = createTrace(reqId, sessionId, query, session);
