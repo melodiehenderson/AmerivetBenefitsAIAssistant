@@ -29,6 +29,11 @@ export interface CaseResult {
   query: string;
   recallAt5: number;
   mrr: number;
+  precision: number;
+  recall: number;
+  f1: number;
+  accuracy: number;
+  hallucinationDetected: boolean;
   mustContainPass: boolean;
   mustNotContainPass: boolean;
   failedMustContain: string[];
@@ -38,10 +43,52 @@ export interface CaseResult {
 export interface EvalReport {
   avgRecallAt5: number;
   avgMRR: number;
+  avgPrecision: number;
+  avgRecall: number;
+  avgF1: number;
+  avgAccuracy: number;
+  hallucinationRate: number;
   mustContainPassRate: number;
   mustNotContainPassRate: number;
   totalCases: number;
   cases: CaseResult[];
+}
+
+function normalizeTokens(text: string): string[] {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(t => t.length >= 3);
+}
+
+/**
+ * Token-overlap precision/recall/F1 between expected answer and actual response.
+ */
+export function computeTextF1(
+  expectedAnswer: string,
+  response: string
+): { precision: number; recall: number; f1: number } {
+  const expected = normalizeTokens(expectedAnswer);
+  const predicted = normalizeTokens(response);
+
+  if (expected.length === 0 || predicted.length === 0) {
+    return { precision: 0, recall: 0, f1: 0 };
+  }
+
+  const expectedSet = new Set(expected);
+  const predictedSet = new Set(predicted);
+
+  const overlap = [...predictedSet].filter(t => expectedSet.has(t)).length;
+  const precision = overlap / Math.max(predictedSet.size, 1);
+  const recall = overlap / Math.max(expectedSet.size, 1);
+  const f1 = precision + recall > 0 ? (2 * precision * recall) / (precision + recall) : 0;
+
+  return {
+    precision: Number(precision.toFixed(4)),
+    recall: Number(recall.toFixed(4)),
+    f1: Number(f1.toFixed(4)),
+  };
 }
 
 // ─── Core Metrics ────────────────────────────────────────────────────────────
@@ -134,12 +181,20 @@ export function runOfflineEvalSuite(
     const mrr = computeMRR(expectedChunkIds, retrieved);
     const containCheck = checkMustContain(response, mustContain);
     const notContainCheck = checkMustNotContain(response, mustNotContain);
+    const lexical = computeTextF1(c.expectedAnswer ?? '', response);
+    const accuracy = containCheck.pass && notContainCheck.pass ? 1 : 0;
+    const hallucinationDetected = !notContainCheck.pass;
 
     return {
       id: c.id,
       query: c.question,
       recallAt5,
       mrr,
+      precision: lexical.precision,
+      recall: lexical.recall,
+      f1: lexical.f1,
+      accuracy,
+      hallucinationDetected,
       mustContainPass: containCheck.pass,
       mustNotContainPass: notContainCheck.pass,
       failedMustContain: containCheck.failed,
@@ -155,6 +210,21 @@ export function runOfflineEvalSuite(
       : 0,
     avgMRR: totalCases > 0
       ? results.reduce((s, r) => s + r.mrr, 0) / totalCases
+      : 0,
+    avgPrecision: totalCases > 0
+      ? results.reduce((s, r) => s + r.precision, 0) / totalCases
+      : 0,
+    avgRecall: totalCases > 0
+      ? results.reduce((s, r) => s + r.recall, 0) / totalCases
+      : 0,
+    avgF1: totalCases > 0
+      ? results.reduce((s, r) => s + r.f1, 0) / totalCases
+      : 0,
+    avgAccuracy: totalCases > 0
+      ? results.reduce((s, r) => s + r.accuracy, 0) / totalCases
+      : 0,
+    hallucinationRate: totalCases > 0
+      ? results.filter(r => r.hallucinationDetected).length / totalCases
       : 0,
     mustContainPassRate: totalCases > 0
       ? results.filter(r => r.mustContainPass).length / totalCases

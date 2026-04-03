@@ -25,6 +25,7 @@ import {
 import {
   computeRecallAtK,
   computeMRR,
+  computeTextF1,
   checkMustContain,
   checkMustNotContain,
   runOfflineEvalSuite,
@@ -434,6 +435,8 @@ describe('Eval metrics: runOfflineEvalSuite', () => {
     expect(report.totalCases).toBe(2);
     expect(report.mustContainPassRate).toBe(1.0);
     expect(report.mustNotContainPassRate).toBe(1.0);
+    expect(report.avgAccuracy).toBe(1.0);
+    expect(report.hallucinationRate).toBe(0);
   });
 
   it('retrieval metrics remain deterministic across repeated runs', () => {
@@ -457,6 +460,22 @@ describe('Eval metrics: runOfflineEvalSuite', () => {
       expect(run.avgMRR).toBe(baseline.avgMRR);
       expect(run.mustContainPassRate).toBe(baseline.mustContainPassRate);
       expect(run.mustNotContainPassRate).toBe(baseline.mustNotContainPassRate);
+      expect(run.avgF1).toBe(baseline.avgF1);
+      expect(run.avgPrecision).toBe(baseline.avgPrecision);
+      expect(run.avgRecall).toBe(baseline.avgRecall);
+      expect(run.avgAccuracy).toBe(baseline.avgAccuracy);
+      expect(run.hallucinationRate).toBe(baseline.hallucinationRate);
     }
+  });
+
+  it('computes lexical precision/recall/F1 for expected vs response text', () => {
+    const metrics = computeTextF1(
+      'Enhanced HSA has lower deductible and lower out-of-pocket maximum',
+      'Enhanced HSA has a lower deductible and lower out-of-pocket maximum.'
+    );
+
+    expect(metrics.precision).toBeGreaterThan(0.5);
+    expect(metrics.recall).toBeGreaterThan(0.5);
+    expect(metrics.f1).toBeGreaterThan(0.5);
   });
 });

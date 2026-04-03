@@ -3008,6 +3008,59 @@ Answer directly from the IMMUTABLE CATALOG. Name the plan. State the exact figur
       }
     }
 
+    const validationGateFailures: string[] = [];
+    if (hallucinations.length > 0) validationGateFailures.push('numerical-integrity');
+    if (hallucinationMatches.length > 0) validationGateFailures.push('textual-hallucination');
+    if (groundingWarnings.length > 0) validationGateFailures.push('grounding-audit');
+    if (finalGenQuality.score < 0.42) validationGateFailures.push('generation-quality');
+    if (!pipelineResult.overallPassed) validationGateFailures.push('pipeline-overall');
+
+    const validationGatePassed = validationGateFailures.length === 0;
+    if (!validationGatePassed) {
+      logger.warn(`[REQ:${reqId}][STEP-11 GATE-FAIL] validation gate blocked response: ${validationGateFailures.join(', ')}`);
+
+      const safeFallback = toPlainAssistantText(
+        `I want to give you a fully accurate answer, but I could not validate this response with high confidence. ` +
+        `Please rephrase your question in one sentence and include the exact benefit topic (medical, dental, vision, life, disability, or HSA/FSA). ` +
+        `You can also contact AmeriVet HR/Benefits at ${HR_PHONE} or use ${ENROLLMENT_PORTAL_URL} for official plan details.`
+      );
+
+      session.lastBotMessage = safeFallback;
+      if (!session.messages) session.messages = [];
+      session.messages.push(
+        { role: 'user', content: query },
+        { role: 'assistant', content: safeFallback }
+      );
+      if (session.messages.length > 6) {
+        session.messages = session.messages.slice(-6);
+      }
+      await updateSession(sessionId, session);
+
+      return NextResponse.json({
+        answer: safeFallback,
+        tier: 'L1',
+        citations: result.chunks,
+        sessionContext: buildSessionContext(session),
+        metadata: {
+          category,
+          validationGate: {
+            passed: false,
+            failures: validationGateFailures,
+            generationScore: finalGenQuality.score,
+            groundingWarnings: groundingWarnings.length,
+            textualHallucinations: hallucinationMatches.length,
+            numericalHallucinations: hallucinations.length,
+          },
+          validation: {
+            retrieval: pipelineResult.retrieval,
+            reasoning: pipelineResult.reasoning,
+            output: pipelineResult.output,
+            overallPassed: pipelineResult.overallPassed,
+          },
+        },
+      });
+    }
+
     logger.info(`[REQ:${reqId}][STEP-11 SCORECARD] score=${finalGenQuality.score} coverage=${finalGenQuality.coverage} specificity=${finalGenQuality.specificity} groundingWarnings=${groundingWarnings.length} answerChars=${answer.length}`);
     logger.info('[QA-SCORECARD]', {
       sessionId,
@@ -3118,6 +3171,14 @@ Answer directly from the IMMUTABLE CATALOG. Name the plan. State the exact figur
           reasoning: pipelineResult.reasoning,
           output: pipelineResult.output,
           overallPassed: pipelineResult.overallPassed
+        },
+        validationGate: {
+          passed: true,
+          failures: [],
+          generationScore: finalGenQuality.score,
+          groundingWarnings: groundingWarnings.length,
+          textualHallucinations: hallucinationMatches.length,
+          numericalHallucinations: hallucinations.length,
         }
       }
     });
