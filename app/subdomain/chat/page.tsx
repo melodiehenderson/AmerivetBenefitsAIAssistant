@@ -9,7 +9,7 @@ import { useRouter } from 'next/navigation';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { 
@@ -115,6 +115,7 @@ export default function SubdomainChatPage() {
     coverageTierLock?: string | null;
     dataConfirmed?: boolean;
   } | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const quickPrompts = [
     'What is covered under my medical plan?',
@@ -126,6 +127,8 @@ export default function SubdomainChatPage() {
   ];
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
+  const TEXTAREA_MIN_HEIGHT = 48;
+  const TEXTAREA_MAX_HEIGHT = 200;
 
   useEffect(() => {
     checkAuth();
@@ -134,6 +137,13 @@ export default function SubdomainChatPage() {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  useEffect(() => {
+    if (!textareaRef.current) return;
+    textareaRef.current.style.height = 'auto';
+    const nextHeight = Math.min(textareaRef.current.scrollHeight + 2, TEXTAREA_MAX_HEIGHT);
+    textareaRef.current.style.height = `${Math.max(nextHeight, TEXTAREA_MIN_HEIGHT)}px`;
+  }, [input]);
 
   // AUTO-WELCOME: Trigger welcome message on page load (before user types)
   useEffect(() => {
@@ -531,12 +541,24 @@ export default function SubdomainChatPage() {
 
             {/* Input Form */}
             <form onSubmit={handleSendMessage} className="flex gap-2">
-              <Input
+              <Textarea
+                ref={textareaRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 placeholder="Ask about your benefits..."
                 disabled={isLoading}
-                className="flex-1"
+                rows={1}
+                className="flex-1 !min-h-[48px] !max-h-[200px] resize-none overflow-y-auto"
+                style={{
+                  minHeight: `${TEXTAREA_MIN_HEIGHT}px`,
+                  maxHeight: `${TEXTAREA_MAX_HEIGHT}px`,
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+                    event.preventDefault();
+                    void handleSendMessage(event as unknown as React.FormEvent);
+                  }
+                }}
               />
               <Button type="submit" disabled={isLoading || !input.trim()}>
                 <Send className="w-4 h-4" />
