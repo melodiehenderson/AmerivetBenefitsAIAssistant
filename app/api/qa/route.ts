@@ -1000,6 +1000,8 @@ Pro tip: 80% Voluntary Term for protection, 20% Whole Life for permanent cash va
 - Match the active persona: narrative for explorer/guide, scannable for analyzer, step-by-step for urgent.
 - Use tables when comparing plans or numbers; otherwise prefer concise prose or short lists.
 - Keep the answer readable on first pass. Do not force a table if it makes the response worse.
+- Do NOT restate the user's message verbatim.
+- If acknowledgement helps, paraphrase in your own words in 8-14 words max, then answer.
 - Use bold sparingly for key figures or plan names.
 - One follow-up suggestion at end when it is helpful.
 </Response_Style>
@@ -1133,10 +1135,9 @@ function buildSessionContext(session: Session) {
 }
 
 type IntentDomainRoute = 'policy' | 'pricing' | 'general';
-// Helper: Generate a Markdown summary for a topic label (used in intercepts to avoid parroting)
+// Helper: Build a concise acknowledgement without parroting the user sentence.
 const buildTopicSummaryMarkdown = (topicLabel: string): string => {
-  // This can be expanded for richer summaries per topic if needed
-  return `**${topicLabel}** overview:\n\nHere are the key details and options for ${topicLabel.toLowerCase()}.`;
+  return `Quick summary of ${topicLabel.toLowerCase()}:`;
 };
 
 type PreprocessSignals = {
