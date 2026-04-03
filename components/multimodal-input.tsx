@@ -273,7 +273,7 @@ function PureMultimodalInput({
         placeholder="Ask about your benefits..."
         value={input}
         onChange={handleInput}
-        className="w-full resize-none overflow-y-auto px-4 py-3 border rounded-lg focus:outline-none bg-transparent"
+        className="w-full !min-h-[44px] !max-h-[200px] resize-none overflow-y-auto px-4 py-3 border rounded-lg focus:outline-none bg-transparent"
         rows={1}
         autoFocus
         style={{
