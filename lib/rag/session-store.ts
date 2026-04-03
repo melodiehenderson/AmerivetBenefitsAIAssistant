@@ -3,6 +3,7 @@ import { redisService } from '@/lib/azure/redis';
 import { logger } from '@/lib/logger';
 import { promises as fs } from 'fs';
 import path from 'path';
+import type { ResponsePersona } from '@/lib/response-persona';
 
 export type SessionStep = 'start' | 'awaiting_state' | 'awaiting_dept' | 'active_chat' | 'awaiting_demographics';
 
@@ -70,6 +71,14 @@ export type Session = {
   currentTopic?: string;              // 'Medical', 'Dental', etc. - for topic focus
   completedTopics?: string[];         // Topics user has resolved
   selectedPlan?: string;              // Currently selected plan name
+  activePersona?: ResponsePersona;     // Current response style persona
+  personaUpdatedAt?: number;          // Last time the persona was refreshed
+  personaHistory?: Array<{
+    persona: ResponsePersona;
+    switchedAt: number;
+    reason: string;
+    query?: string;
+  }>;
   topicStates?: Record<string, {
     topic: string;
     questionsAsked: number;
