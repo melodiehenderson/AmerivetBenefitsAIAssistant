@@ -23,19 +23,5 @@ export default defineConfig({
     environmentOptions: { jsdom: { url: 'http://localhost' } },
     coverage: { provider: 'v8' },
     pool: isWindows ? 'forks' : 'threads',
-    poolOptions: isWindows
-      ? {
-          forks: {
-            singleFork: true,
-            maxForks: 1,
-            minForks: 1,
-          },
-        }
-      : {
-          threads: {
-            maxThreads: 2,
-            minThreads: 1,
-          },
-        },
   },
 });
