@@ -1132,6 +1132,11 @@ function buildCategoryExplorationResponse(
   const buildDentalOverview = () => {
     const dental = catalog.dentalPlan;
     const coins = dental.coverage?.coinsurance ?? {};
+    const toCoveredPercent = (coinsurance?: number) => {
+      if (typeof coinsurance !== 'number') return null;
+      const covered = Math.max(0, Math.min(1, 1 - coinsurance));
+      return Math.round(covered * 100);
+    };
     const deductible = dental.coverage?.deductibles?.individual ?? dental.benefits.deductible;
     const familyDeductible = dental.coverage?.deductibles?.family ?? dental.benefits.deductible * 3;
     const orthoCopay = dental.coverage?.copays?.orthodontia;
@@ -1143,14 +1148,17 @@ function buildCategoryExplorationResponse(
     }
     msg += `Coverage highlights:\n`;
     msg += `- Deductible: $${deductible} individual / $${familyDeductible} family\n`;
-    if (typeof coins.preventive === 'number') {
-      msg += `- Preventive: ${(coins.preventive * 100).toFixed(0)}% covered\n`;
+    const preventiveCovered = toCoveredPercent(coins.preventive);
+    const basicCovered = toCoveredPercent(coins.basic);
+    const majorCovered = toCoveredPercent(coins.major);
+    if (preventiveCovered !== null) {
+      msg += `- Preventive: ${preventiveCovered}% covered\n`;
     }
-    if (typeof coins.basic === 'number') {
-      msg += `- Basic services: ${(coins.basic * 100).toFixed(0)}% covered\n`;
+    if (basicCovered !== null) {
+      msg += `- Basic services: ${basicCovered}% covered\n`;
     }
-    if (typeof coins.major === 'number') {
-      msg += `- Major services: ${(coins.major * 100).toFixed(0)}% covered\n`;
+    if (majorCovered !== null) {
+      msg += `- Major services: ${majorCovered}% covered\n`;
     }
     if (typeof orthoCopay === 'number') {
       msg += `- Orthodontia copay: $${orthoCopay}\n`;
@@ -1227,6 +1235,56 @@ function buildCategoryExplorationResponse(
   }
 
   return null;
+}
+
+// ============================================================================
+// 2c. DENTAL VS VISION COMPARISON (Deterministic)
+// ============================================================================
+function buildDentalVisionComparisonResponse(session: Session): string {
+  const dental = amerivetBenefits2024_2025.dentalPlan;
+  const vision = amerivetBenefits2024_2025.visionPlan;
+  const dentalCoins = dental.coverage?.coinsurance ?? {};
+  const toCoveredPercent = (coinsurance?: number) => {
+    if (typeof coinsurance !== 'number') return null;
+    const covered = Math.max(0, Math.min(1, 1 - coinsurance));
+    return Math.round(covered * 100);
+  };
+  const dentalDeductible = dental.coverage?.deductibles?.individual ?? dental.benefits.deductible;
+  const dentalFamilyDeductible = dental.coverage?.deductibles?.family ?? dental.benefits.deductible * 3;
+  const dentalOrthoCopay = dental.coverage?.copays?.orthodontia;
+  const dentalOopMax = dental.coverage?.outOfPocketMax ?? dental.benefits.outOfPocketMax;
+  const visionCopays = vision.coverage?.copays ?? {};
+
+  let msg = `Here is a side-by-side comparison of Dental vs Vision coverage:\n\n`;
+  msg += `| | **${dental.name}** | **${vision.name}** |\n`;
+  msg += `|---|---|---|\n`;
+  msg += `| Carrier | ${dental.provider} | ${vision.provider} |\n`;
+  msg += `| Deductible | $${dentalDeductible} individual / $${dentalFamilyDeductible} family | $0 |\n`;
+  if (typeof dentalOopMax === 'number') {
+    msg += `| Out-of-pocket max | $${dentalOopMax} | $0 |\n`;
+  } else {
+    msg += `| Out-of-pocket max | Not specified | $0 |\n`;
+  }
+  const preventiveCovered = toCoveredPercent(dentalCoins.preventive);
+  const basicCovered = toCoveredPercent(dentalCoins.basic);
+  const majorCovered = toCoveredPercent(dentalCoins.major);
+  msg += `| Preventive | ${preventiveCovered !== null ? `${preventiveCovered}% covered` : 'Covered'} | N/A |\n`;
+  msg += `| Basic services | ${basicCovered !== null ? `${basicCovered}% covered` : 'Covered'} | N/A |\n`;
+  msg += `| Major services | ${majorCovered !== null ? `${majorCovered}% covered` : 'Covered'} | N/A |\n`;
+  msg += `| Orthodontia | ${typeof dentalOrthoCopay === 'number' ? `$${dentalOrthoCopay} copay` : 'Available'} | Not applicable |\n`;
+  msg += `| Exam copay | N/A | ${typeof visionCopays.exam === 'number' ? `$${visionCopays.exam}` : 'Included'} |\n`;
+  msg += `| Lenses copay | N/A | ${typeof visionCopays.lenses === 'number' ? `$${visionCopays.lenses}` : 'Included'} |\n`;
+
+  if (!session.noPricingMode) {
+    msg += `\n**Monthly premiums:**\n`;
+    msg += `- Dental (Employee Only): $${pricingUtils.formatMoney(dental.tiers.employeeOnly)}/month\n`;
+    msg += `- Vision (Employee Only): $${pricingUtils.formatMoney(vision.tiers.employeeOnly)}/month\n`;
+  } else {
+    msg += `\nPricing is currently hidden. Say "show pricing" to include premiums.\n`;
+  }
+
+  msg += `\nWant the full pricing table for a specific coverage tier or more detail on one plan?`;
+  return session.noPricingMode ? stripPricingDetails(msg) : msg;
 }
 // ============================================================================
 // 3. SESSION CONTEXT BUILDER (for frontend caching)
@@ -2278,6 +2336,46 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
     }
 
     // ========================================================================
+    // FOLLOW-UP: YES to compare dental vs vision
+    // ========================================================================
+    const isYes = /^(yes|yeah|yep|sure|ok|okay|please|do it|go ahead)$/i.test(query.trim());
+    const lastAskedCompare = /compare\s+with\s+vision|compare\s+with\s+vision\s+coverage|compare\s+vision/i.test(session.lastBotMessage || '');
+    const currentTopicLower = (session.currentTopic || '').toLowerCase();
+    if (isYes && lastAskedCompare && currentTopicLower.includes('dental')) {
+      logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] YES-COMPARE-DENTAL-VISION`);
+      const msg = buildDentalVisionComparisonResponse(session);
+      const plainMsg = toPlainAssistantText(msg);
+      session.lastBotMessage = plainMsg;
+      await updateSession(sessionId, session);
+      return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'compare-dental-vision-yes' } });
+    }
+
+    // ========================================================================
+    // DENTAL/VISION COMPARISON (Deterministic)
+    // ========================================================================
+    const compareDentalVisionRequested = /\bcompare\b/i.test(lowerQuery) && /\bvision\b/i.test(lowerQuery) && ( /\bdental\b/i.test(lowerQuery) || currentTopicLower.includes('dental') );
+    if (compareDentalVisionRequested) {
+      logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] COMPARE-DENTAL-VISION`);
+      const msg = buildDentalVisionComparisonResponse(session);
+      const plainMsg = toPlainAssistantText(msg);
+      session.lastBotMessage = plainMsg;
+      await updateSession(sessionId, session);
+      return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'compare-dental-vision' } });
+    }
+
+    // If user asks to compare dental plans, clarify there is only one plan.
+    const compareDentalOnlyRequested = /\bcompare\b/i.test(lowerQuery) && /\bdental\b/i.test(lowerQuery) && !/\bvision\b/i.test(lowerQuery);
+    if (compareDentalOnlyRequested) {
+      logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] COMPARE-DENTAL-ONLY`);
+      let msg = `AmeriVet offers a single dental plan: **${amerivetBenefits2024_2025.dentalPlan.name}** (${amerivetBenefits2024_2025.dentalPlan.provider}).\n\n`;
+      msg += `If you'd like, I can compare it side-by-side with the vision plan or show pricing for a specific coverage tier.`;
+      const plainMsg = toPlainAssistantText(session.noPricingMode ? stripPricingDetails(msg) : msg);
+      session.lastBotMessage = plainMsg;
+      await updateSession(sessionId, session);
+      return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'compare-dental-only' } });
+    }
+
+    // ========================================================================
     // FIRST-PASS: DETERMINISTIC SHORT ANSWERS (yes/no + factual lookups)
     // ========================================================================
     // Intercepts "do we have X?", "who provides X?", "is X available?" queries
@@ -3127,6 +3225,94 @@ Answer directly from the IMMUTABLE CATALOG. Name the plan. State the exact figur
     const validationGatePassed = validationGateFailures.length === 0;
     if (!validationGatePassed) {
       logger.warn(`[REQ:${reqId}][STEP-11 GATE-FAIL] validation gate blocked response: ${validationGateFailures.join(', ')}`);
+
+      // Prefer deterministic, catalog-based responses before using the
+      // "could not validate" fallback.
+      const currentTopicLower = (session.currentTopic || '').toLowerCase();
+      const compareDentalVisionRequested = /\bcompare\b/i.test(lowerQuery) && /\bvision\b/i.test(lowerQuery) && (/\bdental\b/i.test(lowerQuery) || currentTopicLower.includes('dental'));
+      const compareDentalOnlyRequested = /\bcompare\b/i.test(lowerQuery) && /\bdental\b/i.test(lowerQuery) && !/\bvision\b/i.test(lowerQuery);
+
+      if (compareDentalVisionRequested) {
+        const msg = buildDentalVisionComparisonResponse(session);
+        const plainMsg = toPlainAssistantText(msg);
+        session.lastBotMessage = plainMsg;
+        if (!session.messages) session.messages = [];
+        session.messages.push(
+          { role: 'user', content: query },
+          { role: 'assistant', content: plainMsg }
+        );
+        if (session.messages.length > 6) {
+          session.messages = session.messages.slice(-6);
+        }
+        await updateSession(sessionId, session);
+        return NextResponse.json({
+          answer: plainMsg,
+          tier: 'L1',
+          citations: result.chunks,
+          sessionContext: buildSessionContext(session),
+          metadata: {
+            category,
+            validationGate: { passed: false, failures: validationGateFailures, generationScore: finalGenQuality.score },
+            validation: { retrieval: pipelineResult.retrieval, reasoning: pipelineResult.reasoning, output: pipelineResult.output, overallPassed: pipelineResult.overallPassed },
+            intercept: 'compare-dental-vision-validation-fallback'
+          },
+        });
+      }
+
+      if (compareDentalOnlyRequested) {
+        let msg = `AmeriVet offers a single dental plan: **${amerivetBenefits2024_2025.dentalPlan.name}** (${amerivetBenefits2024_2025.dentalPlan.provider}).\n\n`;
+        msg += `If you'd like, I can compare it side-by-side with the vision plan or show pricing for a specific coverage tier.`;
+        const plainMsg = toPlainAssistantText(session.noPricingMode ? stripPricingDetails(msg) : msg);
+        session.lastBotMessage = plainMsg;
+        if (!session.messages) session.messages = [];
+        session.messages.push(
+          { role: 'user', content: query },
+          { role: 'assistant', content: plainMsg }
+        );
+        if (session.messages.length > 6) {
+          session.messages = session.messages.slice(-6);
+        }
+        await updateSession(sessionId, session);
+        return NextResponse.json({
+          answer: plainMsg,
+          tier: 'L1',
+          citations: result.chunks,
+          sessionContext: buildSessionContext(session),
+          metadata: {
+            category,
+            validationGate: { passed: false, failures: validationGateFailures, generationScore: finalGenQuality.score },
+            validation: { retrieval: pipelineResult.retrieval, reasoning: pipelineResult.reasoning, output: pipelineResult.output, overallPassed: pipelineResult.overallPassed },
+            intercept: 'compare-dental-only-validation-fallback'
+          },
+        });
+      }
+
+      const deterministicFallback = buildCategoryExplorationResponse(lowerQuery, session, extractCoverageFromQuery(query));
+      if (deterministicFallback) {
+        const plainMsg = toPlainAssistantText(deterministicFallback);
+        session.lastBotMessage = plainMsg;
+        if (!session.messages) session.messages = [];
+        session.messages.push(
+          { role: 'user', content: query },
+          { role: 'assistant', content: plainMsg }
+        );
+        if (session.messages.length > 6) {
+          session.messages = session.messages.slice(-6);
+        }
+        await updateSession(sessionId, session);
+        return NextResponse.json({
+          answer: plainMsg,
+          tier: 'L1',
+          citations: result.chunks,
+          sessionContext: buildSessionContext(session),
+          metadata: {
+            category,
+            validationGate: { passed: false, failures: validationGateFailures, generationScore: finalGenQuality.score },
+            validation: { retrieval: pipelineResult.retrieval, reasoning: pipelineResult.reasoning, output: pipelineResult.output, overallPassed: pipelineResult.overallPassed },
+            intercept: 'category-exploration-validation-fallback'
+          },
+        });
+      }
 
       const safeFallback = toPlainAssistantText(
         `I want to give you a fully accurate answer, but I could not validate this response with high confidence. ` +
