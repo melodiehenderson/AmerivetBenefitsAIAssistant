@@ -47,6 +47,25 @@ export function applySelfHealGuest(session: Session) {
   return session;
 }
 
+export function applyChildCoverageTierLock(session: Session, query: string): { session: Session; locked: boolean } {
+  const lower = query.toLowerCase();
+  const explicitEmployeeOnly = /\b(employee\s*only|individual|single|just\s*me|only\s*me)\b/i.test(lower);
+  const explicitFamily = /\b(employee\s*\+?\s*family|family\s*(?:of|plan|coverage)|family\s*\d|for\s*(?:my|the|our)\s*family)\b/i.test(lower);
+  const explicitSpouse = /\b(spouse|husband|wife|partner)\b/i.test(lower);
+  const hasChild = /\b(child|children|kid|kids|son|daughter|dependent)\b/i.test(lower);
+
+  if (session.coverageTierLock === 'Employee + Family' || session.coverageTierLock === 'Employee + Spouse') {
+    return { session, locked: false };
+  }
+
+  if (hasChild && !explicitFamily && !explicitSpouse && !explicitEmployeeOnly) {
+    session.coverageTierLock = 'Employee + Child(ren)';
+    return { session, locked: true };
+  }
+
+  return { session, locked: false };
+}
+
 export function shouldPromptForName(session: Session): boolean {
   return !session.hasCollectedName && !session.userAge && !session.userState;
 }

@@ -21,7 +21,7 @@ import { verifyNumericalIntegrity } from '@/lib/rag/grounding-audit';
 import { pipelineLogger, createTrace } from '@/lib/services/pipeline-logger';
 import { buildPersonaDirective, detectPersona, type ResponsePersona } from '@/lib/response-persona';
 import { digestIntent, detectIntentDomain, type IntentDomain } from '@/lib/intent-digest';
-import { applyNameCapture, applySelfHealGuest, ensureNameForDemographics, shouldPromptForName } from '@/lib/session-logic';
+import { applyChildCoverageTierLock, applyNameCapture, applySelfHealGuest, ensureNameForDemographics, shouldPromptForName } from '@/lib/session-logic';
 
 import { IRS_2026 } from '@/lib/data/irs-limits-2026';
 import {
@@ -1378,6 +1378,53 @@ function buildMedicalPlanFallback(query: string, session: Session): string | nul
   }
   return msg.trim();
 }
+
+function buildRecommendationOverview(query: string, session: Session): string | null {
+  const lower = query.toLowerCase();
+  const recommendationSignal = /\b(recommendation|recommend|suggest|best\s+plan|best\s+option|which\s+plan|what\s+plan|what\s+do\s+you\s+recommend)\b/i.test(lower);
+  const healthySignal = /\b(healthy|low\s+utilization|low\s+use|low\s+usage|rarely\s+(?:go|use))\b/i.test(lower);
+  const singleSignal = /\b(single|individual|just\s+me|only\s+me|no\s+dependents|no\s+kids|no\s+children)\b/i.test(lower);
+  const savingsSignal = /\b(save\s+money|low\s+cost|cheapest|lowest\s+premium|save\s+on\s+premiums|budget)\b/i.test(lower);
+
+  if (!(recommendationSignal || healthySignal || savingsSignal)) return null;
+
+  const coverageTier = inferCoverageTierFromQuery(query, session);
+  const payPeriods = session.payPeriods || 26;
+  const rows = pricingUtils.buildPerPaycheckBreakdown(coverageTier, payPeriods);
+  const medRows = rows.filter(r => !/dental|vision/i.test(r.plan) && r.provider !== 'VSP');
+  const filtered = session.userState && !KAISER_STATES.has(session.userState.toUpperCase())
+    ? medRows.filter(r => !/kaiser/i.test(r.plan))
+    : medRows;
+
+  const standard = filtered.find(r => /standard\s+hsa/i.test(r.plan));
+  const enhanced = filtered.find(r => /enhanced\s+hsa/i.test(r.plan));
+  const kaiser = filtered.find(r => /kaiser/i.test(r.plan));
+  if (!standard && !enhanced && filtered.length === 0) return null;
+
+  let msg = `Recommendation for ${coverageTier} coverage:\n\n`;
+  if (!session.noPricingMode) {
+    for (const r of filtered) {
+      msg += `- ${r.plan}: $${pricingUtils.formatMoney(r.perMonth)}/month ($${pricingUtils.formatMoney(r.perPaycheck)} per paycheck)\n`;
+    }
+    msg += `\n`;
+  }
+
+  msg += `If you are healthy and want to keep premiums low, **Standard HSA** is usually the best fit because it has the lowest premium and is HSA-eligible. `;
+  msg += `Both HSA plans use the BCBSTX nationwide PPO network. `;
+  msg += `If you expect more medical use or want a lower deductible, **Enhanced HSA** offers richer coverage at a higher premium.`;
+
+  if (kaiser && session.userState && KAISER_STATES.has(session.userState.toUpperCase())) {
+    msg += ` If you prefer an integrated HMO-style network and are in ${session.userState}, **Kaiser Standard HMO** is also an option.`;
+  }
+
+  msg += `\n\nHSA savings highlights:\n- Pre-tax paycheck contributions\n- Tax-free growth and withdrawals for eligible care\n- Funds roll over year to year\n`;
+  if (singleSignal) {
+    msg += `\nSince you mentioned being single/only covering yourself, the Standard HSA is typically the most cost-efficient starting point.`;
+  }
+
+  msg += `\n\nWant me to compare total annual costs if your usage is low, moderate, or high?`;
+  return msg.trim();
+}
 // ============================================================================
 // 3. SESSION CONTEXT BUILDER (for frontend caching)
 // ============================================================================
@@ -1645,6 +1692,12 @@ export async function POST(req: NextRequest) {
       logger.info(`[REQ:${reqId}][STEP-4 RULE] TIER-LOCK: Employee + Family`);
     }
 
+    // RULE 1b: CHILD-ONLY TIER LOCK ΓÇö "employee + child" or "me and my kids"
+    const childTierLock = applyChildCoverageTierLock(session, query);
+    if (childTierLock.locked) {
+      logger.info(`[REQ:${reqId}][STEP-4 RULE] TIER-LOCK: Employee + Child(ren)`);
+    }
+
     // RULE 2: NO-PRICING INTENT ΓÇö user said "no pricing" / "coverage only"
     // Persists on session so follow-up messages also respect it.
     // User can unlock by saying "show pricing" / "include costs".
@@ -1683,7 +1736,10 @@ export async function POST(req: NextRequest) {
     if (asksKaiser && userInNonKaiserState) {
       logger.info(`[REQ:${reqId}][STEP-5 INTERCEPT] KAISER-REDIRECT: User in ${session.userState} asked about Kaiser`);
       const stateLabel = session.userState!.toUpperCase();
-      const msg = `Kaiser is only available in California, Washington, and Oregon. In ${stateLabel}, your medical options are:\n\n- Standard HSA (BCBS of Texas) ΓÇö lower premium, higher deductible, full HSA contribution eligible\n- Enhanced HSA (BCBS of Texas) ΓÇö higher premium, lower deductible, better for anticipated medical use\n\nBoth use the nationwide BCBSTX PPO network. Would you like a side-by-side comparison?`;
+      const nyNote = stateLabel === 'NY'
+        ? `\n\nFor New York employees, the strongest alternative is **Enhanced HSA** on the BCBSTX nationwide PPO network if you want richer coverage.`
+        : '';
+      const msg = `Kaiser is only available in California, Georgia, Washington, and Oregon. In ${stateLabel}, your medical options are:\n\n- Standard HSA (BCBS of Texas) ΓÇö lower premium, higher deductible, full HSA contribution eligible\n- Enhanced HSA (BCBS of Texas) ΓÇö higher premium, lower deductible, better for anticipated medical use\n\nBoth use the nationwide BCBSTX PPO network.${nyNote} Would you like a side-by-side comparison?`;
       const plainMsg = toPlainAssistantText(msg);
       session.lastBotMessage = plainMsg;
       await updateSession(sessionId, session);
@@ -1691,7 +1747,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Save session if state-based flags changed
-    if (intent.familyTierSignal || intent.noPricing) {
+    if (intent.familyTierSignal || intent.noPricing || childTierLock.locked) {
       await updateSession(sessionId, session);
     }
     
@@ -2082,8 +2138,9 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
 
     // CUSTOM INTERCEPT: Simple recommendation request ("I'm single and healthy, what do you recommend?")
     // Returns deterministic Employee Only pricing instead of relying on LLM to hallucinate numbers
-    const recommendRequested = /\b(recommend|suggestion|which plan|what plan|what do you recommend|best plan)\b/i.test(lowerQuery);
+    const recommendRequested = /\b(recommend|recommendation|suggestion|which plan|what plan|what do you recommend|best plan)\b/i.test(lowerQuery);
     const singleHealthy = /\b(single|healthy|just me|only me|individual|no dependents)\b/i.test(lowerQuery);
+    const recommendationScenarioRequested = /\b(recommendation|recommend|suggest|best plan|best option|what do you recommend|which plan|save money|lowest premium)\b/i.test(lowerQuery);
     if (!pipelineFirstMode && recommendRequested && singleHealthy) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] RECOMMEND-SINGLE`);
       const rows = pricingUtils.buildPerPaycheckBreakdown('Employee Only', session.payPeriods || 26);
@@ -2234,7 +2291,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
     const hasMedicalKeyword = /\b(medical|health)\b/i.test(lowerQuery);
     const hasPlanKeyword = /\b(plan|option|coverage)s?\b/i.test(lowerQuery);
     const hasCompareKeyword = /\b(compare|comparison|option|show|list|available|costs?|prices?|premiums?)\b/i.test(lowerQuery);
-    const medicalComparisonRequested = hasMedicalKeyword && hasPlanKeyword && hasCompareKeyword && !/per[\s-]*pay/i.test(lowerQuery) && !isCostModelingQuery;
+    const medicalComparisonRequested = hasMedicalKeyword && hasPlanKeyword && hasCompareKeyword && !/per[\s-]*pay/i.test(lowerQuery) && !isCostModelingQuery && !recommendationScenarioRequested;
     if (medicalComparisonRequested && shouldUseMedicalComparisonIntercept(query, lowerQuery, intentDomain) && !(recommendRequested && singleHealthy)) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] MEDICAL-COMPARISON`);
       const coverageTier = extractCoverageFromQuery(query);
@@ -2268,6 +2325,16 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
       session.lastBotMessage = plainMsg;
       await updateSession(sessionId, session);
       return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'medical-comparison' } });
+    }
+
+    // CUSTOM INTERCEPT: Scenario recommendation overview (deterministic)
+    const recommendationOverview = buildRecommendationOverview(query, session);
+    if (recommendationOverview) {
+      logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] RECOMMENDATION-OVERVIEW`);
+      const plainMsg = toPlainAssistantText(applyPricingExclusion(recommendationOverview, session.noPricingMode || intent.noPricing));
+      session.lastBotMessage = plainMsg;
+      await updateSession(sessionId, session);
+      return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'recommendation-overview' } });
     }
 
     // CUSTOM INTERCEPT: HSA / Savings recommendation (deterministic)
@@ -2811,6 +2878,14 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
           session.lastBotMessage = plainMsg;
           await updateSession(sessionId, session);
           return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { gatePass: false, intercept: 'ppo-clarification-fallback' } });
+        }
+
+        const recommendationFallback = buildRecommendationOverview(query, session);
+        if (recommendationFallback) {
+          const plainMsg = toPlainAssistantText(applyPricingExclusion(recommendationFallback, session.noPricingMode || intent.noPricing));
+          session.lastBotMessage = plainMsg;
+          await updateSession(sessionId, session);
+          return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { gatePass: false, intercept: 'recommendation-fallback' } });
         }
 
         const medicalFallback = buildMedicalPlanFallback(query, session);
@@ -3576,6 +3651,33 @@ Answer directly from the IMMUTABLE CATALOG. Name the plan. State the exact figur
             validationGate: { passed: false, failures: validationGateFailures, generationScore: finalGenQuality.score },
             validation: { retrieval: pipelineResult.retrieval, reasoning: pipelineResult.reasoning, output: pipelineResult.output, overallPassed: pipelineResult.overallPassed },
             intercept: 'category-exploration-validation-fallback'
+          },
+        });
+      }
+
+      const recommendationFallback = buildRecommendationOverview(query, session);
+      if (recommendationFallback) {
+        const plainMsg = toPlainAssistantText(applyPricingExclusion(recommendationFallback, session.noPricingMode || intent.noPricing));
+        session.lastBotMessage = plainMsg;
+        if (!session.messages) session.messages = [];
+        session.messages.push(
+          { role: 'user', content: query },
+          { role: 'assistant', content: plainMsg }
+        );
+        if (session.messages.length > 6) {
+          session.messages = session.messages.slice(-6);
+        }
+        await updateSession(sessionId, session);
+        return NextResponse.json({
+          answer: plainMsg,
+          tier: 'L1',
+          citations: result.chunks,
+          sessionContext: buildSessionContext(session),
+          metadata: {
+            category,
+            validationGate: { passed: false, failures: validationGateFailures, generationScore: finalGenQuality.score },
+            validation: { retrieval: pipelineResult.retrieval, reasoning: pipelineResult.reasoning, output: pipelineResult.output, overallPassed: pipelineResult.overallPassed },
+            intercept: 'recommendation-validation-fallback'
           },
         });
       }
