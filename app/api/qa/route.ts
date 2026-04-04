@@ -1098,6 +1098,7 @@ function buildCategoryExplorationResponse(
 ): string | null {
   const noPricingMode = !!session.noPricingMode;
   const finalize = (response: string) => noPricingMode ? stripPricingDetails(response) : response;
+  const catalog = amerivetBenefits2024_2025;
 
   // FIX 1: Ensure ternary is fully closed
   const tierKey = coverageTier === 'Employee + Spouse' ? 'employeeSpouse'
@@ -1116,7 +1117,115 @@ function buildCategoryExplorationResponse(
     return null;
   }
 
-  // ... [Rest of your category logic] ...
+  const wantsDental = /\b(dental|teeth|orthodont|braces)\b/i.test(queryLower);
+  const wantsVision = /\b(vision|eye|glasses|contacts|lasik)\b/i.test(queryLower);
+
+  const buildTierPricingLines = (tiers: { employeeOnly: number; employeeSpouse: number; employeeChildren: number; employeeFamily: number }) => {
+    return [
+      `- Employee Only: $${pricingUtils.formatMoney(tiers.employeeOnly)}/month`,
+      `- Employee + Spouse: $${pricingUtils.formatMoney(tiers.employeeSpouse)}/month`,
+      `- Employee + Child(ren): $${pricingUtils.formatMoney(tiers.employeeChildren)}/month`,
+      `- Employee + Family: $${pricingUtils.formatMoney(tiers.employeeFamily)}/month`,
+    ].join('\n');
+  };
+
+  const buildDentalOverview = () => {
+    const dental = catalog.dentalPlan;
+    const coins = dental.coverage?.coinsurance ?? {};
+    const deductible = dental.coverage?.deductibles?.individual ?? dental.benefits.deductible;
+    const familyDeductible = dental.coverage?.deductibles?.family ?? dental.benefits.deductible * 3;
+    const orthoCopay = dental.coverage?.copays?.orthodontia;
+    const outOfPocketMax = dental.coverage?.outOfPocketMax ?? dental.benefits.outOfPocketMax;
+
+    let msg = `Dental coverage: **${dental.name}** (${dental.provider}).\n\n`;
+    if (dental.description) {
+      msg += `${dental.description}\n\n`;
+    }
+    msg += `Coverage highlights:\n`;
+    msg += `- Deductible: $${deductible} individual / $${familyDeductible} family\n`;
+    if (typeof coins.preventive === 'number') {
+      msg += `- Preventive: ${(coins.preventive * 100).toFixed(0)}% covered\n`;
+    }
+    if (typeof coins.basic === 'number') {
+      msg += `- Basic services: ${(coins.basic * 100).toFixed(0)}% covered\n`;
+    }
+    if (typeof coins.major === 'number') {
+      msg += `- Major services: ${(coins.major * 100).toFixed(0)}% covered\n`;
+    }
+    if (typeof orthoCopay === 'number') {
+      msg += `- Orthodontia copay: $${orthoCopay}\n`;
+    }
+    if (typeof outOfPocketMax === 'number') {
+      msg += `- Out-of-pocket max: $${outOfPocketMax}\n`;
+    }
+    if (dental.features?.length) {
+      msg += `\nKey features:\n${dental.features.map(feature => `- ${feature}`).join('\n')}\n`;
+    }
+    if (dental.limitations?.length) {
+      msg += `\nLimitations:\n${dental.limitations.map(item => `- ${item}`).join('\n')}\n`;
+    }
+    if (!noPricingMode) {
+      msg += `\nMonthly premiums:\n${buildTierPricingLines(dental.tiers)}\n`;
+    } else {
+      msg += `\nPricing is currently hidden. Say "show pricing" to include premiums.\n`;
+    }
+    msg += `\nWant to compare with vision coverage or switch coverage tiers?`;
+    return msg;
+  };
+
+  const buildVisionOverview = () => {
+    const vision = catalog.visionPlan;
+    const copays = vision.coverage?.copays ?? {};
+
+    let msg = `Vision coverage: **${vision.name}** (${vision.provider}).\n\n`;
+    if (vision.description) {
+      msg += `${vision.description}\n\n`;
+    }
+    msg += `Coverage highlights:\n`;
+    if (typeof copays.exam === 'number') {
+      msg += `- Exam copay: $${copays.exam}\n`;
+    }
+    if (typeof copays.lenses === 'number') {
+      msg += `- Lenses copay: $${copays.lenses}\n`;
+    }
+    if (vision.features?.length) {
+      msg += `\nKey features:\n${vision.features.map(feature => `- ${feature}`).join('\n')}\n`;
+    }
+    if (vision.limitations?.length) {
+      msg += `\nLimitations:\n${vision.limitations.map(item => `- ${item}`).join('\n')}\n`;
+    }
+    if (!noPricingMode) {
+      msg += `\nMonthly premiums:\n${buildTierPricingLines(vision.tiers)}\n`;
+    } else {
+      msg += `\nPricing is currently hidden. Say "show pricing" to include premiums.\n`;
+    }
+    msg += `\nWant to compare with dental coverage or switch coverage tiers?`;
+    return msg;
+  };
+
+  if (wantsDental && wantsVision) {
+    const msg = `${buildDentalOverview()}\n\n---\n\n${buildVisionOverview()}`;
+    return finalize(msg);
+  }
+
+  if (wantsDental) {
+    return finalize(buildDentalOverview());
+  }
+
+  if (wantsVision) {
+    return finalize(buildVisionOverview());
+  }
+
+  if (/\b(benefits\s+overview|benefits|overview)\b/i.test(queryLower)) {
+    const msg = `Here is a quick overview of your core benefit categories:\n\n` +
+      `- Medical (BCBSTX Standard HSA, Enhanced HSA; Kaiser Standard HMO in CA/GA/WA/OR)\n` +
+      `- Dental (BCBSTX Dental PPO)\n` +
+      `- Vision (VSP Vision Plus)\n` +
+      `- Life and voluntary coverage (Unum and Allstate options)\n\n` +
+      `Which category would you like to explore first?`;
+    return finalize(msg);
+  }
+
   return null;
 }
 // ============================================================================
