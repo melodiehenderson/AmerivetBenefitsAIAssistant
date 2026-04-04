@@ -532,18 +532,18 @@ function shouldUseCategoryExplorationIntercept(query: string, lowerQuery: string
 
   const trimmed = query.trim();
   // Exact single-category mention: "medical", "dental", "life insurance", etc.
-  const directCategory = /^(medical|dental|vision|life(?:\s+insurance)?|disability|hsa|fsa|critical(?:\s+illness)?|accident|supplemental|benefits|benefits\s+overview|overview|what\s+benefits\s+do\s+i\s+have|what\s+are\s+my\s+options|show\s+me\s+benefits)$/i;
+  const directCategory = /^(medical|health|dental|vision|life(?:\s+insurance)?|disability|hsa|fsa|critical(?:\s+illness)?|accident|supplemental|benefits|benefits\s+overview|overview|what\s+benefits\s+do\s+i\s+have|what\s+are\s+my\s+options|show\s+me\s+benefits)$/i;
   // Light exploration phrasing: "tell me about dental", "show me medical", etc.
-  const lightExplore = /^(tell\s+me\s+about|show\s+me|overview\s+of|explain)\s+(medical|dental|vision|life(?:\s+insurance)?|disability|hsa|fsa|critical(?:\s+illness)?|accident|supplemental|benefits)\b/i;
+  const lightExplore = /^(tell\s+me\s+about|show\s+me|overview\s+of|explain)\s+(medical|health|dental|vision|life(?:\s+insurance)?|disability|hsa|fsa|critical(?:\s+illness)?|accident|supplemental|benefits)\b/i;
   // Conversational exploration: "what about dental", "let's look at medical",
   // "what is available for life insurance", "I want to know about dental", etc.
   // These are NOT comparison/recommendation requests — just category exploration.
   // Allow 0-2 filler words between "let's" and the verb (e.g. "let's just talk about",
   // "let's now go over", "let's quickly explore") so conversational topic-switches are caught.
-  const conversationalExplore = /\b(?:what\s+about|let'?s\s+(?:\w+\s+){0,2}(?:look\s+at|talk\s+about|go\s+(?:over|through)|explore|discuss|review|see)|what(?:'s|\s+is)\s+available\s+(?:for|in|under|with)|i\s+want\s+to\s+(?:know|learn|see|hear)\s+about|how\s+about|talk\s+about|interested\s+in)\s+(?:the\s+)?(?:my\s+)?(medical|dental|vision|life(?:\s+insurance)?|disability|hsa|fsa|critical(?:\s+illness)?|accident|supplemental|benefits)\b/i;
+  const conversationalExplore = /\b(?:what\s+about|let'?s\s+(?:\w+\s+){0,2}(?:look\s+at|talk\s+about|go\s+(?:over|through)|explore|discuss|review|see)|what(?:'s|\s+is)\s+available\s+(?:for|in|under|with)|i\s+want\s+to\s+(?:know|learn|see|hear)\s+about|how\s+about|talk\s+about|interested\s+in)\s+(?:the\s+)?(?:my\s+)?(medical|health|dental|vision|life(?:\s+insurance)?|disability|hsa|fsa|critical(?:\s+illness)?|accident|supplemental|benefits)\b/i;
   // "what is available" / "what do I have" paired with a category keyword anywhere in the query
   const availableWithCategory = /\b(?:what(?:'s|\s+is)\s+available|what\s+(?:do\s+)?(?:i|we)\s+(?:have|get)|what\s+(?:options?|plans?|choices?)\s+(?:are|do))\b/i.test(lowerQuery)
-    && /\b(medical|dental|vision|life(?:\s+insurance)?|disability|hsa|fsa|critical(?:\s+illness)?|accident|supplemental)\b/i.test(lowerQuery);
+    && /\b(medical|health|dental|vision|life(?:\s+insurance)?|disability|hsa|fsa|critical(?:\s+illness)?|accident|supplemental)\b/i.test(lowerQuery);
 
   return directCategory.test(trimmed) || lightExplore.test(trimmed) || conversationalExplore.test(trimmed) || availableWithCategory;
 }
@@ -1119,6 +1119,11 @@ function buildCategoryExplorationResponse(
 
   const wantsDental = /\b(dental|teeth|orthodont|braces)\b/i.test(queryLower);
   const wantsVision = /\b(vision|eye|glasses|contacts|lasik)\b/i.test(queryLower);
+  const wantsMedical = /\b(medical|health)\b/i.test(queryLower);
+  const wantsDisability = /\b(disability|std|ltd|short\s*-?term|long\s*-?term)\b/i.test(queryLower);
+  const wantsCritical = /\bcritical\s*illness\b/i.test(queryLower);
+  const wantsAccident = /\b(accident|ad&d)\b/i.test(queryLower);
+  const wantsSupplemental = /\b(supplemental|voluntary)\b/i.test(queryLower);
 
   const buildTierPricingLines = (tiers: { employeeOnly: number; employeeSpouse: number; employeeChildren: number; employeeFamily: number }) => {
     return [
@@ -1211,8 +1216,54 @@ function buildCategoryExplorationResponse(
     return msg;
   };
 
+  const buildMedicalOverview = () => {
+    const coverageTierLabel = coverageTier || 'Employee Only';
+    const payPeriods = session.payPeriods || 26;
+    const rows = pricingUtils.buildPerPaycheckBreakdown(coverageTierLabel, payPeriods);
+    const medRows = rows.filter(r => !/dental|vision/i.test(r.plan) && r.provider !== 'VSP');
+    const filtered = session.userState && !KAISER_STATES.has(session.userState.toUpperCase())
+      ? medRows.filter(r => !/kaiser/i.test(r.plan))
+      : medRows;
+
+    let msg = `Medical plan options (${coverageTierLabel}):\n\n`;
+    if (!noPricingMode) {
+      for (const r of filtered) {
+        msg += `- ${r.plan} (${r.provider}): $${pricingUtils.formatMoney(r.perMonth)}/month ($${pricingUtils.formatMoney(r.annually)}/year)\n`;
+      }
+    } else {
+      for (const r of filtered) {
+        msg += `- ${r.plan} (${r.provider})\n`;
+      }
+      msg += `\nPricing is currently hidden. Say "show pricing" to include premiums.\n`;
+    }
+    if (filtered.length < medRows.length) {
+      msg += `\nNote: Kaiser Standard HMO is only available in CA, WA, and OR.\n`;
+    }
+    msg += `\nWant to compare plans or switch coverage tiers?`;
+    return msg;
+  };
+
   if (wantsDental && wantsVision) {
     const msg = `${buildDentalOverview()}\n\n---\n\n${buildVisionOverview()}`;
+    return finalize(msg);
+  }
+
+  if (wantsDisability || wantsCritical || wantsAccident || wantsSupplemental) {
+    let msg = `I can help with these benefits, but detailed plan terms are in Workday.\n\n`;
+    if (wantsDisability) {
+      msg += `- Disability: Short-Term and Long-Term Disability options are available.\n`;
+    }
+    if (wantsCritical) {
+      msg += `- Critical Illness coverage is available as a supplemental benefit.\n`;
+    }
+    if (wantsAccident) {
+      msg += `- Accident/AD&D coverage is available as a supplemental benefit.\n`;
+    }
+    if (wantsSupplemental) {
+      msg += `- Supplemental benefits include options like critical illness and accident coverage.\n`;
+    }
+    msg += `\nFor plan details, eligibility rules, and rates, please check Workday: ${ENROLLMENT_PORTAL_URL} or contact HR at ${HR_PHONE}.`;
+    msg += `\n\nIf you want, tell me which benefit to focus on and I can summarize what I have available.`;
     return finalize(msg);
   }
 
@@ -1222,6 +1273,10 @@ function buildCategoryExplorationResponse(
 
   if (wantsVision) {
     return finalize(buildVisionOverview());
+  }
+
+  if (wantsMedical) {
+    return finalize(buildMedicalOverview());
   }
 
   if (/\b(benefits\s+overview|benefits|overview)\b/i.test(queryLower)) {
@@ -1709,6 +1764,7 @@ export async function POST(req: NextRequest) {
 
     const lowerQuery = query.toLowerCase();
     const intentDomain = detectIntentDomain(lowerQuery);
+    const pipelineFirstMode = true;
 
     // ========================================================================
     // INTERCEPT: L1 STATIC FAQ CACHE (always run ΓÇö no gate, specific patterns only)
@@ -1717,7 +1773,7 @@ export async function POST(req: NextRequest) {
     // caught before reaching any downstream logic. The L1_FAQ patterns are
     // sufficiently specific that false positives are not a concern.
     const l1Answer = checkL1FAQ(query, session);
-    if (l1Answer) {
+    if (!pipelineFirstMode && l1Answer) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] L1-STATIC-FAQ matched ΓåÆ returning cached answer (${l1Answer.length} chars)`);
       session.lastBotMessage = l1Answer;
       await updateSession(sessionId, session);
@@ -1745,7 +1801,7 @@ export async function POST(req: NextRequest) {
       session.lifeEvents = Array.from(lifeEvents);
     }
 
-    if (preprocessSignals.spouseGeneralFsaConflictIntent) {
+    if (!pipelineFirstMode && preprocessSignals.spouseGeneralFsaConflictIntent) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] HSA-SPOUSE-FSA-CONFLICT detected`);
       // ΓöÇΓöÇ Block 1: IRS compliance (always fires) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
       let msg = `IRS COMPLIANCE RULE (IRS Publication 969): If your spouse is enrolled in a general-purpose Healthcare FSA, you are NOT eligible to contribute to an HSA for those same months. This is a hard IRS rule with no exceptions.
@@ -1793,7 +1849,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
     // Fires when user reports BOTH a marriage QLE AND a job-status change (or
     // pregnancy) in the same message. Returns ordered A-grade response with
     // state-specific plan recommendation.  Must run BEFORE qleFilingOrderRequested.
-    if (preprocessSignals.multiQLESignal) {
+    if (!pipelineFirstMode && preprocessSignals.multiQLESignal) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] MULTI-QLE detected ΓÇö marriage + ${/pregnan|expecting/i.test(lowerQuery) ? 'pregnancy' : 'job-change'}`);
       session.policyReasoningMode = true;  // Prevent pricing tables on subsequent turns
       const currentState = session.userState || '';
@@ -1842,7 +1898,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
 
     const marriageWindowQuestion = /\b(married|marriage|got\s+married)\b/i.test(lowerQuery)
       && /\b(add\s+my\s+spouse|add\s+spouse|how\s+many\s+days|deadline|window|deductible\s+reset|reset\s+to\s+0)\b/i.test(lowerQuery);
-    if (marriageWindowQuestion) {
+    if (!pipelineFirstMode && marriageWindowQuestion) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] MARRIAGE-WINDOW-DEDUCTIBLE`);
       const msg = `Marriage is typically a Qualifying Life Event (QLE), and most plans require you to submit the change within a limited window (commonly 30 days, sometimes 31/60 depending on plan rules).\n\nDeductible reset: adding a spouse usually changes you from individual to family tier, but it does **not** automatically reset all year-to-date deductible/OOP accumulators to $0. Mid-year accumulator handling follows plan/administrator rules.\n\nAction now: submit the marriage QLE in Workday immediately, upload documentation, and confirm both (1) election effective date and (2) how prior individual accumulators map to family accumulators for your plan.`;
       const plainMsg = session.noPricingMode ? stripPricingDetails(toPlainAssistantText(msg)) : toPlainAssistantText(msg);
@@ -1865,7 +1921,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
       /\b(std|short\s*[- ]?term\s+disability)\b/i.test(lowerQuery) &&
       /\b(maternity|leave|pay(?:check)?|paid|salary|60%|sixty\s*percent|week\s*\d+|6th\s+week|sixth\s+week|get\s+paid|income)\b/i.test(lowerQuery)
     );
-    if (stdLeavePayQuestion) {
+    if (!pipelineFirstMode && stdLeavePayQuestion) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] FMLA-STD-LEAVE-PAY-TIMELINE`);
       const salaryMatch = lowerQuery.match(/\$?\s*([0-9]{1,3}(?:,[0-9]{3})*|[0-9]{4,6})\s*\/?\s*month/);
       const salary = salaryMatch ? Number(salaryMatch[1].replace(/,/g, '')) : null;
@@ -1898,7 +1954,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
 
     const stdPreexistingQuestion = /\b(std|short\s*[- ]?term\s+disability)\b/i.test(lowerQuery)
       && /\bpre-?existing|deny\s+my\s+maternity\s+claim|already\s+\d+\s*months\s+pregnant\b/i.test(lowerQuery);
-    if (stdPreexistingQuestion) {
+    if (!pipelineFirstMode && stdPreexistingQuestion) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] STD-PREEXISTING-GUIDANCE`);
       const msg = `This depends on your specific STD policy language and effective-date history. Many STD contracts include pre-existing condition provisions and look-back/look-forward windows, and timing of full-time eligibility can matter.\n\nI canΓÇÖt safely approve or deny the claim outcome here. The right next step is to check your UNUM STD certificate/SPD clause for pre-existing conditions and confirm your effective date with HR/Benefits immediately.`;
       const plainMsg = session.noPricingMode ? stripPricingDetails(toPlainAssistantText(msg)) : toPlainAssistantText(msg);
@@ -1908,7 +1964,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
     }
 
     const allstateTermQuestion = /\b(allstate)\b/i.test(lowerQuery) && /\b(term\s+life)\b/i.test(lowerQuery);
-    if (allstateTermQuestion) {
+    if (!pipelineFirstMode && allstateTermQuestion) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] CARRIER-CORRECTION-TERM-LIFE`);
       const msg = `Quick carrier correction: AmeriVet's **Term Life** insurance is provided by **UNUM** ΓÇö not Allstate. Allstate covers only **Whole Life** (permanent, cash-value) for AmeriVet employees.\n\nHere's the full life insurance lineup:\n- **UNUM Basic Life & AD&D** ΓÇö $25,000 employer-paid, $0 cost to you\n- **UNUM Voluntary Term Life** ΓÇö employee can elect 1xΓÇô5x salary (age-banded pricing; add spouse/child coverage available)\n- **Allstate Whole Life** ΓÇö permanent coverage with cash-value accumulation; employee-paid\n\nTerm Life pricing through UNUM is age-banded and set during enrollment in Workday. Would you like to know the coverage multiples available, or how to add a spouse/dependent to your Term Life?`;
       const plainMsg = session.noPricingMode ? stripPricingDetails(toPlainAssistantText(msg)) : toPlainAssistantText(msg);
@@ -1917,7 +1973,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
       return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'carrier-correction-term-life' } });
     }
 
-    if (preprocessSignals.authorityConflictIntent) {
+    if (!pipelineFirstMode && preprocessSignals.authorityConflictIntent) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] AUTHORITY-RESOLUTION`);
       const msg = `For conflicting benefit terms, the Summary Plan Description (SPD) / official plan document is the controlling source in most employer plans.\n\nUse this tie-break order:\n1) SPD / official plan document\n2) Carrier certificate of coverage\n3) Enrollment summaries/SBC or marketing summaries\n\nIf two official docs conflict, escalate to HR/Benefits for a written determination before relying on age-limit rules.`;
       const plainMsg = toPlainAssistantText(msg);
@@ -1930,7 +1986,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
       preprocessSignals.hasQLEIntent ||
       (preprocessSignals.hasLifecycleEvent && preprocessSignals.hasFilingOrderIntent);
 
-    if (qleFilingOrderRequested) {
+    if (!pipelineFirstMode && qleFilingOrderRequested) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] QLE-FILING-ORDER`);
       const stateNote = session.lastDetectedLocationChange
         ? `I updated your location to ${session.lastDetectedLocationChange.to} (from ${session.lastDetectedLocationChange.from}) for this guidance.\n\n`
@@ -1944,7 +2000,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
     const isLiveSupportRequest = (
         /\b(live\s*(support|agent|person|chat|help)|talk\s*to\s*(a\s*)?(human|person|agent|someone|representative|rep)|speak\s*(to|with)\s*(a\s*)?(human|person|agent|someone)|real\s*(person|human|agent)|customer\s*service|call\s*(someone|support)|phone\s*(number|support)|contact\s*(hr|support|someone)|get\s*(me\s*)?(a\s*)?(human|person|agent))\b/i.test(query)
     );
-    if (isLiveSupportRequest) {
+    if (!pipelineFirstMode && isLiveSupportRequest) {
         logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] LIVE-SUPPORT requested`);
         const nameRef = session.userName && session.userName !== 'Guest' ? session.userName : 'there';
         const msg = `I understand you'd like to speak with someone directly, ${nameRef}. You can reach AmeriVet's HR/Benefits team at ${HR_PHONE} for personalized assistance. You can also visit the enrollment portal at ${ENROLLMENT_PORTAL_URL} for self-service options.\n\nIs there anything else I can help you with in the meantime?`;
@@ -1955,7 +2011,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
 
     // INTERCEPT: SUMMARY REQUEST
     // ========================================================================
-    if (isSummaryRequest(query)) {
+    if (!pipelineFirstMode && isSummaryRequest(query)) {
         logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] SUMMARY requested`);
         const nameRef = session.userName && session.userName !== 'Guest' ? session.userName : 'there';
         const decisions = session.decisionsTracker || {};
@@ -1968,7 +2024,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
 
     // CUSTOM INTERCEPT: Accident plan name inquiry
     const planNumbersQuery = /plan\s*1\b.*plan\s*2/i.test(lowerQuery);
-    if (planNumbersQuery && /\baccident\b/i.test(lowerQuery)) {
+    if (!pipelineFirstMode && planNumbersQuery && /\baccident\b/i.test(lowerQuery)) {
         logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] ACCIDENT-PLAN-NAMES`);
         const msg = `There are two accident policy options: Accident Plan 1 and Accident Plan 2. ` +
                     `Plan 1 typically has a higher premium with more comprehensive benefits, while Plan 2 has a lower premium but lower benefit limits. ` +
@@ -1983,7 +2039,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
     // Returns deterministic Employee Only pricing instead of relying on LLM to hallucinate numbers
     const recommendRequested = /\b(recommend|suggestion|which plan|what plan|what do you recommend|best plan)\b/i.test(lowerQuery);
     const singleHealthy = /\b(single|healthy|just me|only me|individual|no dependents)\b/i.test(lowerQuery);
-    if (recommendRequested && singleHealthy) {
+    if (!pipelineFirstMode && recommendRequested && singleHealthy) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] RECOMMEND-SINGLE`);
       const rows = pricingUtils.buildPerPaycheckBreakdown('Employee Only', session.payPeriods || 26);
       // Filter to medical-only and exclude Kaiser for states outside CA/GA/WA/OR
@@ -2034,7 +2090,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
       }
       return null;
     })();
-    if (twoPlanCompare) {
+    if (!pipelineFirstMode && twoPlanCompare) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] TWO-PLAN-COMPARE: ${twoPlanCompare.map(p => p.label).join(' vs ')}`);
       // Prefer the tier set by RULE 1 in this turn (familyTierSignal) over the locked session value,
       // because the user may have stated family size in the same message as the comparison request.
@@ -2094,7 +2150,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
     const pricingQuestion = /\b(how much|cost|price|premium|rate|what does|pricing|what is|how expensive)\b/i;
     const isCostModelingQuery = /(?:calculate|projected?|estimate|next year|for \d{4}|usage)/i.test(lowerQuery);
     const planNameMatch = lowerQuery.match(planNamesRegex);
-    if (planNameMatch && pricingQuestion.test(lowerQuery) && !/per[\s-]*pay/i.test(lowerQuery) && !isCostModelingQuery && shouldUsePlanPricingIntercept(query, lowerQuery)) {
+    if (!pipelineFirstMode && planNameMatch && pricingQuestion.test(lowerQuery) && !/per[\s-]*pay/i.test(lowerQuery) && !isCostModelingQuery && shouldUsePlanPricingIntercept(query, lowerQuery)) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] PLAN-PRICING: plan=${planNameMatch[1]}`);
       const coverageTier = extractCoverageFromQuery(query);
       const payPeriods = session.payPeriods || 26;
@@ -2133,7 +2189,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
     const hasPlanKeyword = /\b(plan|option|coverage)s?\b/i.test(lowerQuery);
     const hasCompareKeyword = /\b(compare|comparison|option|show|list|available|costs?|prices?|premiums?)\b/i.test(lowerQuery);
     const medicalComparisonRequested = hasMedicalKeyword && hasPlanKeyword && hasCompareKeyword && !/per[\s-]*pay/i.test(lowerQuery) && !isCostModelingQuery;
-    if (medicalComparisonRequested && shouldUseMedicalComparisonIntercept(query, lowerQuery, intentDomain) && !(recommendRequested && singleHealthy)) {
+    if (!pipelineFirstMode && medicalComparisonRequested && shouldUseMedicalComparisonIntercept(query, lowerQuery, intentDomain) && !(recommendRequested && singleHealthy)) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] MEDICAL-COMPARISON`);
       const coverageTier = extractCoverageFromQuery(query);
       const payPeriods = session.payPeriods || 26;
@@ -2171,7 +2227,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
     // CUSTOM INTERCEPT: HSA / Savings recommendation (deterministic)
     // Catches "savings recommendation", "HSA advice", "tax savings" etc. that otherwise fall to RAG and hallucinate
     const savingsRequested = /\b(savings?\s*(recommend|advice|scenario|strategy|tip)|hsa\s*(recommend|advice|benefit|advantage|savings)|tax\s*(savings?|advantage|benefit)\s*(plan|account|option)?|pre-?tax\s*(dollar|saving|benefit))\b/i.test(lowerQuery);
-    if (savingsRequested) {
+    if (!pipelineFirstMode && savingsRequested) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] SAVINGS-RECOMMENDATION`);
       const rows = pricingUtils.buildPerPaycheckBreakdown('Employee Only', session.payPeriods || 26);
       const hsaPlans = rows.filter(r => /hsa/i.test(r.plan));
@@ -2204,7 +2260,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
     // User wants projected expenses or advanced cost comparison
     // Tightened regex: require explicit cost-modeling language, avoid matching generic "low"/"high"
     const costModelRequested = intentDomain !== 'policy' && /(?:calculate|projected?|estimate).*(?:cost|expense)|healthcare costs.*(?:next year|for \d{4})|(?:low|moderate|high)\s+usage/i.test(lowerQuery);
-    if (costModelRequested) {
+    if (!pipelineFirstMode && costModelRequested) {
         logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] COST-MODEL`);
         // try to parse usage level
         const usageMatch = lowerQuery.match(/(low|moderate|high)\s+usage/);
@@ -2225,7 +2281,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
     // Catches complex leave-planning queries that would otherwise crash in RAG
     const parentalLeaveStepByStep = /\b(step[- ]by[- ]step|step\s+by\s+step|parental\s+leave|fmla|family\s+(?:and\s+)?medical\s+leave|maternity\s+\+|maternity.*parental|company\s+leave|pay\s+overlap|overlap\s+edge|leave\s+plan|leave\s+across)\b/i.test(lowerQuery)
       && /\b(maternity|pregnant|birth|baby|leave|std|short[- ]term\s+disability)\b/i.test(lowerQuery);
-    if (parentalLeaveStepByStep) {
+    if (!pipelineFirstMode && parentalLeaveStepByStep) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] PARENTAL-LEAVE-STEP-BY-STEP`);
       const msg = `Here is a step-by-step parental leave plan for AmeriVet employees:\n\n` +
         `Step 1 ΓÇö Short-Term Disability (STD) via Unum\n` +
@@ -2260,7 +2316,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
     // maternityFlowRequested should only fire for pure maternity COST questions, not salary/leave pay math.
     const hasStdPaySignals = /\b(salary|paid|income|60%|sixty\s*percent|how\s+much\s+(?:will|do|would)\s+i|week\s*\d+|6th\s+week|sixth\s+week|std|short\s*[- ]?term\s+disability|leave\s+pay|maternity\s+pay|get\s+paid|paychec?k)\b/i.test(lowerQuery);
     const maternityFlowRequested = maternityRequested && !qleFilingOrderRequested && !hasStdPaySignals;
-    if (maternityFlowRequested) {
+    if (!pipelineFirstMode && maternityFlowRequested) {
   logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] MATERNITY-FLOW`);
   // If noPricingMode is active, the deterministic function produces empty plan
   // sections after stripPricingDetails removes all $ lines ΓÇö fall through to LLM.
@@ -2283,7 +2339,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
     // CUSTOM INTERCEPT: Orthodontics/braces direct answer (deterministic)
     // Uses canonical dental plan data ΓÇö no LLM hallucination possible
     const orthoRequested = /orthodont|braces|\bortho\b|dental\s*(?:cover|include).*(?:ortho|brace)/i.test(lowerQuery);
-    if (orthoRequested) {
+    if (!pipelineFirstMode && orthoRequested) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] ORTHODONTICS`);
       const dental = pricingUtils.getDentalPlanDetails();
       let msg = `Yes! The **${dental.name}** (${dental.provider}) includes orthodontia coverage. Here are the key details:\n\n`;
@@ -2320,7 +2376,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
     const isTopicContinuation = hasNoCategoryKeyword && query.trim().length < 120 &&
       /\b(difference|what(?:'s|\s+is)\s+available|what\s+(?:options?|plans?|choices?)|what\s+(?:do\s+)?(?:i|we)\s+(?:have|get)|available\s+to\s+me|what\s+(?:are|is)\s+(?:the|my)\s+(?:options?|plans?|choices?)|tell\s+me\s+(?:about\s+)?(?:the\s+)?(?:plans?|options?)|just\s+want\s+to\s+know|want\s+to\s+(?:know|see|understand))\b/i.test(lowerQuery);
 
-    if ((isShortFollowUp || isTopicContinuation) && session.currentTopic) {
+    if (!pipelineFirstMode && (isShortFollowUp || isTopicContinuation) && session.currentTopic) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] CONTINUATION-HANDLER: topic=${session.currentTopic}, short=${isShortFollowUp}, topicCont=${isTopicContinuation}`);
       // Use topicLabel instead of parroting the user's query
       const topicLabel = session.currentTopic;
@@ -2341,7 +2397,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
     const isYes = /^(yes|yeah|yep|sure|ok|okay|please|do it|go ahead)$/i.test(query.trim());
     const lastAskedCompare = /compare\s+with\s+vision|compare\s+with\s+vision\s+coverage|compare\s+vision/i.test(session.lastBotMessage || '');
     const currentTopicLower = (session.currentTopic || '').toLowerCase();
-    if (isYes && lastAskedCompare && currentTopicLower.includes('dental')) {
+    if (!pipelineFirstMode && isYes && lastAskedCompare && currentTopicLower.includes('dental')) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] YES-COMPARE-DENTAL-VISION`);
       const msg = buildDentalVisionComparisonResponse(session);
       const plainMsg = toPlainAssistantText(msg);
@@ -2354,7 +2410,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
     // DENTAL/VISION COMPARISON (Deterministic)
     // ========================================================================
     const compareDentalVisionRequested = /\bcompare\b/i.test(lowerQuery) && /\bvision\b/i.test(lowerQuery) && ( /\bdental\b/i.test(lowerQuery) || currentTopicLower.includes('dental') );
-    if (compareDentalVisionRequested) {
+    if (!pipelineFirstMode && compareDentalVisionRequested) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] COMPARE-DENTAL-VISION`);
       const msg = buildDentalVisionComparisonResponse(session);
       const plainMsg = toPlainAssistantText(msg);
@@ -2365,7 +2421,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
 
     // If user asks to compare dental plans, clarify there is only one plan.
     const compareDentalOnlyRequested = /\bcompare\b/i.test(lowerQuery) && /\bdental\b/i.test(lowerQuery) && !/\bvision\b/i.test(lowerQuery);
-    if (compareDentalOnlyRequested) {
+    if (!pipelineFirstMode && compareDentalOnlyRequested) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] COMPARE-DENTAL-ONLY`);
       let msg = `AmeriVet offers a single dental plan: **${amerivetBenefits2024_2025.dentalPlan.name}** (${amerivetBenefits2024_2025.dentalPlan.provider}).\n\n`;
       msg += `If you'd like, I can compare it side-by-side with the vision plan or show pricing for a specific coverage tier.`;
@@ -2383,7 +2439,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
     // instantly ΓÇö no hallucination possible.
     {
       const { intent: firstPassIntent } = classifyQueryIntent(lowerQuery, session.currentTopic);
-      if (firstPassIntent === 'yes_no' || firstPassIntent === 'factual_lookup') {
+      if (!pipelineFirstMode && (firstPassIntent === 'yes_no' || firstPassIntent === 'factual_lookup')) {
         let shortAnswer = buildShortCategoryAnswer(lowerQuery, firstPassIntent, session);
         // Retry with session topic injected for context-free follow-ups
         // e.g. "who is this coverage with?" + currentTopic="life insurance"
@@ -2417,7 +2473,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
     const categoryExplorationIntercept = shouldUseCategoryExplorationIntercept(query, lowerQuery, intentDomain)
       ? buildCategoryExplorationResponse(lowerQuery, session, extractCoverageFromQuery(query))
       : null;
-    if (categoryExplorationIntercept) {
+    if (!pipelineFirstMode && categoryExplorationIntercept) {
         logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] CATEGORY-EXPLORATION: ${normalizeBenefitCategory(lowerQuery)}`);
         // Track current topic so "no thanks" / "skip" can decline it
         session.currentTopic = normalizeBenefitCategory(lowerQuery);
@@ -2459,10 +2515,13 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
         } else {
             msg += `\n\nYou've now reviewed all your available benefits! You can say "summary" anytime to see a recap of your decisions.`;
         }
-        const plainMsg = toPlainAssistantText(msg);
-        session.lastBotMessage = plainMsg;
+        if (!pipelineFirstMode) {
+          const plainMsg = toPlainAssistantText(msg);
+          session.lastBotMessage = plainMsg;
+          await updateSession(sessionId, session);
+          return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session) });
+        }
         await updateSession(sessionId, session);
-        return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session) });
     }
 
     // PHASE 3: STATEFUL GUARDED AGENT ARCHITECTURE
@@ -2540,7 +2599,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
 
     // INTERCEPT: Total deduction calculation ΓÇö checked BEFORE generic per-paycheck
     // so "enroll in all benefits per paycheck" triggers the total, not the per-plan breakdown.
-    if (totalDeductionRequested) {
+    if (!pipelineFirstMode && totalDeductionRequested) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] TOTAL-DEDUCTION`);
       const coverageTier = extractCoverageFromQuery(query);
       const payPeriods = session.payPeriods || 26;
@@ -2622,7 +2681,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
       return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'total-deduction', allPlans: true } });
     }
 
-    if (perPaycheckRequested) {
+    if (!pipelineFirstMode && perPaycheckRequested) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] PER-PAYCHECK`);
       const coverageTier = extractCoverageFromQuery(query);
       const payPeriods = session.payPeriods || 26;
@@ -2679,6 +2738,16 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
     // ========================================================================
     if (result.gatePass === false) {
       logger.warn(`[REQ:${reqId}][GATE2 FAIL] ${result.gateFailReason}, topScore=${result.gateTopScore?.toFixed(3)}`);
+
+      if (pipelineFirstMode) {
+        const l1Cached = checkL1FAQ(query, session);
+        if (l1Cached) {
+          logger.info(`[REQ:${reqId}][GATE2 FALLBACK] L1-STATIC-FAQ matched after gate failure`);
+          session.lastBotMessage = l1Cached;
+          await updateSession(sessionId, session);
+          return NextResponse.json({ answer: l1Cached, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { gatePass: false, intercept: 'l1-static-faq-fallback' } });
+        }
+      }
 
       // COMPARISON FALLBACK: before dead-ending, check if this is a compare/options
       // query with a known topic ΓÇö buildCategoryExplorationResponse can handle it
@@ -3225,6 +3294,35 @@ Answer directly from the IMMUTABLE CATALOG. Name the plan. State the exact figur
     const validationGatePassed = validationGateFailures.length === 0;
     if (!validationGatePassed) {
       logger.warn(`[REQ:${reqId}][STEP-11 GATE-FAIL] validation gate blocked response: ${validationGateFailures.join(', ')}`);
+
+      if (pipelineFirstMode) {
+        const l1Cached = checkL1FAQ(query, session);
+        if (l1Cached) {
+          logger.info(`[REQ:${reqId}][STEP-11 FALLBACK] L1-STATIC-FAQ matched after validation gate failure`);
+          session.lastBotMessage = l1Cached;
+          if (!session.messages) session.messages = [];
+          session.messages.push(
+            { role: 'user', content: query },
+            { role: 'assistant', content: l1Cached }
+          );
+          if (session.messages.length > 6) {
+            session.messages = session.messages.slice(-6);
+          }
+          await updateSession(sessionId, session);
+          return NextResponse.json({
+            answer: l1Cached,
+            tier: 'L1',
+            citations: result.chunks,
+            sessionContext: buildSessionContext(session),
+            metadata: {
+              category,
+              validationGate: { passed: false, failures: validationGateFailures, generationScore: finalGenQuality.score },
+              validation: { retrieval: pipelineResult.retrieval, reasoning: pipelineResult.reasoning, output: pipelineResult.output, overallPassed: pipelineResult.overallPassed },
+              intercept: 'l1-static-faq-validation-fallback'
+            },
+          });
+        }
+      }
 
       // Prefer deterministic, catalog-based responses before using the
       // "could not validate" fallback.
