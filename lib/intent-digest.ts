@@ -72,6 +72,10 @@ export function digestIntent(
     guardrailParts.push('NO-PRICING MODE: never include dollar amounts.');
   }
 
+  if (/\b(medical|hsa|ppo|hmo|kaiser)\b/i.test(lower)) {
+    guardrailParts.push("CRITICAL: Never say 'PPO Plan'. Always say 'HSA Plan using the BCBSTX PPO Network'.");
+  }
+
   if (/\bppo\b/i.test(lower)) {
     guardrailParts.push('PPO GUARDRAIL: AmeriVet does not offer a standalone PPO plan; however, both the Standard and Enhanced HSA plans utilize the BCBSTX Nationwide PPO network.');
   }

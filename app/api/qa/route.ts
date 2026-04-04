@@ -220,7 +220,7 @@ function classifyInput(msg: string) {
   //    Covers: "don't include pricing", "do not include any pricing", "no dollar signs", "without costs"
   //    Also covers: "not asking about pricing", "don't tell me prices", "skip the price", "just features"
   //    NOTE: Trailing \b removed on partial-word patterns (pric->pricing, cost->costs, etc.)
-  const noPricing = /(?:\bno\s*pric|\bno\s*rates?\b|\bno\s*costs?\b|\bno\s*dollar|\bcoverage\s*only\b|\bfeatures?\s*only\b|\bwithout\s*(?:any\s*)?(?:pric|cost|dollar|rate)|\bskip\s*(?:the\s*)?pric|(?:\bdon'?t|\bdo\s+not)\s*(?:show|tell|include|need|list|mention|give|use|add|display|put)\s*(?:me\s*)?(?:any\s*)?(?:the\s*)?(?:cost|pric|rate|premium|dollar)|\bnot\s+(?:asking|looking)\s+(?:about|for)\s+(?:any\s*)?(?:the\s*)?(?:pric|rate|cost)|\bjust\s+(?:the\s*)?(?:feature|coverage|detail|difference|plan|option|benefit)|\bno\s*\$|\bno\s+price|\bignore\s*(?:the\s*)?(?:pric|cost|rate)|\bforget\s*(?:the\s*)?(?:pric|cost|rate))/i.test(clean);
+  const noPricing = /(?:\bno\s*pric|\bno\s*rates?\b|\bno\s*costs?\b|\bno\s*dollar|\bno\s+money\b|\bcoverage\s*only\b|\bfeatures?\s*only\b|\bwithout\s*(?:any\s*)?(?:pric|cost|dollar|rate)|\bskip\s*(?:the\s*)?pric|(?:\bdon'?t|\bdo\s+not)\s*(?:show|tell|include|need|list|mention|give|use|add|display|put)\s*(?:me\s*)?(?:any\s*)?(?:the\s*)?(?:cost|pric|rate|premium|dollar)|\bnot\s+(?:asking|looking)\s+(?:about|for)\s+(?:any\s*)?(?:the\s*)?(?:pric|rate|cost)|\bjust\s+(?:the\s*)?(?:feature|coverage|detail|difference|plan|option|benefit)|\bno\s*\$|\bno\s+price|\bignore\s*(?:the\s*)?(?:pric|cost|rate)|\bforget\s*(?:the\s*)?(?:pric|cost|rate))/i.test(clean);
 
   // E. FAMILY TIER DETECTION — "Spouse and 3 children", "family of 5", "wife and kids", "a spouse and 3 kids"
   //    Automatically locks subsequent responses to Employee + Family tier.
@@ -392,6 +392,15 @@ function normalizeMojibake(text: string): string {
     out = out.split(bad).join(good);
   }
   return out;
+}
+
+function applyPricingExclusion(answer: string, pricingExclusion: boolean): string {
+  if (!pricingExclusion) return answer;
+  const withoutDollarLines = answer
+    .split('\n')
+    .filter(line => !/\$\d/.test(line))
+    .join('\n');
+  return withoutDollarLines.replace(/\$\d+(?:,\d{3})*(?:\.\d{1,2})?/g, '[see portal for pricing]');
 }
 
 function isLikelyGarbledInput(query: string): boolean {
@@ -1014,6 +1023,7 @@ function buildCategoryExplorationResponse(
   const wantsDental = /\b(dental|teeth|orthodont|braces)\b/i.test(queryLower);
   const wantsVision = /\b(vision|eye|glasses|contacts|lasik)\b/i.test(queryLower);
   const wantsMedical = /\b(medical|health)\b/i.test(queryLower);
+  const wantsLife = /\b(life\s+insurance|term\s+life|whole\s+life|basic\s+life|voluntary\s+life)\b/i.test(queryLower);
   const wantsDisability = /\b(disability|std|ltd|short\s*-?term|long\s*-?term)\b/i.test(queryLower);
   const wantsCritical = /\bcritical\s*illness\b/i.test(queryLower);
   const wantsAccident = /\b(accident|ad&d)\b/i.test(queryLower);
@@ -1137,9 +1147,49 @@ function buildCategoryExplorationResponse(
     return msg;
   };
 
+  const buildLifeOverview = () => {
+    const lifePlans = catalog.voluntaryPlans.filter((plan) => plan.voluntaryType === 'life');
+    const basic = lifePlans.find((plan) => /basic life/i.test(plan.name));
+    const term = lifePlans.find((plan) => /term life/i.test(plan.name));
+    const whole = lifePlans.find((plan) => /whole life/i.test(plan.name));
+
+    let msg = `Life insurance options:\n\n`;
+    if (basic) {
+      msg += `- **${basic.name}** (${basic.provider}) — ${basic.description}\n`;
+    }
+    if (term) {
+      msg += `- **${term.name}** (${term.provider}) — ${term.description}\n`;
+    }
+    if (whole) {
+      msg += `- **${whole.name}** (${whole.provider}) — ${whole.description}\n`;
+    }
+
+    const featureLines = (plan?: typeof basic) => {
+      if (!plan?.features?.length) return '';
+      return plan.features.map(feature => `  - ${feature}`).join('\n');
+    };
+
+    if (basic?.features?.length) {
+      msg += `\nBasic Life features:\n${featureLines(basic)}\n`;
+    }
+    if (term?.features?.length) {
+      msg += `\nVoluntary Term Life features:\n${featureLines(term)}\n`;
+    }
+    if (whole?.features?.length) {
+      msg += `\nWhole Life features:\n${featureLines(whole)}\n`;
+    }
+
+    msg += `\nVoluntary life rates are age-banded. For your exact rate and coverage amount, check Workday: ${ENROLLMENT_PORTAL_URL}.`;
+    return msg;
+  };
+
   if (wantsDental && wantsVision) {
     const msg = `${buildDentalOverview()}\n\n---\n\n${buildVisionOverview()}`;
     return finalize(msg);
+  }
+
+  if (wantsLife) {
+    return finalize(buildLifeOverview());
   }
 
   if (wantsDisability || wantsCritical || wantsAccident || wantsSupplemental) {
@@ -1238,6 +1288,7 @@ function buildDentalVisionComparisonResponse(session: Session): string {
 
 function inferCoverageTierFromQuery(query: string, session: Session): string {
   const low = query.toLowerCase();
+  if (/\bchild\b|children|kid|dependent\s+child/i.test(low)) return 'Employee + Child(ren)';
   if (/employee\s*\+\s*family|family\s*(of|plan|coverage)|for\s*(my|the|our)\s*family/i.test(low)) return 'Employee + Family';
   if (/employee\s*\+\s*spouse|spouse|husband|wife|partner/i.test(low)) return 'Employee + Spouse';
   if (/employee\s*\+\s*child|child(?:ren)?\s*coverage|for\s*(my|the)\s*(kid|child|son|daughter)|dependent\s*child/i.test(low)) return 'Employee + Child(ren)';
@@ -2005,12 +2056,12 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
 
     // INTERCEPT: SUMMARY REQUEST
     // ========================================================================
-    if (!pipelineFirstMode && isSummaryRequest(query)) {
+    if (isSummaryRequest(query)) {
         logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] SUMMARY requested`);
         const nameRef = session.userName && session.userName !== 'Guest' ? session.userName : 'there';
         const decisions = session.decisionsTracker || {};
         const msg = compileSummary(decisions, nameRef);
-        const plainMsg = toPlainAssistantText(msg);
+      const plainMsg = toPlainAssistantText(applyPricingExclusion(msg, session.noPricingMode || intent.noPricing));
         session.lastBotMessage = plainMsg;
         await updateSession(sessionId, session);
         return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session) });
@@ -2084,7 +2135,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
       }
       return null;
     })();
-    if (!pipelineFirstMode && twoPlanCompare) {
+    if (twoPlanCompare) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] TWO-PLAN-COMPARE: ${twoPlanCompare.map(p => p.label).join(' vs ')}`);
       // Prefer the tier set by RULE 1 in this turn (familyTierSignal) over the locked session value,
       // because the user may have stated family size in the same message as the comparison request.
@@ -2131,6 +2182,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
           msg += `- Premium difference: **$${pricingUtils.formatMoney(diff)}/month** for ${row2.perMonth > row1.perMonth ? row2.plan + ' costs more' : row1.plan + ' costs more'}.\n`;
         }
         msg += `\nWould you like a total annual cost estimate factoring in expected healthcare usage?`;
+        msg = applyPricingExclusion(msg, session.noPricingMode || intent.noPricing);
         session.lastBotMessage = msg;
         await updateSession(sessionId, session);
         return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'two-plan-compare' } });
@@ -2183,7 +2235,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
     const hasPlanKeyword = /\b(plan|option|coverage)s?\b/i.test(lowerQuery);
     const hasCompareKeyword = /\b(compare|comparison|option|show|list|available|costs?|prices?|premiums?)\b/i.test(lowerQuery);
     const medicalComparisonRequested = hasMedicalKeyword && hasPlanKeyword && hasCompareKeyword && !/per[\s-]*pay/i.test(lowerQuery) && !isCostModelingQuery;
-    if (!pipelineFirstMode && medicalComparisonRequested && shouldUseMedicalComparisonIntercept(query, lowerQuery, intentDomain) && !(recommendRequested && singleHealthy)) {
+    if (medicalComparisonRequested && shouldUseMedicalComparisonIntercept(query, lowerQuery, intentDomain) && !(recommendRequested && singleHealthy)) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] MEDICAL-COMPARISON`);
       const coverageTier = extractCoverageFromQuery(query);
       const payPeriods = session.payPeriods || 26;
@@ -2212,7 +2264,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
         }
         msg += `\nWould you like more detail on any plan, a different coverage tier, or to move on to Dental/Vision?`;
       }
-      const plainMsg = toPlainAssistantText(msg);
+      const plainMsg = toPlainAssistantText(applyPricingExclusion(msg, session.noPricingMode || intent.noPricing));
       session.lastBotMessage = plainMsg;
       await updateSession(sessionId, session);
       return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'medical-comparison' } });
@@ -2333,7 +2385,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
     // CUSTOM INTERCEPT: Orthodontics/braces direct answer (deterministic)
     // Uses canonical dental plan data ΓÇö no LLM hallucination possible
     const orthoRequested = /orthodont|braces|\bortho\b|dental\s*(?:cover|include).*(?:ortho|brace)/i.test(lowerQuery);
-    if (!pipelineFirstMode && orthoRequested) {
+    if (orthoRequested) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] ORTHODONTICS`);
       const dental = pricingUtils.getDentalPlanDetails();
       let msg = `Yes! The **${dental.name}** (${dental.provider}) includes orthodontia coverage. Here are the key details:\n\n`;
@@ -2350,7 +2402,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
         msg += `- Employee + Family: $${pricingUtils.formatMoney(dental.tiers.employeeFamily)}\n`;
       }
       msg += `\nOrthodontic coverage typically applies to both children and adults. For the full Dental Summary with age limits and lifetime maximums, check in Workday: ${ENROLLMENT_PORTAL_URL}`;
-        const plainMsg = session.noPricingMode ? stripPricingDetails(toPlainAssistantText(msg)) : toPlainAssistantText(msg);
+        const plainMsg = applyPricingExclusion(session.noPricingMode ? stripPricingDetails(toPlainAssistantText(msg)) : toPlainAssistantText(msg), session.noPricingMode || intent.noPricing);
         session.lastBotMessage = plainMsg;
         await updateSession(sessionId, session);
         return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'orthodontics' } });
@@ -2404,10 +2456,10 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
     // DENTAL/VISION COMPARISON (Deterministic)
     // ========================================================================
     const compareDentalVisionRequested = /\bcompare\b/i.test(lowerQuery) && /\bvision\b/i.test(lowerQuery) && ( /\bdental\b/i.test(lowerQuery) || currentTopicLower.includes('dental') );
-    if (!pipelineFirstMode && compareDentalVisionRequested) {
+    if (compareDentalVisionRequested) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] COMPARE-DENTAL-VISION`);
       const msg = buildDentalVisionComparisonResponse(session);
-      const plainMsg = toPlainAssistantText(msg);
+      const plainMsg = toPlainAssistantText(applyPricingExclusion(msg, session.noPricingMode || intent.noPricing));
       session.lastBotMessage = plainMsg;
       await updateSession(sessionId, session);
       return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'compare-dental-vision' } });
@@ -2415,11 +2467,11 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
 
     // If user asks to compare dental plans, clarify there is only one plan.
     const compareDentalOnlyRequested = /\bcompare\b/i.test(lowerQuery) && /\bdental\b/i.test(lowerQuery) && !/\bvision\b/i.test(lowerQuery);
-    if (!pipelineFirstMode && compareDentalOnlyRequested) {
+    if (compareDentalOnlyRequested) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] COMPARE-DENTAL-ONLY`);
-      let msg = `AmeriVet offers a single dental plan: **${amerivetBenefits2024_2025.dentalPlan.name}** (${amerivetBenefits2024_2025.dentalPlan.provider}).\n\n`;
-      msg += `If you'd like, I can compare it side-by-side with the vision plan or show pricing for a specific coverage tier.`;
-      const plainMsg = toPlainAssistantText(session.noPricingMode ? stripPricingDetails(msg) : msg);
+      let msg = `AmeriVet offers one comprehensive dental plan: **${amerivetBenefits2024_2025.dentalPlan.name}** (${amerivetBenefits2024_2025.dentalPlan.provider}).\n\n`;
+      msg += `If you'd like a full “Teeth & Eyes” overview, I can compare it side-by-side with the vision plan.`;
+      const plainMsg = toPlainAssistantText(applyPricingExclusion(session.noPricingMode ? stripPricingDetails(msg) : msg, session.noPricingMode || intent.noPricing));
       session.lastBotMessage = plainMsg;
       await updateSession(sessionId, session);
       return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'compare-dental-only' } });
@@ -2467,11 +2519,11 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
     const categoryExplorationIntercept = shouldUseCategoryExplorationIntercept(query, lowerQuery, intentDomain)
       ? buildCategoryExplorationResponse(lowerQuery, session, extractCoverageFromQuery(query))
       : null;
-    if (!pipelineFirstMode && categoryExplorationIntercept) {
+    if (categoryExplorationIntercept && (!pipelineFirstMode || /\b(life\s+insurance|term\s+life|whole\s+life|basic\s+life)\b/i.test(lowerQuery))) {
         logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] CATEGORY-EXPLORATION: ${normalizeBenefitCategory(lowerQuery)}`);
         // Track current topic so "no thanks" / "skip" can decline it
         session.currentTopic = normalizeBenefitCategory(lowerQuery);
-        const plainCategoryResponse = toPlainAssistantText(categoryExplorationIntercept);
+      const plainCategoryResponse = toPlainAssistantText(applyPricingExclusion(categoryExplorationIntercept, session.noPricingMode || intent.noPricing));
         session.lastBotMessage = plainCategoryResponse;
         await updateSession(sessionId, session);
         return NextResponse.json({ answer: plainCategoryResponse, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'category-exploration' } });
@@ -2593,7 +2645,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
 
     // INTERCEPT: Total deduction calculation ΓÇö checked BEFORE generic per-paycheck
     // so "enroll in all benefits per paycheck" triggers the total, not the per-plan breakdown.
-    if (!pipelineFirstMode && totalDeductionRequested) {
+    if (totalDeductionRequested) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] TOTAL-DEDUCTION`);
       const coverageTier = extractCoverageFromQuery(query);
       const payPeriods = session.payPeriods || 26;
@@ -2613,7 +2665,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
           const annual = Number((monthlyFromSelections * 12).toFixed(2));
           msg = `Based on your selected benefits, estimated deductions are $${pricingUtils.formatMoney(perPay)} per paycheck ($${pricingUtils.formatMoney(monthlyFromSelections)}/month, $${pricingUtils.formatMoney(annual)}/year).\n\nThis includes only the plan premiums I can calculate from your saved selections. For exact deductions during enrollment (and any age-banded voluntary benefits), confirm in Workday: ${ENROLLMENT_PORTAL_URL}`;
         }
-        const plainMsg = toPlainAssistantText(msg);
+        const plainMsg = toPlainAssistantText(applyPricingExclusion(msg, session.noPricingMode || intent.noPricing));
         session.lastBotMessage = plainMsg;
         await updateSession(sessionId, session);
         return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'total-deduction' } });
@@ -2669,13 +2721,13 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
         }
         msg += `\nFor your exact payroll deductions during enrollment, please verify in Workday: ${ENROLLMENT_PORTAL_URL}`;
       }
-      const plainMsg = toPlainAssistantText(msg);
+      const plainMsg = toPlainAssistantText(applyPricingExclusion(msg, session.noPricingMode || intent.noPricing));
       session.lastBotMessage = plainMsg;
       await updateSession(sessionId, session);
       return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'total-deduction', allPlans: true } });
     }
 
-    if (!pipelineFirstMode && perPaycheckRequested) {
+    if (perPaycheckRequested) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] PER-PAYCHECK`);
       const coverageTier = extractCoverageFromQuery(query);
       const payPeriods = session.payPeriods || 26;
@@ -2708,7 +2760,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
         msg += `\nNote: Some plans are region-limited (for example, Kaiser availability depends on your state). If you share your state, I can filter to only the plans available to you.`;
       }
       msg += `\nFor your exact payroll deductions during enrollment, please verify in Workday: ${ENROLLMENT_PORTAL_URL}`;
-      const plainMsg = toPlainAssistantText(msg);
+      const plainMsg = toPlainAssistantText(applyPricingExclusion(msg, session.noPricingMode || intent.noPricing));
       session.lastBotMessage = plainMsg;
       await updateSession(sessionId, session);
       return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'per-paycheck' } });
@@ -3213,6 +3265,8 @@ Remember: answer ONLY from the IMMUTABLE CATALOG. Do NOT ask for name, age, or s
       answer = answer.replace(/\[see portal for pricing\](?:\s*\([^)]*\))?/g, '[see portal for pricing]');
       logger.info(`[REQ:${reqId}][STEP-10 POST] NO-PRICING: stripped pricing from response`);
     }
+
+    answer = applyPricingExclusion(answer, pricingExclusion);
 
     answer = toPlainAssistantText(answer);
 
