@@ -1,14 +1,4 @@
-﻿// Optimized Topic Extractor (Prevents "Parrot" syntax)
-function getTopicLabel(query: string, currentTopic?: string): string {
-  const lower = query.toLowerCase();
-  if (/family|spouse|child|kid|dependent/i.test(lower)) return "your family coverage options";
-  if (/medical|health|hsa|ppo|hmo|kaiser/i.test(lower)) return "medical plan details";
-  if (/dental|vision|teeth|eye/i.test(lower)) return "ancillary benefits (dental/vision)";
-  if (/life|disability|accident|critical/i.test(lower)) return "voluntary/supplemental insurance";
-  // Fallback to the session's active topic if the query is vague
-  return currentTopic ? `${currentTopic.toLowerCase()} details` : "your benefits inquiry";
-}
-import { NextRequest, NextResponse } from 'next/server';
+﻿import { NextRequest, NextResponse } from 'next/server';
 import { logger } from '@/lib/logger';
 import { hybridRetrieve } from '@/lib/rag/hybrid-retrieval';
 import { azureOpenAIService } from '@/lib/azure/openai';
@@ -30,6 +20,8 @@ import { detectTextualHallucination } from '@/lib/rag/validation';
 import { verifyNumericalIntegrity } from '@/lib/rag/grounding-audit';
 import { pipelineLogger, createTrace } from '@/lib/services/pipeline-logger';
 import { buildPersonaDirective, detectPersona, type ResponsePersona } from '@/lib/response-persona';
+import { digestIntent, detectIntentDomain, type IntentDomain } from '@/lib/intent-digest';
+import { applyNameCapture, applySelfHealGuest, ensureNameForDemographics, shouldPromptForName } from '@/lib/session-logic';
 
 import { IRS_2026 } from '@/lib/data/irs-limits-2026';
 import {
@@ -41,7 +33,7 @@ import {
 } from '@/lib/rag/semantic-router';
 import pricingUtils from '@/lib/rag/pricing-utils';
 import { classifyQueryIntent, getIntentHint, type QueryIntent } from '@/lib/rag/query-intent-classifier';
-import { amerivetBenefits2024_2025, getCatalogForPrompt } from '@/lib/data/amerivet';
+import { amerivetBenefits2024_2025, getCatalogForPrompt, type BenefitPlan } from '@/lib/data/amerivet';
 // Utility to extract all numbers from the AmeriVet catalog object
 function extractAllNumbers(obj: any): number[] {
   const nums: number[] = [];
@@ -269,27 +261,6 @@ function extractCategory(msg: string): string | null {
   return null; // Fallback to searching everything
 }
 
-// Smart Name Extractor
-function extractName(msg: string): string | null {
-  const NOT_NAMES = new Set(['hello', 'hi', 'hlo', 'hey', 'medical', 'dental', 'vision', 'help', 'benefits', 'insurance', 'quote', 'cost', 'ok', 'yes', 'no']);
-  
-  // 1. Explicit: "My name is Sonal"
-  const match = msg.match(/(?:name is|i'm|i am|call me)\s+([a-zA-Z]{2,15})/i);
-  if (match && !NOT_NAMES.has(match[1].toLowerCase())) return match[1];
-
-  // 2. Implicit: Single word that looks like a name ("Sonal")
-  const words = msg.trim().split(/\s+/);
-  const firstWord = words[0].toLowerCase();
-  
-  // Must be 3+ characters, all letters, not a common word, and have vowels
-  if (words.length <= 2 && 
-      !NOT_NAMES.has(firstWord) && 
-      /^[a-zA-Z]{3,}$/.test(words[0]) &&
-      /[aeiou]/i.test(words[0])) {
-    return words[0].charAt(0).toUpperCase() + words[0].slice(1).toLowerCase();
-  }
-  return null;
-}
 
 // ============================================================================
 // 1.6 FULL BENEFITS LIST & DECISION TRACKER
@@ -362,7 +333,7 @@ function detectDecision(query: string): { category: string; decision: string; st
 
 function isSummaryRequest(query: string): boolean {
   const lower = query.toLowerCase();
-  return /\b(summary|recap|review|what\s+(?:have\s+i|did\s+i)\s+(?:decided|chosen|picked|selected)|show\s+(?:me\s+)?my\s+(?:choices|selections|decisions)|wrap\s*up|overview\s+of\s+my)\b/i.test(lower);
+  return /\b(summary|summarize|summarise|recap|review|what\s+(?:have\s+i|did\s+i)\s+(?:decided|chosen|picked|selected)|show\s+(?:me\s+)?my\s+(?:choices|selections|decisions)|wrap\s*up|overview\s+of\s+my)\b/i.test(lower);
 }
 
 function compileSummary(decisions: Record<string, any>, userName: string): string {
@@ -794,83 +765,6 @@ function scoreGenerationQuality(
 
   const score = Math.min(1, (coverage * 0.55 + specificity * 0.45) * lengthMultiplier);
   return { score: parseFloat(score.toFixed(3)), coverage: parseFloat(coverage.toFixed(3)), specificity: parseFloat(specificity.toFixed(3)), lengthOk };
-}
-
-type IntentDomain = 'pricing' | 'policy' | 'general';
-
-type DigestedIntent = {
-  topic: string;
-  intent: string;
-  guardrail: string;
-  regionalCheck: string;
-};
-
-export function detectIntentDomain(lowerQuery: string): IntentDomain {
-  const hasPolicy = /\b(can\s+i|am\s+i|eligible|qualif(?:y|ied)|how\s+many\s+days|deadline|window|qle|qualifying\s+life\s+event|special\s+enrollment|filing\s+order|what\s+order|step\s*by\s*step|fmla|std|short\s*[- ]?term\s+disability|pre-?existing|clause|deny|denied|deductible\s+reset|effective\s+date)\b/i.test(lowerQuery);
-  const hasPricing = /\b(how\s+much|cost|price|premium|deduct(?:ed|ion)|per\s*pay(?:check|period)|monthly|annual|compare\s+cost|estimate|projection|oop|out\s+of\s+pocket)\b/i.test(lowerQuery);
-
-  if (hasPolicy && !hasPricing) return 'policy';
-  if (hasPricing) return 'pricing';
-  return 'general';
-}
-
-function digestIntent(
-  query: string,
-  session: Session,
-  responseIntent: QueryIntent,
-  intentDomain: IntentDomain,
-): DigestedIntent {
-  const lower = query.toLowerCase();
-  const stateCode = (session.userState || '').toUpperCase();
-
-  let topic = getTopicLabel(query, session.currentTopic);
-  if (/\b(maternity|parental|fmla|std|leave|pregnan|birth|baby)\b/i.test(lower)) {
-    topic = 'Maternity Leave Timeline';
-  }
-
-  let intent = responseIntent.toUpperCase();
-  if (/\b(maternity|parental|fmla|std|leave)\b/i.test(lower)) {
-    intent = 'LEAVE_TIMELINE';
-  } else if (responseIntent === 'cost_lookup') {
-    intent = 'PLAN_COST_LOOKUP';
-  } else if (responseIntent === 'comparison') {
-    intent = 'PLAN_COMPARISON';
-  }
-
-  const guardrailParts: string[] = [];
-  if (intentDomain === 'policy' || intent === 'LEAVE_TIMELINE') {
-    guardrailParts.push('FOCUS ON: duration, eligibility, pay percentages, waiting periods, and filing order.');
-    guardrailParts.push('AVOID: plan premium comparisons and unrelated plan pricing.');
-  } else if (intent === 'PLAN_COMPARISON') {
-    guardrailParts.push('FOCUS ON: side-by-side differences with a markdown table.');
-    guardrailParts.push('AVOID: off-topic policy narration.');
-  } else if (intent === 'PLAN_COST_LOOKUP') {
-    guardrailParts.push('FOCUS ON: exact monthly amounts and requested tier only.');
-    guardrailParts.push('AVOID: broad overviews of unrelated plans.');
-  } else {
-    guardrailParts.push('FOCUS ON: the exact question and direct catalog-grounded answer.');
-    guardrailParts.push('AVOID: repeating the user question or generic filler intros.');
-  }
-
-  if (session.noPricingMode) {
-    guardrailParts.push('NO-PRICING MODE: never include dollar amounts.');
-  }
-
-  let regionalCheck = 'REGIONAL CHECK: apply state-locked medical availability rules before answering.';
-  if (stateCode === 'OR') {
-    regionalCheck = 'REGIONAL CHECK: Oregon is Kaiser-eligible. Include Kaiser in medical options/comparisons and show in table form.';
-  } else if (stateCode === 'GA') {
-    regionalCheck = 'REGIONAL CHECK: Georgia is Kaiser-eligible. Include Kaiser in medical options/comparisons and present the regional comparison in table form.';
-  } else if (stateCode) {
-    regionalCheck = `REGIONAL CHECK: ${stateCode} state lock applies. Only show region-eligible medical options.`;
-  }
-
-  return {
-    topic,
-    intent,
-    guardrail: guardrailParts.join(' '),
-    regionalCheck,
-  };
 }
 
 // ============================================================================
@@ -1341,6 +1235,98 @@ function buildDentalVisionComparisonResponse(session: Session): string {
   msg += `\nWant the full pricing table for a specific coverage tier or more detail on one plan?`;
   return session.noPricingMode ? stripPricingDetails(msg) : msg;
 }
+
+function inferCoverageTierFromQuery(query: string, session: Session): string {
+  const low = query.toLowerCase();
+  if (/employee\s*\+\s*family|family\s*(of|plan|coverage)|for\s*(my|the|our)\s*family/i.test(low)) return 'Employee + Family';
+  if (/employee\s*\+\s*spouse|spouse|husband|wife|partner/i.test(low)) return 'Employee + Spouse';
+  if (/employee\s*\+\s*child|child(?:ren)?\s*coverage|for\s*(my|the)\s*(kid|child|son|daughter)|dependent\s*child/i.test(low)) return 'Employee + Child(ren)';
+  if (/employee\s*only|individual|single|just\s*me|only\s*me/i.test(low)) return 'Employee Only';
+  return session.coverageTierLock || 'Employee Only';
+}
+
+function buildPpoClarificationFallback(session: Session): string {
+  if (session.userState && KAISER_STATES.has(session.userState.toUpperCase())) {
+    return `AmeriVet does not offer a standalone PPO medical plan. Your medical options are Standard HSA and Enhanced HSA (BCBSTX) plus Kaiser Standard HMO in ${session.userState}. The HSA plans use a nationwide PPO network, but they are HDHP/HSA plans, not a traditional PPO.`;
+  }
+  const stateNote = session.userState ? ` In ${session.userState}, your medical options are Standard HSA and Enhanced HSA (BCBSTX).` : '';
+  return `AmeriVet does not offer a standalone PPO medical plan.${stateNote} The HSA plans use a nationwide PPO network, but they are HDHP/HSA plans, not a traditional PPO.`;
+}
+
+function buildMedicalPlanFallback(query: string, session: Session): string | null {
+  const lower = query.toLowerCase();
+  const wantsCompare = /compare|comparison|difference|vs\.?|versus|side\s*by\s*side|both\s+plans|two\s+plans/i.test(lower);
+  const mentionsStandard = /standard\s*hsa/.test(lower);
+  const mentionsEnhanced = /enhanced\s*hsa/.test(lower);
+  const mentionsKaiser = /kaiser|hmo/.test(lower);
+  const wantsDeductible = /deductible/i.test(lower);
+  const wantsOop = /out\s*of\s*pocket|oop\s*max|max\s*(?:out\s*of\s*pocket|oop)/i.test(lower);
+  const wantsCoinsurance = /coinsurance|co\s*insurance/i.test(lower);
+
+  const medicalPlans = amerivetBenefits2024_2025.medicalPlans;
+  const findPlan = (name: string) => medicalPlans.find((p) => p.name.toLowerCase() === name.toLowerCase()) || null;
+
+  const standard = findPlan('Standard HSA');
+  const enhanced = findPlan('Enhanced HSA');
+  const kaiser = findPlan('Kaiser Standard HMO');
+
+  const selected: BenefitPlan[] = [];
+  if (mentionsStandard && standard) selected.push(standard);
+  if (mentionsEnhanced && enhanced) selected.push(enhanced);
+  if (mentionsKaiser && kaiser) selected.push(kaiser);
+
+  if (wantsCompare || selected.length > 1) {
+    const comparePlans = selected.length > 0 ? selected : [standard, enhanced].filter(Boolean) as BenefitPlan[];
+    if (comparePlans.length === 0) return null;
+    const coverageTier = inferCoverageTierFromQuery(query, session);
+    const rows = pricingUtils.buildPerPaycheckBreakdown(coverageTier, session.payPeriods || 26);
+    let msg = `Here is a side-by-side comparison for ${coverageTier} coverage:\n\n`;
+    msg += `| Plan | Deductible | Out-of-pocket max | Coinsurance |`;
+    if (!session.noPricingMode) msg += ` Monthly premium |`;
+    msg += `\n|---|---|---|---|${session.noPricingMode ? '' : '---|'}\n`;
+
+    for (const plan of comparePlans) {
+      const premium = rows.find((r) => r.plan === plan.name)?.perMonth ?? null;
+      const deductible = plan.coverage?.deductibles?.individual ?? plan.benefits.deductible;
+      const oopMax = plan.coverage?.outOfPocketMax ?? plan.benefits.outOfPocketMax;
+      const coins = plan.coverage?.coinsurance?.inNetwork ?? plan.benefits.coinsurance;
+      msg += `| ${plan.name} | $${pricingUtils.formatMoney(deductible)} | $${pricingUtils.formatMoney(oopMax)} | ${Math.round(coins * 100)}% |`;
+      if (!session.noPricingMode) msg += ` $${pricingUtils.formatMoney(premium || 0)} |`;
+      msg += `\n`;
+    }
+
+    if (comparePlans.some((p) => /kaiser/i.test(p.name)) && session.userState && !KAISER_STATES.has(session.userState.toUpperCase())) {
+      msg += `\nNote: Kaiser Standard HMO is only available in CA, GA, WA, and OR. Since you are in ${session.userState}, it may not be available.`;
+    }
+    return msg.trim();
+  }
+
+  const target = mentionsEnhanced && enhanced
+    ? enhanced
+    : mentionsKaiser && kaiser
+      ? kaiser
+      : mentionsStandard && standard
+        ? standard
+        : null;
+
+  if (!target || !(wantsDeductible || wantsOop || wantsCoinsurance)) return null;
+
+  const deductible = target.coverage?.deductibles?.individual ?? target.benefits.deductible;
+  const deductibleFamily = target.coverage?.deductibles?.family ?? null;
+  const oopMax = target.coverage?.outOfPocketMax ?? target.benefits.outOfPocketMax;
+  const coins = target.coverage?.coinsurance?.inNetwork ?? target.benefits.coinsurance;
+  let msg = `${target.name} summary:\n`;
+  msg += `- Deductible: $${pricingUtils.formatMoney(deductible)}${deductibleFamily ? ` individual / $${pricingUtils.formatMoney(deductibleFamily)} family` : ''}\n`;
+  msg += `- Out-of-pocket max: $${pricingUtils.formatMoney(oopMax)}\n`;
+  msg += `- Coinsurance: ${Math.round(coins * 100)}% (in-network)\n`;
+  if (!session.noPricingMode) {
+    const coverageTier = inferCoverageTierFromQuery(query, session);
+    const rows = pricingUtils.buildPerPaycheckBreakdown(coverageTier, session.payPeriods || 26);
+    const premium = rows.find((r) => r.plan === target.name)?.perMonth ?? null;
+    if (premium !== null) msg += `- Monthly premium (${coverageTier}): $${pricingUtils.formatMoney(premium)}\n`;
+  }
+  return msg.trim();
+}
 // ============================================================================
 // 3. SESSION CONTEXT BUILDER (for frontend caching)
 // ============================================================================
@@ -1535,6 +1521,12 @@ export async function POST(req: NextRequest) {
     const intent = classifyInput(query);
     logger.info(`[REQ:${reqId}][STEP-2 INTENT] continuation=${intent.isContinuation} topic=${intent.isTopic} demographics=${intent.isDemographics} hasAge=${intent.hasAge} hasState=${intent.hasState} stateCode=${intent.stateCode||'none'} noPricing=${intent.noPricing} familyTier=${intent.familyTierSignal} asksPPO=${intent.asksPPOPlan}`);
 
+    const nameCapture = applyNameCapture(session, query);
+    if (nameCapture.detectedName) {
+      await updateSession(sessionId, session);
+      logger.info(`[REQ:${reqId}][STEP-2 NAME] Captured name: ${nameCapture.detectedName}`);
+    }
+
     // ------------------------------------------------------------------------
     // STEP 2: SELF-HEALING (The "Win-Win" Fix)
     // ------------------------------------------------------------------------
@@ -1542,10 +1534,9 @@ export async function POST(req: NextRequest) {
     // FIX: If user input looks like "25 in CA" or "Medical", we force a session restore.
     
     if (!session.hasCollectedName && (intent.isContinuation || intent.isTopic || intent.isDemographics)) {
-       logger.info(`[REQ:${reqId}][STEP-2b SELF-HEAL] Restoring lost session as Guest`);
-       session.userName = "Guest"; // Fallback name so we don't loop
-       session.hasCollectedName = true;
-       session.step = 'active_chat';
+      logger.info(`[REQ:${reqId}][STEP-2b SELF-HEAL] Restoring lost session as Guest`);
+      applySelfHealGuest(session);
+      await updateSession(sessionId, session);
     }
 
     // ------------------------------------------------------------------------
@@ -1584,6 +1575,11 @@ export async function POST(req: NextRequest) {
     if ((intent.hasAge && session.userAge) || (intent.hasState && session.userState)) {
       await updateSession(sessionId, session);
         logger.debug(`[QA] Session updated - HasAge: ${!!session.userAge}, HasState: ${!!session.userState}`);
+    }
+
+    if (session.userAge || session.userState) {
+      ensureNameForDemographics(session);
+      await updateSession(sessionId, session);
     }
 
     // ========================================================================
@@ -1673,26 +1669,24 @@ export async function POST(req: NextRequest) {
     // ------------------------------------------------------------------------
 
     // PHASE 1: GET NAME (Only if session is empty AND input is NOT data/topic)
-    if (!session.hasCollectedName) {
-        const name = extractName(query);
-        if (name) {
-            logger.info(`[REQ:${reqId}][STEP-5 INTERCEPT] NAME-COLLECTED: ${name}`);
-            session.userName = name;
-            session.hasCollectedName = true;
-            session.step = 'awaiting_demographics';
-            const msg = `Thanks, ${name}! It's great to meet you.\n\nTo help me find the best plans for you, could you please share your age and state?`;
+    if (shouldPromptForName(session)) {
+      const nameCapture = applyNameCapture(session, query);
+      if (nameCapture.detectedName) {
+        logger.info(`[REQ:${reqId}][STEP-5 INTERCEPT] NAME-COLLECTED: ${nameCapture.detectedName}`);
+        session.step = 'awaiting_demographics';
+        const msg = `Thanks, ${nameCapture.detectedName}! It's great to meet you.\n\nTo help me find the best plans for you, could you please share your age and state?`;
             
-            session.lastBotMessage = msg;
-        await updateSession(sessionId, session);
-            return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session) });
-        } else {
-            // Default Welcome
-            logger.info(`[REQ:${reqId}][STEP-5 INTERCEPT] WELCOME-PROMPT: No name detected, asking for name`);
-            const msg = `Hi there! Welcome!\n\nI'm your AmeriVet Benefits Assistant. I'm here to help you compare plans and find the right fit.\n\nLet's get started - what's your name?`;
-            session.lastBotMessage = msg;
-        await updateSession(sessionId, session);
-            return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session) });
-        }
+        session.lastBotMessage = msg;
+      await updateSession(sessionId, session);
+        return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session) });
+      } else {
+        // Default Welcome
+        logger.info(`[REQ:${reqId}][STEP-5 INTERCEPT] WELCOME-PROMPT: No name detected, asking for name`);
+        const msg = `Hi there! Welcome!\n\nI'm your AmeriVet Benefits Assistant. I'm here to help you compare plans and find the right fit.\n\nLet's get started - what's your name?`;
+        session.lastBotMessage = msg;
+      await updateSession(sessionId, session);
+        return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session) });
+      }
     }
 
     // PHASE 2: THE STRICT GATEKEEPER
@@ -2740,12 +2734,39 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
       logger.warn(`[REQ:${reqId}][GATE2 FAIL] ${result.gateFailReason}, topScore=${result.gateTopScore?.toFixed(3)}`);
 
       if (pipelineFirstMode) {
+        if (isSummaryRequest(query)) {
+          logger.info(`[REQ:${reqId}][GATE2 FALLBACK] SUMMARY requested after gate failure`);
+          const nameRef = session.userName && session.userName !== 'Guest' ? session.userName : 'there';
+          const decisions = session.decisionsTracker || {};
+          const msg = compileSummary(decisions, nameRef);
+          const plainMsg = toPlainAssistantText(msg);
+          session.lastBotMessage = plainMsg;
+          await updateSession(sessionId, session);
+          return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { gatePass: false, intercept: 'summary-fallback' } });
+        }
+
         const l1Cached = checkL1FAQ(query, session);
         if (l1Cached) {
           logger.info(`[REQ:${reqId}][GATE2 FALLBACK] L1-STATIC-FAQ matched after gate failure`);
           session.lastBotMessage = l1Cached;
           await updateSession(sessionId, session);
           return NextResponse.json({ answer: l1Cached, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { gatePass: false, intercept: 'l1-static-faq-fallback' } });
+        }
+
+        if (/\bppo\b/i.test(query) && !/dental\s+ppo/i.test(query)) {
+          const msg = buildPpoClarificationFallback(session);
+          const plainMsg = toPlainAssistantText(msg);
+          session.lastBotMessage = plainMsg;
+          await updateSession(sessionId, session);
+          return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { gatePass: false, intercept: 'ppo-clarification-fallback' } });
+        }
+
+        const medicalFallback = buildMedicalPlanFallback(query, session);
+        if (medicalFallback) {
+          const plainMsg = toPlainAssistantText(medicalFallback);
+          session.lastBotMessage = plainMsg;
+          await updateSession(sessionId, session);
+          return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { gatePass: false, intercept: 'medical-fallback' } });
         }
       }
 
@@ -2993,7 +3014,8 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
     // Classify query intent for response-shape routing
     const { intent: queryResponseIntent, confidence: intentConfidence } = classifyQueryIntent(query, session.currentTopic);
     const intentHintText = getIntentHint(queryResponseIntent);
-    const digestedIntent = digestIntent(query, session, queryResponseIntent, intentDomain);
+    const pricingExclusion = session.noPricingMode || intent.noPricing;
+    const digestedIntent = digestIntent(query, session, queryResponseIntent, intentDomain, pricingExclusion);
     logger.info(`[REQ:${reqId}][STEP-8e INTENT] responseIntent=${queryResponseIntent} confidence=${intentConfidence.toFixed(2)}`);
 
     // Build the strict state header to inject into every user message (re-enforcement)
@@ -3007,6 +3029,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
   Intent: ${digestedIntent.intent}
   Persona: ${personaState.persona}
   Guardrail: ${digestedIntent.guardrail}
+  ${digestedIntent.pricingExclusion ? 'PRICING EXCLUSION: Describe all coverage features, networks, and inclusions, but strictly omit all dollar amounts for premiums.' : ''}
   ${digestedIntent.regionalCheck}
 
   ${stateEnforcement}
@@ -3160,6 +3183,11 @@ Remember: answer ONLY from the IMMUTABLE CATALOG. Do NOT ask for name, age, or s
       answer = answer.replace(PPO_MEDICAL_HALLUCINATION, 'Standard HSA/Enhanced HSA (PPO network)');
     }
 
+    if (/\bppo\b/i.test(query) && !/dental\s+ppo/i.test(query) && !/does\s+not\s+offer|no\s+standalone|not\s+a\s+traditional\s+ppo/i.test(answer)) {
+      logger.warn('[PPO-GUARD] Enforced PPO clarification response');
+      answer = buildPpoClarificationFallback(session);
+    }
+
     // POST-PROCESSING: ALLSTATE WHOLE LIFE HALLUCINATION GUARD
     // The catalog has NO specific coverage amounts for Allstate Whole Life (age-banded/placeholder).
     // Strip any invented coverage ranges (e.g., "$20,000ΓÇô$100,000") or age guarantees (e.g., "until age 95").
@@ -3291,11 +3319,43 @@ Answer directly from the IMMUTABLE CATALOG. Name the plan. State the exact figur
     if (finalGenQuality.score < 0.42) validationGateFailures.push('generation-quality');
     if (!pipelineResult.overallPassed) validationGateFailures.push('pipeline-overall');
 
+    const highConfidenceMedicalFallback = pipelineResult.retrieval.score >= 0.01 || (result.gateTopScore ?? 0) >= 0.01;
+
     const validationGatePassed = validationGateFailures.length === 0;
     if (!validationGatePassed) {
       logger.warn(`[REQ:${reqId}][STEP-11 GATE-FAIL] validation gate blocked response: ${validationGateFailures.join(', ')}`);
 
       if (pipelineFirstMode) {
+        if (isSummaryRequest(query)) {
+          logger.info(`[REQ:${reqId}][STEP-11 FALLBACK] SUMMARY requested after validation gate failure`);
+          const nameRef = session.userName && session.userName !== 'Guest' ? session.userName : 'there';
+          const decisions = session.decisionsTracker || {};
+          const msg = compileSummary(decisions, nameRef);
+          const plainMsg = toPlainAssistantText(msg);
+          session.lastBotMessage = plainMsg;
+          if (!session.messages) session.messages = [];
+          session.messages.push(
+            { role: 'user', content: query },
+            { role: 'assistant', content: plainMsg }
+          );
+          if (session.messages.length > 6) {
+            session.messages = session.messages.slice(-6);
+          }
+          await updateSession(sessionId, session);
+          return NextResponse.json({
+            answer: plainMsg,
+            tier: 'L1',
+            citations: result.chunks,
+            sessionContext: buildSessionContext(session),
+            metadata: {
+              category,
+              validationGate: { passed: false, failures: validationGateFailures, generationScore: finalGenQuality.score },
+              validation: { retrieval: pipelineResult.retrieval, reasoning: pipelineResult.reasoning, output: pipelineResult.output, overallPassed: pipelineResult.overallPassed },
+              intercept: 'summary-validation-fallback'
+            },
+          });
+        }
+
         const l1Cached = checkL1FAQ(query, session);
         if (l1Cached) {
           logger.info(`[REQ:${reqId}][STEP-11 FALLBACK] L1-STATIC-FAQ matched after validation gate failure`);
@@ -3319,6 +3379,60 @@ Answer directly from the IMMUTABLE CATALOG. Name the plan. State the exact figur
               validationGate: { passed: false, failures: validationGateFailures, generationScore: finalGenQuality.score },
               validation: { retrieval: pipelineResult.retrieval, reasoning: pipelineResult.reasoning, output: pipelineResult.output, overallPassed: pipelineResult.overallPassed },
               intercept: 'l1-static-faq-validation-fallback'
+            },
+          });
+        }
+
+        if (/\bppo\b/i.test(query) && !/dental\s+ppo/i.test(query)) {
+          const msg = buildPpoClarificationFallback(session);
+          const plainMsg = toPlainAssistantText(msg);
+          session.lastBotMessage = plainMsg;
+          if (!session.messages) session.messages = [];
+          session.messages.push(
+            { role: 'user', content: query },
+            { role: 'assistant', content: plainMsg }
+          );
+          if (session.messages.length > 6) {
+            session.messages = session.messages.slice(-6);
+          }
+          await updateSession(sessionId, session);
+          return NextResponse.json({
+            answer: plainMsg,
+            tier: 'L1',
+            citations: result.chunks,
+            sessionContext: buildSessionContext(session),
+            metadata: {
+              category,
+              validationGate: { passed: false, failures: validationGateFailures, generationScore: finalGenQuality.score },
+              validation: { retrieval: pipelineResult.retrieval, reasoning: pipelineResult.reasoning, output: pipelineResult.output, overallPassed: pipelineResult.overallPassed },
+              intercept: 'ppo-clarification-validation-fallback'
+            },
+          });
+        }
+
+        const medicalFallback = highConfidenceMedicalFallback ? buildMedicalPlanFallback(query, session) : null;
+        if (medicalFallback) {
+          const plainMsg = toPlainAssistantText(medicalFallback);
+          session.lastBotMessage = plainMsg;
+          if (!session.messages) session.messages = [];
+          session.messages.push(
+            { role: 'user', content: query },
+            { role: 'assistant', content: plainMsg }
+          );
+          if (session.messages.length > 6) {
+            session.messages = session.messages.slice(-6);
+          }
+          await updateSession(sessionId, session);
+          return NextResponse.json({
+            answer: plainMsg,
+            tier: 'L1',
+            citations: result.chunks,
+            sessionContext: buildSessionContext(session),
+            metadata: {
+              category,
+              validationGate: { passed: false, failures: validationGateFailures, generationScore: finalGenQuality.score },
+              validation: { retrieval: pipelineResult.retrieval, reasoning: pipelineResult.reasoning, output: pipelineResult.output, overallPassed: pipelineResult.overallPassed },
+              intercept: 'medical-validation-fallback'
             },
           });
         }
