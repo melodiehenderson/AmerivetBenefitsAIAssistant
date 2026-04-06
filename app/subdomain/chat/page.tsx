@@ -3,7 +3,7 @@
  */
 
 'use client';
-
+import ReactMarkdown from 'react-markdown';
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import ReactMarkdown from 'react-markdown';
@@ -508,7 +508,9 @@ export default function SubdomainChatPage() {
                             </ReactMarkdown>
                           </div>
                         ) : (
-                          <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                          <ReactMarkdown className="text-sm prose prose-sm max-w-none">
+  {message.content}
+</ReactMarkdown>
                         )}
                         <p className="text-xs opacity-70 mt-1">
                           {message.timestamp.toLocaleTimeString()}
