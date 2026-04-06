@@ -6,7 +6,6 @@
 import ReactMarkdown from 'react-markdown';
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -508,9 +507,7 @@ export default function SubdomainChatPage() {
                             </ReactMarkdown>
                           </div>
                         ) : (
-                          <ReactMarkdown className="text-sm prose prose-sm max-w-none">
-  {message.content}
-</ReactMarkdown>
+                          <p className="text-sm whitespace-pre-wrap">{message.content}</p>
                         )}
                         <p className="text-xs opacity-70 mt-1">
                           {message.timestamp.toLocaleTimeString()}
