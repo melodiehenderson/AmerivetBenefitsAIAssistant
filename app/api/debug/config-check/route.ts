@@ -9,6 +9,9 @@ import { getOpenAIConfig, getRedisConfig } from '@/lib/azure/config';
  * NOTE: Public endpoint for debugging - no auth required
  */
 export async function GET() {
+   if (process.env.NODE_ENV === 'production') {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
   try {
     const openaiConfig = getOpenAIConfig();
     const redisConfig = getRedisConfig();
