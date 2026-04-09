@@ -1694,7 +1694,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
           matchedRow,
           coverageTier,
           payPeriods,
-          noPricingMode: session.noPricingMode,
+          noPricingMode: session.noPricingMode || false,
         });
         session.lastBotMessage = msg;
         await updateSession(sessionId, session);
