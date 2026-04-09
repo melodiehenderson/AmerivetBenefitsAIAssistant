@@ -780,10 +780,11 @@ Which of these would you like to learn about next?`
       primaryCategory = 'Disability';
     }
 
-    const recentHistory = (conversation.messages || [])
-      .filter((m) => m.role === 'user' || m.role === 'assistant')
-      .slice(-10)
-      .map((m) => ({ role: m.role, content: m.content }));
+    const recentHistory: Array<{ role: 'user' | 'assistant'; content: string }> = (conversation.messages || [])
+      .flatMap((m) => (m.role === 'user' || m.role === 'assistant')
+        ? [{ role: m.role, content: m.content }]
+        : [])
+      .slice(-10);
 
     // Shared router context — injected into every LLM call as the "developer message".
     const conversationTopic = deriveConversationTopic({
