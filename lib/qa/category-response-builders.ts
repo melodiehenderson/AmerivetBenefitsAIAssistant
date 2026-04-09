@@ -3,7 +3,6 @@ import pricingUtils from '@/lib/rag/pricing-utils';
 import { classifyQueryIntent } from '@/lib/rag/query-intent-classifier';
 import { amerivetBenefits2024_2025 } from '@/lib/data/amerivet';
 import { isKaiserEligibleState } from '@/lib/qa/medical-helpers';
-import { stripPricingDetails } from '@/lib/rag/response-utils';
 
 function buildTierPricingLines(tiers: { employeeOnly: number; employeeSpouse: number; employeeChildren: number; employeeFamily: number }) {
   return [
@@ -12,6 +11,17 @@ function buildTierPricingLines(tiers: { employeeOnly: number; employeeSpouse: nu
     `- Employee + Child(ren): $${pricingUtils.formatMoney(tiers.employeeChildren)}/month`,
     `- Employee + Family: $${pricingUtils.formatMoney(tiers.employeeFamily)}/month`,
   ].join('\n');
+}
+
+function stripPricingDetails(text: string): string {
+  return text
+    .split('\n')
+    .filter(line => !/\$\d|premium|per\s*pay(?:check|period)|\/month|\/year|annual\s+premium|cost\s+comparison|total\s+estimated\s+annual\s+cost/i.test(line))
+    .join('\n')
+    .replace(/\$[\d,]+\.?\d{0,2}(?:\/(?:month|year|mo|yr|paycheck|pay period|bi-?weekly?))?/gi, '')
+    .replace(/\(\s*\)/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 type CategoryResponseArgs = {
