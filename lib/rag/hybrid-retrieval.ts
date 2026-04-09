@@ -564,6 +564,11 @@ export async function retrieveVectorTopK(
 
     return chunks;
   } catch (error) {
+    const errorText = String(error);
+    if (/InvalidVectorQuery|InvalidRequestParameter|vector dimensions|content_vector|AZURE_OPENAI_ENDPOINT|baseURL|endpoint arguments/i.test(errorText)) {
+      logger.warn("[SEARCH][VECTOR] Recoverable vector failure; returning empty results", error);
+      return [];
+    }
     logger.error("Vector search failed:", error);
     throw new Error(`Vector retrieval error: ${error}`);
   }

@@ -1328,7 +1328,7 @@ export async function POST(req: NextRequest) {
     // caught before reaching any downstream logic. The L1_FAQ patterns are
     // sufficiently specific that false positives are not a concern.
     const l1Answer = checkL1FAQ(query, { enrollmentPortalUrl: ENROLLMENT_PORTAL_URL, hrPhone: HR_PHONE });
-    if (!pipelineFirstMode && l1Answer) {
+    if (l1Answer) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] L1-STATIC-FAQ matched ΓåÆ returning cached answer (${l1Answer.length} chars)`);
       session.lastBotMessage = l1Answer;
       await updateSession(sessionId, session);
