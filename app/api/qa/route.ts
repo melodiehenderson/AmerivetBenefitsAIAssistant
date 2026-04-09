@@ -1715,7 +1715,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
       const msg = buildMedicalComparisonMessage({
         coverageTier,
         filtered,
-        hasHiddenKaiser: filtered.length < medRows.length,
+        hasHiddenKaiser: filtered.length < rows.length,
         noPricingMode: session.noPricingMode || intent.noPricing,
       });
       const plainMsg = toPlainAssistantText(applyPricingExclusion(msg, session.noPricingMode || intent.noPricing));
