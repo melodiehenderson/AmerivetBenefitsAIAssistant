@@ -58,6 +58,7 @@ import {
   buildZeroChunkFallbackMessage,
   recordAssistantReply,
 } from '@/lib/qa/post-retrieval-fallbacks';
+import { buildScopeGuardResponse } from '@/lib/qa/scope-guard';
 import {
   buildCategoryExplorationResponse,
   buildDentalVisionComparisonResponse,
