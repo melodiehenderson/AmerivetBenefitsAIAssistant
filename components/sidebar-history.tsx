@@ -99,7 +99,8 @@ export function getChatHistoryPaginationKey(
 
 export function SidebarHistory() {
   const { setOpenMobile } = useSidebar();
-  const { id } = useParams();
+  const params = useParams<{ id?: string }>();
+  const id = typeof params?.id === 'string' ? params.id : undefined;
   const { account: user } = useAuth();
 
   const {
