@@ -7,7 +7,7 @@ import tsconfigPaths from 'vite-tsconfig-paths';
 const isWindows = process.platform === 'win32';
 
 export default defineConfig({
-  plugins: [tsconfigPaths()],
+  plugins: [tsconfigPaths({ ignoreConfigErrors: true })],
   resolve: {
     alias: [
       { find: '@', replacement: fileURLToPath(new URL('./', import.meta.url)) },

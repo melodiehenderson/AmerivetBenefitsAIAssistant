@@ -364,7 +364,7 @@ export function compareMaternityCosts(coverageTier: string, userState?: string |
   msg += `Recommendation: If you are planning a pregnancy, consider plans with lower deductibles and out-of-pocket maximums, even if premiums are higher.\n\n`;
   msg += `Lower OOP numbers indicate better maternity cost protection. Remember premiums vary by coverage tier.\n\n`;
   
-  const enrollmentUrl = process.env.ENROLLMENT_PORTAL_URL || 'https://wd5.myworkday.com/amerivet/login.htmld';
+  const enrollmentUrl = process.env.ENROLLMENT_PORTAL_URL || 'https://wd5.myworkday.com/amerivet/login.html';
   msg += `Next steps: Review detailed maternity coverage in your benefits enrollment portal: ${enrollmentUrl}`;
   
   return msg;

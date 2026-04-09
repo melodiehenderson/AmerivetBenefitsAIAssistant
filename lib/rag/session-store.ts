@@ -103,8 +103,8 @@ export type Session = {
 type MemoryEntry = { session: Session; expiresAt: number };
 
 const memoryStore = new Map<string, MemoryEntry>();
-const MEMORY_TTL_MS = 15 * 60 * 1000; // 15 minutes in-memory to reduce Redis round-trips
-const SESSION_TTL_SECONDS = 24 * 60 * 60; // 24 hours persistent TTL
+const MEMORY_TTL_MS = 90 * 60 * 1000; // 90 minutes in-memory so users can step away and resume
+const SESSION_TTL_SECONDS = 7 * 24 * 60 * 60; // 7 days persistent TTL for benefits conversations
 const REDIS_PREFIX = 'rag:session:';
 const FS_PATH = path.join('/tmp', 'rag-session-cache.json');
 

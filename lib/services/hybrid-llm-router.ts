@@ -1,10 +1,11 @@
 /**
  * Hybrid LLM Router
- * Routes requests between different LLM providers for cost optimization and performance
+ * Routes benefits queries through Azure OpenAI only so production traffic stays
+ * within the Azure stack this app is already built around.
  */
 
-import { OpenAI } from 'openai';
 import { logger } from '@/lib/logger';
+import { azureOpenAIService } from '@/lib/services/azure-openai';
 
 export interface LLMRequest {
   messages: Array<{ role: string; content: string }>;
@@ -24,131 +25,84 @@ export interface LLMResponse {
   cost: number;
 }
 
+const MODEL_PRICING: Record<string, { inputPer1M: number; outputPer1M: number }> = {
+  'gpt-4.1-mini': { inputPer1M: 0.15, outputPer1M: 0.6 },
+  'gpt-4o': { inputPer1M: 2.5, outputPer1M: 10 },
+  'gpt-4': { inputPer1M: 30, outputPer1M: 60 },
+};
+
 export class HybridLLMRouter {
-  private openaiClient: OpenAI | null = null;
-  private costThreshold: number = 0.01; // $0.01 threshold for model selection
-
-  constructor() {
-    // Lazy initialization: defer OpenAI client creation until runtime to prevent build-time crashes
-  }
-
-  /**
-   * Lazy-initialize OpenAI client on first use (runtime only)
-   */
-  private getClient(): OpenAI {
-    if (!this.openaiClient) {
-      this.openaiClient = new OpenAI({
-        apiKey: process.env.OPENAI_API_KEY || 'dummy-key-for-build',
-      });
-    }
-    return this.openaiClient;
-  }
-
-  /**
-   * Route request to appropriate LLM based on cost and performance requirements
-   */
   async routeRequest(request: LLMRequest): Promise<LLMResponse> {
     try {
-      // For simple queries, use GPT-3.5 Turbo for cost efficiency
-      if (this.isSimpleQuery(request.messages)) {
-        return await this.routeToGPT35(request);
-      }
+      const requestedModel =
+        request.model ||
+        process.env.SMART_ROUTER_MODEL ||
+        process.env.AZURE_OPENAI_DEPLOYMENT_NAME ||
+        'gpt-4.1-mini';
 
-      // For complex queries, use GPT-4 for better quality
-      return await this.routeToGPT4(request);
+      const response = await azureOpenAIService.generateText({
+        messages: request.messages
+          .filter((message): message is { role: 'system' | 'user' | 'assistant'; content: string } => {
+            return ['system', 'user', 'assistant'].includes(message.role);
+          })
+          .map((message) => ({
+            role: message.role as 'system' | 'user' | 'assistant',
+            content: message.content,
+          })),
+        model: requestedModel,
+        maxTokens: request.maxTokens || 1000,
+        temperature: request.temperature ?? 0.3,
+      });
+
+      return {
+        content: response.content,
+        model: requestedModel,
+        usage: response.usage,
+        cost: this.calculateCost(
+          requestedModel,
+          response.usage.promptTokens,
+          response.usage.completionTokens,
+        ),
+      };
     } catch (error) {
-      logger.error('LLM routing failed', error);
+      logger.error('Azure LLM routing failed', error);
       throw new Error('Failed to process LLM request');
     }
   }
 
-  /**
-   * Create chat completion (alias for compatibility)
-   */
   async createChatCompletion(request: LLMRequest): Promise<LLMResponse> {
     return this.routeRequest(request);
   }
 
-  /**
-   * Process message (alias for compatibility)
-   */
-  async processMessage(request: { message: string; userId: string; conversationId: string }): Promise<LLMResponse> {
+  async processMessage(request: {
+    message: string;
+    userId: string;
+    conversationId: string;
+  }): Promise<LLMResponse> {
     return this.routeRequest({
       messages: [
         { role: 'system', content: 'You are a helpful assistant.' },
         { role: 'user', content: request.message },
       ],
-      model: 'gpt-3.5-turbo',
-      temperature: 0.7,
-      maxTokens: 1000
+      model:
+        process.env.SMART_ROUTER_MODEL ||
+        process.env.AZURE_OPENAI_DEPLOYMENT_NAME ||
+        'gpt-4.1-mini',
+      temperature: 0.3,
+      maxTokens: 1000,
     });
   }
 
-  private async routeToGPT35(request: LLMRequest): Promise<LLMResponse> {
-    const response = await this.getClient().chat.completions.create({
-      model: 'gpt-3.5-turbo',
-      messages: request.messages as any,
-      temperature: request.temperature || 0.7,
-      max_tokens: request.maxTokens || 1000,
-    });
-
-    return {
-      content: response.choices[0]?.message?.content || '',
-      model: 'gpt-3.5-turbo',
-      usage: {
-        promptTokens: response.usage?.prompt_tokens || 0,
-        completionTokens: response.usage?.completion_tokens || 0,
-        totalTokens: response.usage?.total_tokens || 0,
-      },
-      cost: this.calculateCost('gpt-3.5-turbo', response.usage?.total_tokens || 0),
-    };
-  }
-
-  private async routeToGPT4(request: LLMRequest): Promise<LLMResponse> {
-    const response = await this.getClient().chat.completions.create({
-      model: 'gpt-4',
-      messages: request.messages as any,
-      temperature: request.temperature || 0.7,
-      max_tokens: request.maxTokens || 2000,
-    });
-
-    return {
-      content: response.choices[0]?.message?.content || '',
-      model: 'gpt-4',
-      usage: {
-        promptTokens: response.usage?.prompt_tokens || 0,
-        completionTokens: response.usage?.completion_tokens || 0,
-        totalTokens: response.usage?.total_tokens || 0,
-      },
-      cost: this.calculateCost('gpt-4', response.usage?.total_tokens || 0),
-    };
-  }
-
-  private isSimpleQuery(messages: Array<{ role: string; content: string }>): boolean {
-    const lastMessage = messages[messages.length - 1];
-    const content = lastMessage?.content || '';
-    
-    // Simple heuristics for query complexity
-    const simpleKeywords = ['what', 'how', 'when', 'where', 'yes', 'no'];
-    const complexKeywords = ['analyze', 'compare', 'explain', 'evaluate', 'synthesize'];
-    
-    const hasSimpleKeywords = simpleKeywords.some(keyword => 
-      content.toLowerCase().includes(keyword)
+  private calculateCost(
+    model: string,
+    promptTokens: number,
+    completionTokens: number,
+  ): number {
+    const pricing = MODEL_PRICING[model] || MODEL_PRICING['gpt-4.1-mini'];
+    return (
+      (promptTokens / 1_000_000) * pricing.inputPer1M +
+      (completionTokens / 1_000_000) * pricing.outputPer1M
     );
-    const hasComplexKeywords = complexKeywords.some(keyword => 
-      content.toLowerCase().includes(keyword)
-    );
-    
-    return hasSimpleKeywords && !hasComplexKeywords && content.length < 200;
-  }
-
-  private calculateCost(model: string, tokens: number): number {
-    const pricing = {
-      'gpt-3.5-turbo': 0.0005 / 1000, // $0.0005 per 1K tokens
-      'gpt-4': 0.03 / 1000, // $0.03 per 1K tokens
-    };
-
-    return (pricing[model as keyof typeof pricing] || 0.001) * tokens;
   }
 }
 

@@ -17,6 +17,8 @@ type ChatContext = {
   validationGate?: string;
   userAge?: number;
   category?: string;
+  currentTopic?: string;
+  lastBotMessage?: string;
   intent?: IntentType;
 };
 
@@ -27,7 +29,7 @@ interface ChatResponse {
   timestamp: Date;
 }
 
-const ENROLLMENT_URL = process.env.ENROLLMENT_PORTAL_URL || 'https://wd5.myworkday.com/amerivet/login.htmld';
+const ENROLLMENT_URL = process.env.ENROLLMENT_PORTAL_URL || 'https://wd5.myworkday.com/amerivet/login.html';
 
 export class SimpleChatRouter {
   private static readonly MEDICAL_TRANSITION =
@@ -40,16 +42,10 @@ export class SimpleChatRouter {
 
   constructor() {}
 
-  private conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [];
-
   async routeMessage(message: string, context?: ChatContext, attachments?: any[]): Promise<ChatResponse> {
     try {
-      // Store conversation history for context extraction
-      if (context?.history) {
-        this.conversationHistory = context.history;
-      }
-      
       const normalizedMessage = message.toLowerCase();
+      const lastUserMessage = this.getLastUserMessage(message, context?.history);
 
       if (attachments && attachments.length > 0) {
         return this.handleDocumentAnalysis(message, attachments, context);
@@ -80,7 +76,7 @@ export class SimpleChatRouter {
       }
 
       if (this.isCostProjectionQuestion(normalizedMessage)) {
-        return this.handleCostProjectionQuestion(context);
+        return this.handleCostProjectionQuestion(context, lastUserMessage);
       }
 
       if (this.isMaternityQuestion(normalizedMessage)) {
@@ -355,14 +351,14 @@ export class SimpleChatRouter {
     };
   }
 
-  private handleCostProjectionQuestion(context?: ChatContext): ChatResponse {
+  private handleCostProjectionQuestion(context?: ChatContext, lastUserMessage = ''): ChatResponse {
     const contextIntro = this.buildContextIntro(context);
     const enrollmentUrl = process.env.ENROLLMENT_PORTAL_URL || ENROLLMENT_URL;
 
     // Extract usage level from typical patterns
-    const usageLevel = this.extractUsageLevel();
-    const coverageTier = this.extractCoverageTier();
-    const network = this.extractNetworkPreference();
+    const usageLevel = this.extractUsageLevel(lastUserMessage);
+    const coverageTier = this.extractCoverageTier(lastUserMessage);
+    const network = this.extractNetworkPreference(lastUserMessage);
 
     const projection = estimateCostProjection({
       coverageTier: coverageTier || 'Employee Only',
@@ -393,9 +389,9 @@ export class SimpleChatRouter {
     };
   }
 
-  private extractUsageLevel(): 'low' | 'moderate' | 'high' {
+  private extractUsageLevel(message: string): 'low' | 'moderate' | 'high' {
     // Extract usage level from conversation context
-    const message = this.getLastUserMessage();
+
     const messageLower = message.toLowerCase();
     
     if (messageLower.includes('high') || messageLower.includes('heavy') || messageLower.includes('frequent')) {
@@ -419,8 +415,7 @@ export class SimpleChatRouter {
     return 'moderate'; // Default
   }
 
-  private extractCoverageTier(): string | null {
-    const message = this.getLastUserMessage();
+  private extractCoverageTier(message: string): string | null {
     const messageLower = message.toLowerCase();
     
     // Check for family size indicators
@@ -473,8 +468,7 @@ export class SimpleChatRouter {
     return null;
   }
 
-  private extractNetworkPreference(): string | null {
-    const message = this.getLastUserMessage();
+  private extractNetworkPreference(message: string): string | null {
     const messageLower = message.toLowerCase();
     
     if (messageLower.includes('kaiser')) {
@@ -493,17 +487,18 @@ export class SimpleChatRouter {
     return null;
   }
 
-  private getLastUserMessage(): string {
-    // Try to get from conversation history if available
-    if (this.conversationHistory && this.conversationHistory.length > 0) {
-      // Find last user message
-      for (let i = this.conversationHistory.length - 1; i >= 0; i--) {
-        if (this.conversationHistory[i].role === 'user') {
-          return this.conversationHistory[i].content;
+  private getLastUserMessage(
+    currentMessage: string,
+    history?: Array<{ role: 'user' | 'assistant'; content: string }>,
+  ): string {
+    if (history && history.length > 0) {
+      for (let i = history.length - 1; i >= 0; i--) {
+        if (history[i].role === 'user') {
+          return history[i].content;
         }
       }
     }
-    return '';
+    return currentMessage;
   }
 
   private handleMaternityQuestion(context?: ChatContext): ChatResponse {

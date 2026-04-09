@@ -6,6 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import { marked } from 'marked';
 import { WelcomeVideoModal } from '@/components/welcome-video-modal';
+import { Textarea } from '@/components/ui/textarea';
 
 interface Message {
   id: string;
@@ -28,7 +29,22 @@ function ChatPageContent() {
   const [attachedFiles, setAttachedFiles] = React.useState<File[]>([]);
   const abortRef = React.useRef<AbortController | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+  const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
+  const [sessionId] = React.useState(() => `local-chat-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
+  const [cachedContext, setCachedContext] = React.useState<{
+    userName?: string;
+    userAge?: number;
+    userState?: string;
+    hasCollectedName?: boolean;
+    disclaimerShown?: boolean;
+    currentTopic?: string;
+    askedForDemographics?: boolean;
+    selectedPlan?: string;
+    noPricingMode?: boolean;
+    coverageTierLock?: string | null;
+    dataConfirmed?: boolean;
+  } | null>(null);
 
   React.useEffect(() => {
     setIsMounted(true);
@@ -63,6 +79,20 @@ function ChatPageContent() {
   React.useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  const TEXTAREA_MIN_HEIGHT = 96;
+  const TEXTAREA_MAX_HEIGHT = 200;
+
+  const syncTextareaHeight = React.useCallback(() => {
+    if (!textareaRef.current) return;
+    textareaRef.current.style.height = 'auto';
+    const nextHeight = Math.min(textareaRef.current.scrollHeight + 2, TEXTAREA_MAX_HEIGHT);
+    textareaRef.current.style.height = `${Math.max(nextHeight, TEXTAREA_MIN_HEIGHT)}px`;
+  }, []);
+
+  React.useEffect(() => {
+    syncTextareaHeight();
+  }, [message, syncTextareaHeight]);
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || []);
@@ -106,27 +136,40 @@ function ChatPageContent() {
     abortRef.current = controller;
 
     try {
-      const res = await fetch('/api/chat-demo', {
+      const res = await fetch('/api/qa', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: msg }),
+        body: JSON.stringify({
+          query: msg,
+          sessionId,
+          companyId: 'amerivet',
+          userId: `local-user-${sessionId.split('-').pop()}`,
+          context: cachedContext,
+        }),
         signal: controller.signal,
       });
-      
+
       if (res.ok) {
         const data = await res.json();
+        if (data.sessionContext) {
+          setCachedContext((prev) => ({
+            ...prev,
+            ...data.sessionContext,
+          }));
+        }
         const assistantMessage: Message = {
           id: data.message?.id || crypto.randomUUID(),
           role: 'assistant',
-          content: data.message?.content || 'I received your message but couldn\'t generate a response. This is demo mode - the full AI integration will be available in production.',
+          content: data.answer || data.response || 'I received your message but couldn\'t generate a grounded response.',
           timestamp: new Date(data.message?.timestamp || Date.now())
         };
         setMessages(prev => [...prev, assistantMessage]);
       } else {
+        const data = await res.json().catch(() => null);
         const errorMessage: Message = {
           id: crypto.randomUUID(),
           role: 'assistant',
-          content: 'Sorry, I encountered an error. This is demo mode - the full AI integration will be available in production.',
+          content: data?.error || 'Sorry, I encountered an error while reaching the QA service.',
           timestamp: new Date()
         };
         setMessages(prev => [...prev, errorMessage]);
@@ -136,7 +179,7 @@ function ChatPageContent() {
       const errorMessage: Message = {
         id: crypto.randomUUID(),
         role: 'assistant',
-        content: 'Sorry, I encountered an error. This is demo mode - the full AI integration will be available in production.',
+        content: 'Sorry, I encountered an error while reaching the QA service.',
         timestamp: new Date()
       };
       setMessages(prev => [...prev, errorMessage]);
@@ -336,11 +379,18 @@ function ChatPageContent() {
                 onChange={handleFileUpload}
               />
 
-              <input
-                className="flex-1 border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              <Textarea
+                ref={textareaRef}
+                className="flex-1 !min-h-[96px] !max-h-[200px] resize-none overflow-y-auto border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 placeholder="Type your message..."
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
+                rows={4}
+                style={{
+                  minHeight: `${TEXTAREA_MIN_HEIGHT}px`,
+                  maxHeight: `${TEXTAREA_MAX_HEIGHT}px`,
+                  overflowY: textareaRef.current && textareaRef.current.scrollHeight > TEXTAREA_MAX_HEIGHT ? 'auto' : 'hidden',
+                }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();

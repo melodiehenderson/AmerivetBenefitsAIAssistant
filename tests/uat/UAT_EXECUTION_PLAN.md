@@ -89,7 +89,7 @@ curl https://amerivetaibot.bcgenrolls.com/api/ready
 
 #### Test Steps:
 1. **Navigate to login page**
-   - URL: https://wd5.myworkday.com/amerivet/login.htmld
+   - URL: https://wd5.myworkday.com/amerivet/login.html
    - ✅ Verify: AmeriVet logo visible
    - ✅ Verify: Employee/Admin password fields shown
    - ✅ Verify: Feature descriptions displayed
@@ -155,7 +155,7 @@ curl https://amerivetaibot.bcgenrolls.com/api/ready
 
 #### Test Steps:
 1. **Login as Admin**
-   - URL: https://wd5.myworkday.com/amerivet/login.htmld
+   - URL: https://wd5.myworkday.com/amerivet/login.html
    - Password: `admin2024!`
    - ✅ Verify: Redirected to admin dashboard
    - ✅ Verify: Admin menu visible

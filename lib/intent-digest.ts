@@ -11,6 +11,23 @@ export type DigestedIntent = {
   pricingExclusion: boolean;
 };
 
+type DetermineChatRoutePolicyArgs = {
+  lowerQuery: string;
+  benefitTypes: string[];
+  mappedIntent?: string | null;
+  slotsComplete: boolean;
+  useRagOverride: boolean;
+  useSmartOverride: boolean;
+};
+
+type ChatRoutePolicy = {
+  intentDomain: IntentDomain;
+  shouldUseRag: boolean;
+  shouldUseSmart: boolean;
+};
+
+const COMPLEX_CHAT_INTENTS = new Set(['compare', 'cost', 'recommend', 'coverage', 'details', 'enroll']);
+
 export function getTopicLabel(query: string, currentTopic?: string): string {
   const lower = query.toLowerCase();
   if (/family|spouse|child|kid|dependent/i.test(lower)) return 'your family coverage options';
@@ -27,6 +44,24 @@ export function detectIntentDomain(lowerQuery: string): IntentDomain {
   if (hasPolicy && !hasPricing) return 'policy';
   if (hasPricing) return 'pricing';
   return 'general';
+}
+
+export function determineChatRoutePolicy({
+  lowerQuery,
+  benefitTypes,
+  mappedIntent,
+  slotsComplete,
+  useRagOverride,
+  useSmartOverride,
+}: DetermineChatRoutePolicyArgs): ChatRoutePolicy {
+  const intentDomain = detectIntentDomain(lowerQuery);
+  const hasComplexBenefitSignal = benefitTypes.length > 0 || COMPLEX_CHAT_INTENTS.has(mappedIntent ?? '');
+
+  return {
+    intentDomain,
+    shouldUseRag: useRagOverride || intentDomain === 'policy' || (hasComplexBenefitSignal && slotsComplete),
+    shouldUseSmart: useSmartOverride && !slotsComplete && intentDomain !== 'policy',
+  };
 }
 
 export function digestIntent(

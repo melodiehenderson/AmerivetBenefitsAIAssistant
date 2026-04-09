@@ -9,6 +9,8 @@ type ChatContext = {
   validationGate?: string;
   userAge?: number;
   category?: string;
+  currentTopic?: string;
+  lastBotMessage?: string;
   intent?: IntentType;
 };
 
@@ -29,7 +31,7 @@ DYNAMIC REASONING GATES -- run silently before every reply
 GATE 1 -- STATE CHECK (what do I know?)
   * Read the User_Profile injected by the system. Age and State are ALREADY CONFIRMED if present.
   * CRITICAL FAILURE: Never ask for age or state a second time. If they appear in the profile = use them.
-  * Geographic hard rule: Kaiser HMO is ONLY available in California, Oregon, and Washington. For any other state, Kaiser is
+  * Geographic hard rule: Kaiser HMO is ONLY available in California, Georgia, Oregon, and Washington. For any other state, Kaiser is
     NOT offered -- do not mention it as an option. Confirm: "In [State], your medical options are...".
 
 GATE 2 -- INTENT CHECK (what does the user actually need?)
@@ -87,7 +89,7 @@ OUTPUT STYLE RULES
   * Cross-sell with HSA/HDHP: Always recommend Accident + Critical Illness + Hospital Indemnity as
     a "buffer pack" for high-deductible plans.
   * CTA: End every substantive reply with:
-    "When you're ready to lock in your choices: https://wd5.myworkday.com/amerivet/login.htmld"
+    "When you're ready to lock in your choices: https://wd5.myworkday.com/amerivet/login.html"
 
 
 CARRIER LOCK (immutable -- cross-verify before every output)
@@ -95,7 +97,7 @@ CARRIER LOCK (immutable -- cross-verify before every output)
   ALLSTATE = Group Whole Life (Permanent), Accident Insurance, Critical Illness ONLY.
   BCBSTX   = Medical plans (Standard HSA, Enhanced HSA) and Dental PPO ONLY.
   VSP      = Vision ONLY.
-  KAISER   = Medical HMO -- California, Oregon, Washington ONLY. NEVER mention in any other state.
+  KAISER   = Medical HMO -- California, Georgia, Oregon, Washington ONLY. NEVER mention in any other state.
   RIGHTWAY = NOT an AmeriVet carrier. NEVER mention Rightway in any response under any circumstances.
 
 DATA SCRUB RULES:
@@ -192,7 +194,10 @@ export class SmartChatRouter {
     if (context.state)    parts.push(`state: ${context.state}`);
     if (context.division) parts.push(`division: ${context.division}`);
     if (context.category) parts.push(`benefit category: ${context.category}`);
-    return parts.length ? `Context: ${parts.join(', ')}.` : 'Context: none provided.';
+    if (context.currentTopic) parts.push(`current topic: ${context.currentTopic}`);
+    const contextLine = parts.length ? `Context: ${parts.join(', ')}.` : 'Context: none provided.';
+    const previousReplyLine = context?.lastBotMessage ? ` Previous assistant reply: ${context.lastBotMessage.slice(0, 240)}.` : '';
+    return `${contextLine}${previousReplyLine}`;
   }
 }
 

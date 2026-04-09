@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AmeriVet Local Preview</title>
+  <style>
+    :root {
+      --bg: #f3f6fb;
+      --panel: #ffffff;
+      --line: #d7dfec;
+      --text: #162033;
+      --muted: #58657c;
+      --blue: #175cff;
+      --blue-soft: #eaf1ff;
+      --user: #1c5cff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: linear-gradient(180deg, #f9fbff 0%, var(--bg) 100%);
+      color: var(--text);
+    }
+    .wrap {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 28px 20px 40px;
+    }
+    .hero, .sidebar, .chat {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      box-shadow: 0 10px 28px rgba(19, 33, 68, 0.06);
+    }
+    .hero { padding: 24px; margin-bottom: 18px; }
+    .hero h1 { margin: 0 0 10px; font-size: 30px; }
+    .hero p { margin: 0; color: var(--muted); line-height: 1.5; }
+    .grid {
+      display: grid;
+      grid-template-columns: 300px minmax(0, 1fr);
+      gap: 18px;
+      align-items: start;
+    }
+    .sidebar { padding: 18px; display: grid; gap: 16px; }
+    .field label { display: block; font-size: 13px; font-weight: 700; margin-bottom: 6px; }
+    .field input {
+      width: 100%;
+      padding: 11px 12px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      font-size: 14px;
+    }
+    .quick {
+      display: grid;
+      gap: 10px;
+    }
+    .quick button {
+      text-align: left;
+      border: 1px solid var(--line);
+      background: var(--blue-soft);
+      color: var(--text);
+      border-radius: 12px;
+      padding: 12px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .chat {
+      min-height: 680px;
+      display: grid;
+      grid-template-rows: 1fr auto;
+      padding: 18px;
+      gap: 14px;
+    }
+    .messages {
+      display: grid;
+      gap: 14px;
+      align-content: start;
+    }
+    .empty {
+      color: var(--muted);
+      font-size: 15px;
+      padding: 10px 2px;
+    }
+    .bubble {
+      border-radius: 16px;
+      padding: 14px 16px;
+      overflow-x: auto;
+      line-height: 1.5;
+      white-space: normal;
+    }
+    .bubble.user {
+      background: var(--user);
+      color: white;
+      justify-self: end;
+      max-width: 76%;
+    }
+    .bubble.assistant {
+      background: #f4f7fc;
+      color: var(--text);
+      justify-self: stretch;
+      max-width: 100%;
+      border: 1px solid #e3eaf6;
+    }
+    .composer {
+      display: grid;
+      gap: 10px;
+    }
+    textarea {
+      width: 100%;
+      min-height: 110px;
+      resize: vertical;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 14px;
+      font: inherit;
+    }
+    .row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+    .status { font-size: 14px; color: var(--muted); }
+    .send {
+      border: none;
+      background: var(--blue);
+      color: white;
+      border-radius: 12px;
+      padding: 11px 18px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    table {
+      width: 100%;
+      min-width: 32rem;
+      border-collapse: collapse;
+      margin-top: 12px;
+      font-size: 14px;
+      background: white;
+    }
+    th, td {
+      border: 1px solid var(--line);
+      padding: 10px 12px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th { background: #eef4ff; }
+    code { background: #e9eef8; padding: 2px 6px; border-radius: 6px; }
+    @media (max-width: 900px) {
+      .grid { grid-template-columns: 1fr; }
+      .chat { min-height: 560px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <h1>AmeriVet Local Preview</h1>
+      <p>
+        This preview uses the benefits catalog stored in the repo so we can test the no-guessing behavior,
+        clarify-first fallback wording, and table formatting without needing the developer's missing local Azure setup.
+      </p>
+    </section>
+
+    <div class="grid">
+      <aside class="sidebar">
+        <div class="field">
+          <label for="state">State</label>
+          <input id="state" value="TX" />
+        </div>
+        <div class="field">
+          <label for="age">Age</label>
+          <input id="age" placeholder="Optional" />
+        </div>
+        <div class="quick">
+          <button data-prompt="Does AmeriVet offer a gold PPO with Rightway support?">Ungrounded test</button>
+          <button data-prompt="What medical plans are available in Texas?">Grounded medical test</button>
+          <button data-prompt="Compare the medical plans in Texas in a table.">Table rendering test</button>
+        </div>
+      </aside>
+
+      <section class="chat">
+        <div class="messages" id="messages">
+          <div class="empty">No messages yet. Pick a test prompt or type your own question.</div>
+        </div>
+
+        <form class="composer" id="composer">
+          <textarea id="input" placeholder="Ask a benefits question..."></textarea>
+          <div class="row">
+            <div class="status" id="status">Testing grounded answers only.</div>
+            <button class="send" type="submit">Send</button>
+          </div>
+        </form>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    const plans = {
+      TX: [
+        {
+          name: 'Standard HSA',
+          provider: 'BCBSTX',
+          monthly: '$86.84/month',
+          biweekly: '$40.08 bi-weekly',
+          deductible: '$3,500 individual / $7,000 family',
+          oop: '$6,500',
+          notes: 'Nationwide PPO network, HSA eligible, preventive care at 100%.'
+        },
+        {
+          name: 'Enhanced HSA',
+          provider: 'BCBSTX',
+          monthly: '$160.36/month',
+          biweekly: '$74.01 bi-weekly',
+          deductible: '$2,500 individual / $5,000 family',
+          oop: '$5,500',
+          notes: 'Lower deductible, enhanced employer HSA contribution, nationwide provider access.'
+        }
+      ],
+      GA: [
+        {
+          name: 'Standard HSA', provider: 'BCBSTX', monthly: '$86.84/month', biweekly: '$40.08 bi-weekly', deductible: '$3,500 individual / $7,000 family', oop: '$6,500', notes: 'Nationwide PPO network, HSA eligible.'
+        },
+        {
+          name: 'Enhanced HSA', provider: 'BCBSTX', monthly: '$160.36/month', biweekly: '$74.01 bi-weekly', deductible: '$2,500 individual / $5,000 family', oop: '$5,500', notes: 'Lower deductible, enhanced employer HSA contribution.'
+        },
+        {
+          name: 'Kaiser Standard HMO', provider: 'Kaiser', monthly: '$142.17/month', biweekly: '$65.62 bi-weekly', deductible: '$1,000 individual / $2,000 family', oop: '$4,500', notes: 'Integrated Kaiser HMO only in Kaiser service areas.'
+        }
+      ],
+      CA: [
+        {
+          name: 'Standard HSA', provider: 'BCBSTX', monthly: '$86.84/month', biweekly: '$40.08 bi-weekly', deductible: '$3,500 individual / $7,000 family', oop: '$6,500', notes: 'Nationwide PPO network, HSA eligible.'
+        },
+        {
+          name: 'Enhanced HSA', provider: 'BCBSTX', monthly: '$160.36/month', biweekly: '$74.01 bi-weekly', deductible: '$2,500 individual / $5,000 family', oop: '$5,500', notes: 'Lower deductible, enhanced employer HSA contribution.'
+        },
+        {
+          name: 'Kaiser Standard HMO', provider: 'Kaiser', monthly: '$142.17/month', biweekly: '$65.62 bi-weekly', deductible: '$1,000 individual / $2,000 family', oop: '$4,500', notes: 'Integrated Kaiser HMO only in Kaiser service areas.'
+        }
+      ],
+      OR: [
+        {
+          name: 'Standard HSA', provider: 'BCBSTX', monthly: '$86.84/month', biweekly: '$40.08 bi-weekly', deductible: '$3,500 individual / $7,000 family', oop: '$6,500', notes: 'Nationwide PPO network, HSA eligible.'
+        },
+        {
+          name: 'Enhanced HSA', provider: 'BCBSTX', monthly: '$160.36/month', biweekly: '$74.01 bi-weekly', deductible: '$2,500 individual / $5,000 family', oop: '$5,500', notes: 'Lower deductible, enhanced employer HSA contribution.'
+        },
+        {
+          name: 'Kaiser Standard HMO', provider: 'Kaiser', monthly: '$142.17/month', biweekly: '$65.62 bi-weekly', deductible: '$1,000 individual / $2,000 family', oop: '$4,500', notes: 'Integrated Kaiser HMO only in Kaiser service areas.'
+        }
+      ],
+      WA: [
+        {
+          name: 'Standard HSA', provider: 'BCBSTX', monthly: '$86.84/month', biweekly: '$40.08 bi-weekly', deductible: '$3,500 individual / $7,000 family', oop: '$6,500', notes: 'Nationwide PPO network, HSA eligible.'
+        },
+        {
+          name: 'Enhanced HSA', provider: 'BCBSTX', monthly: '$160.36/month', biweekly: '$74.01 bi-weekly', deductible: '$2,500 individual / $5,000 family', oop: '$5,500', notes: 'Lower deductible, enhanced employer HSA contribution.'
+        },
+        {
+          name: 'Kaiser Standard HMO', provider: 'Kaiser', monthly: '$142.17/month', biweekly: '$65.62 bi-weekly', deductible: '$1,000 individual / $2,000 family', oop: '$4,500', notes: 'Integrated Kaiser HMO only in Kaiser service areas.'
+        }
+      ]
+    };
+
+    const stateInput = document.getElementById('state');
+    const ageInput = document.getElementById('age');
+    const input = document.getElementById('input');
+    const messages = document.getElementById('messages');
+    const status = document.getElementById('status');
+    const form = document.getElementById('composer');
+
+    function addMessage(role, html) {
+      const empty = messages.querySelector('.empty');
+      if (empty) empty.remove();
+      const div = document.createElement('div');
+      div.className = `bubble ${role}`;
+      div.innerHTML = html;
+      messages.appendChild(div);
+      div.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+
+    function escapeHtml(value) {
+      return value.replace(/[&<>"']/g, (ch) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[ch]));
+    }
+
+    function renderTable(rows) {
+      const header = `
+        <table>
+          <thead>
+            <tr>
+              <th>Plan</th>
+              <th>Provider</th>
+              <th>Employee Only</th>
+              <th>Deductible</th>
+              <th>Out-of-Pocket Max</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map((plan) => `
+              <tr>
+                <td>${plan.name}</td>
+                <td>${plan.provider}</td>
+                <td>${plan.monthly}<br>${plan.biweekly}</td>
+                <td>${plan.deductible}</td>
+                <td>${plan.oop}</td>
+                <td>${plan.notes}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>`;
+      return header;
+    }
+
+    function answerQuestion(question) {
+      const normalized = question.toLowerCase();
+      const state = (stateInput.value || 'TX').toUpperCase();
+      const availablePlans = plans[state] || plans.TX;
+      const age = ageInput.value.trim();
+
+      if (/right\s*way|rightway|gold\s*ppo|ppo\s+support/.test(normalized)) {
+        return `
+          <p>I couldn't verify that in the official AmeriVet benefits materials stored in this repo preview.</p>
+          <p>If you'd like, reply with the specific benefit, plan name, or state you're asking about and I'll try again.</p>
+          <p>For accurate, plan-specific details, please visit the <a href="https://wd5.myworkday.com/amerivet/login.html" target="_blank" rel="noreferrer">benefits enrollment portal</a> or speak with your HR team at <strong>888-217-4728</strong>.</p>
+        `;
+      }
+
+      if (/what medical plans|medical plans are available|available in/.test(normalized)) {
+        return `
+          <p>For <strong>${state}</strong>, the medical plans available in this local catalog preview are:</p>
+          ${renderTable(availablePlans)}
+          <p>${age ? `I also captured age <strong>${escapeHtml(age)}</strong> for follow-up questions. ` : ''}If you want, I can compare these side by side next.</p>
+        `;
+      }
+
+      if (/compare.*medical.*table/.test(normalized)) {
+        return `
+          <p>Here is a side-by-side comparison for <strong>${state}</strong> based on the repo catalog:</p>
+          ${renderTable(availablePlans)}
+          <p>Want me to walk through which plan is usually better for lower premiums versus lower deductible exposure?</p>
+        `;
+      }
+
+      return `
+        <p>This local preview is currently focused on grounded plan availability and no-guessing behavior.</p>
+        <p>Try one of these:</p>
+        <ul>
+          <li><code>Does AmeriVet offer a gold PPO with Rightway support?</code></li>
+          <li><code>What medical plans are available in Texas?</code></li>
+          <li><code>Compare the medical plans in Texas in a table.</code></li>
+        </ul>
+      `;
+    }
+
+    document.querySelectorAll('[data-prompt]').forEach((button) => {
+      button.addEventListener('click', () => {
+        input.value = button.getAttribute('data-prompt');
+      });
+    });
+
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const question = input.value.trim();
+      if (!question) return;
+      addMessage('user', `<p>${escapeHtml(question)}</p>`);
+      status.textContent = 'Generating grounded preview reply...';
+      const response = answerQuestion(question);
+      window.setTimeout(() => {
+        addMessage('assistant', response);
+        status.textContent = 'Testing grounded answers only.';
+      }, 180);
+      input.value = '';
+    });
+  </script>
+</body>
+</html>

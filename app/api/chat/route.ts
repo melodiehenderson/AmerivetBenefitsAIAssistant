@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 // Hard-coded enrollment portal — source of truth for all CTA links.
-const WORKDAY_ENROLLMENT_URL = 'https://wd5.myworkday.com/amerivet/login.htmld';
+const WORKDAY_ENROLLMENT_URL = 'https://wd5.myworkday.com/amerivet/login.html';
 const HR_PHONE = process.env.HR_PHONE_NUMBER || '888-217-4728';
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -15,12 +15,29 @@ import { trackEnhancedChatResponse } from '@/lib/analytics/tracking';
 import { conversationService } from '@/lib/services/conversation-service';
 import { logger } from '@/lib/logger';
 import { z } from 'zod';
+import { determineChatRoutePolicy } from '@/lib/intent-digest';
+import type { Session } from '@/lib/rag/session-store';
 import { extractUserSlots, extractAndMapEntities } from '@/lib/rag/query-understanding';
 import { cityToStateMap } from '@/lib/schemas/onboarding';
-import { getCatalogForPrompt } from '@/lib/data/amerivet';
+import { getCatalogForPrompt, KAISER_AVAILABLE_STATE_CODES } from '@/lib/data/amerivet';
+import {
+  checkL1FAQ,
+  deriveConversationTopic,
+  isKaiserAvailabilityQuestion,
+  isLikelyFollowUpMessage,
+  isStandaloneMedicalPpoRequest,
+  normalizeBenefitCategory,
+  shouldUseCategoryExplorationIntercept,
+} from '@/lib/qa/routing-helpers';
+import { buildPpoClarificationForState, buildRecommendationOverview, getCoverageTierForQuery } from '@/lib/qa/medical-helpers';
+import { buildCategoryExplorationResponse } from '@/lib/qa/category-response-builders';
+import { buildLiveSupportFallback } from '@/lib/qa/support-response-builders';
+import { buildScopeGuardResponse } from '@/lib/qa/scope-guard';
 import { normalizeRatesInText } from '@/lib/utils/formatRates';
 import { tryCache, writeCache } from '@/lib/services/cache-router';
 import { calculateSTDBenefit, formatSTDBenefit } from '@/lib/utils/pricing';
+
+const KAISER_ELIGIBLE_STATES = new Set<string>(KAISER_AVAILABLE_STATE_CODES);
 
 // Validation schema for chat request
 const chatRequestSchema = z.object({
@@ -121,6 +138,37 @@ function isNoPricingComparisonIntent(normalizedMessage: string): boolean {
   return comparison.test(normalizedMessage) || noPricing.test(normalizedMessage);
 }
 
+function buildDeterministicChatSession(metadata: Record<string, any> | undefined, history: Array<{ role: 'user' | 'assistant'; content: string }>, currentTopic?: string): Session {
+  const safeMetadata = metadata ?? {};
+  return {
+    step: 'active_chat',
+    context: {
+      state: safeMetadata.state,
+      dept: safeMetadata.division,
+    },
+    userName: safeMetadata.userName || 'Guest',
+    hasCollectedName: Boolean(safeMetadata.userName),
+    userAge: typeof safeMetadata.userAge === 'number' ? safeMetadata.userAge : null,
+    userState: typeof safeMetadata.state === 'string' ? safeMetadata.state : null,
+    userDept: typeof safeMetadata.division === 'string' ? safeMetadata.division : undefined,
+    dataConfirmed: Boolean(safeMetadata.userAge && safeMetadata.state),
+    messages: history,
+    noPricingMode: safeMetadata.noPricingMode === true,
+    coverageTierLock: typeof safeMetadata.coverageTierLock === 'string'
+      ? safeMetadata.coverageTierLock
+      : typeof safeMetadata.coverageTier === 'string'
+        ? safeMetadata.coverageTier
+        : undefined,
+    payPeriods: typeof safeMetadata.payPeriods === 'number' ? safeMetadata.payPeriods : undefined,
+    currentTopic: currentTopic || safeMetadata.currentTopic,
+    lastBotMessage: typeof safeMetadata.lastBotMessage === 'string' ? safeMetadata.lastBotMessage : undefined,
+    decisionsTracker: safeMetadata.decisionsTracker || {},
+    completedTopics: safeMetadata.completedTopics || [],
+    lifeEvents: Array.isArray(safeMetadata.lifeEvents) ? safeMetadata.lifeEvents : [],
+    userSalary: typeof safeMetadata.userSalary === 'number' ? safeMetadata.userSalary : undefined,
+  };
+}
+
 export const POST = withAuth(undefined, [PERMISSIONS.CHAT_WITH_AI])(async (request: NextRequest) => {
   try {
     // Ensure Authorization header present for tests that bypass auth wrapper
@@ -174,7 +222,7 @@ export const POST = withAuth(undefined, [PERMISSIONS.CHAT_WITH_AI])(async (reque
     await conversationService.addMessage(conversation.id, userMessage);
 
     // Helper to send a normal assistant message (non-eligibility)
-    const sendAssistantMessage = async (content: string): Promise<NextResponse> => {
+    const sendAssistantMessage = async (content: string, metadataPatch?: Record<string, any>): Promise<NextResponse> => {
       const plainContent = toPlainAssistantText(content);
       const aiMessage = {
         id: crypto.randomUUID(),
@@ -184,6 +232,11 @@ export const POST = withAuth(undefined, [PERMISSIONS.CHAT_WITH_AI])(async (reque
       };
 
       await conversationService.addMessage(conversation.id, aiMessage);
+
+      if (metadataPatch && Object.keys(metadataPatch).length) {
+        const updated = await conversationService.patchMetadata(conversation.id, metadataPatch);
+        conversation.metadata = { ...(conversation.metadata || {}), ...(updated.metadata || {}) };
+      }
 
       return NextResponse.json({
         message: aiMessage,
@@ -262,8 +315,7 @@ export const POST = withAuth(undefined, [PERMISSIONS.CHAT_WITH_AI])(async (reque
     const constructAnalystPrompt = (meta: Record<string, any>): string => {
       const catalogText = getCatalogForPrompt(meta.state as string | null);
       const stateCode = (meta.state as string | null) ?? 'UNKNOWN';
-      const kaiserStates = ['CA', 'OR', 'WA'];
-      const kaiserEligible = kaiserStates.includes(stateCode);
+      const kaiserEligible = KAISER_ELIGIBLE_STATES.has(stateCode);
       const kaiserRule = kaiserEligible
         ? `Kaiser HMO is AVAILABLE in ${stateCode} — include it in medical comparisons.`
         : `Kaiser HMO is NOT available in ${stateCode} — NEVER mention Kaiser as an option.`;
@@ -300,7 +352,7 @@ export const POST = withAuth(undefined, [PERMISSIONS.CHAT_WITH_AI])(async (reque
         `  ALLSTATE = Group Whole Life (Permanent), Accident Insurance, Critical Illness ONLY.`,
         `  BCBSTX   = Medical (Standard HSA, Enhanced HSA) and Dental PPO ONLY.`,
         `  VSP      = Vision ONLY.`,
-        `  KAISER   = Medical HMO — CA/OR/WA ONLY. ${kaiserRule}`,
+        `  KAISER   = Medical HMO — CA/GA/OR/WA ONLY. ${kaiserRule}`,
         ``,
         `BANNED entities — NEVER mention these in any response:`,
         `  - "Rightway" / "RightWay" / "Right Way" — NOT an AmeriVet carrier or resource.`,
@@ -480,7 +532,7 @@ export const POST = withAuth(undefined, [PERMISSIONS.CHAT_WITH_AI])(async (reque
 • Department: ${trimmedDivision}
 
         ${ageContext} may be eligible for health, dental, vision, and retirement benefits in ${metadata.state}.\n\nI'm here to keep things simple, friendly, and useful so you feel confident in your choices.\n\n**What would you like to look at first?**
-• Medical plans (Standard HSA, Enhanced HSA${metadata.state && ['CA', 'OR', 'WA'].includes(metadata.state) ? ', Kaiser HMO' : ''})
+• Medical plans (Standard HSA, Enhanced HSA${metadata.state && KAISER_ELIGIBLE_STATES.has(metadata.state) ? ', Kaiser HMO' : ''})
 • Dental (BCBSTX PPO) & Vision (VSP)
 • Critical Illness, Accident, or Hospital Indemnity
 • Life Insurance & Disability (Unum)
@@ -516,18 +568,40 @@ export const POST = withAuth(undefined, [PERMISSIONS.CHAT_WITH_AI])(async (reque
     const normalizedMessage = message.trim().toLowerCase();
     const supportOnlyIntent = isSupportOnlyIntent(normalizedMessage);
     const comparisonNoPricingIntent = isNoPricingComparisonIntent(normalizedMessage);
+    const faqAnswer = checkL1FAQ(message, {
+      enrollmentPortalUrl: WORKDAY_ENROLLMENT_URL,
+      hrPhone: HR_PHONE,
+    });
 
     // =========================================================================
-    // L1 INTERCEPT: Rightway / Contact / Support queries
-    // Rightway is NOT an AmeriVet resource. Intercept before any LLM call.
+    // L1 INTERCEPT: FAQ / support / regional availability queries
+    // Keep these deterministic so chat and QA do not drift on static answers.
     // =========================================================================
-    if (supportOnlyIntent) {
-      return sendAssistantMessage(
-        `Rightway is not part of the AmeriVet benefits package.\n\n` +
-        `For support with your AmeriVet benefits, use only these official contacts:\n` +
-        `- HR/Benefits phone: ${HR_PHONE}\n` +
-        `- Enrollment portal: ${WORKDAY_ENROLLMENT_URL}`
-      );
+    if (faqAnswer) {
+      return sendAssistantMessage(faqAnswer);
+    }
+
+    const scopeGuardAnswer = buildScopeGuardResponse(message, {
+      enrollmentPortalUrl: WORKDAY_ENROLLMENT_URL,
+      hrPhone: HR_PHONE,
+    });
+    if (scopeGuardAnswer) {
+      return sendAssistantMessage(scopeGuardAnswer);
+    }
+
+    // =========================================================================
+    // L1 INTERCEPT: PPO clarification
+    // AmeriVet does not offer a standalone medical PPO plan. Handle this before
+    // any routed/model path so chat and QA agree on the same clarification.
+    // =========================================================================
+    if (isStandaloneMedicalPpoRequest(normalizedMessage)) {
+      const userState = typeof conversation.metadata?.state === 'string'
+        ? conversation.metadata.state.toUpperCase()
+        : undefined;
+      const followUp = userState && KAISER_ELIGIBLE_STATES.has(userState)
+        ? 'Would you like to compare the available medical plans?'
+        : 'Would you like to see a comparison of the Standard HSA vs. Enhanced HSA?';
+      return sendAssistantMessage(`${buildPpoClarificationForState(userState)}\n\n${followUp}`);
     }
 
     // Medical Loop Fix (Sprint 1.2): "other plans" should not loop to medical
@@ -647,7 +721,7 @@ Which of these would you like to learn about next?`
     if (mapped.isAboutBenefitNotInCatalog) {
       return sendAssistantMessage(
         `I'm sorry, but that benefit isn't part of the AmeriVet benefits package. ` +
-        `AmeriVet offers: Medical (BCBSTX HSA plans + Kaiser HMO in CA/OR/WA), ` +
+        `AmeriVet offers: Medical (BCBSTX HSA plans + Kaiser HMO in CA/GA/OR/WA), ` +
         `Dental (BCBSTX PPO), Vision (VSP Plus), Life & Disability (Unum), ` +
         `and special accounts (HSA / FSA / Commuter). ` +
         `Which of these would you like to explore?`
@@ -691,6 +765,12 @@ Which of these would you like to learn about next?`
       ? (BENEFIT_CATEGORY_MAP[mapped.benefitTypes[0]] ?? undefined)
       : undefined;
 
+    const existingTopic = conversation.metadata?.currentTopic as string | undefined;
+    const followUpMessage = isLikelyFollowUpMessage(normalizedMessage);
+    if (!primaryCategory && existingTopic && followUpMessage) {
+      primaryCategory = existingTopic;
+    }
+
     // INTENT SWITCHER: STD / Leave-pay queries must search Disability docs, not Medical.
     // Without this, "how much will I get paid on maternity leave" searches Medical and
     // returns deductible/OOP data instead of the UNUM STD policy.
@@ -700,14 +780,65 @@ Which of these would you like to learn about next?`
       primaryCategory = 'Disability';
     }
 
+    const recentHistory = (conversation.messages || [])
+      .filter((m) => m.role === 'user' || m.role === 'assistant')
+      .slice(-10)
+      .map((m) => ({ role: m.role, content: m.content }));
+
     // Shared router context — injected into every LLM call as the "developer message".
+    const conversationTopic = deriveConversationTopic({
+      benefitTypes: mapped.benefitTypes,
+      primaryCategory,
+      existingTopic,
+      normalizedMessage,
+    });
+
+    const qaSession = buildDeterministicChatSession(conversation.metadata, recentHistory, conversationTopic);
+    const coverageTier = getCoverageTierForQuery(message, qaSession);
+    const chatRoutePolicy = determineChatRoutePolicy({
+      lowerQuery: normalizedMessage,
+      benefitTypes: mapped.benefitTypes,
+      mappedIntent: mapped.intent ?? null,
+      slotsComplete,
+      useRagOverride: useRAG,
+      useSmartOverride: useSmart,
+    });
+    const { intentDomain } = chatRoutePolicy;
+
+    const categoryExplorationIntercept = shouldUseCategoryExplorationIntercept(message, normalizedMessage, intentDomain)
+      ? buildCategoryExplorationResponse({
+          queryLower: normalizedMessage,
+          session: qaSession,
+          coverageTier,
+          enrollmentPortalUrl: WORKDAY_ENROLLMENT_URL,
+          hrPhone: HR_PHONE,
+        })
+      : null;
+    if (categoryExplorationIntercept) {
+      return sendAssistantMessage(categoryExplorationIntercept, {
+        currentTopic: primaryCategory || conversationTopic || conversation.metadata?.currentTopic || null,
+        lastBotMessage: toPlainAssistantText(categoryExplorationIntercept),
+      });
+    }
+
+    const recommendationOverview = buildRecommendationOverview(message, qaSession);
+    if (recommendationOverview) {
+      return sendAssistantMessage(recommendationOverview, {
+        currentTopic: conversationTopic || conversation.metadata?.currentTopic || null,
+        lastBotMessage: toPlainAssistantText(recommendationOverview),
+      });
+    }
+
     const routerContext = {
       userAge:  gateMeta.userAge as number | undefined,
       state:    gateMeta.state  as string | undefined,
       division: gateMeta.division as string | undefined,
       category: primaryCategory,
+      currentTopic: conversationTopic,
+      lastBotMessage: conversation.metadata?.lastBotMessage as string | undefined,
       intent:   mapped.intent,
       validationGate,
+      history: recentHistory,
     };
 
     // 4. CACHE CHECK — L0 exact + L1 semantic before any LLM call.
@@ -725,6 +856,12 @@ Which of these would you like to learn about next?`
           timestamp: new Date(),
         };
         await conversationService.addMessage(conversation.id, cachedAiMessage);
+        try {
+          await conversationService.patchMetadata(conversation.id, {
+            currentTopic: conversationTopic || conversation.metadata?.currentTopic || null,
+            lastBotMessage: cachedAiMessage.content,
+          });
+        } catch {}
         return NextResponse.json({
           message: cachedAiMessage,
           conversationId: conversation.id,
@@ -738,12 +875,7 @@ Which of these would you like to learn about next?`
     }
 
     // 5. ROUTE — safe to reference mapped + slotsComplete (both declared above).
-    const COMPLEX_INTENTS = new Set(['compare', 'cost', 'recommend', 'coverage', 'details', 'enroll']);
-    const isComplexBenefitQuery = (
-      mapped.benefitTypes.length > 0 ||
-      COMPLEX_INTENTS.has(mapped.intent ?? '')
-    ) && slotsComplete;
-    const shouldUseRAG = useRAG || isComplexBenefitQuery;
+    const { shouldUseRag: shouldUseRAG, shouldUseSmart } = chatRoutePolicy;
     let routed;
     let modelUsed: 'simple' | 'smart' | 'rag' = 'simple';
     let ragChunksUsed = 0;
@@ -752,22 +884,21 @@ Which of these would you like to learn about next?`
       try {
         routed = await ragChatRouter.routeMessage(userMessage.content, {
           companyId,
-          history:  [],
           ...routerContext,
         });
         modelUsed = 'rag';
         ragChunksUsed = (routed as any).metadata?.chunksUsed ?? 0;
-        // Distinguish: did we retrieve real docs, or was it a fallback LLM-only call?
+        // Distinguish: did we retrieve real docs, or fall back to the safe hand-off response?
         routeSource = (routed as any).responseType === 'rag' && ragChunksUsed > 0
-          ? 'rag-doc'      // ✅ retrieved chunks from Azure Search
-          : 'rag-fallback'; // ⚠️  RAG tried but no matching docs — LLM answered alone
-        logger.info('[Router] RAG path', { isComplexBenefitQuery, ragChunksUsed, routeSource });
+          ? 'rag-doc'
+          : 'rag-fallback';
+        logger.info('[Router] RAG path', { intentDomain, ragChunksUsed, routeSource });
       } catch (err) {
         logger.warn('RAG router failed, falling back to smart/simple', { err });
       }
     }
 
-    if (!routed && useSmart) {
+    if (!routed && shouldUseSmart) {
       try {
         routed = await smartChatRouter.routeMessage(userMessage.content, {
           ...routerContext,
@@ -820,10 +951,10 @@ Which of these would you like to learn about next?`
         .replace(/\n{3,}/g, '\n\n')
         .trim();
       if (enhancedContent.length < 20) {
-        enhancedContent = `For benefits support, please contact your HR/Benefits team or visit the enrollment portal: ${WORKDAY_ENROLLMENT_URL}\n\nIs there anything else I can help with?`;
+        enhancedContent = buildLiveSupportFallback(WORKDAY_ENROLLMENT_URL, HR_PHONE);
       }
     }
-    enhancedContent = enhancedContent.replace(L3_BANNED_PHONE_RE, 'your HR/Benefits team');
+    enhancedContent = enhancedContent.replace(L3_BANNED_PHONE_RE, `AmeriVet HR/Benefits at ${HR_PHONE}`);
 
     // L3.2: CARRIER MISATTRIBUTION GUARD — fix wrong carrier assignments
     const L3_CARRIER_RULES: Array<{ pattern: RegExp; fix: string }> = [
@@ -859,8 +990,8 @@ Which of these would you like to learn about next?`
       enhancedContent = enhancedContent.replace(L3_DHMO_RE, 'BCBSTX Dental PPO');
     }
 
-    // L3.5: KAISER GEOGRAPHIC GUARD — Kaiser only in CA/OR/WA
-    const kaiserApplicable = userState && ['CA', 'OR', 'WA'].includes(userState);
+    // L3.5: KAISER GEOGRAPHIC GUARD — Kaiser only where the catalog allows it
+    const kaiserApplicable = userState && KAISER_ELIGIBLE_STATES.has(userState);
     if (!kaiserApplicable && /\bkaiser\b/i.test(enhancedContent)) {
       logger.warn(`[L3] Stripped Kaiser reference for non-eligible state: ${userState}`);
       enhancedContent = enhancedContent
@@ -961,6 +1092,13 @@ Which of these would you like to learn about next?`
 
     await conversationService.addMessage(conversation.id, aiMessage);
 
+    try {
+      await conversationService.patchMetadata(conversation.id, {
+        currentTopic: conversationTopic || conversation.metadata?.currentTopic || null,
+        lastBotMessage: enhancedContent,
+      });
+    } catch {}
+
     // Track analytics for user satisfaction monitoring
     try {
       trackEnhancedChatResponse(
@@ -1004,4 +1142,3 @@ Which of these would you like to learn about next?`
     return NextResponse.json({ error: 'Chat processing failed' }, { status: 500 });
   }
 });
-

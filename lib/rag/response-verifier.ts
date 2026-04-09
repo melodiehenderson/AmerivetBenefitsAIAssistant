@@ -328,11 +328,13 @@ export function verifyResponse(
 
 /** Standard message shown to the user when the verifier triggers a 'refuse'. */
 export const PORTAL_FALLBACK_MESSAGE =
-  "I couldn't find that information in the official AmeriVet benefits documents. " +
-  "For accurate, plan-specific details please visit your [benefits enrollment portal]({{PORTAL_URL}}), " +
-  "or speak with your HR team.";
+  "I couldn't verify that in the official AmeriVet benefits documents. " +
+  "If you'd like, reply with the specific benefit, plan name, or state you're asking about and I'll try again. " +
+  "For accurate, plan-specific details, please visit your [benefits enrollment portal]({{PORTAL_URL}}) or speak with your HR team.";
 
 export function buildPortalFallback(portalUrl?: string): string {
   const url = portalUrl || process.env.ENROLLMENT_PORTAL_URL || process.env.NEXT_PUBLIC_ENROLLMENT_URL || '#';
-  return PORTAL_FALLBACK_MESSAGE.replace('{{PORTAL_URL}}', url);
+  const hrPhone = process.env.HR_PHONE_NUMBER || process.env.HR_PHONE || undefined;
+  return buildClarifyThenPortalFallback(url, hrPhone);
 }
+import { buildClarifyThenPortalFallback } from '@/lib/qa/support-response-builders';

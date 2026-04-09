@@ -30,7 +30,7 @@ export type CacheRouteSource =
   | 'cache-exact'    // L0 exact hash hit — zero LLM cost
   | 'cache-semantic' // L1 similarity hit — cheap reframe only
   | 'rag-doc'        // RAG: retrieved Azure Search chunks
-  | 'rag-fallback'   // RAG attempted but returned no chunks, LLM answered alone
+  | 'rag-fallback'   // RAG attempted but returned the safe no-grounding fallback
   | 'smart'          // SmartChatRouter (pattern-matching, no RAG)
   | 'simple';        // SimpleChatRouter (no RAG, no pattern)
 

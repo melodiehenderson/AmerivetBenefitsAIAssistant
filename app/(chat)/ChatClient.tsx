@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { marked } from 'marked';
 import { WelcomeVideoModal } from '@/components/welcome-video-modal';
+import { Textarea } from '@/components/ui/textarea';
 
 interface Message {
   id: string;
@@ -24,6 +25,7 @@ export default function ChatClient() {
   const [currentQuestion, setCurrentQuestion] = React.useState<'name' | 'state' | 'division' | null>('name');
   const abortRef = React.useRef<AbortController | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+  const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
@@ -37,6 +39,20 @@ export default function ChatClient() {
   React.useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  const TEXTAREA_MIN_HEIGHT = 96;
+  const TEXTAREA_MAX_HEIGHT = 200;
+
+  const syncTextareaHeight = React.useCallback(() => {
+    if (!textareaRef.current) return;
+    textareaRef.current.style.height = 'auto';
+    const nextHeight = Math.min(textareaRef.current.scrollHeight + 2, TEXTAREA_MAX_HEIGHT);
+    textareaRef.current.style.height = `${Math.max(nextHeight, TEXTAREA_MIN_HEIGHT)}px`;
+  }, []);
+
+  React.useEffect(() => {
+    syncTextareaHeight();
+  }, [message, syncTextareaHeight]);
 
   async function submit(msg: string) {
     if (!msg.trim() || isSubmitting) return;
@@ -197,11 +213,18 @@ export default function ChatClient() {
           </button>
           <input ref={fileInputRef} type="file" hidden onChange={() => {}} />
 
-          <input
-            className="flex-1 border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          <Textarea
+            ref={textareaRef}
+            className="flex-1 !min-h-[96px] !max-h-[200px] resize-none overflow-y-auto border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
             placeholder="Type your message..."
             value={message}
             onChange={(e) => setMessage(e.target.value)}
+            rows={4}
+            style={{
+              minHeight: `${TEXTAREA_MIN_HEIGHT}px`,
+              maxHeight: `${TEXTAREA_MAX_HEIGHT}px`,
+              overflowY: textareaRef.current && textareaRef.current.scrollHeight > TEXTAREA_MAX_HEIGHT ? 'auto' : 'hidden',
+            }}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();

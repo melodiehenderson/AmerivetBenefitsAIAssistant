@@ -351,7 +351,7 @@ export function getAgeBandedResponse(
   
   return `Since this is an age-rated product, the cost varies based on your exact age and coverage amount you select. 
 
-To see your personalized rate, please log in to the enrollment portal at ${process.env.ENROLLMENT_PORTAL_URL || 'https://wd5.myworkday.com/amerivet/login.htmld'} where you can view the exact premium for your age bracket and customize your coverage level.
+To see your personalized rate, please log in to the enrollment portal at ${process.env.ENROLLMENT_PORTAL_URL || 'https://wd5.myworkday.com/amerivet/login.html'} where you can view the exact premium for your age bracket and customize your coverage level.
 
 Would you like me to explain what this coverage includes instead?`;
 }

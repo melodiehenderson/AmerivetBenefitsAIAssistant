@@ -294,7 +294,7 @@ export class VectorSearchService {
       query,
       results: [
         {
-          content: `I understand you're looking for information about: ${query}. While I can't perform advanced vector search right now, I can help you with general benefits information.`,
+          content: `Advanced vector search isn't available right now, but I can still help with general benefits information.`,
           score: 0.5,
           metadata: { type: 'fallback' },
           source: 'fallback_search',

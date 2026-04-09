@@ -75,6 +75,8 @@ export interface AmerivetBenefitsCatalog {
   };
 }
 
+export const KAISER_AVAILABLE_STATE_CODES = ['CA', 'GA', 'OR', 'WA'] as const;
+
 const biweekly = (monthly: number) => Number(((monthly * 12) / 26).toFixed(2));
 
 const createPlan = (plan: BenefitPlan): BenefitPlan => plan;

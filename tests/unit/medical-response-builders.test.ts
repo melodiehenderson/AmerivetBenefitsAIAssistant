@@ -1,0 +1,118 @@
+import { describe, expect, it } from 'vitest';
+
+import { checkMustContain, checkMustNotContain } from '../eval/metrics';
+import pricingUtils from '@/lib/rag/pricing-utils';
+import {
+  buildMedicalComparisonMessage,
+  buildTwoPlanComparisonMessage,
+} from '@/lib/qa/medical-response-builders';
+import { buildDentalVisionComparisonResponse } from '@/lib/qa/category-response-builders';
+import { buildMedicalPlanFallback, buildRecommendationOverview } from '@/lib/qa/medical-helpers';
+import type { Session } from '@/lib/rag/session-store';
+
+function expectContract(response: string | null, mustContain: string[], mustNotContain: string[] = []) {
+  expect(response).toBeTruthy();
+  const contain = checkMustContain(response!, mustContain);
+  const notContain = checkMustNotContain(response!, mustNotContain);
+  expect(contain.pass, `Missing required phrases: ${contain.failed.join(', ')}\n\nResponse:\n${response}`).toBe(true);
+  expect(notContain.pass, `Found forbidden phrases: ${notContain.failed.join(', ')}\n\nResponse:\n${response}`).toBe(true);
+}
+
+function makeSession(overrides: Partial<Session> = {}): Session {
+  return {
+    step: 'active_chat',
+    context: {},
+    ...overrides,
+  };
+}
+
+describe('medical-response-builders', () => {
+  it('builds a deterministic standard-versus-enhanced comparison for family coverage', () => {
+    const rows = pricingUtils.buildPerPaycheckBreakdown('Employee + Family', 26)
+      .filter((row) => row.plan === 'Standard HSA' || row.plan === 'Enhanced HSA');
+
+    const response = buildTwoPlanComparisonMessage({
+      coverageTier: 'Employee + Family',
+      payPeriods: 26,
+      row1: rows.find((row) => row.plan === 'Standard HSA')!,
+      row2: rows.find((row) => row.plan === 'Enhanced HSA')!,
+      noPricingMode: false,
+    });
+
+    expectContract(response, ['Standard HSA', 'Enhanced HSA', 'Monthly premium', 'Per paycheck (26/yr)', 'Premium difference'], []);
+  });
+
+  it('builds a pricing-hidden medical overview with the Kaiser regional note', () => {
+    const rows = pricingUtils.buildPerPaycheckBreakdown('Employee Only', 26)
+      .filter((row) => row.plan === 'Standard HSA' || row.plan === 'Enhanced HSA');
+
+    const response = buildMedicalComparisonMessage({
+      coverageTier: 'Employee Only',
+      filtered: rows,
+      hasHiddenKaiser: true,
+      noPricingMode: true,
+    });
+
+    expectContract(response, ['Standard HSA', 'Enhanced HSA', 'Kaiser Standard HMO is available only in California, Georgia, Washington, and Oregon'], ['$']);
+  });
+
+  it('answers enhanced HSA deductible questions from the shared medical fallback', () => {
+    const response = buildMedicalPlanFallback(
+      'what is the deductible for enhanced hsa?',
+      makeSession({ userState: 'TX' }),
+    );
+
+    expectContract(response, ['Enhanced HSA summary', 'Deductible', 'Out-of-pocket max', 'Coinsurance'], []);
+  });
+
+  it('answers compare-the-two-plans questions from the shared medical fallback', () => {
+    const response = buildMedicalPlanFallback(
+      'compare standard hsa versus enhanced hsa for my family in texas',
+      makeSession({ userState: 'TX' }),
+    );
+
+    expectContract(response, ['side-by-side comparison', 'Standard HSA', 'Enhanced HSA', '| Plan |', '| Deductible |'], ['Kaiser Standard HMO']);
+  });
+
+  it('gives balanced recommendation guidance for standard versus enhanced HSA', () => {
+    const response = buildRecommendationOverview(
+      'Which plan do you recommend: Standard HSA or Enhanced HSA?',
+      makeSession({ userState: 'TX' }),
+    );
+
+    expectContract(response, ['Standard HSA', 'Enhanced HSA', 'lowest premium', 'lower deductible'], ['always better']);
+  });
+
+  it('answers deductible-difference questions for individual coverage from the shared medical fallback', () => {
+    const response = buildMedicalPlanFallback(
+      'What is the deductible difference between Standard HSA and Enhanced HSA for individual coverage?',
+      makeSession({ userState: 'TX' }),
+    );
+
+    expectContract(response, ['Standard HSA', 'Enhanced HSA', '$3,500', '$2,500'], ['Kaiser deductible']);
+  });
+
+  it('keeps dental annual max distinct from vision allowances in comparison tables', () => {
+    const response = buildDentalVisionComparisonResponse(makeSession());
+
+    expectContract(response, ['BCBSTX Dental PPO', 'VSP Vision Plus', '$1500'], ['Vision annual max $1500']);
+  });
+
+  it('compares all California medical options including Kaiser for individual coverage', () => {
+    const response = buildMedicalPlanFallback(
+      'Compare Standard HSA, Enhanced HSA, and Kaiser HMO for individual coverage in California.',
+      makeSession({ userState: 'CA' }),
+    );
+
+    expectContract(response, ['Standard HSA', 'Enhanced HSA', 'Kaiser Standard HMO', '$6,500', '$5,500', '$4,500'], []);
+  });
+
+  it('nudges frequent-care users toward evaluating Enhanced HSA first without making absolute claims', () => {
+    const response = buildRecommendationOverview(
+      'What do you recommend if I expect frequent doctor visits?',
+      makeSession({ userState: 'TX' }),
+    );
+
+    expectContract(response, ['Enhanced HSA', 'lower deductible'], ['always choose']);
+  });
+});

@@ -227,7 +227,7 @@ Recommendations:
 
   private getFallbackAnswer(question: string): ChainResult {
     return {
-      response: `I understand you're asking about: ${question}. While I can't process this with advanced AI right now, I can help you with general benefits information.`,
+      response: `I can't use advanced AI processing right now, but I can still help with general benefits information.`,
       confidence: 0.5,
       reasoning: ['Used fallback response', 'Limited AI processing'],
       metadata: { method: 'fallback' },

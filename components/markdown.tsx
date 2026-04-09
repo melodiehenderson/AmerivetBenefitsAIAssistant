@@ -2,29 +2,30 @@ import Link from 'next/link';
 import React, { memo } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { cn } from '@/lib/utils';
 import { CodeBlock } from './code-block';
 
 const components: Partial<Components> = {
   // @ts-expect-error
   code: CodeBlock,
   pre: ({ children }) => <>{children}</>,
-  ol: ({ node, children, ...props }) => {
+  ol: ({ node, children, className, ...props }) => {
     return (
-      <ol className="list-decimal list-outside ml-4" {...props}>
+      <ol className={cn('list-decimal list-outside ml-4 space-y-1', className)} {...props}>
         {children}
       </ol>
     );
   },
-  li: ({ node, children, ...props }) => {
+  li: ({ node, children, className, ...props }) => {
     return (
-      <li className="py-1" {...props}>
+      <li className={cn('py-1', className)} {...props}>
         {children}
       </li>
     );
   },
-  ul: ({ node, children, ...props }) => {
+  ul: ({ node, children, className, ...props }) => {
     return (
-      <ul className="list-decimal list-outside ml-4" {...props}>
+      <ul className={cn('list-disc list-outside ml-4 space-y-1', className)} {...props}>
         {children}
       </ul>
     );
@@ -47,6 +48,59 @@ const components: Partial<Components> = {
       >
         {children}
       </Link>
+    );
+  },
+  table: ({ node, children, className, ...props }) => {
+    return (
+      <div className="my-4 w-full overflow-x-auto rounded-lg border border-border">
+        <table
+          className={cn('w-full min-w-[32rem] border-collapse text-sm', className)}
+          {...props}
+        >
+          {children}
+        </table>
+      </div>
+    );
+  },
+  thead: ({ node, children, className, ...props }) => {
+    return (
+      <thead className={cn('bg-muted/60', className)} {...props}>
+        {children}
+      </thead>
+    );
+  },
+  tbody: ({ node, children, className, ...props }) => {
+    return (
+      <tbody className={cn('divide-y divide-border', className)} {...props}>
+        {children}
+      </tbody>
+    );
+  },
+  tr: ({ node, children, className, ...props }) => {
+    return (
+      <tr className={cn('align-top', className)} {...props}>
+        {children}
+      </tr>
+    );
+  },
+  th: ({ node, children, className, ...props }) => {
+    return (
+      <th
+        className={cn(
+          'border-b border-border px-4 py-3 text-left font-semibold text-foreground',
+          className,
+        )}
+        {...props}
+      >
+        {children}
+      </th>
+    );
+  },
+  td: ({ node, children, className, ...props }) => {
+    return (
+      <td className={cn('px-4 py-3 text-muted-foreground', className)} {...props}>
+        {children}
+      </td>
     );
   },
   h1: ({ node, children, ...props }) => {

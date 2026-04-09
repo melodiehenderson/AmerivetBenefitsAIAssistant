@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { detectIntentDomain, stripPricingDetails, stripThoughtBlock } from '../../app/api/qa/route';
+import { stripPricingDetails, stripThoughtBlock } from '../../app/api/qa/route';
+import { detectIntentDomain } from '../../lib/intent-digest';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers: replicate the exact intercept trigger conditions from route.ts
