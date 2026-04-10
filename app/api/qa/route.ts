@@ -2100,6 +2100,22 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
       return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'compare-dental-only' } });
     }
 
+    const dentalPlanCountRequested =
+      /\bdental\b/i.test(lowerQuery) &&
+      (
+        /\b(is\s+there\s+only\s+one|only\s+one|how\s+many|are\s+there\s+\d+|two\s+dental\s+plans?|2\s+dental\s+plans?|multiple\s+dental\s+plans?|more\s+than\s+one)\b/i.test(lowerQuery) ||
+        /\bchoose\s+from\b/i.test(lowerQuery)
+      );
+    if (deterministicConversationInterceptsEnabled && dentalPlanCountRequested) {
+      logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] DENTAL-PLAN-COUNT`);
+      const msg = `AmeriVet offers one dental plan: **${amerivetBenefits2024_2025.dentalPlan.name}** (${amerivetBenefits2024_2025.dentalPlan.provider}). It is the only dental option in the AmeriVet benefits package.`;
+      const plainMsg = toPlainAssistantText(applyPricingExclusion(session.noPricingMode ? stripPricingDetails(msg) : msg, session.noPricingMode || intent.noPricing));
+      session.currentTopic = 'Dental';
+      session.lastBotMessage = plainMsg;
+      await updateSession(sessionId, session);
+      return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'dental-plan-count' } });
+    }
+
     const crossBenefitDeductibleAnswer = buildCrossBenefitDeductibleAnswer(query);
     if (deterministicConversationInterceptsEnabled && crossBenefitDeductibleAnswer) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] CROSS-BENEFIT-DEDUCTIBLE`);

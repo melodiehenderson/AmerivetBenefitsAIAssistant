@@ -38,6 +38,9 @@ describe('routing-helpers follow-up heuristics', () => {
 
   it('treats conversational category pivots like "let\'s look at medical" as category exploration', () => {
     expect(shouldUseCategoryExplorationIntercept("Let's look at medical", "let's look at medical", 'general')).toBe(true);
+    expect(shouldUseCategoryExplorationIntercept("Okay, let's do vision", "okay, let's do vision", 'general')).toBe(true);
+    expect(shouldUseCategoryExplorationIntercept('medical please', 'medical please', 'general')).toBe(true);
+    expect(shouldUseCategoryExplorationIntercept("I'd like to see my medical options", "i'd like to see my medical options", 'general')).toBe(true);
     expect(shouldUseCategoryExplorationIntercept('Tell me about dental', 'tell me about dental', 'general')).toBe(true);
     expect(shouldUseCategoryExplorationIntercept('I need to understand family coverage options. My spouse works part-time and we have two kids.', 'i need to understand family coverage options. my spouse works part-time and we have two kids.', 'general')).toBe(true);
   });
