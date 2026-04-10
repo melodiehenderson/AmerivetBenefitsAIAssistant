@@ -7,7 +7,7 @@ import {
   buildTwoPlanComparisonMessage,
 } from '@/lib/qa/medical-response-builders';
 import { buildDentalVisionComparisonResponse } from '@/lib/qa/category-response-builders';
-import { buildMedicalPlanFallback, buildRecommendationOverview } from '@/lib/qa/medical-helpers';
+import { buildCrossBenefitDeductibleAnswer, buildMedicalPlanFallback, buildRecommendationOverview } from '@/lib/qa/medical-helpers';
 import type { Session } from '@/lib/rag/session-store';
 
 function expectContract(response: string | null, mustContain: string[], mustNotContain: string[] = []) {
@@ -42,6 +42,21 @@ describe('medical-response-builders', () => {
     expectContract(response, ['Standard HSA', 'Enhanced HSA', 'Monthly premium', 'Per paycheck (26/yr)', 'Premium difference'], []);
   });
 
+  it('builds a visible named-plan comparison when one plan is Kaiser', () => {
+    const rows = pricingUtils.buildPerPaycheckBreakdown('Employee Only', 26)
+      .filter((row) => row.plan === 'Standard HSA' || row.plan === 'Kaiser Standard HMO');
+
+    const response = buildTwoPlanComparisonMessage({
+      coverageTier: 'Employee Only',
+      payPeriods: 26,
+      row1: rows.find((row) => row.plan === 'Standard HSA')!,
+      row2: rows.find((row) => row.plan === 'Kaiser Standard HMO')!,
+      noPricingMode: false,
+    });
+
+    expectContract(response, ['Standard HSA', 'Kaiser Standard HMO', 'Monthly premium', 'Per paycheck (26/yr)', 'integrated HMO-style network'], []);
+  });
+
   it('builds a pricing-hidden medical overview with the Kaiser regional note', () => {
     const rows = pricingUtils.buildPerPaycheckBreakdown('Employee Only', 26)
       .filter((row) => row.plan === 'Standard HSA' || row.plan === 'Enhanced HSA');
@@ -63,6 +78,14 @@ describe('medical-response-builders', () => {
     );
 
     expectContract(response, ['Enhanced HSA summary', 'Deductible', 'Out-of-pocket max', 'Coinsurance'], []);
+  });
+
+  it('answers practical cross-benefit deductible questions without deflecting', () => {
+    const response = buildCrossBenefitDeductibleAnswer(
+      "Do dental out-of-pocket payments count toward my medical plan's deductible?",
+    );
+
+    expectContract(response, ['Dental and medical coverage are generally separate benefit plans', 'do not count toward your medical plan deductible', 'separate buckets'], ['contact the AmeriVet benefits team']);
   });
 
   it('answers compare-the-two-plans questions from the shared medical fallback', () => {

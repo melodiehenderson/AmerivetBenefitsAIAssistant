@@ -35,6 +35,7 @@ import pricingUtils from '@/lib/rag/pricing-utils';
 import { classifyQueryIntent, getIntentHint, type QueryIntent } from '@/lib/rag/query-intent-classifier';
 import { amerivetBenefits2024_2025, getCatalogForPrompt, KAISER_AVAILABLE_STATE_CODES } from '@/lib/data/amerivet';
 import {
+  buildCrossBenefitDeductibleAnswer,
   buildKaiserUnavailableFallback,
   buildMedicalPlanFallback,
   buildPpoClarificationFallback,
@@ -1164,6 +1165,12 @@ export async function POST(req: NextRequest) {
       logger.info(`[REQ:${reqId}][STEP-4 RULE] TIER-LOCK: Employee + Child(ren)`);
     }
 
+    const explicitCoverageTier = extractExplicitCoverageFromQuery(query);
+    if (explicitCoverageTier && session.coverageTierLock !== explicitCoverageTier) {
+      session.coverageTierLock = explicitCoverageTier;
+      logger.info(`[REQ:${reqId}][STEP-4 RULE] TIER-LOCK: ${explicitCoverageTier}`);
+    }
+
     // RULE 2: NO-PRICING INTENT ΓÇö user said "no pricing" / "coverage only"
     // Persists on session so follow-up messages also respect it.
     // User can unlock by saying "show pricing" / "include costs".
@@ -1204,7 +1211,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Save session if state-based flags changed
-    if (intent.familyTierSignal || intent.noPricing || childTierLock.locked) {
+    if (intent.familyTierSignal || intent.noPricing || childTierLock.locked || explicitCoverageTier) {
       await updateSession(sessionId, session);
     }
     
@@ -1642,9 +1649,9 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
       const compareSignal = /\b(?:compare|vs\.?|versus|side\s*by\s*side|difference\s+between|compared\s+to)\b/i.test(lowerQuery) || (/\b(?:or)\b/i.test(lowerQuery) && /\b(?:hsa|hmo|ppo|dental|vision)\b/i.test(lowerQuery));
       if (!compareSignal) return null;
       const knownPlans: { key: string; label: string; regex: RegExp }[] = [
-        { key: 'standard hsa', label: 'Standard HSA', regex: /\bstandard\s*(?:hsa)?\b/i },
+        { key: 'standard hsa', label: 'Standard HSA', regex: /\bstandard\s*hsa\b/i },
         { key: 'enhanced hsa', label: 'Enhanced HSA', regex: /\benhanced\s*(?:hsa)?\b/i },
-        { key: 'kaiser',       label: 'Kaiser Standard HMO', regex: /\b(kaiser|hmo)\b/i },
+        { key: 'kaiser',       label: 'Kaiser Standard HMO', regex: /\bkaiser(?:\s+standard)?(?:\s+hmo)?\b|\bhmo\b/i },
       ];
       const matched = knownPlans.filter(p => p.regex.test(lowerQuery));
       if (matched.length >= 2) return matched.slice(0, 2);
@@ -1693,6 +1700,8 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
           noPricingMode: session.noPricingMode || intent.noPricing,
         });
         msg = applyPricingExclusion(msg, session.noPricingMode || intent.noPricing);
+        session.currentTopic = 'Medical';
+        session.coverageTierLock = coverageTier;
         session.lastBotMessage = msg;
         await updateSession(sessionId, session);
         return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'two-plan-compare' } });
@@ -1752,6 +1761,8 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
         noPricingMode: session.noPricingMode || intent.noPricing,
       });
       const plainMsg = toPlainAssistantText(applyPricingExclusion(msg, session.noPricingMode || intent.noPricing));
+      session.currentTopic = 'Medical';
+      session.coverageTierLock = coverageTier;
       session.lastBotMessage = plainMsg;
       await updateSession(sessionId, session);
       return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'medical-comparison' } });
@@ -1762,6 +1773,9 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
     if (recommendationOverview) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] RECOMMENDATION-OVERVIEW`);
       const plainMsg = toPlainAssistantText(applyPricingExclusion(recommendationOverview, session.noPricingMode || intent.noPricing));
+      if (/\b(hsa|kaiser|medical|health|ppo|hmo)\b/i.test(lowerQuery)) {
+        session.currentTopic = 'Medical';
+      }
       session.lastBotMessage = plainMsg;
       await updateSession(sessionId, session);
       return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'recommendation-overview' } });
@@ -1813,6 +1827,8 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
         const network = networkMatch ? networkMatch[0] : undefined;
         const rawMsg = pricingUtils.estimateCostProjection({ coverageTier, usage, network, state: session.userState || undefined, age: session.userAge || undefined });
         const plainMsg = session.noPricingMode ? stripPricingDetails(toPlainAssistantText(rawMsg)) : toPlainAssistantText(rawMsg);
+        session.currentTopic = 'Medical';
+        session.coverageTierLock = coverageTier;
         session.lastBotMessage = plainMsg;
         await updateSession(sessionId, session);
         return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'cost-model' } });
@@ -1892,6 +1908,25 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
     const isShortFollowUp = isLikelyFollowUpMessage(query.trim()) && query.trim().length < 30;
     const isTopicContinuation = isTopicContinuationMessage(query, session.currentTopic);
     const isYes = isSimpleAffirmation(query);
+    const explicitTierFromFollowUp = extractExplicitCoverageFromQuery(query);
+
+    if (deterministicConversationInterceptsEnabled && session.currentTopic && explicitTierFromFollowUp) {
+      logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] TIER-SWITCH: topic=${session.currentTopic}`);
+      const topicResponse = buildCategoryExplorationResponse({
+        queryLower: session.currentTopic.toLowerCase(),
+        session,
+        coverageTier: explicitTierFromFollowUp,
+        enrollmentPortalUrl: ENROLLMENT_PORTAL_URL,
+        hrPhone: HR_PHONE,
+      });
+      if (topicResponse) {
+        session.coverageTierLock = explicitTierFromFollowUp;
+        const plainMsg = toPlainAssistantText(topicResponse);
+        session.lastBotMessage = plainMsg;
+        await updateSession(sessionId, session);
+        return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'tier-switch', topic: session.currentTopic, coverageTier: explicitTierFromFollowUp } });
+      }
+    }
 
     if (deterministicConversationInterceptsEnabled && session.currentTopic && /\bcoverage\s+tiers?\b/i.test(lowerQuery)) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] COVERAGE-TIERS: topic=${session.currentTopic}`);
@@ -2010,6 +2045,15 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
       session.lastBotMessage = plainMsg;
       await updateSession(sessionId, session);
       return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'compare-dental-only' } });
+    }
+
+    const crossBenefitDeductibleAnswer = buildCrossBenefitDeductibleAnswer(query);
+    if (deterministicConversationInterceptsEnabled && crossBenefitDeductibleAnswer) {
+      logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] CROSS-BENEFIT-DEDUCTIBLE`);
+      const plainMsg = toPlainAssistantText(crossBenefitDeductibleAnswer);
+      session.lastBotMessage = plainMsg;
+      await updateSession(sessionId, session);
+      return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'cross-benefit-deductible' } });
     }
 
     // ========================================================================
@@ -2161,7 +2205,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
     const explicitTotalDeduction = /\b(total\s+deduct(?:ion|ed|ions)?|total\s+(?:monthly|annual)\s+(?:cost|premium)|how\s+much\s+(?:would\s+)?(?:be\s+)?deducted)\b/i.test(query);
     const totalDeductionRequested = intentDomain !== 'policy' && ((enrollAllSignal && deductionQuestionSignal) || explicitTotalDeduction);
 
-    function extractCoverageFromQuery(q: string): string {
+    function extractExplicitCoverageFromQuery(q: string): string | null {
       const low = q.toLowerCase();
       // Employee + Family (including natural language like "family of 4", "family plan", "spouse and children")
       if (/employee\s*\+?\s*family|family\s*(of|plan|coverage)|family\s*\d|for\s*(my|the|our)\s*family/i.test(low)) return 'Employee + Family';
@@ -2173,7 +2217,16 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
       if (/employee\s*\+?\s*child|child(?:ren)?\s*coverage|for\s*(my|the)\s*(kid|child|son|daughter)|dependent\s*child/i.test(low)) return 'Employee + Child(ren)';
       // Employee Only
       if (/employee\s*only|individual|single|just\s*me|only\s*me/i.test(low)) return 'Employee Only';
-      // SESSION TIER LOCK: If session has a locked tier from family detection, use it
+      return null;
+    }
+
+    function extractCoverageFromQuery(q: string): string {
+      const explicitCoverageTier = extractExplicitCoverageFromQuery(q);
+      if (explicitCoverageTier) return explicitCoverageTier;
+      const lastBotCoverageTier = typeof session.lastBotMessage === 'string'
+        ? session.lastBotMessage.match(/\b(Employee Only|Employee \+ Spouse|Employee \+ Child\(ren\)|Employee \+ Family)\b/i)?.[1]
+        : null;
+      if (lastBotCoverageTier) return lastBotCoverageTier;
       if (session.coverageTierLock) return session.coverageTierLock;
       return 'Employee Only';
     }

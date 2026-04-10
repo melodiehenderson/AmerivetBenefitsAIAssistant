@@ -70,6 +70,19 @@ export function getCoverageTierForQuery(query: string, session: Session): string
   return inferCoverageTierFromQuery(query, session);
 }
 
+export function buildCrossBenefitDeductibleAnswer(query: string): string | null {
+  const lower = query.toLowerCase();
+  const asksWhetherCounts = /\b(count|apply|go toward|goes toward|toward|towards|rolled?\s+into)\b/i.test(lower);
+  const mentionsMedicalAccumulator = /\bmedical\b.*\b(deductible|out[- ]of[- ]pocket|oop max)\b|\b(deductible|out[- ]of[- ]pocket|oop max)\b.*\bmedical\b/i.test(lower);
+  const benefitLabel = /\bvision\b/i.test(lower) && !/\bdental\b/i.test(lower) ? 'Vision' : (/\bdental\b/i.test(lower) ? 'Dental' : null);
+
+  if (!benefitLabel || !asksWhetherCounts || !mentionsMedicalAccumulator) {
+    return null;
+  }
+
+  return `${benefitLabel} and medical coverage are generally separate benefit plans, so ${benefitLabel.toLowerCase()} out-of-pocket costs usually do not count toward your medical plan deductible or medical out-of-pocket maximum.\n\nThink of them as separate buckets:\n- Medical expenses apply to your medical deductible and medical out-of-pocket maximum\n- ${benefitLabel} expenses apply only to the ${benefitLabel.toLowerCase()} plan's own deductibles, copays, or annual limits\n\nIf you want, I can also explain how the ${benefitLabel.toLowerCase()} deductible and annual maximum work.`;
+}
+
 export function getAvailablePricingRows(
   session: Session,
   coverageTier: string,

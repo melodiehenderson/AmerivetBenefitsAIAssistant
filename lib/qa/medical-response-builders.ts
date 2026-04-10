@@ -13,22 +13,31 @@ type TwoPlanComparisonArgs = {
 export function buildTwoPlanComparisonMessage({ coverageTier, payPeriods, row1, row2, noPricingMode }: TwoPlanComparisonArgs): string {
   let msg = `Here's a side-by-side comparison for **${coverageTier}** coverage:\n\n`;
 
-  msg += `| | **${row1.plan}** | **${row2.plan}** |\n`;
-  msg += `|---|---|---|\n`;
+  const appendPlanBlock = (row: PricingRow) => {
+    msg += `**${row.plan}**\n`;
+    if (!noPricingMode) {
+      msg += `- Monthly premium: $${pricingUtils.formatMoney(row.perMonth)}\n`;
+      msg += `- Per paycheck (${payPeriods}/yr): $${pricingUtils.formatMoney(row.perPaycheck)}\n`;
+      msg += `- Annual premium: $${pricingUtils.formatMoney(row.annually)}\n`;
+    } else {
+      msg += `- Pricing hidden for this comparison\n`;
+    }
+    msg += `\n`;
+  };
 
-  if (!noPricingMode) {
-    msg += `| Monthly premium | $${pricingUtils.formatMoney(row1.perMonth)} | $${pricingUtils.formatMoney(row2.perMonth)} |\n`;
-    msg += `| Per paycheck (${payPeriods}/yr) | $${pricingUtils.formatMoney(row1.perPaycheck)} | $${pricingUtils.formatMoney(row2.perPaycheck)} |\n`;
-    msg += `| Annual premium | $${pricingUtils.formatMoney(row1.annually)} | $${pricingUtils.formatMoney(row2.annually)} |\n`;
-  } else {
-    msg += `| Network type | HDHP (HSA-eligible) | Enhanced PPO |\n`;
-    msg += `| Deductible | Higher deductible | Lower deductible |\n`;
-    msg += `| Out-of-pocket max | Lower after deductible | Higher cap |\n`;
-  }
+  appendPlanBlock(row1);
+  appendPlanBlock(row2);
 
   msg += `\n**Key differences:**\n`;
-  msg += `- **Standard HSA** pairs with a Health Savings Account (HSA) - pre-tax savings you control.\n`;
-  msg += `- **Enhanced HSA** has lower deductibles and richer coverage, better for frequent healthcare users.\n`;
+  if (/hsa/i.test(row1.plan)) {
+    msg += `- **${row1.plan}** is HSA-eligible, which means you can use pre-tax dollars for qualified medical expenses.\n`;
+  }
+  if (/hsa/i.test(row2.plan)) {
+    msg += `- **${row2.plan}** is HSA-eligible, which means you can use pre-tax dollars for qualified medical expenses.\n`;
+  }
+  if (/kaiser/i.test(row1.plan) || /kaiser/i.test(row2.plan)) {
+    msg += `- **Kaiser Standard HMO** uses an integrated HMO-style network, while the HSA plans use the BCBSTX nationwide PPO network.\n`;
+  }
 
   if (!noPricingMode) {
     const diff = Math.abs(row2.perMonth - row1.perMonth);
