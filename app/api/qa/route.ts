@@ -1479,7 +1479,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
     }
 
     const marriageWindowQuestion = /\b(married|marriage|got\s+married)\b/i.test(lowerQuery)
-      && /\b(add\s+my\s+spouse|add\s+spouse|how\s+many\s+days|deadline|window|deductible\s+reset|reset\s+to\s+0)\b/i.test(lowerQuery);
+      && /\b(add\s+my\s+spouse|add\s+spouse|how\s+many\s+days|how\s+long|deadline|window|update\s+my\s+benefits|change\s+my\s+benefits|update\s+coverage|change\s+coverage|deductible\s+reset|reset\s+to\s+0)\b/i.test(lowerQuery);
     if (deterministicPolicyInterceptsEnabled && marriageWindowQuestion) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] MARRIAGE-WINDOW-DEDUCTIBLE`);
       const msg = `Marriage is typically a Qualifying Life Event (QLE), and most plans require you to submit the change within a limited window (commonly 30 days, sometimes 31/60 depending on plan rules).\n\nDeductible reset: adding a spouse usually changes you from individual to family tier, but it does **not** automatically reset all year-to-date deductible/OOP accumulators to $0. Mid-year accumulator handling follows plan/administrator rules.\n\nAction now: submit the marriage QLE in Workday immediately, upload documentation, and confirm both (1) election effective date and (2) how prior individual accumulators map to family accumulators for your plan.`;
