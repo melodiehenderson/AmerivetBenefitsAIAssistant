@@ -1729,11 +1729,11 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
     if (medicalComparisonRequested && shouldUseMedicalComparisonIntercept(query, lowerQuery, intentDomain) && !(recommendRequested && singleHealthy)) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] MEDICAL-COMPARISON`);
       const coverageTier = getCoverageTierForQuery(query, session);
-      const { rows, filtered } = getAvailablePricingRows(session, coverageTier);
+      const { baseRows, filtered } = getAvailablePricingRows(session, coverageTier);
       const msg = buildMedicalComparisonMessage({
         coverageTier,
         filtered,
-        hasHiddenKaiser: filtered.length < rows.length,
+        hasHiddenKaiser: filtered.length < baseRows.length,
         noPricingMode: session.noPricingMode || intent.noPricing,
       });
       const plainMsg = toPlainAssistantText(applyPricingExclusion(msg, session.noPricingMode || intent.noPricing));

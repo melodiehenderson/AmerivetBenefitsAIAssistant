@@ -86,7 +86,7 @@ export function getAvailablePricingRows(
   const filtered = session.userState && !isKaiserEligibleState(session.userState)
     ? baseRows.filter(r => !/kaiser/i.test(r.plan))
     : baseRows;
-  return { payPeriods, rows, filtered };
+  return { payPeriods, rows, baseRows, filtered };
 }
 
 export function buildMedicalPlanFallback(query: string, session: Session): string | null {
