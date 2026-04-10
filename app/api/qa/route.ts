@@ -1930,7 +1930,9 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
     const isShortFollowUp = isLikelyFollowUpMessage(query.trim()) && query.trim().length < 30;
     const isTopicContinuation = isTopicContinuationMessage(query, session.currentTopic);
     const isYes = isSimpleAffirmation(query);
+    const lastBotMessageLower = (session.lastBotMessage || '').toLowerCase();
     const explicitTierFromFollowUp = extractExplicitCoverageFromQuery(query);
+    const looksLikeTierSwitchRequest = /\b(show|see|options?|plans?|coverage)\b/i.test(lowerQuery);
     const inferredFollowUpTopic = (() => {
       if (session.currentTopic) return session.currentTopic;
       const lastBot = (session.lastBotMessage || '').toLowerCase();
@@ -1943,10 +1945,19 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
       if (/\b(vision plan|vision coverage)\b/i.test(lastBot)) return 'Vision';
       return undefined;
     })();
+    const lastBotSuggestsMedicalTierSwitch = /\b(medical plan options|switch coverage tiers|compare plans|medical coverage tiers)\b/i.test(lastBotMessageLower);
+    const shouldForceMedicalTierSwitch =
+      Boolean(explicitTierFromFollowUp) &&
+      (
+        inferredFollowUpTopic?.toLowerCase().includes('medical') ||
+        lastBotSuggestsMedicalTierSwitch ||
+        (session.coverageTierLock && looksLikeTierSwitchRequest)
+      );
 
-    if (deterministicConversationInterceptsEnabled && explicitTierFromFollowUp && inferredFollowUpTopic) {
-      logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] TIER-SWITCH: topic=${inferredFollowUpTopic}`);
-      const topicLower = inferredFollowUpTopic.toLowerCase();
+    if (deterministicConversationInterceptsEnabled && explicitTierFromFollowUp && (inferredFollowUpTopic || shouldForceMedicalTierSwitch)) {
+      const resolvedTopic = shouldForceMedicalTierSwitch ? 'Medical' : inferredFollowUpTopic!;
+      logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] TIER-SWITCH: topic=${resolvedTopic}`);
+      const topicLower = resolvedTopic.toLowerCase();
       const topicResponse = topicLower.includes('medical')
         ? buildMedicalComparisonMessage({
             coverageTier: explicitTierFromFollowUp,
@@ -1962,12 +1973,12 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
             hrPhone: HR_PHONE,
           });
       if (topicResponse) {
-        session.currentTopic = inferredFollowUpTopic;
+        session.currentTopic = resolvedTopic;
         session.coverageTierLock = explicitTierFromFollowUp;
         const plainMsg = toPlainAssistantText(topicResponse);
         session.lastBotMessage = plainMsg;
         await updateSession(sessionId, session);
-        return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'tier-switch', topic: inferredFollowUpTopic, coverageTier: explicitTierFromFollowUp } });
+        return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'tier-switch', topic: resolvedTopic, coverageTier: explicitTierFromFollowUp } });
       }
     }
 
@@ -1986,7 +1997,6 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
       return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'coverage-tiers', topic: session.currentTopic } });
     }
 
-    const lastBotMessageLower = (session.lastBotMessage || '').toLowerCase();
     if (deterministicConversationInterceptsEnabled && isYes && session.currentTopic && /side-by-side comparison|compare those two|compare plans/.test(lastBotMessageLower)) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] YES-COMPARE-GENERIC: topic=${session.currentTopic}`);
       const topicLower = session.currentTopic.toLowerCase();
