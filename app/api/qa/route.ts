@@ -209,12 +209,14 @@ export function extractStateCode(msg: string, hasAge: boolean): { code: string |
 
   const rawTokens = original.split(/[\s,.;:()\[\]{}<>"']+/).filter(Boolean);
   for (const raw of rawTokens) {
-    // if token appears in negated phrase, skip
-    const lowerRaw = raw.toLowerCase();
-    const negPattern = new RegExp(`\\b(?:not|n't|except|but not|without)\\s+${lowerRaw}\\b`, 'i');
-    if (negPattern.test(lower)) continue;
     const cleaned = raw.replace(/[^A-Za-z]/g, '');
     if (cleaned.length !== 2) continue;
+
+    // if token appears in a negated phrase, skip it. Use the cleaned two-letter token
+    // and escape it so punctuation from the original query can never corrupt the regex.
+    const escapedCleaned = cleaned.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').toLowerCase();
+    const negPattern = new RegExp(`\\b(?:not|n't|except|but not|without)\\s+${escapedCleaned}\\b`, 'i');
+    if (negPattern.test(lower)) continue;
 
     const upper = cleaned.toUpperCase();
     if (!US_STATE_CODES.has(upper)) continue;
