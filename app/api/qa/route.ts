@@ -1909,22 +1909,43 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
     const isTopicContinuation = isTopicContinuationMessage(query, session.currentTopic);
     const isYes = isSimpleAffirmation(query);
     const explicitTierFromFollowUp = extractExplicitCoverageFromQuery(query);
+    const inferredFollowUpTopic = (() => {
+      if (session.currentTopic) return session.currentTopic;
+      const lastBot = (session.lastBotMessage || '').toLowerCase();
+      if (
+        /\b(medical plan options|medical coverage tiers|medical options|standard hsa|enhanced hsa|kaiser standard hmo|healthcare usage|annual cost estimate|switch coverage tiers|compare plans|medical deductible|medical out-of-pocket)\b/i.test(lastBot)
+      ) {
+        return 'Medical';
+      }
+      if (/\b(dental plan|orthodont|dental coverage)\b/i.test(lastBot)) return 'Dental';
+      if (/\b(vision plan|vision coverage)\b/i.test(lastBot)) return 'Vision';
+      return undefined;
+    })();
 
-    if (deterministicConversationInterceptsEnabled && session.currentTopic && explicitTierFromFollowUp) {
-      logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] TIER-SWITCH: topic=${session.currentTopic}`);
-      const topicResponse = buildCategoryExplorationResponse({
-        queryLower: session.currentTopic.toLowerCase(),
-        session,
-        coverageTier: explicitTierFromFollowUp,
-        enrollmentPortalUrl: ENROLLMENT_PORTAL_URL,
-        hrPhone: HR_PHONE,
-      });
+    if (deterministicConversationInterceptsEnabled && explicitTierFromFollowUp && inferredFollowUpTopic) {
+      logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] TIER-SWITCH: topic=${inferredFollowUpTopic}`);
+      const topicLower = inferredFollowUpTopic.toLowerCase();
+      const topicResponse = topicLower.includes('medical')
+        ? buildMedicalComparisonMessage({
+            coverageTier: explicitTierFromFollowUp,
+            filtered: getAvailablePricingRows(session, explicitTierFromFollowUp).filtered,
+            hasHiddenKaiser: Boolean(session.userState && !isKaiserEligibleState(session.userState)),
+            noPricingMode: session.noPricingMode || intent.noPricing,
+          })
+        : buildCategoryExplorationResponse({
+            queryLower: topicLower,
+            session,
+            coverageTier: explicitTierFromFollowUp,
+            enrollmentPortalUrl: ENROLLMENT_PORTAL_URL,
+            hrPhone: HR_PHONE,
+          });
       if (topicResponse) {
+        session.currentTopic = inferredFollowUpTopic;
         session.coverageTierLock = explicitTierFromFollowUp;
         const plainMsg = toPlainAssistantText(topicResponse);
         session.lastBotMessage = plainMsg;
         await updateSession(sessionId, session);
-        return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'tier-switch', topic: session.currentTopic, coverageTier: explicitTierFromFollowUp } });
+        return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'tier-switch', topic: inferredFollowUpTopic, coverageTier: explicitTierFromFollowUp } });
       }
     }
 
