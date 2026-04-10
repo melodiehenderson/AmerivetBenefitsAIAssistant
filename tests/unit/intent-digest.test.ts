@@ -60,6 +60,22 @@ describe('intent-digest', () => {
     expect(policy.shouldUseSmart).toBe(false);
   });
 
+  it('treats marriage deadline phrasing as a policy question', () => {
+    const policy = determineChatRoutePolicy({
+      lowerQuery: 'i got married yesterday. how long do i have to update my benefits?',
+      benefitTypes: [],
+      mappedIntent: 'general',
+      slotsComplete: false,
+      useRagOverride: false,
+      useSmartOverride: true,
+    });
+
+    expect(policy.intentDomain).toBe('policy');
+    expect(policy.preferredLayer).toBe('retrieval');
+    expect(policy.deterministicFirst).toBe(false);
+    expect(policy.requiresUserContext).toBe(false);
+  });
+
   it('keeps smart routing for incomplete non-policy queries', () => {
     const policy = determineChatRoutePolicy({
       lowerQuery: 'show me medical options',
