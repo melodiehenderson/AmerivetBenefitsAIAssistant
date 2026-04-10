@@ -83,6 +83,7 @@ import {
   compileSummary,
   deriveConversationTopic,
   isLikelyFollowUpMessage,
+  isRightwayQuery,
   isSimpleAffirmation,
   isSummaryRequest,
   isTopicContinuationMessage,
@@ -90,6 +91,7 @@ import {
   shouldUseCategoryExplorationIntercept,
   shouldUseMedicalComparisonIntercept,
   shouldUsePlanPricingIntercept,
+  normalizeStaticBenefitAnswer,
 } from '@/lib/qa/routing-helpers';
 // Utility to extract all numbers from the AmeriVet catalog object
 function extractAllNumbers(obj: any): number[] {
@@ -2537,6 +2539,11 @@ Remember: answer ONLY from the IMMUTABLE CATALOG. Do NOT ask for name, age, or s
       logger.warn('[QA] Pricing normalization failed:', e);
     }
     
+    answer = normalizeStaticBenefitAnswer(answer);
+    if (isRightwayQuery(query)) {
+      answer = checkL1FAQ('rightway', { enrollmentPortalUrl: ENROLLMENT_PORTAL_URL, hrPhone: HR_PHONE }) || buildLiveSupportFallback(ENROLLMENT_PORTAL_URL, HR_PHONE);
+    }
+
     // POST-PROCESSING: Strip banned content (Rightway, wrong phone numbers, wrong carriers)
     // Sentence-level removal: match any sentence containing a banned term
     const BANNED_TERMS_RE = /rightway|right\s*way/i;

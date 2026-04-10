@@ -21,7 +21,7 @@ const L1_FAQ: L1FAQEntry[] = [
     answer: ({ enrollmentPortalUrl, hrPhone }) => `The AmeriVet benefits enrollment portal is Workday: ${enrollmentPortalUrl}\n\nYou can also call HR at ${hrPhone} for guided enrollment support.`,
   },
   {
-    patterns: [/\brightway\b/i],
+    patterns: [/\bright\s*way\b|\brightway\b/i],
     answer: ({ enrollmentPortalUrl, hrPhone }) => `Rightway is not an AmeriVet benefits resource and is not part of the AmeriVet benefits package.\n\nFor benefits navigation support, please contact AmeriVet HR/Benefits at ${hrPhone} or visit ${enrollmentPortalUrl}.`,
   },
   {
@@ -35,6 +35,30 @@ const L1_FAQ: L1FAQEntry[] = [
 ];
 
 const KAISER_STATE_CODES = new Set<string>(KAISER_AVAILABLE_STATE_CODES);
+
+const STALE_KAISER_GEOGRAPHY_PATTERNS: RegExp[] = [
+  /California,\s+Washington,\s+and\s+Oregon/gi,
+  /California\s+\(CA\),\s+Washington\s+\(WA\),\s+and\s+Oregon\s+\(OR\)/gi,
+  /\bCA,\s*WA,\s*OR\b/gi,
+];
+
+export function isRightwayQuery(query: string): boolean {
+  return /\bright\s*way\b|\brightway\b/i.test(query);
+}
+
+export function normalizeStaticBenefitAnswer(answer: string): string {
+  let normalized = answer;
+  for (const pattern of STALE_KAISER_GEOGRAPHY_PATTERNS) {
+    normalized = normalized.replace(pattern, "California, Georgia, Washington, and Oregon");
+  }
+
+  normalized = normalized.replace(
+    /Kaiser HMO is only available in California \(CA\), Washington \(WA\), and Oregon \(OR\)/gi,
+    "Kaiser HMO is only available in California (CA), Georgia (GA), Washington (WA), and Oregon (OR)"
+  );
+
+  return normalized;
+}
 
 export function normalizeBenefitCategory(keyword: string): string {
   const lower = keyword.toLowerCase();

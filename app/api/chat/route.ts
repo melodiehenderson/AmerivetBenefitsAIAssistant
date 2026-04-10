@@ -25,8 +25,10 @@ import {
   deriveConversationTopic,
   isKaiserAvailabilityQuestion,
   isLikelyFollowUpMessage,
+  isRightwayQuery,
   isStandaloneMedicalPpoRequest,
   normalizeBenefitCategory,
+  normalizeStaticBenefitAnswer,
   shouldUseCategoryExplorationIntercept,
 } from '@/lib/qa/routing-helpers';
 import { buildPpoClarificationForState, buildRecommendationOverview, getCoverageTierForQuery } from '@/lib/qa/medical-helpers';
@@ -941,6 +943,14 @@ Which of these would you like to learn about next?`
     // =========================================================================
 
     // L3.1: RIGHTWAY STRIP — sentence-level removal of banned terms
+    enhancedContent = normalizeStaticBenefitAnswer(enhancedContent);
+    if (isRightwayQuery(message)) {
+      enhancedContent = checkL1FAQ('rightway', {
+        enrollmentPortalUrl: WORKDAY_ENROLLMENT_URL,
+        hrPhone: HR_PHONE,
+      }) || buildLiveSupportFallback(WORKDAY_ENROLLMENT_URL, HR_PHONE);
+    }
+
     const L3_BANNED_TERMS_RE = /rightway|right\s*way/i;
     const L3_BANNED_PHONE_RE = /\(?\s*305\s*\)?\s*[-.]?\s*851\s*[-.]?\s*7310/g;
     if (L3_BANNED_TERMS_RE.test(enhancedContent)) {
