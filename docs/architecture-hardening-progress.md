@@ -155,6 +155,10 @@ PATH=/opt/homebrew/bin:$PATH /opt/homebrew/bin/npx vitest run tests/unit/hybrid-
 - Live semantic judge eval: `5` cases, `overallAverage: 4.8`
 - Combined readiness checkpoint written to `docs/readiness-summary.md`
 
+## Deployment Note
+
+- Build-critical Next metadata images were converted from Git LFS handling to normal Git blobs because Vercel preview builds were failing on `icon`, `openGraph`, and `twitter` image imports.
+
 ## Next Recommended Work
 
 ### Near-Term
