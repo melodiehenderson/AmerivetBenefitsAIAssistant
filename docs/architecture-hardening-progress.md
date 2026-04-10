@@ -158,6 +158,11 @@ PATH=/opt/homebrew/bin:$PATH /opt/homebrew/bin/npx vitest run tests/unit/hybrid-
 ## Deployment Note
 
 - Build-critical Next metadata images were converted from Git LFS handling to normal Git blobs because Vercel preview builds were failing on `icon`, `openGraph`, and `twitter` image imports.
+- The Vercel preview build was still failing on Next's metadata image loader after the Git LFS cleanup, so the special metadata PNG files were replaced with code-based metadata routes:
+  - `app/icon.tsx`
+  - `app/(chat)/opengraph-image.tsx`
+  - `app/(chat)/twitter-image.tsx`
+- Local `npm run build:vercel` is now passing with those route-based metadata assets, which gives us a clean path to retest Vercel from a fresh push.
 
 ## Next Recommended Work
 
