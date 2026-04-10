@@ -1185,6 +1185,28 @@ export async function POST(req: NextRequest) {
       await updateSession(sessionId, session);
     }
 
+    const lastBotLooksMedical = /\b(medical plan options|medical coverage tiers|medical options|standard hsa|enhanced hsa|kaiser standard hmo|switch coverage tiers|compare plans)\b/i
+      .test(session.lastBotMessage || '');
+    if (explicitCoverageTier && lastBotLooksMedical) {
+      logger.info(`[REQ:${reqId}][STEP-5 INTERCEPT] EARLY-TIER-SWITCH: ${explicitCoverageTier}`);
+      const plainMsg = toPlainAssistantText(buildMedicalComparisonMessage({
+        coverageTier: explicitCoverageTier,
+        filtered: getAvailablePricingRows(session, explicitCoverageTier).filtered,
+        hasHiddenKaiser: Boolean(session.userState && !isKaiserEligibleState(session.userState)),
+        noPricingMode: session.noPricingMode || intent.noPricing,
+      }));
+      session.currentTopic = 'Medical';
+      session.coverageTierLock = explicitCoverageTier;
+      session.lastBotMessage = plainMsg;
+      await updateSession(sessionId, session);
+      return NextResponse.json({
+        answer: plainMsg,
+        tier: 'L1',
+        sessionContext: buildSessionContext(session),
+        metadata: { intercept: 'early-tier-switch', coverageTier: explicitCoverageTier },
+      });
+    }
+
     // RULE 3: PPO PLAN CLARIFICATION ΓÇö user asks for "the PPO plan" (medical)
     // Deterministic response: no LLM needed, no hallucination possible.
     if (intent.asksPPOPlan) {
