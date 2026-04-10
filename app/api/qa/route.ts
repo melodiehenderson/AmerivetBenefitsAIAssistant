@@ -20,7 +20,7 @@ import { detectTextualHallucination } from '@/lib/rag/validation';
 import { verifyNumericalIntegrity } from '@/lib/rag/grounding-audit';
 import { pipelineLogger, createTrace } from '@/lib/services/pipeline-logger';
 import { buildPersonaDirective, detectPersona, type ResponsePersona } from '@/lib/response-persona';
-import { digestIntent, detectIntentDomain, type IntentDomain } from '@/lib/intent-digest';
+import { determineChatRoutePolicy, digestIntent, detectIntentDomain, type IntentDomain } from '@/lib/intent-digest';
 import { applyChildCoverageTierLock, applyNameCapture, applySelfHealGuest, ensureNameForDemographics, shouldPromptForName } from '@/lib/session-logic';
 
 import { IRS_2026 } from '@/lib/data/irs-limits-2026';
@@ -93,6 +93,11 @@ import {
   shouldUsePlanPricingIntercept,
   normalizeStaticBenefitAnswer,
 } from '@/lib/qa/routing-helpers';
+import {
+  buildKaiserAvailabilityStatement,
+  buildKaiserUnavailableStateStatement,
+  KAISER_ELIGIBILITY_SHORT,
+} from '@/lib/qa/facts';
 // Utility to extract all numbers from the AmeriVet catalog object
 function extractAllNumbers(obj: any): number[] {
   const nums: number[] = [];
@@ -874,12 +879,12 @@ function buildShortCategoryAnswer(
     // Kaiser state check - KEEP this hard rule
     if (/\b(kaiser|hmo)\b/i.test(queryLower)) {
       if (isKaiserEligible) {
-        return `Yes ΓÇö Kaiser HMO is available in your state (${userState}). AmeriVet offers the Kaiser Standard HMO for employees in CA, GA, WA, and OR.`;
+        return `Yes ΓÇö Kaiser HMO is available in your state (${userState}). AmeriVet offers the Kaiser Standard HMO for employees in ${KAISER_ELIGIBILITY_SHORT}.`;
       }
       if (userState) {
-        return `Kaiser HMO is only available in CA, GA, WA, and OR ΓÇö it is not available in ${userState}. Your medical options are the Standard HSA and Enhanced HSA plans through BCBSTX.`;
+        return `${buildKaiserUnavailableStateStatement(userState)} Your medical options are the Standard HSA and Enhanced HSA plans through BCBSTX.`;
       }
-      return 'Kaiser HMO is available in CA, GA, WA, and OR only. Let me know your state and I can confirm your options.';
+      return `${buildKaiserAvailabilityStatement().replace(' through AmeriVet.', '.')} Let me know your state and I can confirm your options.`;
     }
 
     // Other medical queries route to LLM
@@ -1274,7 +1279,17 @@ export async function POST(req: NextRequest) {
     // STD calculations, pre-existing conditions) do NOT require age/state.
     // They are answered from plan rules, not pricing tables.
     const intentDomainEarly = detectIntentDomain(query.toLowerCase());
-    if (!hasData && !intent.isContinuation && intentDomainEarly !== 'policy') {
+    const earlyRoutePolicy = determineChatRoutePolicy({
+      lowerQuery: query.toLowerCase(),
+      benefitTypes: [],
+      mappedIntent: null,
+      slotsComplete: hasData,
+      useRagOverride: false,
+      useSmartOverride: true,
+    });
+    logger.info(`[REQ:${reqId}][STEP-6 POLICY] preferred=${earlyRoutePolicy.preferredLayer} fallback=${earlyRoutePolicy.fallbackLayer} deterministicFirst=${earlyRoutePolicy.deterministicFirst} requiresUserContext=${earlyRoutePolicy.requiresUserContext} intentDomain=${earlyRoutePolicy.intentDomain}`);
+
+    if (!hasData && !intent.isContinuation && earlyRoutePolicy.requiresUserContext) {
         logger.info(`[REQ:${reqId}][STEP-6 GATE] BLOCKED ΓÇö missing data, intentDomain=${intentDomainEarly}`);
         
         // Scenario A: User asks "Medical PPO" or "critical injury insurance" but we don't know their State.
@@ -1315,7 +1330,7 @@ export async function POST(req: NextRequest) {
     // Log when user with complete data proceeds to RAG
     if (hasData) {
         logger.info(`[REQ:${reqId}][STEP-6 GATE] PASSED ΓÇö Age=${session.userAge} State=${session.userState}${!hasData && intentDomainEarly === 'policy' ? ' (policy bypass)' : ''}`);
-    } else if (intentDomainEarly === 'policy') {
+    } else if (earlyRoutePolicy.intentDomain === 'policy') {
         logger.info(`[REQ:${reqId}][STEP-6 GATE] POLICY-BYPASS ΓÇö no data but intent=policy`);
     }
 

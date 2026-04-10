@@ -2,6 +2,7 @@ import type { Session } from '@/lib/rag/session-store';
 import type { QueryIntent } from '@/lib/rag/query-intent-classifier';
 
 export type IntentDomain = 'pricing' | 'policy' | 'general';
+export type AnswerExecutionLayer = 'deterministic' | 'retrieval' | 'generation';
 
 export type DigestedIntent = {
   topic: string;
@@ -22,6 +23,11 @@ type DetermineChatRoutePolicyArgs = {
 
 type ChatRoutePolicy = {
   intentDomain: IntentDomain;
+  preferredLayer: AnswerExecutionLayer;
+  fallbackLayer: AnswerExecutionLayer;
+  deterministicFirst: boolean;
+  requiresUserContext: boolean;
+  rationale: string;
   shouldUseRag: boolean;
   shouldUseSmart: boolean;
 };
@@ -56,11 +62,34 @@ export function determineChatRoutePolicy({
 }: DetermineChatRoutePolicyArgs): ChatRoutePolicy {
   const intentDomain = detectIntentDomain(lowerQuery);
   const hasComplexBenefitSignal = benefitTypes.length > 0 || COMPLEX_CHAT_INTENTS.has(mappedIntent ?? '');
+  const shouldUseRag = useRagOverride || intentDomain === 'policy' || (hasComplexBenefitSignal && slotsComplete);
+  const shouldUseSmart = useSmartOverride && !slotsComplete && intentDomain !== 'policy';
+
+  let preferredLayer: AnswerExecutionLayer = 'deterministic';
+  let fallbackLayer: AnswerExecutionLayer = 'generation';
+  let rationale = 'Default to deterministic helpers for simple, low-risk benefit guidance.';
+
+  if (shouldUseRag) {
+    preferredLayer = 'retrieval';
+    fallbackLayer = 'generation';
+    rationale = intentDomain === 'policy'
+      ? 'Policy-like questions should prefer grounded retrieval before any model-only generation.'
+      : 'Complex, slot-complete benefit questions should prefer grounded retrieval.';
+  } else if (shouldUseSmart) {
+    preferredLayer = 'generation';
+    fallbackLayer = 'deterministic';
+    rationale = 'Incomplete but non-policy questions can use guarded generation until more user context is available.';
+  }
 
   return {
     intentDomain,
-    shouldUseRag: useRagOverride || intentDomain === 'policy' || (hasComplexBenefitSignal && slotsComplete),
-    shouldUseSmart: useSmartOverride && !slotsComplete && intentDomain !== 'policy',
+    preferredLayer,
+    fallbackLayer,
+    deterministicFirst: intentDomain !== 'policy',
+    requiresUserContext: intentDomain !== 'policy',
+    rationale,
+    shouldUseRag,
+    shouldUseSmart,
   };
 }
 

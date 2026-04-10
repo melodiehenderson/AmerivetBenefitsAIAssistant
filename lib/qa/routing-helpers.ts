@@ -1,4 +1,11 @@
 import { KAISER_AVAILABLE_STATE_CODES } from '@/lib/data/amerivet';
+import {
+  buildKaiserAvailabilityStatement,
+  buildKaiserUnavailableStateStatement,
+  KAISER_STATES_PLAIN,
+  KAISER_STATES_WITH_CODES,
+  RIGHTWAY_NOT_AMERIVET_MESSAGE,
+} from '@/lib/qa/facts';
 import type { IntentDomain } from '@/lib/intent-digest';
 
 type L1FAQArgs = {
@@ -22,11 +29,11 @@ const L1_FAQ: L1FAQEntry[] = [
   },
   {
     patterns: [/\bright\s*way\b|\brightway\b/i],
-    answer: ({ enrollmentPortalUrl, hrPhone }) => `Rightway is not an AmeriVet benefits resource and is not part of the AmeriVet benefits package.\n\nFor benefits navigation support, please contact AmeriVet HR/Benefits at ${hrPhone} or visit ${enrollmentPortalUrl}.`,
+    answer: ({ enrollmentPortalUrl, hrPhone }) => `${RIGHTWAY_NOT_AMERIVET_MESSAGE}\n\nFor benefits navigation support, please contact AmeriVet HR/Benefits at ${hrPhone} or visit ${enrollmentPortalUrl}.`,
   },
   {
     patterns: [/\bkaiser\b.*\b(only|available|states?|where|which\s+states?|limited|regions?)\b|\b(only|available|states?|where|which\s+states?|limited|regions?)\b.*\bkaiser\b/i],
-    answer: () => `Kaiser HMO is only available in California (CA), Georgia (GA), Washington (WA), and Oregon (OR) through AmeriVet. It is not available in any other state. In all other states, your medical options are Standard HSA and Enhanced HSA (both through BCBS of Texas, nationwide PPO network).`,
+    answer: () => `${buildKaiserAvailabilityStatement()} It is not available in any other state. In all other states, your medical options are Standard HSA and Enhanced HSA (both through BCBS of Texas, nationwide PPO network).`,
   },
   {
     patterns: [/\b(receptionist|office\s*(staff|personnel|directory)|name\s*of.*(?:dentist|doctor|office|staff)|staff\s*(name|list|directory)|who\s*is\s*(?:the|my)\s*(?:dentist|doctor|hr\s*rep|benefits\s*rep))\b/i],
@@ -49,12 +56,12 @@ export function isRightwayQuery(query: string): boolean {
 export function normalizeStaticBenefitAnswer(answer: string): string {
   let normalized = answer;
   for (const pattern of STALE_KAISER_GEOGRAPHY_PATTERNS) {
-    normalized = normalized.replace(pattern, "California, Georgia, Washington, and Oregon");
+    normalized = normalized.replace(pattern, KAISER_STATES_PLAIN);
   }
 
   normalized = normalized.replace(
     /Kaiser HMO is only available in California \(CA\), Washington \(WA\), and Oregon \(OR\)/gi,
-    "Kaiser HMO is only available in California (CA), Georgia (GA), Washington (WA), and Oregon (OR)"
+    `Kaiser HMO is only available in ${KAISER_STATES_WITH_CODES}`
   );
 
   return normalized;
@@ -93,12 +100,12 @@ export function buildKaiserAvailabilityFaqAnswer(userState?: string | null): str
   if (userState) {
     const normalized = userState.toUpperCase();
     if (KAISER_STATE_CODES.has(normalized)) {
-      return `Yes — Kaiser HMO is available in ${normalized}. AmeriVet offers Kaiser in California (CA), Georgia (GA), Washington (WA), and Oregon (OR).`;
+      return `Yes — Kaiser HMO is available in ${normalized}. AmeriVet offers Kaiser in ${KAISER_STATES_WITH_CODES}.`;
     }
-    return `Kaiser HMO is only available in California (CA), Georgia (GA), Washington (WA), and Oregon (OR) — it is not available in ${normalized}. In ${normalized}, your medical options are Standard HSA and Enhanced HSA through BCBSTX.`;
+    return `${buildKaiserUnavailableStateStatement(normalized)} In ${normalized}, your medical options are Standard HSA and Enhanced HSA through BCBSTX.`;
   }
 
-  return `Kaiser HMO is only available in California (CA), Georgia (GA), Washington (WA), and Oregon (OR) through AmeriVet. It is not available in any other state. In all other states, your medical options are Standard HSA and Enhanced HSA (both through BCBS of Texas, nationwide PPO network).`;
+  return `${buildKaiserAvailabilityStatement()} It is not available in any other state. In all other states, your medical options are Standard HSA and Enhanced HSA (both through BCBS of Texas, nationwide PPO network).`;
 }
 
 export function isLikelyFollowUpMessage(normalizedMessage: string): boolean {

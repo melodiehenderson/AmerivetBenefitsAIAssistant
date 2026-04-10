@@ -27,6 +27,13 @@ vi.mock('@/lib/azure/config', () => ({
     encryptionKey: '0123456789abcdef0123456789abcdef', // 32 chars
     rateLimitRedisUrl: 'redis://localhost:6379', resendApiKey: 'resend-key',
   }),
+  getOpenAIConfig: () => ({
+    endpoint: (process.env.AZURE_OPENAI_ENDPOINT || 'https://test.openai.azure.com').trim(),
+    apiKey: (process.env.AZURE_OPENAI_API_KEY || 'test-azure-key').trim(),
+    apiVersion: (process.env.AZURE_OPENAI_API_VERSION || '2024-02-15-preview').trim(),
+    deploymentName: (process.env.AZURE_OPENAI_DEPLOYMENT_NAME || process.env.AZURE_OPENAI_DEPLOYMENT || 'gpt').trim(),
+    embeddingDeployment: (process.env.AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT || process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT || 'emb').trim(),
+  }),
 }));
 
 vi.mock('@/lib/azure/cosmos', () => ({
