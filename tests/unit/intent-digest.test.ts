@@ -52,8 +52,28 @@ describe('intent-digest', () => {
     });
 
     expect(policy.intentDomain).toBe('policy');
+    expect(policy.preferredLayer).toBe('retrieval');
+    expect(policy.fallbackLayer).toBe('generation');
+    expect(policy.deterministicFirst).toBe(false);
+    expect(policy.requiresUserContext).toBe(false);
     expect(policy.shouldUseRag).toBe(true);
     expect(policy.shouldUseSmart).toBe(false);
+  });
+
+  it('treats marriage deadline phrasing as a policy question', () => {
+    const policy = determineChatRoutePolicy({
+      lowerQuery: 'i got married yesterday. how long do i have to update my benefits?',
+      benefitTypes: [],
+      mappedIntent: 'general',
+      slotsComplete: false,
+      useRagOverride: false,
+      useSmartOverride: true,
+    });
+
+    expect(policy.intentDomain).toBe('policy');
+    expect(policy.preferredLayer).toBe('retrieval');
+    expect(policy.deterministicFirst).toBe(false);
+    expect(policy.requiresUserContext).toBe(false);
   });
 
   it('keeps smart routing for incomplete non-policy queries', () => {
@@ -67,6 +87,10 @@ describe('intent-digest', () => {
     });
 
     expect(policy.intentDomain).toBe('general');
+    expect(policy.preferredLayer).toBe('generation');
+    expect(policy.fallbackLayer).toBe('deterministic');
+    expect(policy.deterministicFirst).toBe(true);
+    expect(policy.requiresUserContext).toBe(true);
     expect(policy.shouldUseRag).toBe(false);
     expect(policy.shouldUseSmart).toBe(true);
   });
@@ -81,7 +105,28 @@ describe('intent-digest', () => {
       useSmartOverride: true,
     });
 
+    expect(policy.preferredLayer).toBe('retrieval');
+    expect(policy.fallbackLayer).toBe('generation');
     expect(policy.shouldUseRag).toBe(true);
+    expect(policy.shouldUseSmart).toBe(false);
+  });
+
+  it('defaults simple queries to deterministic-first handling', () => {
+    const policy = determineChatRoutePolicy({
+      lowerQuery: 'what is the hr phone number?',
+      benefitTypes: [],
+      mappedIntent: 'general',
+      slotsComplete: false,
+      useRagOverride: false,
+      useSmartOverride: false,
+    });
+
+    expect(policy.intentDomain).toBe('general');
+    expect(policy.preferredLayer).toBe('deterministic');
+    expect(policy.fallbackLayer).toBe('generation');
+    expect(policy.deterministicFirst).toBe(true);
+    expect(policy.requiresUserContext).toBe(true);
+    expect(policy.shouldUseRag).toBe(false);
     expect(policy.shouldUseSmart).toBe(false);
   });
 });

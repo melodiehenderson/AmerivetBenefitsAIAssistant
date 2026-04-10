@@ -2,6 +2,7 @@ import type { Session } from '@/lib/rag/session-store';
 import type { QueryIntent } from '@/lib/rag/query-intent-classifier';
 
 export type IntentDomain = 'pricing' | 'policy' | 'general';
+export type AnswerExecutionLayer = 'deterministic' | 'retrieval' | 'generation';
 
 export type DigestedIntent = {
   topic: string;
@@ -22,6 +23,11 @@ type DetermineChatRoutePolicyArgs = {
 
 type ChatRoutePolicy = {
   intentDomain: IntentDomain;
+  preferredLayer: AnswerExecutionLayer;
+  fallbackLayer: AnswerExecutionLayer;
+  deterministicFirst: boolean;
+  requiresUserContext: boolean;
+  rationale: string;
   shouldUseRag: boolean;
   shouldUseSmart: boolean;
 };
@@ -38,7 +44,7 @@ export function getTopicLabel(query: string, currentTopic?: string): string {
 }
 
 export function detectIntentDomain(lowerQuery: string): IntentDomain {
-  const hasPolicy = /\b(can\s+i|am\s+i|eligible|qualif(?:y|ied)|how\s+many\s+days|deadline|window|qle|qualifying\s+life\s+event|special\s+enrollment|filing\s+order|what\s+order|step\s*by\s*step|fmla|std|short\s*[- ]?term\s+disability|pre-?existing|clause|deny|denied|deductible\s+reset|effective\s+date)\b/i.test(lowerQuery);
+  const hasPolicy = /\b(can\s+i|am\s+i|eligible|qualif(?:y|ied)|how\s+many\s+days|how\s+long|deadline|window|qle|qualifying\s+life\s+event|special\s+enrollment|filing\s+order|what\s+order|step\s*by\s*step|fmla|std|short\s*[- ]?term\s+disability|pre-?existing|clause|deny|denied|deductible\s+reset|effective\s+date|marriage|married|got\s+married|wedding|birth|baby|adoption|lost\s+coverage|loss\s+of\s+coverage|update\s+my\s+benefits|change\s+my\s+benefits|update\s+coverage|change\s+coverage)\b/i.test(lowerQuery);
   const hasPricing = /\b(how\s+much|cost|price|premium|deduct(?:ed|ion)|per\s*pay(?:check|period)|monthly|annual|compare\s+cost|estimate|projection|oop|out\s*of\s*pocket)\b/i.test(lowerQuery);
 
   if (hasPolicy && !hasPricing) return 'policy';
@@ -56,11 +62,34 @@ export function determineChatRoutePolicy({
 }: DetermineChatRoutePolicyArgs): ChatRoutePolicy {
   const intentDomain = detectIntentDomain(lowerQuery);
   const hasComplexBenefitSignal = benefitTypes.length > 0 || COMPLEX_CHAT_INTENTS.has(mappedIntent ?? '');
+  const shouldUseRag = useRagOverride || intentDomain === 'policy' || (hasComplexBenefitSignal && slotsComplete);
+  const shouldUseSmart = useSmartOverride && !slotsComplete && intentDomain !== 'policy';
+
+  let preferredLayer: AnswerExecutionLayer = 'deterministic';
+  let fallbackLayer: AnswerExecutionLayer = 'generation';
+  let rationale = 'Default to deterministic helpers for simple, low-risk benefit guidance.';
+
+  if (shouldUseRag) {
+    preferredLayer = 'retrieval';
+    fallbackLayer = 'generation';
+    rationale = intentDomain === 'policy'
+      ? 'Policy-like questions should prefer grounded retrieval before any model-only generation.'
+      : 'Complex, slot-complete benefit questions should prefer grounded retrieval.';
+  } else if (shouldUseSmart) {
+    preferredLayer = 'generation';
+    fallbackLayer = 'deterministic';
+    rationale = 'Incomplete but non-policy questions can use guarded generation until more user context is available.';
+  }
 
   return {
     intentDomain,
-    shouldUseRag: useRagOverride || intentDomain === 'policy' || (hasComplexBenefitSignal && slotsComplete),
-    shouldUseSmart: useSmartOverride && !slotsComplete && intentDomain !== 'policy',
+    preferredLayer,
+    fallbackLayer,
+    deterministicFirst: intentDomain !== 'policy',
+    requiresUserContext: intentDomain !== 'policy',
+    rationale,
+    shouldUseRag,
+    shouldUseSmart,
   };
 }
 

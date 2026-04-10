@@ -38,6 +38,13 @@ import { buildScopeGuardResponse } from '@/lib/qa/scope-guard';
 import { normalizeRatesInText } from '@/lib/utils/formatRates';
 import { tryCache, writeCache } from '@/lib/services/cache-router';
 import { calculateSTDBenefit, formatSTDBenefit } from '@/lib/utils/pricing';
+import {
+  buildCarrierLockBlock,
+  DHMO_BANNED_ENTITY_STATEMENT,
+  INVALID_PHONE_BANNED_ENTITY_STATEMENT,
+  PPO_BANNED_ENTITY_STATEMENT,
+  RIGHTWAY_BANNED_ENTITY_STATEMENT,
+} from '@/lib/qa/facts';
 
 const KAISER_ELIGIBLE_STATES = new Set<string>(KAISER_AVAILABLE_STATE_CODES);
 
@@ -350,17 +357,13 @@ export const POST = withAuth(undefined, [PERMISSIONS.CHAT_WITH_AI])(async (reque
         ``,
         `<Carrier_Lock>`,
         `These carrier assignments are IMMUTABLE — do NOT re-assign any carrier to a different product:`,
-        `  UNUM     = Basic Life & AD&D, Voluntary Term Life, Short-Term Disability, Long-Term Disability ONLY.`,
-        `  ALLSTATE = Group Whole Life (Permanent), Accident Insurance, Critical Illness ONLY.`,
-        `  BCBSTX   = Medical (Standard HSA, Enhanced HSA) and Dental PPO ONLY.`,
-        `  VSP      = Vision ONLY.`,
-        `  KAISER   = Medical HMO — CA/GA/OR/WA ONLY. ${kaiserRule}`,
+        ...buildCarrierLockBlock().split('\n').map(line => `  ${line}`),
         ``,
         `BANNED entities — NEVER mention these in any response:`,
-        `  - "Rightway" / "RightWay" / "Right Way" — NOT an AmeriVet carrier or resource.`,
-        `  - "DHMO" — AmeriVet does NOT offer a DHMO dental plan. Only BCBSTX Dental PPO.`,
-        `  - "PPO" as a medical plan name — AmeriVet medical plans are "Standard HSA" and "Enhanced HSA" (they use BCBSTX PPO network, but the plans are NOT called "PPO").`,
-        `  - Phone number (305) 851-7310 — this is NOT an AmeriVet number.`,
+        `  - ${RIGHTWAY_BANNED_ENTITY_STATEMENT}`,
+        `  - ${DHMO_BANNED_ENTITY_STATEMENT}`,
+        `  - ${PPO_BANNED_ENTITY_STATEMENT}`,
+        `  - ${INVALID_PHONE_BANNED_ENTITY_STATEMENT}`,
         `</Carrier_Lock>`,
         ``,
         `<Catalog_Rules>`,
@@ -807,6 +810,14 @@ Which of these would you like to learn about next?`
       useSmartOverride: useSmart,
     });
     const { intentDomain } = chatRoutePolicy;
+    logger.info('[Router] Policy selected', {
+      intentDomain: chatRoutePolicy.intentDomain,
+      preferredLayer: chatRoutePolicy.preferredLayer,
+      fallbackLayer: chatRoutePolicy.fallbackLayer,
+      deterministicFirst: chatRoutePolicy.deterministicFirst,
+      requiresUserContext: chatRoutePolicy.requiresUserContext,
+      rationale: chatRoutePolicy.rationale,
+    });
 
     const categoryExplorationIntercept = shouldUseCategoryExplorationIntercept(message, normalizedMessage, intentDomain)
       ? buildCategoryExplorationResponse({

@@ -50,7 +50,7 @@ HSA account offsets out-of-pocket costs."
 "I think the Kaiser HMO might be available in your area, but I'm not sure about the deductible."
 
 ✅ GOOD (geographic check, sourced):
-"The Kaiser Standard HMO is available in California, Oregon, and Washington [AmeriVet Regional Plan Guide].
+"The Kaiser Standard HMO is available in California, Georgia, Oregon, and Washington [AmeriVet Regional Plan Guide].
 Your state (TX) is not eligible for this plan. The BCBSTX plans are the applicable options."
 
 === END EXAMPLES ===

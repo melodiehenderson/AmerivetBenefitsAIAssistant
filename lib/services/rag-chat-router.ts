@@ -1,3 +1,4 @@
+import { buildCarrierLockBlock } from '@/lib/qa/facts';
 /**
  * RAG-Enhanced Chat Router
  * Combines hybrid retrieval with LLM generation and chunk validation
@@ -54,12 +55,7 @@ GROUNDING RULES (non-negotiable):
   user to: https://wd5.myworkday.com/amerivet/login.html
 
 CARRIER LOCK (immutable - never re-assign a carrier to a different product):
-  UNUM     = Basic Life & AD&D, Voluntary Term Life, Short-Term Disability, Long-Term Disability ONLY.
-  ALLSTATE = Group Whole Life (Permanent), Accident Insurance, Critical Illness ONLY.
-  BCBSTX   = Medical (Standard HSA, Enhanced HSA) and Dental PPO ONLY.
-  VSP      = Vision ONLY.
-  KAISER   = Medical HMO - California, Oregon, Washington ONLY. NEVER mention in any other state.
-  RIGHTWAY = NOT an AmeriVet carrier. NEVER mention Rightway in any response under any circumstances.
+${buildCarrierLockBlock()}
 
 BANNED ENTITIES - NEVER include in responses:
 - "Rightway" or "Right Way" - NOT an AmeriVet resource or carrier.
