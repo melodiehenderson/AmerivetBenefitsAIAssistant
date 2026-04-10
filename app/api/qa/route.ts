@@ -1337,6 +1337,7 @@ export async function POST(req: NextRequest) {
     const lowerQuery = query.toLowerCase();
     const intentDomain = detectIntentDomain(lowerQuery);
     const pipelineFirstMode = true;
+    const deterministicPolicyInterceptsEnabled = !pipelineFirstMode || earlyRoutePolicy.intentDomain === 'policy';
 
     // ========================================================================
     // INTERCEPT: L1 STATIC FAQ CACHE (always run ΓÇö no gate, specific patterns only)
@@ -1382,7 +1383,7 @@ export async function POST(req: NextRequest) {
       session.lifeEvents = Array.from(lifeEvents);
     }
 
-    if (!pipelineFirstMode && preprocessSignals.spouseGeneralFsaConflictIntent) {
+    if (deterministicPolicyInterceptsEnabled && preprocessSignals.spouseGeneralFsaConflictIntent) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] HSA-SPOUSE-FSA-CONFLICT detected`);
       // ΓöÇΓöÇ Block 1: IRS compliance (always fires) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
       let msg = `IRS COMPLIANCE RULE (IRS Publication 969): If your spouse is enrolled in a general-purpose Healthcare FSA, you are NOT eligible to contribute to an HSA for those same months. This is a hard IRS rule with no exceptions.
@@ -1430,7 +1431,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
     // Fires when user reports BOTH a marriage QLE AND a job-status change (or
     // pregnancy) in the same message. Returns ordered A-grade response with
     // state-specific plan recommendation.  Must run BEFORE qleFilingOrderRequested.
-    if (!pipelineFirstMode && preprocessSignals.multiQLESignal) {
+    if (deterministicPolicyInterceptsEnabled && preprocessSignals.multiQLESignal) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] MULTI-QLE detected ΓÇö marriage + ${/pregnan|expecting/i.test(lowerQuery) ? 'pregnancy' : 'job-change'}`);
       session.policyReasoningMode = true;  // Prevent pricing tables on subsequent turns
       const currentState = session.userState || '';
@@ -1479,7 +1480,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
 
     const marriageWindowQuestion = /\b(married|marriage|got\s+married)\b/i.test(lowerQuery)
       && /\b(add\s+my\s+spouse|add\s+spouse|how\s+many\s+days|deadline|window|deductible\s+reset|reset\s+to\s+0)\b/i.test(lowerQuery);
-    if (!pipelineFirstMode && marriageWindowQuestion) {
+    if (deterministicPolicyInterceptsEnabled && marriageWindowQuestion) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] MARRIAGE-WINDOW-DEDUCTIBLE`);
       const msg = `Marriage is typically a Qualifying Life Event (QLE), and most plans require you to submit the change within a limited window (commonly 30 days, sometimes 31/60 depending on plan rules).\n\nDeductible reset: adding a spouse usually changes you from individual to family tier, but it does **not** automatically reset all year-to-date deductible/OOP accumulators to $0. Mid-year accumulator handling follows plan/administrator rules.\n\nAction now: submit the marriage QLE in Workday immediately, upload documentation, and confirm both (1) election effective date and (2) how prior individual accumulators map to family accumulators for your plan.`;
       const plainMsg = session.noPricingMode ? stripPricingDetails(toPlainAssistantText(msg)) : toPlainAssistantText(msg);
@@ -1502,7 +1503,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
       /\b(std|short\s*[- ]?term\s+disability)\b/i.test(lowerQuery) &&
       /\b(maternity|leave|pay(?:check)?|paid|salary|60%|sixty\s*percent|week\s*\d+|6th\s+week|sixth\s+week|get\s+paid|income)\b/i.test(lowerQuery)
     );
-    if (!pipelineFirstMode && stdLeavePayQuestion) {
+    if (deterministicPolicyInterceptsEnabled && stdLeavePayQuestion) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] FMLA-STD-LEAVE-PAY-TIMELINE`);
       const lines = buildStdLeavePayTimeline(lowerQuery);
       const plainMsg = session.noPricingMode ? stripPricingDetails(toPlainAssistantText(lines)) : toPlainAssistantText(lines);
@@ -1513,7 +1514,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
 
     const stdPreexistingQuestion = /\b(std|short\s*[- ]?term\s+disability)\b/i.test(lowerQuery)
       && /\bpre-?existing|deny\s+my\s+maternity\s+claim|already\s+\d+\s*months\s+pregnant\b/i.test(lowerQuery);
-    if (!pipelineFirstMode && stdPreexistingQuestion) {
+    if (deterministicPolicyInterceptsEnabled && stdPreexistingQuestion) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] STD-PREEXISTING-GUIDANCE`);
       const msg = buildStdPreexistingGuidance();
       const plainMsg = session.noPricingMode ? stripPricingDetails(toPlainAssistantText(msg)) : toPlainAssistantText(msg);
@@ -1532,7 +1533,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
       return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'carrier-correction-term-life' } });
     }
 
-    if (!pipelineFirstMode && preprocessSignals.authorityConflictIntent) {
+    if (deterministicPolicyInterceptsEnabled && preprocessSignals.authorityConflictIntent) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] AUTHORITY-RESOLUTION`);
       const msg = buildAuthorityResolutionMessage();
       const plainMsg = toPlainAssistantText(msg);
@@ -1545,7 +1546,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
       preprocessSignals.hasQLEIntent ||
       (preprocessSignals.hasLifecycleEvent && preprocessSignals.hasFilingOrderIntent);
 
-    if (!pipelineFirstMode && qleFilingOrderRequested) {
+    if (deterministicPolicyInterceptsEnabled && qleFilingOrderRequested) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] QLE-FILING-ORDER`);
       const msg = buildQleFilingOrderMessage(session);
       const plainMsg = toPlainAssistantText(msg);
@@ -1808,7 +1809,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
     // Catches complex leave-planning queries that would otherwise crash in RAG
     const parentalLeaveStepByStep = /\b(step[- ]by[- ]step|step\s+by\s+step|parental\s+leave|fmla|family\s+(?:and\s+)?medical\s+leave|maternity\s+\+|maternity.*parental|company\s+leave|pay\s+overlap|overlap\s+edge|leave\s+plan|leave\s+across)\b/i.test(lowerQuery)
       && /\b(maternity|pregnant|birth|baby|leave|std|short[- ]term\s+disability)\b/i.test(lowerQuery);
-    if (!pipelineFirstMode && parentalLeaveStepByStep) {
+    if (deterministicPolicyInterceptsEnabled && parentalLeaveStepByStep) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] PARENTAL-LEAVE-STEP-BY-STEP`);
       const msg = buildParentalLeavePlan(ENROLLMENT_PORTAL_URL, HR_PHONE);
       const plainMsg = toPlainAssistantText(msg);
@@ -1822,7 +1823,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
     // maternityFlowRequested should only fire for pure maternity COST questions, not salary/leave pay math.
     const hasStdPaySignals = /\b(salary|paid|income|60%|sixty\s*percent|how\s+much\s+(?:will|do|would)\s+i|week\s*\d+|6th\s+week|sixth\s+week|std|short\s*[- ]?term\s+disability|leave\s+pay|maternity\s+pay|get\s+paid|paychec?k)\b/i.test(lowerQuery);
     const maternityFlowRequested = maternityRequested && !qleFilingOrderRequested && !hasStdPaySignals;
-    if (!pipelineFirstMode && maternityFlowRequested) {
+    if (deterministicPolicyInterceptsEnabled && maternityFlowRequested) {
   logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] MATERNITY-FLOW`);
   // If noPricingMode is active, the deterministic function produces empty plan
   // sections after stripPricingDetails removes all $ lines ΓÇö fall through to LLM.
