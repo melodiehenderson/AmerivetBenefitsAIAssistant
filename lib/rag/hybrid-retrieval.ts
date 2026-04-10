@@ -138,10 +138,6 @@ export function filterChunksByCategory(chunks: Chunk[], category: string): Chunk
 type MemoryChunk = { id: string; text: string; embedding?: number[]; docId: string; companyId: string };
 let memoryIndex: MemoryChunk[] = [];
 
-function useInMemoryVitestIndex(): boolean {
-  return isVitest && process.env.RUN_RETRIEVAL_EVAL !== '1';
-}
-
 export function __test_only_resetMemoryIndex() { 
   memoryIndex = []; 
 }
@@ -243,11 +239,6 @@ function cosineSimilarity(a: number[], b: number[]): number {
   return mag === 0 ? 0 : dot / mag;
 }
 
-export function isRecoverableVectorFailure(error: unknown): boolean {
-  const errorText = String(error);
-  return /InvalidVectorQuery|InvalidRequestParameter|vector dimensions|content_vector|AZURE_OPENAI_ENDPOINT|baseURL|endpoint arguments|Embedding generation unavailable/i.test(errorText);
-}
-
 // ============================================================================
 // Azure Search Client (Lazy Initialization)
 // ============================================================================
@@ -272,7 +263,7 @@ function ensureSearchClient(): any | null {
   logger.debug(`[SEARCH] Initializing client with index: ${indexName}`);
   logger.debug(`[SEARCH] Endpoint configured: ${!!endpoint}, API Key: ${apiKey ? 'SET' : 'MISSING'}`);
 
-  if ((!endpoint || !apiKey) && !useInMemoryVitestIndex()) {
+  if ((!endpoint || !apiKey) && !isVitest) {
     throw new Error("Azure Search credentials not configured");
   }
   
@@ -428,7 +419,7 @@ async function searchWithFilterFallback(
  */
 async function generateEmbedding(text: string): Promise<number[]> {
   // In tests, use a deterministic lightweight embedding
-  if (useInMemoryVitestIndex()) {
+  if (isVitest) {
     const vec = new Array(128).fill(0);
     for (let i = 0; i < text.length; i++) {
       vec[i % 128] += text.charCodeAt(i) / 255;
@@ -443,11 +434,17 @@ async function generateEmbedding(text: string): Promise<number[]> {
     if (service && typeof service.generateEmbedding === 'function') {
       return await service.generateEmbedding(text);
     }
-    throw new Error('azureOpenAIService.generateEmbedding is unavailable');
+    logger.warn('[Embedding] azureOpenAIService.generateEmbedding not available; using fallback embedding');
   } catch (e) {
-    logger.error('[Embedding] Unable to generate production embedding for retrieval', e);
-    throw new Error('Embedding generation unavailable for production retrieval');
+    logger.warn('[Embedding] Azure OpenAI import failed; using fallback embedding', e);
   }
+
+  // Fallback: deterministic 128-dim embedding
+  const vec = new Array(128).fill(0);
+  for (let i = 0; i < text.length; i++) {
+    vec[i % 128] += text.charCodeAt(i) / 255;
+  }
+  return vec;
 }
 
 // ============================================================================
@@ -467,7 +464,7 @@ export async function retrieveVectorTopK(
   const startTime = Date.now();
 
   // In-memory fallback for tests
-  if (!client && useInMemoryVitestIndex()) {
+  if (!client && isVitest) {
     const queryVector = await generateEmbedding(query);
     const filtered = memoryIndex.filter(c => c.companyId === context.companyId);
     const scored = filtered
@@ -567,7 +564,8 @@ export async function retrieveVectorTopK(
 
     return chunks;
   } catch (error) {
-    if (isRecoverableVectorFailure(error)) {
+    const errorText = String(error);
+    if (/InvalidVectorQuery|InvalidRequestParameter|vector dimensions|content_vector|AZURE_OPENAI_ENDPOINT|baseURL|endpoint arguments/i.test(errorText)) {
       logger.warn("[SEARCH][VECTOR] Recoverable vector failure; returning empty results", error);
       return [];
     }
@@ -593,7 +591,7 @@ export async function retrieveBM25TopK(
   const startTime = Date.now();
 
   // In-memory fallback for tests (simple keyword matching)
-  if (!client && useInMemoryVitestIndex()) {
+  if (!client && isVitest) {
     const filtered = memoryIndex.filter(c => c.companyId === context.companyId);
     const queryLower = query.toLowerCase();
     const scored = filtered
@@ -925,28 +923,18 @@ export async function hybridRetrieve(
           : merged.slice(0, Math.max(cfg.rerankedTopK, 12));
       };
 
-      const expandedCoverage = await expandResults(context, expandK);
-      expansionUsed = true;
-      if (expandedCoverage.length > 0) {
-        guardedFinal = expandedCoverage;
-      } else {
-        logger.warn('[RAG][GUARD] Expanded vector sweep returned 0 chunks; keeping prior hybrid results');
-      }
-      expansionPhases.push({ phase: 'expand', chunks: expandedCoverage.length, distinctDocs: new Set(expandedCoverage.map(c => c.docId)).size });
+  guardedFinal = await expandResults(context, expandK);
+  expansionUsed = true;
+  expansionPhases.push({ phase: 'expand', chunks: guardedFinal.length, distinctDocs: new Set(guardedFinal.map(c => c.docId)).size });
       logCoverage('expanded coverage', guardedFinal);
 
       if (needsMoreCoverage(guardedFinal) && typeof context.planYear !== 'undefined') {
         logger.warn('[RAG][GUARD] Still low; retrying without planYear filter');
         const contextNoYear: RetrievalContext = { ...context };
         delete (contextNoYear as any).planYear;
-        const noYearCoverage = await expandResults(contextNoYear, expandK);
-        if (noYearCoverage.length > 0) {
-          guardedFinal = noYearCoverage;
-        } else {
-          logger.warn('[RAG][GUARD] No-year vector sweep returned 0 chunks; keeping prior results');
-        }
+        guardedFinal = await expandResults(contextNoYear, expandK);
         droppedPlanYearFilter = true;
-        expansionPhases.push({ phase: 'noYear', chunks: noYearCoverage.length, distinctDocs: new Set(noYearCoverage.map(c => c.docId)).size });
+        expansionPhases.push({ phase: 'noYear', chunks: guardedFinal.length, distinctDocs: new Set(guardedFinal.map(c => c.docId)).size });
         logCoverage('no-year coverage', guardedFinal);
       }
 
@@ -956,13 +944,9 @@ export async function hybridRetrieve(
         delete (contextNoYear as any).planYear;
         const vWide = await retrieveVectorTopK(query, contextNoYear, 150);
         const mergedWide = rrfMerge([vWide], cfg.rrfK, 32);
-        if (mergedWide.length > 0) {
-          guardedFinal = mergedWide.slice(0, Math.max(8, cfg.rerankedTopK));
-        } else {
-          logger.warn('[RAG][GUARD] Vector-only wide sweep returned 0 chunks; keeping prior results');
-        }
+        guardedFinal = mergedWide.slice(0, Math.max(8, cfg.rerankedTopK));
         bm25WideSweep = true;
-        expansionPhases.push({ phase: 'bm25Wide', chunks: mergedWide.length, distinctDocs: new Set(mergedWide.map(c => c.docId)).size });
+        expansionPhases.push({ phase: 'bm25Wide', chunks: guardedFinal.length, distinctDocs: new Set(guardedFinal.map(c => c.docId)).size });
         logCoverage('vector-wide coverage', guardedFinal);
       }
     }

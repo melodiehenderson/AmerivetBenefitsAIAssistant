@@ -1,7 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
-import nodeFetch, { Headers as NodeFetchHeaders, Request as NodeFetchRequest, Response as NodeFetchResponse } from 'node-fetch';
 
 type JudgeCase = {
   id: string;
@@ -36,10 +35,6 @@ function extractJsonObject(text: string): string {
 }
 
 async function runJudgeOnce(testCase: JudgeCase): Promise<JudgeResult> {
-  global.fetch = nodeFetch as any;
-  global.Headers = NodeFetchHeaders as any;
-  global.Request = NodeFetchRequest as any;
-  global.Response = NodeFetchResponse as any;
   const realOpenAIModule = await vi.importActual<typeof import('../../lib/azure/openai')>('../../lib/azure/openai');
   const rubric = (testCase.evaluation_prompts || [
     'Score factual accuracy, completeness, and absence of hallucination.'
@@ -106,7 +101,6 @@ describe.skipIf(!shouldRun)('LLM-as-Judge eval', () => {
 
   it('average score is >= 4.0 across three judge calls per case', async () => {
     const allAverages: number[] = [];
-    const perCase: Array<{ id: string; category: string; average: number; scores: number[] }> = [];
 
     for (const testCase of judgeCases) {
       const scores: number[] = [];
@@ -118,23 +112,10 @@ describe.skipIf(!shouldRun)('LLM-as-Judge eval', () => {
       }
       const avg = scores.reduce((s, n) => s + n, 0) / scores.length;
       allAverages.push(avg);
-      perCase.push({
-        id: testCase.id,
-        category: testCase.category,
-        average: Number(avg.toFixed(4)),
-        scores,
-      });
       expect(avg, `${testCase.id} average judge score was ${avg.toFixed(2)}`).toBeGreaterThanOrEqual(4.0);
     }
 
     const overall = allAverages.reduce((s, n) => s + n, 0) / allAverages.length;
-    console.info(
-      `[LLM-JUDGE-EVAL] ${JSON.stringify({
-        totalCases: perCase.length,
-        overallAverage: Number(overall.toFixed(4)),
-        perCase,
-      })}`
-    );
     expect(overall).toBeGreaterThanOrEqual(4.0);
   }, 120000);
 });

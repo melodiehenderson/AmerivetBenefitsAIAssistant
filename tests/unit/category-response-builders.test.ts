@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Session } from '@/lib/rag/session-store';
-import { buildCategoryExplorationResponse } from '@/lib/qa/category-response-builders';
+import { buildCategoryExplorationResponse, buildCoverageTierOptionsResponse } from '@/lib/qa/category-response-builders';
 import { buildRecommendationOverview } from '@/lib/qa/medical-helpers';
 
 const baseSession = (overrides: Partial<Session> = {}): Session => ({
@@ -41,6 +41,21 @@ describe('category-response-builders', () => {
     });
 
     expect(response).toContain('Medical');
+    expect(response).toContain('Dental');
+    expect(response).toContain('Vision');
+  });
+
+  it('returns a deterministic family coverage overview for spouse-plus-kids prompts', () => {
+    const response = buildCategoryExplorationResponse({
+      queryLower: 'i need to understand family coverage options. my spouse works part-time and we have two kids.',
+      session: baseSession({ userState: 'WA' }),
+      coverageTier: 'Employee Only',
+      enrollmentPortalUrl: 'https://example.com/workday',
+      hrPhone: '888-217-4728',
+    });
+
+    expect(response).toContain('Employee + Family');
+    expect(response).toContain('Medical options at that tier');
     expect(response).toContain('Dental');
     expect(response).toContain('Vision');
   });
@@ -93,5 +108,14 @@ describe('category-response-builders', () => {
     expect(response).toContain('Short-Term and Long-Term Disability options are available');
     expect(response).toContain('Workday');
     expect(response).toContain('888-217-4728');
+  });
+
+  it('returns the four canonical medical coverage tiers', () => {
+    const response = buildCoverageTierOptionsResponse(baseSession({ userState: 'WA' }), 'medical');
+
+    expect(response).toContain('Employee Only');
+    expect(response).toContain('Employee + Spouse');
+    expect(response).toContain('Employee + Child(ren)');
+    expect(response).toContain('Employee + Family');
   });
 });

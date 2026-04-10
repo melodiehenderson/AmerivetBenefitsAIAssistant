@@ -1,11 +1,4 @@
 import { KAISER_AVAILABLE_STATE_CODES } from '@/lib/data/amerivet';
-import {
-  buildKaiserAvailabilityStatement,
-  buildKaiserUnavailableStateStatement,
-  KAISER_STATES_PLAIN,
-  KAISER_STATES_WITH_CODES,
-  RIGHTWAY_NOT_AMERIVET_MESSAGE,
-} from '@/lib/qa/facts';
 import type { IntentDomain } from '@/lib/intent-digest';
 
 type L1FAQArgs = {
@@ -29,11 +22,11 @@ const L1_FAQ: L1FAQEntry[] = [
   },
   {
     patterns: [/\bright\s*way\b|\brightway\b/i],
-    answer: ({ enrollmentPortalUrl, hrPhone }) => `${RIGHTWAY_NOT_AMERIVET_MESSAGE}\n\nFor benefits navigation support, please contact AmeriVet HR/Benefits at ${hrPhone} or visit ${enrollmentPortalUrl}.`,
+    answer: ({ enrollmentPortalUrl, hrPhone }) => `Rightway is not an AmeriVet benefits resource and is not part of the AmeriVet benefits package.\n\nFor benefits navigation support, please contact AmeriVet HR/Benefits at ${hrPhone} or visit ${enrollmentPortalUrl}.`,
   },
   {
     patterns: [/\bkaiser\b.*\b(only|available|states?|where|which\s+states?|limited|regions?)\b|\b(only|available|states?|where|which\s+states?|limited|regions?)\b.*\bkaiser\b/i],
-    answer: () => `${buildKaiserAvailabilityStatement()} It is not available in any other state. In all other states, your medical options are Standard HSA and Enhanced HSA (both through BCBS of Texas, nationwide PPO network).`,
+    answer: () => `Kaiser HMO is only available in California (CA), Georgia (GA), Washington (WA), and Oregon (OR) through AmeriVet. It is not available in any other state. In all other states, your medical options are Standard HSA and Enhanced HSA (both through BCBS of Texas, nationwide PPO network).`,
   },
   {
     patterns: [/\b(receptionist|office\s*(staff|personnel|directory)|name\s*of.*(?:dentist|doctor|office|staff)|staff\s*(name|list|directory)|who\s*is\s*(?:the|my)\s*(?:dentist|doctor|hr\s*rep|benefits\s*rep))\b/i],
@@ -56,12 +49,12 @@ export function isRightwayQuery(query: string): boolean {
 export function normalizeStaticBenefitAnswer(answer: string): string {
   let normalized = answer;
   for (const pattern of STALE_KAISER_GEOGRAPHY_PATTERNS) {
-    normalized = normalized.replace(pattern, KAISER_STATES_PLAIN);
+    normalized = normalized.replace(pattern, "California, Georgia, Washington, and Oregon");
   }
 
   normalized = normalized.replace(
     /Kaiser HMO is only available in California \(CA\), Washington \(WA\), and Oregon \(OR\)/gi,
-    `Kaiser HMO is only available in ${KAISER_STATES_WITH_CODES}`
+    "Kaiser HMO is only available in California (CA), Georgia (GA), Washington (WA), and Oregon (OR)"
   );
 
   return normalized;
@@ -81,7 +74,8 @@ export function normalizeBenefitCategory(keyword: string): string {
 }
 
 export function isSimpleAffirmation(message: string): boolean {
-  return /^(yes|yes please|yeah|yep|sure|ok|okay|please|do it|go ahead)$/i.test(message.trim());
+  const normalized = message.trim().replace(/[.!?]+$/g, '');
+  return /^(yes|yes please|yeah|yep|sure|ok|okay|please|do it|go ahead)$/i.test(normalized);
 }
 
 export function isStandaloneMedicalPpoRequest(query: string): boolean {
@@ -100,16 +94,17 @@ export function buildKaiserAvailabilityFaqAnswer(userState?: string | null): str
   if (userState) {
     const normalized = userState.toUpperCase();
     if (KAISER_STATE_CODES.has(normalized)) {
-      return `Yes — Kaiser HMO is available in ${normalized}. AmeriVet offers Kaiser in ${KAISER_STATES_WITH_CODES}.`;
+      return `Yes — Kaiser HMO is available in ${normalized}. AmeriVet offers Kaiser in California (CA), Georgia (GA), Washington (WA), and Oregon (OR).`;
     }
-    return `${buildKaiserUnavailableStateStatement(normalized)} In ${normalized}, your medical options are Standard HSA and Enhanced HSA through BCBSTX.`;
+    return `Kaiser HMO is only available in California (CA), Georgia (GA), Washington (WA), and Oregon (OR) — it is not available in ${normalized}. In ${normalized}, your medical options are Standard HSA and Enhanced HSA through BCBSTX.`;
   }
 
-  return `${buildKaiserAvailabilityStatement()} It is not available in any other state. In all other states, your medical options are Standard HSA and Enhanced HSA (both through BCBS of Texas, nationwide PPO network).`;
+  return `Kaiser HMO is only available in California (CA), Georgia (GA), Washington (WA), and Oregon (OR) through AmeriVet. It is not available in any other state. In all other states, your medical options are Standard HSA and Enhanced HSA (both through BCBS of Texas, nationwide PPO network).`;
 }
 
 export function isLikelyFollowUpMessage(normalizedMessage: string): boolean {
-  return normalizedMessage.length <= 120 && /(^((yes|yes please|yeah|yep|sure|ok|okay|please|go ahead|do it|any workaround\??|what about the waiting period\??))$|\b(more|details|difference|compare|comparison|that one|those|it|what about that|which one|go on|continue|expand|break it down|tell me more|workaround|waiting period)\b)/i.test(normalizedMessage);
+  const normalized = normalizedMessage.trim().replace(/[.!?]+$/g, '');
+  return normalized.length <= 120 && /(^((yes|yes please|yeah|yep|sure|ok|okay|please|go ahead|do it|any workaround\??|what about the waiting period\??|i'?m in\s+[a-z]{2}|my usage is\s+(?:low|moderate|high)|(?:low|moderate|high)\s+usage))$|\b(more|details|difference|compare|comparison|that one|those|it|what about that|which one|go on|continue|expand|break it down|tell me more|workaround|waiting period|coverage tiers?|different coverage tier|switch coverage tiers?|my usage is|low usage|moderate usage|high usage)\b)/i.test(normalized);
 }
 
 export function isTopicContinuationMessage(query: string, currentTopic?: string): boolean {
@@ -122,8 +117,8 @@ export function isTopicContinuationMessage(query: string, currentTopic?: string)
   const hasNoCategoryKeyword = !/\b(medical|dental|vision|life|disability|hsa|fsa|critical|accident|supplemental)\b/i.test(lowerQuery);
   if (!hasNoCategoryKeyword) return false;
 
-  const shortFollowUp = trimmed.length <= 40 && /^(yes please|any workaround\??|what about the waiting period\??|difference|more|details|explain|tell me more|what'?s the difference|go on|elaborate|how so|why|which one|more info|more details|expand|break it down)$/i.test(trimmed);
-  const topicContinuation = /\b(difference|what(?:'s|\s+is)\s+available|what\s+(?:options?|plans?|choices?)|what\s+(?:do\s+)?(?:i|we)\s+(?:have|get)|available\s+to\s+me|what\s+(?:are|is)\s+(?:the|my)\s+(?:options?|plans?|choices?)|tell\s+me\s+(?:about\s+)?(?:the\s+)?(?:plans?|options?)|just\s+want\s+to\s+know|want\s+to\s+(?:know|see|understand))\b/i.test(lowerQuery);
+  const shortFollowUp = trimmed.length <= 60 && /^(yes please|any workaround\??|what about the waiting period\??|difference|more|details|explain|tell me more|what'?s the difference|go on|elaborate|how so|why|which one|more info|more details|expand|break it down|what coverage tiers? (?:are available)?|coverage tiers?|i'?m in\s+[a-z]{2}|my usage is\s+(?:low|moderate|high)|(?:low|moderate|high)\s+usage)$/i.test(trimmed);
+  const topicContinuation = /\b(difference|what(?:'s|\s+is)\s+available|what\s+(?:options?|plans?|choices?|coverage\s+tiers?)|what\s+(?:do\s+)?(?:i|we)\s+(?:have|get)|available\s+to\s+me|what\s+(?:are|is)\s+(?:the|my)\s+(?:options?|plans?|choices?|coverage\s+tiers?)|tell\s+me\s+(?:about\s+)?(?:the\s+)?(?:plans?|options?|coverage\s+tiers?)|just\s+want\s+to\s+know|want\s+to\s+(?:know|see|understand)|switch\s+coverage\s+tiers?|different\s+coverage\s+tier|i'?m\s+in\s+[a-z]{2}|my\s+usage\s+is\s+(?:low|moderate|high)|(?:low|moderate|high)\s+usage)\b/i.test(lowerQuery);
 
   return shortFollowUp || topicContinuation;
 }
@@ -213,13 +208,14 @@ export function shouldUseCategoryExplorationIntercept(query: string, lowerQuery:
   }
 
   const trimmed = query.trim();
-  const directCategory = /^(medical|health|dental|vision|life(?:\s+insurance)?|disability|hsa|fsa|critical(?:\s+illness)?|accident|supplemental|benefits|benefits\s+overview|overview|what\s+benefits\s+do\s+i\s+have|what\s+are\s+my\s+options|show\s+me\s+benefits)$/i;
+  const directCategory = /^(medical|health|dental|vision|life(?:\s+insurance)?|disability|hsa|fsa|critical(?:\s+illness)?|accident|supplemental|benefits|benefits\s+overview|overview|family\s+coverage|family\s+coverage\s+options|what\s+benefits\s+do\s+i\s+have|what\s+are\s+my\s+options|show\s+me\s+benefits)$/i;
   const lightExplore = /^(tell\s+me\s+about|show\s+me|overview\s+of|explain)\s+(medical|health|dental|vision|life(?:\s+insurance)?|disability|hsa|fsa|critical(?:\s+illness)?|accident|supplemental|benefits)\b/i;
-  const conversationalExplore = /\b(?:what\s+about|let'?s\s+(?:\w+\s+){0,2}(?:look\s+at|talk\s+about|go\s+(?:over|through)|explore|discuss|review|see)|what(?:'s|\s+is)\s+available\s+(?:for|in|under|with)|i\s+want\s+to\s+(?:know|learn|see|hear)\s+about|how\s+about|talk\s+about|interested\s+in)\s+(?:the\s+)?(?:my\s+)?(medical|health|dental|vision|life(?:\s+insurance)?|disability|hsa|fsa|critical(?:\s+illness)?|accident|supplemental|benefits)\b/i;
+  const conversationalExplore = /\b(?:what\s+about|let'?s\s+(?:\w+\s+){0,2}(?:look\s+at|talk\s+about|go\s+(?:over|through)|explore|discuss|review|see)|what(?:'s|\s+is)\s+available\s+(?:for|in|under|with)|i\s+want\s+to\s+(?:know|learn|see|hear|understand)\s+about|how\s+about|talk\s+about|interested\s+in)\s+(?:the\s+)?(?:my\s+)?(medical|health|dental|vision|life(?:\s+insurance)?|disability|hsa|fsa|critical(?:\s+illness)?|accident|supplemental|benefits|family\s+coverage(?:\s+options)?)\b/i;
   const availableWithCategory = /\b(?:what(?:'s|\s+is)\s+available|what\s+(?:do\s+)?(?:i|we)\s+(?:have|get)|what\s+(?:options?|plans?|choices?)\s+(?:are|do))\b/i.test(lowerQuery)
-    && /\b(medical|health|dental|vision|life(?:\s+insurance)?|disability|hsa|fsa|critical(?:\s+illness)?|accident|supplemental)\b/i.test(lowerQuery);
+    && /\b(medical|health|dental|vision|life(?:\s+insurance)?|disability|hsa|fsa|critical(?:\s+illness)?|accident|supplemental|family|spouse|child|kid|dependent)\b/i.test(lowerQuery);
+  const familyCoverageExplore = /\b(family\s+coverage|family\s+plan|spouse\s+works?\s+part[- ]?time|we\s+have\s+\w+\s+kids?|we\s+have\s+\w+\s+children|coverage\s+for\s+my\s+family|our\s+family)\b/i.test(lowerQuery);
 
-  return directCategory.test(trimmed) || lightExplore.test(trimmed) || conversationalExplore.test(trimmed) || availableWithCategory;
+  return directCategory.test(trimmed) || lightExplore.test(trimmed) || conversationalExplore.test(trimmed) || availableWithCategory || familyCoverageExplore;
 }
 
 export function shouldUsePlanPricingIntercept(query: string, lowerQuery: string): boolean {

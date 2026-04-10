@@ -1,11 +1,3 @@
-import {
-  buildCarrierLockBlock,
-  DHMO_BANNED_ENTITY_STATEMENT,
-  INVALID_PHONE_BANNED_ENTITY_STATEMENT,
-  PPO_BANNED_ENTITY_STATEMENT,
-  RIGHTWAY_BANNED_ENTITY_STATEMENT,
-} from '@/lib/qa/facts';
-
 export type BenefitTier = 'employeeOnly' | 'employeeSpouse' | 'employeeChildren' | 'employeeFamily';
 
 export interface BenefitPremiumBreakdown {
@@ -631,13 +623,12 @@ export function getCatalogForPrompt(stateCode?: string | null): string {
     `  gym membership, wellness reimbursement, student loan repayment, long-term care, cancer-only plans.`,
     '',
     '── CARRIER LOCK (immutable — never re-assign a carrier to a different plan type) ──',
-    ...buildCarrierLockBlock().split('\n').map(line => `  ${line}`),
-    '',
-    '── BANNED ENTITIES ─────────────────────────────────────────────────────────',
-    `  ${RIGHTWAY_BANNED_ENTITY_STATEMENT}`,
-    `  ${DHMO_BANNED_ENTITY_STATEMENT}`,
-    `  ${PPO_BANNED_ENTITY_STATEMENT}`,
-    `  ${INVALID_PHONE_BANNED_ENTITY_STATEMENT}`,
+    '  UNUM       = Basic Life & AD&D, Voluntary Term Life, Short-Term Disability, Long-Term Disability ONLY.',
+    '  ALLSTATE   = Group Whole Life (Permanent), Accident Insurance, Critical Illness ONLY.',
+    '  BCBSTX     = Medical plans (Standard HSA, Enhanced HSA) and Dental PPO ONLY.',
+    '  VSP        = Vision plan ONLY.',
+    '  KAISER     = Medical HMO — California, Oregon, Washington ONLY. NEVER mention in any other state.',
+    '  RIGHTWAY   — NOT an AmeriVet carrier. NEVER mention Rightway in any response.',
     '',
   ];
 

@@ -15,11 +15,3 @@
 *.jpg filter=lfs diff=lfs merge=lfs -text
 *.jpeg filter=lfs diff=lfs merge=lfs -text
 *.png filter=lfs diff=lfs merge=lfs -text
-
-# Build-critical Next metadata images must remain normal Git blobs so Vercel
-# can import them during preview/production builds without relying on LFS.
-app/icon.png -filter -diff -merge text
-app/(chat)/opengraph-image.png -filter -diff -merge text
-app/(chat)/twitter-image.png -filter -diff -merge text
-public/favicon.png -filter -diff -merge text
-public/brand/amerivet-logo.png -filter -diff -merge text

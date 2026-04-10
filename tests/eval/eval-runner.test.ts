@@ -39,10 +39,6 @@ interface EvalCase {
   question: string;
   state: string | null;
   noPricingMode: boolean;
-  planYear?: string;
-  layer?: 'deterministic' | 'retrieval' | 'judge' | 'contract';
-  sequenceId?: string;
-  turn?: number;
   must_contain: string[];
   must_not_contain: string[];
   expected_behavior: string;
@@ -280,49 +276,6 @@ const categoryGroups = dataset.reduce<Record<string, EvalCase[]>>((acc, c) => {
   return acc;
 }, {});
 
-function buildCategoryPassRates(cases: EvalCase[]) {
-  const stats = new Map<string, { total: number; passed: number }>();
-
-  for (const c of cases) {
-    const response = generateResponse(c);
-    if (!response) continue;
-
-    const containCheck = checkMustContain(response, c.must_contain || []);
-    const notContainCheck = checkMustNotContain(response, c.must_not_contain || []);
-    const passed = containCheck.pass && notContainCheck.pass;
-
-    const existing = stats.get(c.category) || { total: 0, passed: 0 };
-    existing.total += 1;
-    if (passed) existing.passed += 1;
-    stats.set(c.category, existing);
-  }
-
-  return Object.fromEntries(
-    [...stats.entries()]
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([category, values]) => [
-        category,
-        {
-          total: values.total,
-          passed: values.passed,
-          passRate: Number((values.passed / Math.max(values.total, 1)).toFixed(4)),
-        },
-      ])
-  );
-}
-
-function buildPlanYearCounts(cases: EvalCase[]) {
-  const counts = cases.reduce<Record<string, number>>((acc, c) => {
-    const key = c.planYear || 'unspecified';
-    acc[key] = (acc[key] || 0) + 1;
-    return acc;
-  }, {});
-
-  return Object.fromEntries(
-    Object.entries(counts).sort(([a], [b]) => a.localeCompare(b))
-  );
-}
-
 function buildDeterministicEvalSnapshot() {
   const deterministicCases = dataset.filter(c => DETERMINISTIC_CATEGORIES.has(c.category));
 
@@ -354,8 +307,6 @@ function buildDeterministicEvalSnapshot() {
     groundingProxyDefinition:
       'Proxy only: (1 - hallucinationRate) * 100 for evaluated deterministic cases',
     groundingContractCasesSkipped,
-    planYears: buildPlanYearCounts(dataset),
-    byCategory: buildCategoryPassRates(deterministicCases),
   };
 }
 
@@ -436,11 +387,24 @@ describe('Eval dataset integrity', () => {
   });
 
   it('deterministic categories meet >= 90% pass rate per category', () => {
-    const categoryPassRates = buildCategoryPassRates(
-      dataset.filter(c => DETERMINISTIC_CATEGORIES.has(c.category))
-    );
+    const categoryStats = new Map<string, { total: number; passed: number }>();
 
-    for (const [category, stats] of Object.entries(categoryPassRates)) {
+    for (const c of dataset) {
+      if (!DETERMINISTIC_CATEGORIES.has(c.category)) continue;
+      const response = generateResponse(c);
+      if (!response) continue;
+
+      const containCheck = checkMustContain(response, c.must_contain || []);
+      const notContainCheck = checkMustNotContain(response, c.must_not_contain || []);
+      const passed = containCheck.pass && notContainCheck.pass;
+
+      const existing = categoryStats.get(c.category) || { total: 0, passed: 0 };
+      existing.total += 1;
+      if (passed) existing.passed += 1;
+      categoryStats.set(c.category, existing);
+    }
+
+    for (const [category, stats] of categoryStats.entries()) {
       const rate = stats.total > 0 ? stats.passed / stats.total : 0;
       expect(rate, `Category ${category} pass rate ${Math.round(rate * 100)}% is below 90%`).toBeGreaterThanOrEqual(0.9);
     }

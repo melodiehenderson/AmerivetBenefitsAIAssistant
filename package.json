@@ -14,8 +14,6 @@
     "dev:turbo": "next dev --turbo -p 3000 -H localhost",
     "verify": "npm run typecheck && npm run lint && npm test && npm run build:vercel",
     "validate:rag": "node ./scripts/validate-rag.mjs",
-    "eval:retrieval": "vitest run tests/eval/retrieval-live.test.ts",
-    "eval:judge": "vitest run tests/eval/llm-judge.test.ts",
     "build": "next build",
     "build:vercel": "node ./scripts/prebuild-fix-dirs.mjs && node ./scripts/disable-routes-for-build.cjs && next build && node ./scripts/postbuild-fix-manifests.mjs && node ./scripts/restore-routes-after-build.cjs && node ./scripts/fix-vercel-symlinks.mjs",
     "build:ci": "node ./scripts/ci-guard.mjs && npm run typecheck && npm run lint && next build",

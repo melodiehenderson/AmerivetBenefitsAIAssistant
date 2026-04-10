@@ -1,11 +1,6 @@
 import type { Session } from '@/lib/rag/session-store';
 import pricingUtils from '@/lib/rag/pricing-utils';
 import { amerivetBenefits2024_2025, KAISER_AVAILABLE_STATE_CODES, type BenefitPlan } from '@/lib/data/amerivet';
-import {
-  buildKaiserAvailabilityStatement,
-  KAISER_ELIGIBILITY_SHORT,
-  KAISER_STATES_PLAIN,
-} from '@/lib/qa/facts';
 
 const KAISER_STATES = new Set<string>(KAISER_AVAILABLE_STATE_CODES);
 
@@ -40,15 +35,15 @@ export function buildPpoClarificationFallback(session: Pick<Session, 'userState'
 export function buildKaiserUnavailableFallback(session: Session, variant: KaiserUnavailableVariant): string {
   const stateLabel = (session.userState || 'your state').toUpperCase();
   if (variant === 'pricing') {
-    return `${buildKaiserAvailabilityStatement().replace(' through AmeriVet.', '.')} Since you're in ${stateLabel}, your medical plan options are **Standard HSA** and **Enhanced HSA**. Would you like pricing for those?`;
+    return `Kaiser Standard HMO is only available in California, Georgia, Washington, and Oregon. Since you're in ${stateLabel}, your medical plan options are **Standard HSA** and **Enhanced HSA**. Would you like pricing for those?`;
   }
   if (variant === 'redirect') {
     const nyNote = stateLabel === 'NY'
       ? `\n\nFor New York employees, the strongest alternative is **Enhanced HSA** on the BCBSTX nationwide PPO network if you want richer coverage.`
       : '';
-    return `Kaiser is only available in ${KAISER_STATES_PLAIN}. In ${stateLabel}, your medical options are:\n\n- Standard HSA (BCBS of Texas) ΓÇö lower premium, higher deductible, full HSA contribution eligible\n- Enhanced HSA (BCBS of Texas) ΓÇö higher premium, lower deductible, better for anticipated medical use\n\nBoth use the nationwide BCBSTX PPO network.${nyNote} Would you like a side-by-side comparison?`;
+    return `Kaiser is only available in California, Georgia, Washington, and Oregon. In ${stateLabel}, your medical options are:\n\n- Standard HSA (BCBS of Texas) ΓÇö lower premium, higher deductible, full HSA contribution eligible\n- Enhanced HSA (BCBS of Texas) ΓÇö higher premium, lower deductible, better for anticipated medical use\n\nBoth use the nationwide BCBSTX PPO network.${nyNote} Would you like a side-by-side comparison?`;
   }
-  return `${buildKaiserAvailabilityStatement().replace(' through AmeriVet.', '.')} Since you're in ${stateLabel}, your medical options are **Standard HSA** and **Enhanced HSA**. Would you like to compare those two instead?`;
+  return `Kaiser Standard HMO is only available in California, Georgia, Washington, and Oregon. Since you're in ${stateLabel}, your medical options are **Standard HSA** and **Enhanced HSA**. Would you like to compare those two instead?`;
 }
 
 function getMedicalPlansCatalog() {
@@ -86,7 +81,7 @@ export function getAvailablePricingRows(
   const filtered = session.userState && !isKaiserEligibleState(session.userState)
     ? baseRows.filter(r => !/kaiser/i.test(r.plan))
     : baseRows;
-  return { payPeriods, rows, baseRows, filtered };
+  return { payPeriods, rows, filtered };
 }
 
 export function buildMedicalPlanFallback(query: string, session: Session): string | null {
@@ -127,7 +122,7 @@ export function buildMedicalPlanFallback(query: string, session: Session): strin
     }
 
     if (comparePlans.some((p) => /kaiser/i.test(p.name)) && session.userState && !isKaiserEligibleState(session.userState)) {
-      msg += `\nNote: Kaiser Standard HMO is only available in ${KAISER_ELIGIBILITY_SHORT}. Since you are in ${session.userState}, it may not be available.`;
+      msg += `\nNote: Kaiser Standard HMO is only available in CA, GA, WA, and OR. Since you are in ${session.userState}, it may not be available.`;
     }
     return msg.trim();
   }

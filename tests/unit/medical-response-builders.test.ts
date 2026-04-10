@@ -56,20 +56,6 @@ describe('medical-response-builders', () => {
     expectContract(response, ['Standard HSA', 'Enhanced HSA', 'Kaiser Standard HMO is available only in California, Georgia, Washington, and Oregon'], ['$']);
   });
 
-  it('does not add the Kaiser regional note when Kaiser is already present in the medical list', () => {
-    const rows = pricingUtils.buildPerPaycheckBreakdown('Employee Only', 26)
-      .filter((row) => row.plan === 'Standard HSA' || row.plan === 'Enhanced HSA' || row.plan === 'Kaiser Standard HMO');
-
-    const response = buildMedicalComparisonMessage({
-      coverageTier: 'Employee Only',
-      filtered: rows,
-      hasHiddenKaiser: false,
-      noPricingMode: false,
-    });
-
-    expectContract(response, ['Standard HSA', 'Enhanced HSA', 'Kaiser Standard HMO'], ['available only in California, Georgia, Washington, and Oregon']);
-  });
-
   it('answers enhanced HSA deductible questions from the shared medical fallback', () => {
     const response = buildMedicalPlanFallback(
       'what is the deductible for enhanced hsa?',

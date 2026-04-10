@@ -32,6 +32,34 @@ type CategoryResponseArgs = {
   hrPhone: string;
 };
 
+export function buildCoverageTierOptionsResponse(
+  session: Session,
+  benefit: 'medical' | 'dental' | 'vision' = 'medical',
+): string {
+  const tierLines = [
+    '- Employee Only',
+    '- Employee + Spouse',
+    '- Employee + Child(ren)',
+    '- Employee + Family',
+  ].join('\n');
+
+  if (benefit === 'medical') {
+    let msg = `These are the available medical coverage tiers:\n\n${tierLines}\n\n`;
+    msg += `If you tell me which tier you want, I can show the matching medical plans`;
+    if (session.userState) {
+      msg += ` in ${session.userState}`;
+    }
+    msg += `.`;
+    return msg;
+  }
+
+  if (benefit === 'dental') {
+    return `These are the available dental coverage tiers:\n\n${tierLines}\n\nTell me which tier you want and I’ll show the dental pricing/details for that level.`;
+  }
+
+  return `These are the available vision coverage tiers:\n\n${tierLines}\n\nTell me which tier you want and I’ll show the vision pricing/details for that level.`;
+}
+
 export function buildCategoryExplorationResponse({ queryLower, session, coverageTier, enrollmentPortalUrl, hrPhone }: CategoryResponseArgs): string | null {
   const noPricingMode = !!session.noPricingMode;
   const finalize = (response: string) => noPricingMode ? stripPricingDetails(response) : response;
@@ -54,6 +82,7 @@ export function buildCategoryExplorationResponse({ queryLower, session, coverage
   const wantsCritical = /\bcritical\s*illness\b/i.test(queryLower);
   const wantsAccident = /\b(accident|ad&d)\b/i.test(queryLower);
   const wantsSupplemental = /\b(supplemental|voluntary)\b/i.test(queryLower);
+  const wantsFamilyCoverage = /\b(family\s+coverage|family\s+plan|spouse|child|children|kid|kids|dependent)\b/i.test(queryLower);
 
   const buildDentalOverview = () => {
     const dental = catalog.dentalPlan;
@@ -137,6 +166,51 @@ export function buildCategoryExplorationResponse({ queryLower, session, coverage
     return msg;
   };
 
+  const buildFamilyCoverageOverview = () => {
+    const inferredTier = /\bspouse\b/i.test(queryLower) && /\b(child|children|kid|kids)\b/i.test(queryLower)
+      ? 'Employee + Family'
+      : /\bspouse\b/i.test(queryLower)
+        ? 'Employee + Spouse'
+        : /\b(child|children|kid|kids|dependent)\b/i.test(queryLower)
+          ? 'Employee + Child(ren)'
+          : 'Employee + Family';
+
+    const payPeriods = session.payPeriods || 26;
+    const rows = pricingUtils.buildPerPaycheckBreakdown(inferredTier, payPeriods);
+    const medicalRows = rows.filter((row) => !/dental|vision/i.test(row.plan) && row.provider !== 'VSP');
+    const filteredMedical = session.userState && !isKaiserEligibleState(session.userState)
+      ? medicalRows.filter((row) => !/kaiser/i.test(row.plan))
+      : medicalRows;
+    const dental = catalog.dentalPlan;
+    const vision = catalog.visionPlan;
+
+    let msg = `For a household like the one you described, the most likely coverage tier is **${inferredTier}**.\n\n`;
+    msg += `Medical options at that tier:\n`;
+    for (const row of filteredMedical) {
+      if (noPricingMode) {
+        msg += `- ${row.plan} (${row.provider})\n`;
+      } else {
+        msg += `- ${row.plan} (${row.provider}): $${pricingUtils.formatMoney(row.perMonth)}/month\n`;
+      }
+    }
+
+    if (filteredMedical.length < medicalRows.length) {
+      msg += `\nKaiser is only available in CA, GA, WA, and OR.\n`;
+    }
+
+    msg += `\nFamily-supporting benefits at the same tier:\n`;
+    if (noPricingMode) {
+      msg += `- Dental: ${dental.name}\n`;
+      msg += `- Vision: ${vision.name}\n`;
+    } else {
+      msg += `- Dental (${dental.name}): $${pricingUtils.formatMoney(dental.tiers.employeeFamily)}/month\n`;
+      msg += `- Vision (${vision.name}): $${pricingUtils.formatMoney(vision.tiers.employeeFamily)}/month\n`;
+    }
+
+    msg += `\nWant to focus on medical, compare coverage tiers, or look at dental/vision for the family tier?`;
+    return msg;
+  };
+
   const buildLifeOverview = () => {
     const lifePlans = catalog.voluntaryPlans.filter((plan) => plan.voluntaryType === 'life');
     const basic = lifePlans.find((plan) => /basic life/i.test(plan.name));
@@ -159,6 +233,9 @@ export function buildCategoryExplorationResponse({ queryLower, session, coverage
 
   if (wantsDental && wantsVision) return finalize(`${buildDentalOverview()}\n\n---\n\n${buildVisionOverview()}`);
   if (wantsLife) return finalize(buildLifeOverview());
+  if (wantsFamilyCoverage && !wantsMedical && !wantsDental && !wantsVision && !wantsLife && !wantsDisability && !wantsCritical && !wantsAccident && !wantsSupplemental) {
+    return finalize(buildFamilyCoverageOverview());
+  }
 
   if (wantsDisability || wantsCritical || wantsAccident || wantsSupplemental) {
     let msg = `I can help with these benefits, but detailed plan terms are in Workday.\n\n`;
