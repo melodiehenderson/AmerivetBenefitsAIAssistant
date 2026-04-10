@@ -3,8 +3,8 @@
 import * as React from 'react';
 import dynamic from 'next/dynamic';
 import { useSearchParams } from 'next/navigation';
-import Image from 'next/image';
 import { marked } from 'marked';
+import { AmeriVetLogo } from '@/components/amerivet-logo';
 import { WelcomeVideoModal } from '@/components/welcome-video-modal';
 import { Textarea } from '@/components/ui/textarea';
 
@@ -201,8 +201,7 @@ function ChatPageContent() {
       {/* Chat Header */}
       <div className="border-b p-4 bg-white shrink-0">
         <div className="flex items-center space-x-3">
-          <Image
-            src="/brand/amerivet-logo.png"
+          <AmeriVetLogo
             alt="AmeriVet Logo"
             width={32}
             height={32}

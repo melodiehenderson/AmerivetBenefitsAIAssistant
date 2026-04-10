@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import Image from 'next/image';
+import { AmeriVetLogo } from '@/components/amerivet-logo';
 
 export const Greeting = () => {
   return (
@@ -8,8 +8,7 @@ export const Greeting = () => {
       className="max-w-3xl mx-auto md:mt-20 px-8 size-full flex flex-col justify-center"
     >
       <div className="flex justify-center mb-6">
-        <Image
-          src="/brand/amerivet-logo.png"
+        <AmeriVetLogo
           alt="Amerivet Logo"
           width={160}
           height={48}

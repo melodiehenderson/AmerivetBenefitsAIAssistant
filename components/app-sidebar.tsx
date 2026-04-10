@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { PlusIcon, UserIcon } from 'lucide-react';
-import Image from 'next/image';
+import { AmeriVetLogo } from '@/components/amerivet-logo';
 
 import { SidebarHistory } from '@/components/sidebar-history';
 import { SidebarUserNav } from '@/components/sidebar-user-nav';
@@ -35,8 +35,7 @@ export function AppSidebar() {
               }}
               className="flex flex-row gap-3 items-center"
             >
-              <Image
-                src="/brand/amerivet-logo.png"
+              <AmeriVetLogo
                 alt="Amerivet"
                 width={40}
                 height={40}

@@ -11,13 +11,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { amerivetBenefits2024_2025 } from '@/lib/data/amerivet';
+import { amerivetBenefits2024_2025, KAISER_AVAILABLE_STATE_CODES } from '@/lib/data/amerivet';
 import { ArrowLeft, Calculator, DollarSign, Activity, Pill, Hospital, HeartPulse, AlertCircle } from 'lucide-react';
 import { Slider } from '@/components/ui/slider';
-import Image from 'next/image';
-
-// Kaiser is only available in these states (matches amerivet.ts regionalAvailability)
-const KAISER_STATES = ['CA', 'WA', 'OR'];
+import { AmeriVetLogo } from '@/components/amerivet-logo';
 
 // Plans from canonical catalog
 const catalogPlans = amerivetBenefits2024_2025.medicalPlans;
@@ -62,7 +59,9 @@ export default function CalculatorPage() {
   const [rxPerMonth, setRxPerMonth] = useState([7]);
   const [surgeries, setSurgeries] = useState([0]);
 
-  const isKaiserAvailable = userState && KAISER_STATES.includes(userState);
+  const isKaiserAvailable = Boolean(
+    userState && KAISER_AVAILABLE_STATE_CODES.includes(userState as (typeof KAISER_AVAILABLE_STATE_CODES)[number]),
+  );
 
   useEffect(() => {
     // Check auth
@@ -120,8 +119,7 @@ export default function CalculatorPage() {
       <header className="sticky top-0 z-10 bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center">
-            <Image
-              src="/brand/amerivet-logo.png"
+            <AmeriVetLogo
               alt="AmeriVet"
               width={40}
               height={40}
@@ -284,4 +282,3 @@ export default function CalculatorPage() {
     </div>
   );
 }
-

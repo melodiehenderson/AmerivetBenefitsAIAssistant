@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { AmeriVetLogo } from '@/components/amerivet-logo';
 import { Loader2, Lock, Eye, EyeOff } from 'lucide-react';
 
 // Centralized API helper
@@ -74,7 +75,7 @@ export default function SubdomainLoginPage() {
         <CardHeader className="text-center">
           {/* Logo Image */}
           <div className="mx-auto mb-4">
-            <img src="/brand/amerivet-logo.png" alt="AmeriVet Logo" className="w-32 h-16 mx-auto object-contain" />
+            <AmeriVetLogo alt="AmeriVet Logo" width={128} height={64} className="w-32 h-16 mx-auto object-contain" />
           </div>
           <CardTitle className="text-2xl font-bold">Benefits AI Assistant</CardTitle>
           <CardDescription>

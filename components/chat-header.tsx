@@ -1,9 +1,9 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import Image from 'next/image';
 import { useWindowSize } from 'usehooks-ts';
 
+import { AmeriVetLogo } from '@/components/amerivet-logo';
 import { ModelSelector } from '@/components/model-selector';
 import { SidebarToggle } from '@/components/sidebar-toggle';
 import { Button } from '@/components/ui/button';
@@ -36,8 +36,7 @@ function PureChatHeader({
       <SidebarToggle />
 
       <div className="hidden md:flex items-center gap-2 pr-2 border-r border-border/60 mr-2">
-        <Image
-          src="/brand/amerivet-logo.png"
+        <AmeriVetLogo
           alt="Amerivet"
           width={112}
           height={32}

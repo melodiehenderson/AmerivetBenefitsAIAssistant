@@ -6,6 +6,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { AmeriVetLogo } from '@/components/amerivet-logo';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ArrowLeft, BarChart3, TrendingUp, MessageSquare, FileText, Calculator as CalcIcon, X } from 'lucide-react';
@@ -121,9 +122,10 @@ export default function AnalyticsPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <img 
-                src="/brand/amerivet-logo.png" 
-                alt="AmeriVet" 
+              <AmeriVetLogo
+                alt="AmeriVet"
+                width={40}
+                height={40}
                 className="w-10 h-10 object-contain"
               />
               <Button 
@@ -323,4 +325,3 @@ export default function AnalyticsPage() {
     </div>
   );
 }
-

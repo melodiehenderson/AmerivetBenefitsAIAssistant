@@ -9,6 +9,7 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { AmeriVetLogo } from '@/components/amerivet-logo';
 import { ArrowLeft, FileText, Download, Search, Calendar } from 'lucide-react';
 
 interface Document {
@@ -82,9 +83,10 @@ export default function DocumentsPage() {
       <header className="sticky top-0 z-10 bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center">
-            <img 
-              src="/brand/amerivet-logo.png" 
-              alt="AmeriVet" 
+            <AmeriVetLogo
+              alt="AmeriVet"
+              width={40}
+              height={40}
               className="w-10 h-10 mr-3 object-contain"
             />
             <Button variant="outline" onClick={() => router.push('/subdomain/dashboard')} className="mr-4">

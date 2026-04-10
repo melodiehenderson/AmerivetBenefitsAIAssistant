@@ -2,10 +2,10 @@
 'use client';
 
 import { useAuth } from '@/context/auth-context';
+import { AmeriVetLogo } from '@/components/amerivet-logo';
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
-import Image from 'next/image';
 
 export default function LoginPage() {
   const { login, account, loading } = useAuth();
@@ -21,8 +21,7 @@ export default function LoginPage() {
     <div className="flex flex-col items-center justify-center min-h-screen">
       <div className="w-full max-w-sm p-8 space-y-8 bg-white rounded-lg shadow-lg">
         <div className="text-center">
-          <Image
-            src="/brand/amerivet-logo.png"
+          <AmeriVetLogo
             alt="Amerivet Logo"
             width={160}
             height={48}

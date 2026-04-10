@@ -9,6 +9,7 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { AmeriVetLogo } from '@/components/amerivet-logo';
 import { 
   MessageSquare, 
   BarChart3, 
@@ -131,7 +132,7 @@ export default function SubdomainDashboardPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center">
-              <img src="/brand/amerivet-logo.png" alt="AmeriVet Logo" className="w-32 h-10 mr-4 object-contain" />
+              <AmeriVetLogo alt="AmeriVet Logo" width={128} height={40} className="w-32 h-10 mr-4 object-contain" />
               <h1 className="text-xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
                 Benefits Assistant
               </h1>
@@ -319,4 +320,3 @@ export default function SubdomainDashboardPage() {
     </div>
   );
 }
-
