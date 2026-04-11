@@ -66,13 +66,13 @@ export function buildMedicalPlanDetailAnswer(query: string, session: Session): s
   if (/\b(urgent\s+care)\b/i.test(queryLower)) {
     return summary.urgentCare
       ? `${summary.displayName}: urgent care is ${summary.urgentCare}.`
-      : `${summary.displayName}: I do not yet have a separate urgent care line item structured.`;
+      : `${summary.displayName}: I do not have a separate urgent care line item in my current summary, so I do not want to guess.`;
   }
 
   if (/\b(emergency\s+room|er)\b/i.test(queryLower)) {
     return summary.emergencyRoom
       ? `${summary.displayName}: emergency room care is ${summary.emergencyRoom}.`
-      : `${summary.displayName}: I do not yet have a separate emergency room line item structured.`;
+      : `${summary.displayName}: I do not have a separate emergency room line item in my current summary, so I do not want to guess.`;
   }
 
   if (/\b(in[- ]network|in network)\b/i.test(queryLower) && /\b(coinsurance|cost[- ]sharing|coverage)\b/i.test(queryLower)) {
@@ -82,7 +82,7 @@ export function buildMedicalPlanDetailAnswer(query: string, session: Session): s
   if (/\b(out[- ]of[- ]network|out of network)\b/i.test(queryLower) && /\b(coinsurance|cost[- ]sharing|coverage)\b/i.test(queryLower)) {
     return summary.outOfNetworkCoinsurance
       ? `${summary.displayName}: out-of-network coverage is ${summary.outOfNetworkCoinsurance}.`
-      : `${summary.displayName}: I do not yet have a separate out-of-network line item structured.`;
+      : `${summary.displayName}: I do not have a separate out-of-network line item in my current summary, so I do not want to guess.`;
   }
 
   if (/\b(network|ppo|hmo)\b/i.test(queryLower) && !/\bcoinsurance\b/i.test(queryLower)) {
@@ -104,18 +104,18 @@ export function buildMedicalPlanDetailAnswer(query: string, session: Session): s
   if (/\b(physical\s+therapy|therapy|pt|outpatient\s+therapy)\b/i.test(queryLower)) {
     return summary.physicalTherapy
       ? `${summary.displayName}: ${summary.physicalTherapy}.`
-      : `${summary.displayName}: I do not yet have a separate physical therapy line item structured.`;
+      : `${summary.displayName}: I do not have a separate physical therapy line item in my current summary, so I do not want to guess.`;
   }
 
   if (/\b(maternity|pregnan|delivery|prenatal|postnatal|baby|birth)\b/i.test(queryLower)) {
     return summary.maternity
       ? `${summary.displayName}: ${summary.maternity}.`
-      : `${summary.displayName}: I do not yet have a dedicated maternity line item structured.`;
+      : `${summary.displayName}: I do not have a dedicated maternity line item in my current summary, so I do not want to guess.`;
   }
 
   if (/\b(rx|prescription|drug|generic|brand|specialty)\b/i.test(queryLower)) {
     const rx = summary.prescriptionDrugs;
-    if (!rx) return `${summary.displayName}: I do not yet have the prescription drug tiers structured.`;
+    if (!rx) return `${summary.displayName}: I do not have the prescription drug tier details in my current summary, so I do not want to guess.`;
 
     if (/\bgeneric\b/i.test(queryLower) && rx.generic) {
       return `${summary.displayName}: generic prescriptions are ${rx.generic}.`;
@@ -129,7 +129,7 @@ export function buildMedicalPlanDetailAnswer(query: string, session: Session): s
     if (/\bspecialty\b/i.test(queryLower) && rx.specialty) {
       return `${summary.displayName}: specialty prescriptions are ${rx.specialty}.`;
     }
-    return `${summary.displayName}: ${rx.note || 'I do not yet have the prescription drug tiers structured in the plan-summary layer.'}`;
+    return `${summary.displayName}: ${rx.note || 'I do not have the prescription drug tier details in my current summary, so I do not want to guess.'}`;
   }
 
   return null;

@@ -126,6 +126,7 @@ export default function SubdomainChatPage() {
     'What is the 401(k) employer match?',
   ];
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const welcomeTriggeredRef = useRef(false);
   const router = useRouter();
   const TEXTAREA_MIN_HEIGHT = 48;
   const TEXTAREA_MAX_HEIGHT = 200;
@@ -149,7 +150,8 @@ export default function SubdomainChatPage() {
   useEffect(() => {
     const triggerWelcome = async () => {
       // Only trigger if no messages yet and authenticated
-      if (messages.length > 0 || !isAuthenticated) return;
+      if (welcomeTriggeredRef.current || messages.length > 0 || !isAuthenticated) return;
+      welcomeTriggeredRef.current = true;
       
       setIsLoading(true);
       try {
@@ -191,6 +193,7 @@ export default function SubdomainChatPage() {
         }
       } catch (err) {
         console.error('Welcome trigger failed:', err);
+        welcomeTriggeredRef.current = false;
       } finally {
         setIsLoading(false);
       }
@@ -199,7 +202,7 @@ export default function SubdomainChatPage() {
     // Small delay to ensure auth check completes
     const timer = setTimeout(triggerWelcome, 500);
     return () => clearTimeout(timer);
-  }, [isAuthenticated]);
+  }, [isAuthenticated, messages.length, sessionId]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -412,9 +415,9 @@ export default function SubdomainChatPage() {
           <div className="flex items-center h-16">
             <AmeriVetLogo
               alt="AmeriVet"
-              width={40}
-              height={40}
-              className="w-10 h-10 mr-3 object-contain"
+              width={28}
+              height={28}
+              className="mr-3 shrink-0"
             />
             <Button
               variant="outline"

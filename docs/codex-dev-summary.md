@@ -8,6 +8,13 @@
 - Wired the QA route to use this lookup before broader continuation/fallback behavior, so prompts like `more info on standard`, `specialist copay on enhanced`, or `generic rx on standard` can resolve through one structured path.
 - Current limitation: Rx tiers and some service-level fields are still intentionally marked as “not yet structured” where the repo does not yet contain trustworthy canonical values. This is deliberate groundwork for a full benefits-summary data ingest rather than another round of hardcoded one-offs.
 
+## User-Facing Cleanup / Logo Correction
+- Files: `components/amerivet-logo.tsx`, `app/subdomain/chat/page.tsx`, `lib/data/amerivet-plan-summaries.ts`, `lib/qa/plan-detail-lookup.ts`.
+- Reverted the shared logo away from the made-up code-rendered approximation and back to the real AmeriVet image mark.
+- Reduced the subdomain chat header logo footprint so it no longer clips adjacent text.
+- Fixed the subdomain chat welcome flow so the auto-welcome only fires once and cannot duplicate itself during fast first-turn interactions.
+- Rewrote internal-sounding fallback phrases like `not yet modeled` / `not yet structured in the plan-summary layer` into user-facing language that simply says the assistant does not want to guess when a detail is missing from the current summary.
+
 ## Table Formatting
 - Files: `components/markdown.tsx`, `tests/components/markdown.test.tsx`, `vitest.config.ts`.
 - Added proper markdown table rendering and a scrollable wrapper for wide benefit tables.
