@@ -171,4 +171,102 @@ describe('qa-v2 transcript replays', () => {
       session,
     );
   });
+
+  it('replays decision guidance into focused follow-ups instead of generic fallback', async () => {
+    await replayTranscript(
+      [
+        {
+          user: "what benefit should i pay attention to first if i'm mostly worried about protecting my family?",
+          mustContain: ['protecting your family', 'life insurance next', 'disability'],
+          mustNotContain: ['Tell me which area you want to focus on next'],
+        },
+        {
+          user: 'routine care',
+          mustContain: ['If routine care is what matters most', 'dental next', 'vision after that'],
+          mustNotContain: ['Tell me which area you want to focus on next'],
+        },
+      ],
+      makeSession({
+        userName: 'Sarah',
+        hasCollectedName: true,
+        userAge: 42,
+        userState: 'FL',
+        dataConfirmed: true,
+        coverageTierLock: 'Employee + Family',
+      }),
+    );
+  });
+
+  it('replays the proactive orthodontia follow-up with an actual braces explanation', async () => {
+    await replayTranscript(
+      [
+        {
+          user: "what's an orthodontia rider?",
+          mustContain: ['orthodontia rider means', 'braces'],
+        },
+        {
+          user: 'yes please - show me what that means for braces',
+          mustContain: ['For braces, the practical question', 'orthodontia copay is $500'],
+          mustNotContain: ['Tell me which area you want to focus on next'],
+        },
+      ],
+      makeSession({
+        userName: 'Sarah',
+        hasCollectedName: true,
+        userAge: 42,
+        userState: 'FL',
+        dataConfirmed: true,
+        currentTopic: 'Dental',
+        completedTopics: ['Dental'],
+      }),
+    );
+  });
+
+  it('replays proactive HSA fit guidance instead of offering an empty follow-up', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'can you tell me about hsa/fsa?',
+          mustContain: ['Health Savings Account', 'Flexible Spending Account'],
+        },
+        {
+          user: 'yes, tell me when an hsa is the better fit',
+          mustContain: ['simplest way to think about HSA versus FSA fit', 'cannot make full HSA contributions'],
+          mustNotContain: ['Tell me which area you want to focus on next'],
+        },
+      ],
+      makeSession({
+        userName: 'Sarah',
+        hasCollectedName: true,
+        userAge: 42,
+        userState: 'FL',
+        dataConfirmed: true,
+        currentTopic: 'HSA/FSA',
+      }),
+    );
+  });
+
+  it('replays proactive supplemental-fit guidance instead of drifting to fallback', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'what is accident/ad&d?',
+          mustContain: ['Accident/AD&D coverage is another supplemental option'],
+        },
+        {
+          user: 'yes, help me think through whether that is worth considering',
+          mustContain: ['usually worth considering', 'another layer beyond the core medical plan'],
+          mustNotContain: ['Tell me which area you want to focus on next'],
+        },
+      ],
+      makeSession({
+        userName: 'Sarah',
+        hasCollectedName: true,
+        userAge: 42,
+        userState: 'FL',
+        dataConfirmed: true,
+        currentTopic: 'Accident/AD&D',
+      }),
+    );
+  });
 });

@@ -125,4 +125,147 @@ describe('qa-v2 engine', () => {
     expect(result.answer).toContain('orthodontia rider means');
     expect(result.answer).toContain('braces');
   });
+
+  it('navigates focused decision-guidance follow-ups without falling back', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Sarah',
+      hasCollectedName: true,
+      userAge: 42,
+      userState: 'FL',
+      dataConfirmed: true,
+      coverageTierLock: 'Employee + Family',
+    });
+
+    const first = await runQaV2Engine({
+      query: "what benefit should i pay attention to first if i'm mostly worried about protecting my family?",
+      session,
+    });
+
+    expect(first.answer).toContain('protecting your family');
+    expect(first.answer).toContain('life insurance next');
+
+    const second = await runQaV2Engine({
+      query: 'routine care',
+      session,
+    });
+
+    expect(second.answer).toContain('If routine care is what matters most');
+    expect(second.answer).not.toContain('Tell me which area you want to focus on next');
+  });
+
+  it('explains braces when it proactively offered that dental follow-up', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Sarah',
+      hasCollectedName: true,
+      userAge: 42,
+      userState: 'FL',
+      dataConfirmed: true,
+      currentTopic: 'Dental',
+      completedTopics: ['Dental'],
+    });
+
+    await runQaV2Engine({
+      query: "what's an orthodontia rider?",
+      session,
+    });
+
+    const braces = await runQaV2Engine({
+      query: 'yes please - show me what that means for braces',
+      session,
+    });
+
+    expect(braces.answer).toContain('For braces, the practical question');
+    expect(braces.answer).toContain('orthodontia copay is $500');
+  });
+
+  it('parses "ok - i\'m 42 in OR" as Oregon, not Indiana', async () => {
+    const session = makeSession({ step: 'start', userName: 'Rhonda', hasCollectedName: true });
+
+    await runQaV2Engine({
+      query: 'tell me about my medical options please',
+      session,
+    });
+
+    const result = await runQaV2Engine({
+      query: "ok - i'm 42 in OR",
+      session,
+    });
+
+    expect(result.answer).toContain('42 in OR');
+    expect(result.answer).not.toContain('42 in IN');
+  });
+
+  it('preserves cost-model intent when a state correction is included in the same message', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Sarah',
+      hasCollectedName: true,
+      userAge: 42,
+      userState: 'FL',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee + Family',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'I actually live in OR. Help me calculate healthcare costs for next year. My household is family4+, usage level is high, and I prefer kaiser network. Please recommend plans and estimate costs.',
+      session,
+    });
+
+    expect(result.answer).toContain('updated cost view');
+    expect(result.answer).toContain('Projected Healthcare Costs for Employee + Family coverage in Oregon');
+    expect(result.answer).not.toContain('updated medical view');
+  });
+
+  it('cashes the proactive HSA-versus-FSA follow-up instead of falling back', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Sarah',
+      hasCollectedName: true,
+      userAge: 42,
+      userState: 'FL',
+      dataConfirmed: true,
+      currentTopic: 'HSA/FSA',
+    });
+
+    await runQaV2Engine({
+      query: 'can you tell me about hsa/fsa?',
+      session,
+    });
+
+    const result = await runQaV2Engine({
+      query: 'yes, tell me when an hsa is the better fit',
+      session,
+    });
+
+    expect(result.answer).toContain('simplest way to think about HSA versus FSA fit');
+    expect(result.answer).toContain('cannot make full HSA contributions');
+  });
+
+  it('cashes the proactive supplemental-worth-it follow-up instead of falling back', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Sarah',
+      hasCollectedName: true,
+      userAge: 42,
+      userState: 'FL',
+      dataConfirmed: true,
+      currentTopic: 'Accident/AD&D',
+    });
+
+    await runQaV2Engine({
+      query: 'what is accident/ad&d?',
+      session,
+    });
+
+    const result = await runQaV2Engine({
+      query: 'yes, help me think through whether that is worth considering',
+      session,
+    });
+
+    expect(result.answer).toContain('usually worth considering');
+    expect(result.answer).toContain('another layer beyond the core medical plan');
+  });
 });

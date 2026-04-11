@@ -248,4 +248,144 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
       },
     ],
   },
+  {
+    id: 'V2-TX-011',
+    category: 'family_protection_guidance_followup',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Sarah',
+      hasCollectedName: true,
+      userAge: 42,
+      userState: 'FL',
+      dataConfirmed: true,
+      coverageTierLock: 'Employee + Family',
+    },
+    turns: [
+      {
+        user: "what benefit should i pay attention to first if i'm mostly worried about protecting my family?",
+        mustContain: ['protecting your family', 'life insurance next', 'disability'],
+        mustNotContain: ['Tell me which area you want to focus on next'],
+      },
+      {
+        user: 'routine care',
+        mustContain: ['If routine care is what matters most', 'dental next', 'vision after that'],
+        mustNotContain: ['Tell me which area you want to focus on next'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-012',
+    category: 'orthodontia_braces_followup',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Sarah',
+      hasCollectedName: true,
+      userAge: 42,
+      userState: 'FL',
+      dataConfirmed: true,
+      currentTopic: 'Dental',
+      completedTopics: ['Dental'],
+    },
+    turns: [
+      {
+        user: "what's an orthodontia rider?",
+        mustContain: ['orthodontia rider means', 'braces'],
+      },
+      {
+        user: 'yes please - show me what that means for braces',
+        mustContain: ['For braces, the practical question', 'orthodontia copay is $500'],
+        mustNotContain: ['Tell me which area you want to focus on next'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-013',
+    category: 'demographic_parser_or_not_in',
+    initialSession: {
+      step: 'start',
+      context: {},
+      userName: 'Rhonda',
+      hasCollectedName: true,
+    },
+    turns: [
+      {
+        user: 'tell me about my medical options please',
+        mustContain: ['age and state'],
+      },
+      {
+        user: "ok - i'm 42 in OR",
+        mustContain: ['42 in OR', 'benefits available to you'],
+        mustNotContain: ['42 in IN'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-014',
+    category: 'state_correction_cost_flow',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Sarah',
+      hasCollectedName: true,
+      userAge: 42,
+      userState: 'FL',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee + Family',
+    },
+    turns: [
+      {
+        user: 'I actually live in OR. Help me calculate healthcare costs for next year. My household is family4+, usage level is high, and I prefer kaiser network. Please recommend plans and estimate costs.',
+        mustContain: ['updated cost view', 'Projected Healthcare Costs for Employee + Family coverage in Oregon'],
+        mustNotContain: ['updated medical view', 'Want to compare plans or switch coverage tiers?'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-015',
+    category: 'hsa_fit_followup',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Sarah',
+      hasCollectedName: true,
+      userAge: 42,
+      userState: 'FL',
+      dataConfirmed: true,
+      currentTopic: 'HSA/FSA',
+    },
+    turns: [
+      {
+        user: 'can you tell me about hsa/fsa?',
+        mustContain: ['Health Savings Account', 'Flexible Spending Account'],
+      },
+      {
+        user: 'yes, tell me when an hsa is the better fit',
+        mustContain: ['simplest way to think about HSA versus FSA fit', 'rollover year to year', 'cannot make full HSA contributions'],
+        mustNotContain: ['Tell me which area you want to focus on next'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-016',
+    category: 'supplemental_fit_followup',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Sarah',
+      hasCollectedName: true,
+      userAge: 42,
+      userState: 'FL',
+      dataConfirmed: true,
+      currentTopic: 'Accident/AD&D',
+    },
+    turns: [
+      {
+        user: 'what is accident/ad&d?',
+        mustContain: ['Accident/AD&D coverage is another supplemental option'],
+      },
+      {
+        user: 'yes, help me think through whether that is worth considering',
+        mustContain: ['usually worth considering', 'active and you want another layer', 'medical plan'],
+        mustNotContain: ['Tell me which area you want to focus on next'],
+      },
+    ],
+  },
 ];

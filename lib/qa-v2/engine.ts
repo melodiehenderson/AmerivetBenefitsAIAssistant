@@ -27,6 +27,8 @@ type EngineResult = {
   metadata?: Record<string, unknown>;
 };
 
+type BenefitPriorityFocus = 'healthcare_costs' | 'family_protection' | 'routine_care';
+
 function buildSessionContext(session: Session) {
   return {
     userName: session.userName || null,
@@ -36,6 +38,8 @@ function buildSessionContext(session: Session) {
     disclaimerShown: session.disclaimerShown || false,
     currentTopic: session.currentTopic || null,
     completedTopics: session.completedTopics || [],
+    pendingGuidancePrompt: session.pendingGuidancePrompt || null,
+    pendingGuidanceTopic: session.pendingGuidanceTopic || null,
     askedForDemographics: session.askedForDemographics || false,
     selectedPlan: session.selectedPlan || null,
     noPricingMode: session.noPricingMode || false,
@@ -60,6 +64,11 @@ function setTopic(session: Session, topic?: string | null) {
   if (!topic) return;
   session.currentTopic = topic;
   markTopicCompleted(session, topic);
+}
+
+function clearPendingGuidance(session: Session) {
+  delete session.pendingGuidancePrompt;
+  delete session.pendingGuidanceTopic;
 }
 
 function buildAllBenefitsMenu(): string {
@@ -101,12 +110,68 @@ function buildPackageGuidance(session: Session, topic?: string | null): string {
 
 function isBenefitDecisionGuidanceRequest(query: string): boolean {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
-  return /\b(worth\s+considering|think\s+through|help\s+me\s+decide|what\s+should\s+i\s+consider|what\s+else\s+should\s+i\s+consider|which\s+of\s+these\s+benefits|which\s+benefit\s+is\s+worth|what\s+should\s+i\s+look\s+at\s+first)\b/i.test(lower)
-    && /\b(benefit|benefits|package|coverage)\b/i.test(lower);
+  if (isCostModelRequest(lower)) return false;
+  return (
+    /\b(worth\s+considering|think\s+through|help\s+me\s+decide|what\s+should\s+i\s+consider|what\s+else\s+should\s+i\s+consider|which\s+of\s+these\s+benefits|which\s+benefit\s+is\s+worth|what\s+should\s+i\s+look\s+at\s+first|pay\s+attention\s+to\s+first)\b/i.test(lower)
+    && /\b(benefit|benefits|package|coverage)\b/i.test(lower)
+  ) || /\bprotecting\s+my\s+family|routine\s+care|healthcare\s+costs\b/i.test(lower);
 }
 
-function buildBenefitDecisionGuidance(session: Session): string {
+function detectBenefitPriorityFocus(query: string): BenefitPriorityFocus | null {
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  if (/\b(family\s+protection|protect(?:ing)?\s+my\s+family|protect\s+my\s+family|income\s+protection)\b/i.test(lower)) {
+    return 'family_protection';
+  }
+  if (/\b(routine\s+care|everyday\s+care|dental\s+and\s+vision|glasses|contacts|cleanings)\b/i.test(lower)) {
+    return 'routine_care';
+  }
+  if (/\b(healthcare\s+costs|medical\s+costs|lowest\s+bills|save\s+money|keep\s+costs\s+down)\b/i.test(lower)) {
+    return 'healthcare_costs';
+  }
+  return null;
+}
+
+function buildBenefitDecisionGuidance(session: Session, focus?: BenefitPriorityFocus | null): string {
   const hasDependents = /employee\s+\+\s+(spouse|child|family)/i.test(session.coverageTierLock || '');
+  if (focus === 'family_protection') {
+    return [
+      `If protecting your family is the top priority, I would focus here first:`,
+      ``,
+      `- Keep medical in place first so a major illness or injury does not become the biggest financial hit`,
+      `- Look at life insurance next so your household has income replacement if something happens to you`,
+      `- Look at disability after that, because protecting your paycheck is often just as important as the death benefit when people rely on your income`,
+      `- Treat dental and vision as secondary unless your household expects regular routine use`,
+      ``,
+      `If you want, I can walk you through life versus disability next and explain which one usually matters more for family protection.`,
+    ].join('\n');
+  }
+
+  if (focus === 'routine_care') {
+    return [
+      `If routine care is what matters most, I would usually narrow it this way:`,
+      ``,
+      `- Start with medical so you choose the right core plan for doctor visits, prescriptions, and unexpected care`,
+      `- Look at dental next if your household expects cleanings, fillings, crowns, or orthodontic use`,
+      `- Look at vision after that if you expect eye exams, glasses, or contacts`,
+      `- Leave life, disability, and supplemental plans for after your everyday care decisions are settled`,
+      ``,
+      `If you want, I can help you decide whether dental or vision is more worth adding first based on what your household actually uses.`,
+    ].join('\n');
+  }
+
+  if (focus === 'healthcare_costs') {
+    return [
+      `If keeping healthcare costs down is the priority, I would narrow it this way:`,
+      ``,
+      `- Focus on medical first, because that is where premium, deductible, and out-of-pocket exposure matter most`,
+      `- Compare Standard HSA versus Enhanced HSA based on how much care you expect to use`,
+      `- Consider dental and vision after that only if you know your household will actually use them enough to justify the extra payroll deduction`,
+      `- Leave supplemental plans for later unless you already know you want extra cash-protection coverage`,
+      ``,
+      `If you want, I can compare the medical tradeoff first and then help you decide whether dental or vision is worth adding on top.`,
+    ].join('\n');
+  }
+
   const guidance = [
     `If you are deciding what is actually worth attention first, I would usually think about your benefits in this order:`,
     ``,
@@ -122,6 +187,79 @@ function buildBenefitDecisionGuidance(session: Session): string {
 
   guidance.push('', `If you want, tell me whether you are optimizing more for healthcare costs, family protection, or routine care, and I’ll narrow down what is most worth considering first.`);
   return guidance.join('\n');
+}
+
+function buildHsaFitGuidance(): string {
+  return [
+    `Here is the simplest way to think about HSA versus FSA fit:`,
+    ``,
+    `- HSA is usually the better fit if you are enrolled in AmeriVet's Standard HSA or Enhanced HSA plan, want long-term tax advantages, and like the idea of rollover year to year instead of losing the unused balance`,
+    `- FSA is usually the better fit if you expect to spend the money within the current plan year and want pre-tax help with eligible expenses without needing an HSA-qualified medical plan`,
+    `- HSA is usually stronger for people who want to build a longer-term healthcare cushion`,
+    `- FSA is usually stronger for people who know they will use the dollars soon and do not need the portability of an HSA`,
+    ``,
+    `The biggest rule to remember is that you generally cannot make full HSA contributions while covered by a general-purpose healthcare FSA.`,
+    ``,
+    `If you want, I can help you think through which one fits better based on whether you are optimizing for long-term savings or near-term medical expenses.`,
+  ].join('\n');
+}
+
+function buildSupplementalFitGuidance(session: Session): string {
+  const topic = session.currentTopic || session.pendingGuidanceTopic || 'Supplemental';
+
+  if (topic === 'Accident/AD&D') {
+    return [
+      `Accident/AD&D is usually worth considering when one of these sounds true:`,
+      ``,
+      `- You want extra cash support if an accidental injury happens, even with medical coverage in place`,
+      `- Your household is active and you want another layer beyond the core medical plan`,
+      `- You would feel better having a supplemental benefit that can help with bills after an accidental injury`,
+      ``,
+      `It is usually less important than choosing the right medical plan, and usually comes after life or disability if family income protection is the bigger concern.`,
+      ``,
+      `If you want, I can compare accident/AD&D versus critical illness in plain language so you can see which one is more relevant for your situation.`,
+    ].join('\n');
+  }
+
+  if (topic === 'Critical Illness') {
+    return [
+      `Critical illness is usually worth considering when you want extra cash support if a major diagnosis happens and you are worried about the non-medical financial ripple effects.`,
+      ``,
+      `People usually give it more attention when:`,
+      `- They have a high deductible medical plan and want extra protection on top`,
+      `- They would struggle with household costs, travel, or childcare during a serious health event`,
+      `- They want a lump-sum style supplemental benefit rather than just relying on medical coverage alone`,
+      ``,
+      `It usually comes after the medical decision and often after life or disability if income protection is the bigger concern for the household.`,
+    ].join('\n');
+  }
+
+  if (topic === 'Disability') {
+    return [
+      `Disability is usually worth considering if missing part of your paycheck would create a bigger financial problem than the medical bills themselves.`,
+      ``,
+      `People usually prioritize it when:`,
+      `- Their household depends on their income`,
+      `- They do not have a large emergency cushion`,
+      `- Protecting ongoing income feels more urgent than adding another routine-care benefit`,
+      ``,
+      `If family protection is the priority, disability often matters sooner than supplemental cash benefits like accident or critical illness.`,
+    ].join('\n');
+  }
+
+  return [
+    `A supplemental benefit is usually worth considering when you already have your core medical decision in place and want an extra layer of cash-support protection.`,
+    ``,
+    `The usual order is: medical first, then life/disability if income protection matters, then supplemental benefits if you want extra protection on top.`,
+    ``,
+    `If you want, I can narrow down whether accident, critical illness, or disability is the most relevant next step for your situation.`,
+  ].join('\n');
+}
+
+function shouldHandleSupplementalFitFollowup(query: string): boolean {
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  return isSimpleAffirmation(query)
+    || /\b(worth\s+considering|is\s+it\s+worth|should\s+i\s+get|when\s+would\s+i\s+want|tell\s+me\s+more|help\s+me\s+think\s+through)\b/i.test(lower);
 }
 
 function benefitTopicFromQuery(query: string): string | null {
@@ -151,8 +289,11 @@ function extractState(message: string): string | null {
     if (pattern.test(lower)) return code;
   }
 
-  const ageThenState = message.match(/\b(1[8-9]|[2-9][0-9])\b[\s,/-]+(AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|IA|ID|IL|IN|KS|KY|LA|MA|MD|ME|MI|MN|MO|MS|MT|NC|ND|NE|NH|NJ|NM|NV|NY|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VA|VT|WA|WI|WV|WY)\b/i);
+  const ageThenState = message.match(/\b(1[8-9]|[2-9][0-9])\b(?:\s*,\s*|\s*\/\s*|\s*-\s*)(AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|IA|ID|IL|IN|KS|KY|LA|MA|MD|ME|MI|MN|MO|MS|MT|NC|ND|NE|NH|NJ|NM|NV|NY|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VA|VT|WA|WI|WV|WY)\b/i);
   if (ageThenState) return ageThenState[2].toUpperCase();
+
+  const exactAgeState = message.match(/^\s*(?:ok(?:ay)?\b[\s,-]*)?(?:i'?m\s*)?(1[8-9]|[2-9][0-9])\s+(AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|IA|ID|IL|IN|KS|KY|LA|MA|MD|ME|MI|MN|MO|MS|MT|NC|ND|NE|NH|NJ|NM|NV|NY|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VA|VT|WA|WI|WV|WY)\s*$/i);
+  if (exactAgeState) return exactAgeState[2].toUpperCase();
 
   const locationCueMatch = message.match(/\b(?:in|from|live in|located in|state is|i'm in|i am in)\s+(AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|IA|ID|IL|IN|KS|KY|LA|MA|MD|ME|MI|MN|MO|MS|MT|NC|ND|NE|NH|NJ|NM|NV|NY|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VA|VT|WA|WI|WV|WY)\b/i);
   if (locationCueMatch) return locationCueMatch[1].toUpperCase();
@@ -246,6 +387,23 @@ function usageLevelFromSession(session: Session): 'low' | 'moderate' | 'high' {
   return usageLevelFromQuery(userMessages);
 }
 
+function coverageTierFromConversation(session: Session): string | null {
+  if (session.coverageTierLock) return session.coverageTierLock;
+
+  const assistantMessages = (session.messages || [])
+    .filter((message) => message.role === 'assistant')
+    .map((message) => message.content)
+    .join('\n');
+
+  const match = assistantMessages.match(/Recommendation for (Employee Only|Employee \+ Spouse|Employee \+ Child\(ren\)|Employee \+ Family) coverage/i);
+  return match ? match[1] : null;
+}
+
+function isOrthodontiaBracesFollowup(query: string): boolean {
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  return /\b(braces|orthodontic|orthodontia|out[- ]of[- ]pocket|what\s+that\s+means)\b/i.test(lower);
+}
+
 function buildBenefitsOverviewReply(session: Session): string {
   const intro = hasDemographics(session)
     ? `Perfect! ${session.userAge} in ${session.userState}.`
@@ -254,6 +412,8 @@ function buildBenefitsOverviewReply(session: Session): string {
 }
 
 function buildTopicReply(session: Session, topic: string, query: string): string {
+  clearPendingGuidance(session);
+
   if (topic === 'Benefits Overview') {
     return buildBenefitsOverviewReply(session);
   }
@@ -292,15 +452,62 @@ function buildTopicReply(session: Session, topic: string, query: string): string
     hrPhone: HR_PHONE,
   });
 
-  if (categoryResponse) return categoryResponse;
+  if (categoryResponse) {
+    if (topic === 'HSA/FSA' && /better fit versus an FSA for your situation/i.test(categoryResponse)) {
+      session.pendingGuidancePrompt = 'hsa_vs_fsa';
+      session.pendingGuidanceTopic = 'HSA/FSA';
+    }
+    if ((topic === 'Accident/AD&D' || topic === 'Critical Illness' || topic === 'Disability')
+      && /worth considering for your situation/i.test(categoryResponse)) {
+      session.pendingGuidancePrompt = 'supplemental_fit';
+      session.pendingGuidanceTopic = topic;
+    }
+    return categoryResponse;
+  }
 
   return `I can help with ${topic.toLowerCase()}, but I want to keep it grounded in the AmeriVet benefits package. Please ask that one a little more specifically and I’ll answer directly.`;
 }
 
 function buildContinuationReply(session: Session, query: string): string | null {
   const lower = query.toLowerCase();
+  const focus = detectBenefitPriorityFocus(query);
 
-  if (!session.currentTopic) return null;
+  if (session.currentTopic === 'HSA/FSA' && (/\bwhat\s+does\s+hsa\s+mean\b|\bwhat\s+is\s+an?\s+hsa\b|\bwhat\s+does\s+fsa\s+mean\b|\bwhat\s+is\s+an?\s+fsa\b/i.test(lower))) {
+    return buildTopicReply(session, 'HSA/FSA', query);
+  }
+
+  if (session.pendingGuidancePrompt === 'benefit_decision' && focus) {
+    session.pendingGuidancePrompt = 'benefit_decision';
+    return buildBenefitDecisionGuidance(session, focus);
+  }
+
+  if (session.pendingGuidancePrompt === 'orthodontia_braces' && isOrthodontiaBracesFollowup(query)) {
+    clearPendingGuidance(session);
+    return [
+      `For braces, the practical question is not just whether orthodontia exists on the plan, but how much of the cost the plan actually helps with.`,
+      ``,
+      `With AmeriVet's dental plan:`,
+      `- Orthodontic coverage is included instead of excluded outright`,
+      `- The orthodontia copay is $500`,
+      `- You would still want to confirm waiting periods, age limits, and any orthodontic maximums in Workday before counting on a specific dollar outcome`,
+      ``,
+      `So the short version is: this plan is more helpful for a household expecting braces than a dental plan with no orthodontic benefit at all, but it still does not mean braces are fully covered.`,
+    ].join('\n');
+  }
+
+  if (session.pendingGuidancePrompt === 'hsa_vs_fsa') {
+    if (isSimpleAffirmation(query) || /\b(hsa|fsa|better fit|which one|long[- ]term savings|near[- ]term medical expenses)\b/i.test(lower)) {
+      clearPendingGuidance(session);
+      return buildHsaFitGuidance();
+    }
+  }
+
+  if (session.pendingGuidancePrompt === 'supplemental_fit' && shouldHandleSupplementalFitFollowup(query)) {
+    clearPendingGuidance(session);
+    return buildSupplementalFitGuidance(session);
+  }
+
+  if (!session.currentTopic && !session.pendingGuidancePrompt) return null;
 
   if (isPackageGuidanceMessage(lower)) {
     return buildPackageGuidance(session, session.currentTopic);
@@ -322,7 +529,7 @@ function buildContinuationReply(session: Session, query: string): string | null 
       /\blikely\s+total\s+annual\s+cost\b|\bcompare\b.*\bstandard\s+hsa\b.*\benhanced\s+hsa\b/i.test(session.lastBotMessage || '')
     ) {
       return pricingUtils.estimateCostProjection({
-        coverageTier: session.coverageTierLock || 'Employee Only',
+        coverageTier: coverageTierFromConversation(session) || 'Employee Only',
         usage: usageLevelFromSession(session),
         state: session.userState || undefined,
         age: session.userAge || undefined,
@@ -342,6 +549,8 @@ function buildContinuationReply(session: Session, query: string): string | null 
   }
 
   if (session.currentTopic === 'Dental' && /\borthodontia\s+rider\b|\brider\b/i.test(lower)) {
+    session.pendingGuidancePrompt = 'orthodontia_braces';
+    session.pendingGuidanceTopic = 'Dental';
     return `An orthodontia rider means the dental plan includes an added orthodontic benefit instead of excluding braces and related treatment entirely. In practical terms, it is the part of the dental coverage that makes orthodontia available under the plan's rules.\n\nFor AmeriVet's dental plan, that means orthodontic coverage is included rather than being a separate standalone dental plan. If you want, I can explain what that means for braces and out-of-pocket costs next.`;
   }
 
@@ -353,13 +562,27 @@ function buildStateCorrectionReply(session: Session, query: string): string | nu
   if (!correction) return null;
 
   session.userState = correction.state;
+  const detectedTopic = benefitTopicFromQuery(query);
+  const normalizedTopic = detectedTopic && detectedTopic !== 'Benefits Overview'
+    ? normalizeBenefitCategory(detectedTopic)
+    : detectedTopic;
 
   if (!session.currentTopic) {
     return `Thanks for the correction — I’ve updated your state to ${correction.state}.`;
   }
 
+  if (isCostModelRequest(query)) {
+    session.currentTopic = 'Medical';
+    return `Thanks for the correction — in ${correction.state}, here’s the updated cost view:\n\n${buildTopicReply(session, 'Medical', query)}`;
+  }
+
+  if (normalizedTopic && normalizedTopic !== 'Benefits Overview' && normalizedTopic !== session.currentTopic) {
+    setTopic(session, normalizedTopic);
+    return `Thanks for the correction — I’ve updated your state to ${correction.state}. Here’s the updated ${normalizedTopic.toLowerCase()} view:\n\n${buildTopicReply(session, normalizedTopic, query)}`;
+  }
+
   if (session.currentTopic === 'Medical') {
-    return `Thanks for the correction — in ${correction.state}, here’s the updated medical view:\n\n${buildTopicReply(session, 'Medical', 'medical options')}`;
+    return `Thanks for the correction — in ${correction.state}, here’s the updated medical view:\n\n${buildTopicReply(session, 'Medical', query)}`;
   }
 
   return `Thanks for the correction — I’ve updated your state to ${correction.state}. That does not materially change the ${session.currentTopic.toLowerCase()} options I just showed, but I’ll use ${correction.state} for any state-specific guidance going forward.`;
@@ -431,19 +654,29 @@ export async function runQaV2Engine(params: {
     return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'demographic-gate-v2' } };
   }
 
-  if (isBenefitDecisionGuidanceRequest(query)) {
-    const answer = buildBenefitDecisionGuidance(session);
-    session.lastBotMessage = answer;
-    session.messages.push({ role: 'assistant', content: answer });
-    return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'benefit-decision-guidance-v2' } };
-  }
-
   if (isCostModelRequest(query) && !detectedTopic) {
     setTopic(session, 'Medical');
     const answer = buildTopicReply(session, 'Medical', query);
     session.lastBotMessage = answer;
     session.messages.push({ role: 'assistant', content: answer });
     return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'cost-model-v2', topic: 'Medical' } };
+  }
+
+  if (isBenefitDecisionGuidanceRequest(query)) {
+    const focus = detectBenefitPriorityFocus(query);
+    const answer = buildBenefitDecisionGuidance(session, focus);
+    session.pendingGuidancePrompt = 'benefit_decision';
+    session.pendingGuidanceTopic = focus || 'general';
+    session.lastBotMessage = answer;
+    session.messages.push({ role: 'assistant', content: answer });
+    return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'benefit-decision-guidance-v2' } };
+  }
+
+  const continuationReply = buildContinuationReply(session, query);
+  if (continuationReply) {
+    session.lastBotMessage = continuationReply;
+    session.messages.push({ role: 'assistant', content: continuationReply });
+    return { answer: continuationReply, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'continuation-v2', topic: session.currentTopic || null } };
   }
 
   const normalizedTopic = detectedTopic && detectedTopic !== 'Benefits Overview'
@@ -456,13 +689,6 @@ export async function runQaV2Engine(params: {
     session.lastBotMessage = answer;
     session.messages.push({ role: 'assistant', content: answer });
     return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'topic-reply-v2', topic: normalizedTopic } };
-  }
-
-  const continuationReply = buildContinuationReply(session, query);
-  if (continuationReply) {
-    session.lastBotMessage = continuationReply;
-    session.messages.push({ role: 'assistant', content: continuationReply });
-    return { answer: continuationReply, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'continuation-v2', topic: session.currentTopic || null } };
   }
 
   if (shouldUseCategoryExplorationIntercept(query, query.toLowerCase(), 'general')) {

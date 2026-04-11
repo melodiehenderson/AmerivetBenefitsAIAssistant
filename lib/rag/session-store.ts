@@ -70,6 +70,8 @@ export type Session = {
   // NEW: Conversation Engine State (Senior Engineer Architecture)
   currentTopic?: string;              // 'Medical', 'Dental', etc. - for topic focus
   completedTopics?: string[];         // Topics user has resolved
+  pendingGuidancePrompt?: 'benefit_decision' | 'orthodontia_braces' | 'hsa_vs_fsa' | 'supplemental_fit';
+  pendingGuidanceTopic?: string;
   selectedPlan?: string;              // Currently selected plan name
   activePersona?: ResponsePersona;     // Current response style persona
   personaUpdatedAt?: number;          // Last time the persona was refreshed
