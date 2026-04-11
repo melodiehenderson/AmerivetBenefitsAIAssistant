@@ -32,6 +32,26 @@ type CategoryResponseArgs = {
   hrPhone: string;
 };
 
+function buildPackageNextStepPrompt(topic: 'Dental' | 'Vision' | 'Life' | 'Disability' | 'Supplemental'): string {
+  if (topic === 'Dental') {
+    return 'If you want, I can show vision quickly too, switch dental coverage tiers, or move on to life, disability, or supplemental benefits next.';
+  }
+
+  if (topic === 'Vision') {
+    return 'If you want, I can show dental quickly too, switch vision coverage tiers, or move on to life, disability, or supplemental benefits next.';
+  }
+
+  if (topic === 'Life') {
+    return 'If you want, I can move on to disability, critical illness, or accident coverage next.';
+  }
+
+  if (topic === 'Disability') {
+    return 'If you want, I can move on to life insurance, critical illness, or accident coverage next.';
+  }
+
+  return 'If you want, I can move on to life insurance, disability, or HSA/FSA guidance next.';
+}
+
 export function buildCoverageTierOptionsResponse(
   session: Session,
   benefit: 'medical' | 'dental' | 'vision' = 'medical',
@@ -117,7 +137,7 @@ export function buildCategoryExplorationResponse({ queryLower, session, coverage
     } else {
       msg += `\nPricing is currently hidden. Say "show pricing" to include premiums.\n`;
     }
-    msg += `\nWant to compare with vision coverage or switch coverage tiers?`;
+    msg += `\n${buildPackageNextStepPrompt('Dental')}`;
     return msg;
   };
 
@@ -136,7 +156,7 @@ export function buildCategoryExplorationResponse({ queryLower, session, coverage
     } else {
       msg += `\nPricing is currently hidden. Say "show pricing" to include premiums.\n`;
     }
-    msg += `\nWant to compare with dental coverage or switch coverage tiers?`;
+    msg += `\n${buildPackageNextStepPrompt('Vision')}`;
     return msg;
   };
 
@@ -229,6 +249,7 @@ export function buildCategoryExplorationResponse({ queryLower, session, coverage
     if (whole?.features?.length) msg += `\nWhole Life features:\n${featureLines(whole)}\n`;
 
     msg += `\nVoluntary life rates are age-banded. For your exact rate and coverage amount, check Workday: ${enrollmentPortalUrl}.`;
+    msg += `\n\n${buildPackageNextStepPrompt('Life')}`;
     return msg;
   };
 
@@ -280,6 +301,7 @@ export function buildCategoryExplorationResponse({ queryLower, session, coverage
     }
 
     msg += `\n\nFor exact rates, covered conditions, waiting periods, and exclusions, please check Workday: ${enrollmentPortalUrl} or contact HR at ${hrPhone}.`;
+    msg += `\n\n${buildPackageNextStepPrompt(wantsDisability ? 'Disability' : 'Supplemental')}`;
     return finalize(msg.trim());
   }
 

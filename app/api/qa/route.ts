@@ -2204,9 +2204,9 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
       const topicLower = session.currentTopic.toLowerCase();
 
       if (topicLower.includes('dental')) {
-        msg = `AmeriVet offers one dental plan: **${amerivetBenefits2024_2025.dentalPlan.name}** (${amerivetBenefits2024_2025.dentalPlan.provider}). There are not multiple dental plan choices to compare.\n\nIf you want, I can help you compare that dental plan with vision, or we can move on to life, disability, or supplemental benefits next.`;
+        msg = `AmeriVet offers one dental plan: **${amerivetBenefits2024_2025.dentalPlan.name}** (${amerivetBenefits2024_2025.dentalPlan.provider}). There are not multiple dental plan choices to compare.\n\nIf you want, I can give you a quick vision summary too, switch dental coverage tiers, or move on to life, disability, or supplemental benefits next.`;
       } else if (topicLower.includes('vision')) {
-        msg = `AmeriVet offers one vision plan: **${amerivetBenefits2024_2025.visionPlan.name}** (${amerivetBenefits2024_2025.visionPlan.provider}). There are not multiple vision plan choices to compare.\n\nIf you want, I can compare vision with dental, switch coverage tiers, or move on to life, disability, or supplemental benefits next.`;
+        msg = `AmeriVet offers one vision plan: **${amerivetBenefits2024_2025.visionPlan.name}** (${amerivetBenefits2024_2025.visionPlan.provider}). There are not multiple vision plan choices to compare.\n\nIf you want, I can give you a quick dental summary too, switch vision coverage tiers, or move on to life, disability, or supplemental benefits next.`;
       } else if (topicLower.includes('critical') || topicLower.includes('accident') || topicLower.includes('disability') || topicLower.includes('supplemental')) {
         msg = buildCategoryExplorationResponse({
           queryLower: session.currentTopic.toLowerCase(),
@@ -2225,19 +2225,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
       }
     }
 
-    // ========================================================================
-    // FOLLOW-UP: YES to compare dental vs vision
-    // ========================================================================
-    const lastAskedCompare = /compare\s+with\s+vision|compare\s+with\s+vision\s+coverage|compare\s+vision/i.test(session.lastBotMessage || '');
     const currentTopicLower = (session.currentTopic || '').toLowerCase();
-    if (deterministicConversationInterceptsEnabled && isYes && lastAskedCompare && currentTopicLower.includes('dental')) {
-      logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] YES-COMPARE-DENTAL-VISION`);
-      const msg = buildDentalVisionComparisonResponse(session);
-      const plainMsg = toPlainAssistantText(msg);
-      session.lastBotMessage = plainMsg;
-      await updateSession(sessionId, session);
-      return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'compare-dental-vision-yes' } });
-    }
 
     // ========================================================================
     // DENTAL/VISION COMPARISON (Deterministic)
@@ -2257,7 +2245,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
     if (compareDentalOnlyRequested) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] COMPARE-DENTAL-ONLY`);
       let msg = `AmeriVet offers one comprehensive dental plan: **${amerivetBenefits2024_2025.dentalPlan.name}** (${amerivetBenefits2024_2025.dentalPlan.provider}).\n\n`;
-      msg += `If you'd like a full “Teeth & Eyes” overview, I can compare it side-by-side with the vision plan.`;
+      msg += `If you'd like, I can give you a quick vision summary too, or we can move on to life, disability, or supplemental benefits next.`;
       const plainMsg = toPlainAssistantText(applyPricingExclusion(session.noPricingMode ? stripPricingDetails(msg) : msg, session.noPricingMode || intent.noPricing));
       session.lastBotMessage = plainMsg;
       await updateSession(sessionId, session);

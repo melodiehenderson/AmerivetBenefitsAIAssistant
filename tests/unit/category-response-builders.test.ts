@@ -94,6 +94,35 @@ describe('category-response-builders', () => {
     expect(response).toContain('Whole Life');
     expect(response).toContain('Unum');
     expect(response).toContain('Allstate');
+    expect(response).toContain('move on to disability, critical illness, or accident coverage next');
+  });
+
+  it('uses forward-looking package guidance after dental instead of pushing a dental-vs-vision comparison', () => {
+    const response = buildCategoryExplorationResponse({
+      queryLower: 'dental please',
+      session: baseSession(),
+      coverageTier: 'Employee Only',
+      enrollmentPortalUrl: 'https://example.com/workday',
+      hrPhone: '888-217-4728',
+    });
+
+    expect(response).toContain('show vision quickly too');
+    expect(response).toContain('move on to life, disability, or supplemental benefits next');
+    expect(response).not.toContain('compare with vision coverage');
+  });
+
+  it('uses forward-looking package guidance after vision instead of pushing a vision-vs-dental comparison', () => {
+    const response = buildCategoryExplorationResponse({
+      queryLower: 'vision please',
+      session: baseSession(),
+      coverageTier: 'Employee Only',
+      enrollmentPortalUrl: 'https://example.com/workday',
+      hrPhone: '888-217-4728',
+    });
+
+    expect(response).toContain('show dental quickly too');
+    expect(response).toContain('move on to life, disability, or supplemental benefits next');
+    expect(response).not.toContain('compare with dental coverage');
   });
 
   it('returns a deterministic disability overview without fabricating detailed policy terms', () => {
