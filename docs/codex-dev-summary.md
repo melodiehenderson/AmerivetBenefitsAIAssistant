@@ -14,6 +14,8 @@
   - added a self-heal pass that clears obviously bad reserved names like `WELCOME` if they were already persisted in an older session
   - simplified the shared logo component back to direct file rendering from the real asset after the attempted header crop logic proved fragile
   - updated the subdomain chat header to use the real logo file at a size that matches the asset’s natural aspect ratio instead of trying to fake a square mark crop in code
+  - added the supplied `Amerivet-Wordmark-Logo.png` as a second canonical brand asset for larger surfaces
+  - updated the shared logo component to support both `mark` and `wordmark` variants so dashboard/login can use the full wordmark while tighter headers keep the compact mark
 
 ## Structured Plan-Summary Layer
 - Files: `lib/data/amerivet-plan-summaries.ts` (new), `lib/qa/plan-detail-lookup.ts` (new), `app/api/qa/route.ts`, `tests/unit/plan-detail-lookup.test.ts` (new).

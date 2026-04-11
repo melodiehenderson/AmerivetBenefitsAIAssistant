@@ -4,10 +4,19 @@ type AmeriVetLogoProps = {
   height?: number;
   className?: string;
   priority?: boolean;
+  variant?: 'mark' | 'wordmark';
 };
 
-const AMERIVET_LOGO_SRC = '/brand/amerivet-logo.png';
-const LOGO_ASPECT_RATIO = 259 / 129;
+const LOGO_SOURCES = {
+  mark: {
+    src: '/brand/amerivet-logo.png',
+    aspectRatio: 259 / 129,
+  },
+  wordmark: {
+    src: '/brand/amerivet-wordmark-logo.png',
+    aspectRatio: 1000 / 300,
+  },
+} as const;
 
 function joinClasses(...parts: Array<string | undefined>) {
   return parts.filter(Boolean).join(' ');
@@ -18,10 +27,12 @@ export function AmeriVetLogo({
   width = 40,
   height,
   className,
+  variant = 'mark',
 }: AmeriVetLogoProps) {
-  const safeHeight = height ?? Math.round(width / LOGO_ASPECT_RATIO);
+  const logo = LOGO_SOURCES[variant];
+  const safeHeight = height ?? Math.round(width / logo.aspectRatio);
   const normalizedWidth =
-    width === safeHeight ? Math.round(safeHeight * LOGO_ASPECT_RATIO) : width;
+    width === safeHeight ? Math.round(safeHeight * logo.aspectRatio) : width;
 
   return (
     <span
@@ -31,7 +42,7 @@ export function AmeriVetLogo({
       title={alt}
     >
       <img
-        src={AMERIVET_LOGO_SRC}
+        src={logo.src}
         alt={alt}
         width={normalizedWidth}
         height={safeHeight}

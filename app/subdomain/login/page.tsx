@@ -75,7 +75,7 @@ export default function SubdomainLoginPage() {
         <CardHeader className="text-center">
           {/* Logo Image */}
           <div className="mx-auto mb-4">
-            <AmeriVetLogo alt="AmeriVet Logo" width={128} height={64} className="w-32 h-16 mx-auto object-contain" />
+            <AmeriVetLogo alt="AmeriVet Logo" variant="wordmark" width={260} height={78} className="w-64 h-[78px] mx-auto object-contain" />
           </div>
           <CardTitle className="text-2xl font-bold">Benefits AI Assistant</CardTitle>
           <CardDescription>
