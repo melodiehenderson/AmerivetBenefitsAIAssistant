@@ -104,7 +104,7 @@ export function buildKaiserAvailabilityFaqAnswer(userState?: string | null): str
 
 export function isLikelyFollowUpMessage(normalizedMessage: string): boolean {
   const normalized = normalizedMessage.trim().replace(/[.!?]+$/g, '');
-  return normalized.length <= 120 && /(^((yes|yes please|yeah|yep|sure|ok|okay|please|go ahead|do it|any workaround\??|what about the waiting period\??|i'?m in\s+[a-z]{2}|my usage is\s+(?:low|moderate|high)|(?:low|moderate|high)\s+usage))$|\b(more|details|difference|compare|comparison|that one|those|it|what about that|which one|go on|continue|expand|break it down|tell me more|workaround|waiting period|coverage tiers?|different coverage tier|switch coverage tiers?|my usage is|low usage|moderate usage|high usage|other choices?|other options?|anything else|what else|any more|other plans?)\b)/i.test(normalized);
+  return normalized.length <= 160 && /(^((yes|yes please|yeah|yep|sure|ok|okay|please|go ahead|do it|any workaround\??|what about the waiting period\??|i'?m in\s+[a-z]{2}|my usage is\s+(?:low|moderate|high)|(?:low|moderate|high)\s+usage))$|\b(more|details|difference|compare|comparison|that one|those|it|what about that|which one|go on|continue|expand|break it down|tell me more|workaround|waiting period|coverage tiers?|different coverage tier|switch coverage tiers?|my usage is|low usage|moderate usage|high usage|other choices?|other options?|anything else|what else|any more|other plans?|what else should i consider|what should i think about|what should i look at next|anything else i should know|what other things should i think about|other things in my benefits package)\b)/i.test(normalized);
 }
 
 export function isTopicContinuationMessage(query: string, currentTopic?: string): boolean {
@@ -117,10 +117,18 @@ export function isTopicContinuationMessage(query: string, currentTopic?: string)
   const hasNoCategoryKeyword = !/\b(medical|dental|vision|life|disability|hsa|fsa|critical|accident|supplemental)\b/i.test(lowerQuery);
   if (!hasNoCategoryKeyword) return false;
 
-  const shortFollowUp = trimmed.length <= 60 && /^(yes please|any workaround\??|what about the waiting period\??|difference|more|details|explain|tell me more|what'?s the difference|go on|elaborate|how so|why|which one|more info|more details|expand|break it down|what coverage tiers? (?:are available)?|coverage tiers?|other choices?|other options?|anything else|what else|any more|other plans?|i'?m in\s+[a-z]{2}|my usage is\s+(?:low|moderate|high)|(?:low|moderate|high)\s+usage)$/i.test(trimmed);
-  const topicContinuation = /\b(difference|what(?:'s|\s+is)\s+available|what\s+(?:options?|plans?|choices?|coverage\s+tiers?)|what\s+(?:do\s+)?(?:i|we)\s+(?:have|get)|available\s+to\s+me|what\s+(?:are|is)\s+(?:the|my)\s+(?:options?|plans?|choices?|coverage\s+tiers?)|tell\s+me\s+(?:about\s+)?(?:the\s+)?(?:plans?|options?|coverage\s+tiers?)|just\s+want\s+to\s+know|want\s+to\s+(?:know|see|understand)|switch\s+coverage\s+tiers?|different\s+coverage\s+tier|other\s+(?:choices?|options?|plans?)|anything\s+else|what\s+else|any\s+more|do\s+(?:i|we)\s+have\s+any\s+other\s+(?:choices?|options?|plans?)|i'?m\s+in\s+[a-z]{2}|my\s+usage\s+is\s+(?:low|moderate|high)|(?:low|moderate|high)\s+usage)\b/i.test(lowerQuery);
+  const shortFollowUp = trimmed.length <= 120 && /^(yes please|any workaround\??|what about the waiting period\??|difference|more|details|explain|tell me more|what'?s the difference|go on|elaborate|how so|why|which one|more info|more details|expand|break it down|what coverage tiers? (?:are available)?|coverage tiers?|other choices?|other options?|anything else|what else|any more|other plans?|what else should i consider|what should i think about|what should i look at next|anything else i should know|what other things should i think about|other things in my benefits package|i'?m in\s+[a-z]{2}|my usage is\s+(?:low|moderate|high)|(?:low|moderate|high)\s+usage)$/i.test(trimmed);
+  const topicContinuation = /\b(difference|what(?:'s|\s+is)\s+available|what\s+(?:options?|plans?|choices?|coverage\s+tiers?)|what\s+(?:do\s+)?(?:i|we)\s+(?:have|get)|available\s+to\s+me|what\s+(?:are|is)\s+(?:the|my)\s+(?:options?|plans?|choices?|coverage\s+tiers?)|tell\s+me\s+(?:about\s+)?(?:the\s+)?(?:plans?|options?|coverage\s+tiers?)|just\s+want\s+to\s+know|want\s+to\s+(?:know|see|understand)|switch\s+coverage\s+tiers?|different\s+coverage\s+tier|other\s+(?:choices?|options?|plans?)|anything\s+else|what\s+else|any\s+more|do\s+(?:i|we)\s+have\s+any\s+other\s+(?:choices?|options?|plans?)|what\s+else\s+should\s+i\s+consider|what\s+should\s+i\s+think\s+about|what\s+should\s+i\s+look\s+at\s+next|anything\s+else\s+i\s+should\s+know|what\s+other\s+things\s+should\s+i\s+think\s+about|other\s+things\s+in\s+my\s+benefits\s+package|i'?m\s+in\s+[a-z]{2}|my\s+usage\s+is\s+(?:low|moderate|high)|(?:low|moderate|high)\s+usage)\b/i.test(lowerQuery);
 
   return shortFollowUp || topicContinuation;
+}
+
+export function isPackageGuidanceMessage(query: string): boolean {
+  return /\b(what\s+else\s+should\s+i\s+consider|what\s+should\s+i\s+think\s+about|what\s+else\s+is\s+there|what\s+should\s+i\s+look\s+at\s+next|other\s+things\s+in\s+my\s+benefits\s+package|what\s+other\s+things.*benefits\s+package|what\s+else\s+do\s+i\s+need\s+to\s+think\s+about|anything\s+else\s+i\s+should\s+know|what\s+else\s+should\s+we\s+look\s+at)\b/i.test(query);
+}
+
+export function isOtherChoicesMessage(query: string): boolean {
+  return /\b(other\s+(?:dental\s+|vision\s+|medical\s+)?choices?|other\s+(?:dental\s+|vision\s+|medical\s+)?options?|other\s+(?:dental\s+|vision\s+|medical\s+)?plans?|anything\s+else|what\s+else|any\s+more)\b/i.test(query);
 }
 
 export function deriveConversationTopic(params: {

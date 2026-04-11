@@ -85,6 +85,8 @@ import {
   checkL1FAQ,
   compileSummary,
   deriveConversationTopic,
+  isOtherChoicesMessage,
+  isPackageGuidanceMessage,
   isLikelyFollowUpMessage,
   isRightwayQuery,
   isSimpleAffirmation,
@@ -2065,10 +2067,8 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
       return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'medical-plan-detail' } });
     }
 
-    const asksOtherChoices =
-      /\b(other\s+(?:dental\s+|vision\s+|medical\s+)?choices?|other\s+(?:dental\s+|vision\s+|medical\s+)?options?|other\s+(?:dental\s+|vision\s+|medical\s+)?plans?|anything\s+else|what\s+else|any\s+more)\b/i.test(lowerQuery);
-    const asksPackageGuidance =
-      /\b(what\s+else\s+should\s+i\s+consider|what\s+should\s+i\s+think\s+about|what\s+else\s+is\s+there|what\s+should\s+i\s+look\s+at\s+next|other\s+things\s+in\s+my\s+benefits\s+package|what\s+other\s+things.*benefits\s+package|what\s+else\s+do\s+i\s+need\s+to\s+think\s+about)\b/i.test(lowerQuery);
+    const asksOtherChoices = isOtherChoicesMessage(lowerQuery);
+    const asksPackageGuidance = isPackageGuidanceMessage(lowerQuery);
     const asksDependentCountChange =
       /\b(does\s+it\s+change|what\s+if)\b/i.test(lowerQuery) &&
       /\b(\d+)\s+(kids?|children)\b/i.test(lowerQuery);

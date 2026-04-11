@@ -6,6 +6,8 @@ import {
   checkL1FAQ,
   deriveConversationTopic,
   isLikelyFollowUpMessage,
+  isOtherChoicesMessage,
+  isPackageGuidanceMessage,
   isSimpleAffirmation,
   isStandaloneMedicalPpoRequest,
   isTopicContinuationMessage,
@@ -195,6 +197,27 @@ describe('conversation scenario regressions', () => {
         normalizedMessage: 'What about the waiting period?',
       }),
     ).toBe('Disability');
+  });
+
+  it('treats package-guidance phrasing as a valid continuation instead of a reset', () => {
+    expect(isPackageGuidanceMessage('what else should i consider?')).toBe(true);
+    expect(isPackageGuidanceMessage('what other things in my benefits package should i think about?')).toBe(true);
+    expect(isLikelyFollowUpMessage('what else should i consider?')).toBe(true);
+    expect(isTopicContinuationMessage('what else should i consider?', 'Vision')).toBe(true);
+    expect(
+      deriveConversationTopic({
+        benefitTypes: [],
+        existingTopic: 'Vision',
+        normalizedMessage: 'what else should i consider?',
+      }),
+    ).toBe('Vision');
+  });
+
+  it('treats broader "other choices" wording as follow-up exploration', () => {
+    expect(isOtherChoicesMessage('are there any other plans?')).toBe(true);
+    expect(isOtherChoicesMessage('do i have any other options?')).toBe(true);
+    expect(isLikelyFollowUpMessage('are there any other plans?')).toBe(true);
+    expect(isTopicContinuationMessage('are there any other plans?', 'Dental')).toBe(true);
   });
 
   it('redirects non-Kaiser states back to HSA comparison instead of forcing Kaiser', () => {

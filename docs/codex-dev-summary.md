@@ -1,5 +1,12 @@
 # Codex Change Summary
 
+## MVP Functional Priority Framework
+- File: `docs/mvp-functional-priorities.md` (new).
+- Codified the current MVP execution priorities into explicit Red / Yellow / Green bands.
+- Important product decision captured there:
+  - branding/logo polish is **yellow**, not green, because broken or missing branding still undermines client confidence even if it is not the top functional blocker
+  - the highest-priority work remains conversation reliability, plan-detail answer coverage, memory stability, and cross-surface truth consistency
+
 ## Name Capture / Welcome Flow Hardening
 - Files: `lib/session-logic.ts`, `tests/unit/session-logic.test.ts`.
 - Relaxed name capture so the assistant accepts very short names and initials like `Q` or `AJ` instead of treating them as a failed onboarding turn.
