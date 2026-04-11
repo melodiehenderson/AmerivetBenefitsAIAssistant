@@ -1,5 +1,15 @@
 # Codex Change Summary
 
+## Name Capture / Welcome Flow Hardening
+- Files: `lib/session-logic.ts`, `tests/unit/session-logic.test.ts`.
+- Relaxed name capture so the assistant accepts very short names and initials like `Q` or `AJ` instead of treating them as a failed onboarding turn.
+- Expanded explicit self-identification parsing so phrases like `actually, I'm Melodie` or `my name is Melodie` can overwrite the previously stored name cleanly.
+- Added focused regression coverage for:
+  - short-name capture
+  - single-letter name capture
+  - explicit rename / correction after a prior name was already stored
+- Intent of this change: reduce the apparent “duplicate welcome” loop that was actually caused by the collector flow not accepting short first-turn name entries.
+
 ## Structured Plan-Summary Layer
 - Files: `lib/data/amerivet-plan-summaries.ts` (new), `lib/qa/plan-detail-lookup.ts` (new), `app/api/qa/route.ts`, `tests/unit/plan-detail-lookup.test.ts` (new).
 - Added the first structured medical plan-summary layer so QA can answer plan-detail questions from explicit fields instead of only one-off intercepts.

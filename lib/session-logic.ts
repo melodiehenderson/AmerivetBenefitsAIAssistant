@@ -2,30 +2,59 @@ import type { Session } from '@/lib/rag/session-store';
 
 const NOT_NAMES = new Set([
   'hello', 'hi', 'hlo', 'hey', 'medical', 'dental', 'vision', 'help', 'benefits',
-  'insurance', 'quote', 'cost', 'ok', 'yes', 'no',
+  'insurance', 'quote', 'cost', 'ok', 'yes', 'no', 'thanks', 'thank', 'pricing',
 ]);
 
-export function extractName(query: string): string | null {
-  const match = query.match(/(?:name is|i'm|i am|call me)\s+([a-zA-Z]{2,15})/i);
-  if (match && !NOT_NAMES.has(match[1].toLowerCase())) return match[1];
-
-  const words = query.trim().split(/\s+/);
-  const firstWord = words[0]?.toLowerCase();
-  if (
-    words.length <= 2 &&
-    firstWord &&
-    !NOT_NAMES.has(firstWord) &&
-    /^[a-zA-Z]{3,}$/.test(words[0]) &&
-    /[aeiou]/i.test(words[0])
-  ) {
-    return words[0].charAt(0).toUpperCase() + words[0].slice(1).toLowerCase();
+function normalizeNameToken(token: string): string {
+  const trimmed = token.trim();
+  if (trimmed.length <= 2 || /^[A-Z]+$/.test(trimmed)) {
+    return trimmed.toUpperCase();
   }
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase();
+}
+
+function normalizeNamePhrase(raw: string): string {
+  return raw
+    .trim()
+    .split(/\s+/)
+    .map(normalizeNameToken)
+    .join(' ');
+}
+
+function isReservedNameToken(token: string): boolean {
+  return NOT_NAMES.has(token.toLowerCase());
+}
+
+export function extractName(query: string): string | null {
+  const explicitMatch = query.match(
+    /(?:actually[, ]+)?(?:my name is|i'm called|i am called|i'm|i am|call me)\s+([a-zA-Z][a-zA-Z' -]{0,30})/i,
+  );
+  if (explicitMatch) {
+    const candidate = explicitMatch[1].trim();
+    const parts = candidate.split(/\s+/);
+    if (parts.every((part) => /^[a-zA-Z][a-zA-Z'-]*$/.test(part) && !isReservedNameToken(part))) {
+      return normalizeNamePhrase(candidate);
+    }
+  }
+
+  const words = query.trim().split(/\s+/).filter(Boolean);
+  const normalizedWords = words.map((word) => word.replace(/[^a-zA-Z'-]/g, ''));
+
+  if (
+    normalizedWords.length >= 1 &&
+    normalizedWords.length <= 2 &&
+    normalizedWords.every((word) => word && /^[a-zA-Z][a-zA-Z'-]*$/.test(word) && !isReservedNameToken(word))
+  ) {
+    return normalizeNamePhrase(normalizedWords.join(' '));
+  }
+
   return null;
 }
 
 export function applyNameCapture(session: Session, query: string) {
   const detectedName = extractName(query);
-  if (detectedName && (!session.userName || session.userName === 'Guest')) {
+  const explicitRename = /(?:actually[, ]+)?(?:my name is|i'm called|i am called|i'm|i am|call me)\s+/i.test(query);
+  if (detectedName && (explicitRename || !session.userName || session.userName === 'Guest')) {
     session.userName = detectedName;
     session.hasCollectedName = true;
   }

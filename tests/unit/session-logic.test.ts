@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyChildCoverageTierLock, ensureNameForDemographics, shouldPromptForName } from '@/lib/session-logic';
+import { applyChildCoverageTierLock, applyNameCapture, ensureNameForDemographics, shouldPromptForName } from '@/lib/session-logic';
 import type { Session } from '@/lib/rag/session-store';
 
 describe('session-logic', () => {
@@ -57,5 +57,38 @@ describe('session-logic', () => {
 
     expect(result.locked).toBe(false);
     expect(result.session.coverageTierLock).toBe('Employee + Child(ren)');
+  });
+
+  it('accepts very short first-turn names like initials', () => {
+    const session: Session = { step: 'start', context: {} };
+
+    const result = applyNameCapture(session, 'AJ');
+
+    expect(result.detectedName).toBe('AJ');
+    expect(result.session.userName).toBe('AJ');
+    expect(result.session.hasCollectedName).toBe(true);
+  });
+
+  it('accepts a single-letter first-turn name entry', () => {
+    const session: Session = { step: 'start', context: {} };
+
+    const result = applyNameCapture(session, 'Q');
+
+    expect(result.detectedName).toBe('Q');
+    expect(result.session.userName).toBe('Q');
+  });
+
+  it('updates the stored name when the user explicitly corrects it later', () => {
+    const session: Session = {
+      step: 'active_chat',
+      context: {},
+      userName: 'AJ',
+      hasCollectedName: true,
+    };
+
+    const result = applyNameCapture(session, "actually, i'm Melodie");
+
+    expect(result.detectedName).toBe('Melodie');
+    expect(result.session.userName).toBe('Melodie');
   });
 });
