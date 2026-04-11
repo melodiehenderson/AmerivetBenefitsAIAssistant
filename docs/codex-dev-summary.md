@@ -16,7 +16,8 @@
   - updated the subdomain chat header to use the real logo file at a size that matches the asset’s natural aspect ratio instead of trying to fake a square mark crop in code
   - added the supplied `Amerivet-Wordmark-Logo.png` as a second canonical brand asset for larger surfaces
   - updated the shared logo component to support both `mark` and `wordmark` variants so dashboard/login can use the full wordmark while tighter headers keep the compact mark
-  - follow-up production fix: switched the shared logo component from raw `/brand/...` URL strings to bundled static imports via `next/image`, so the logos are served through Next's hashed asset pipeline rather than relying on direct `public/brand` delivery
+  - follow-up production fix: replaced both raw `/brand/...` URL usage and failed `next/image` static imports with explicit app routes (`/api/brand/mark`, `/api/brand/wordmark`) that stream the logo files directly from disk
+  - reason: Vercel was failing direct `public/brand` delivery in production, and its build pipeline also rejected these particular PNGs as static `next/image` imports
 
 ## Structured Plan-Summary Layer
 - Files: `lib/data/amerivet-plan-summaries.ts` (new), `lib/qa/plan-detail-lookup.ts` (new), `app/api/qa/route.ts`, `tests/unit/plan-detail-lookup.test.ts` (new).
