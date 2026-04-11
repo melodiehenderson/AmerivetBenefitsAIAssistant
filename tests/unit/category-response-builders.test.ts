@@ -125,6 +125,34 @@ describe('category-response-builders', () => {
     expect(response).not.toContain('compare with dental coverage');
   });
 
+  it('does not re-offer dental after vision when dental was already covered', () => {
+    const response = buildCategoryExplorationResponse({
+      queryLower: 'vision please',
+      session: baseSession({ completedTopics: ['Dental'] }),
+      coverageTier: 'Employee Only',
+      enrollmentPortalUrl: 'https://example.com/workday',
+      hrPhone: '888-217-4728',
+    });
+
+    expect(response).toContain('move on to life, disability, or supplemental benefits next');
+    expect(response).not.toContain('show dental quickly too');
+    expect(response).not.toContain('switch vision coverage tiers');
+  });
+
+  it('does not re-offer vision after dental when vision was already covered', () => {
+    const response = buildCategoryExplorationResponse({
+      queryLower: 'dental please',
+      session: baseSession({ completedTopics: ['Vision'] }),
+      coverageTier: 'Employee Only',
+      enrollmentPortalUrl: 'https://example.com/workday',
+      hrPhone: '888-217-4728',
+    });
+
+    expect(response).toContain('move on to life, disability, or supplemental benefits next');
+    expect(response).not.toContain('show vision quickly too');
+    expect(response).not.toContain('switch dental coverage tiers');
+  });
+
   it('returns a deterministic disability overview without fabricating detailed policy terms', () => {
     const response = buildCategoryExplorationResponse({
       queryLower: 'tell me about disability insurance',

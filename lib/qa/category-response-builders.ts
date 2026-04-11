@@ -32,13 +32,24 @@ type CategoryResponseArgs = {
   hrPhone: string;
 };
 
-function buildPackageNextStepPrompt(topic: 'Dental' | 'Vision' | 'Life' | 'Disability' | 'Supplemental'): string {
+function buildPackageNextStepPrompt(
+  topic: 'Dental' | 'Vision' | 'Life' | 'Disability' | 'Supplemental',
+  session?: Session,
+): string {
+  const completed = new Set(session?.completedTopics || []);
+
   if (topic === 'Dental') {
-    return 'If you want, I can show vision quickly too, switch dental coverage tiers, or move on to life, disability, or supplemental benefits next.';
+    if (completed.has('Vision')) {
+      return 'If you want, we can move on to life, disability, or supplemental benefits next.';
+    }
+    return 'If you want, I can show vision quickly too, or move on to life, disability, or supplemental benefits next.';
   }
 
   if (topic === 'Vision') {
-    return 'If you want, I can show dental quickly too, switch vision coverage tiers, or move on to life, disability, or supplemental benefits next.';
+    if (completed.has('Dental')) {
+      return 'If you want, we can move on to life, disability, or supplemental benefits next.';
+    }
+    return 'If you want, I can show dental quickly too, or move on to life, disability, or supplemental benefits next.';
   }
 
   if (topic === 'Life') {
@@ -137,7 +148,7 @@ export function buildCategoryExplorationResponse({ queryLower, session, coverage
     } else {
       msg += `\nPricing is currently hidden. Say "show pricing" to include premiums.\n`;
     }
-    msg += `\n${buildPackageNextStepPrompt('Dental')}`;
+    msg += `\n${buildPackageNextStepPrompt('Dental', session)}`;
     return msg;
   };
 
@@ -156,7 +167,7 @@ export function buildCategoryExplorationResponse({ queryLower, session, coverage
     } else {
       msg += `\nPricing is currently hidden. Say "show pricing" to include premiums.\n`;
     }
-    msg += `\n${buildPackageNextStepPrompt('Vision')}`;
+    msg += `\n${buildPackageNextStepPrompt('Vision', session)}`;
     return msg;
   };
 
@@ -249,7 +260,7 @@ export function buildCategoryExplorationResponse({ queryLower, session, coverage
     if (whole?.features?.length) msg += `\nWhole Life features:\n${featureLines(whole)}\n`;
 
     msg += `\nVoluntary life rates are age-banded. For your exact rate and coverage amount, check Workday: ${enrollmentPortalUrl}.`;
-    msg += `\n\n${buildPackageNextStepPrompt('Life')}`;
+    msg += `\n\n${buildPackageNextStepPrompt('Life', session)}`;
     return msg;
   };
 
@@ -301,7 +312,7 @@ export function buildCategoryExplorationResponse({ queryLower, session, coverage
     }
 
     msg += `\n\nFor exact rates, covered conditions, waiting periods, and exclusions, please check Workday: ${enrollmentPortalUrl} or contact HR at ${hrPhone}.`;
-    msg += `\n\n${buildPackageNextStepPrompt(wantsDisability ? 'Disability' : 'Supplemental')}`;
+    msg += `\n\n${buildPackageNextStepPrompt(wantsDisability ? 'Disability' : 'Supplemental', session)}`;
     return finalize(msg.trim());
   }
 

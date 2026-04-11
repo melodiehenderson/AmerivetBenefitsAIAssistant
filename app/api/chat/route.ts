@@ -172,6 +172,16 @@ function buildDeterministicChatSession(metadata: Record<string, any> | undefined
   };
 }
 
+function mergeCompletedTopics(existing: unknown, topic?: string | null): string[] | undefined {
+  const normalizedExisting = Array.isArray(existing)
+    ? existing.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    : [];
+
+  if (!topic) return normalizedExisting.length ? normalizedExisting : undefined;
+  if (normalizedExisting.includes(topic)) return normalizedExisting;
+  return [...normalizedExisting, topic];
+}
+
 export const POST = withAuth(undefined, [PERMISSIONS.CHAT_WITH_AI])(async (request: NextRequest) => {
   try {
     // Ensure Authorization header present for tests that bypass auth wrapper
@@ -869,16 +879,20 @@ Which of these would you like to learn about next?`
         })
       : null;
     if (categoryExplorationIntercept) {
+      const nextTopic = primaryCategory || conversationTopic || conversation.metadata?.currentTopic || null;
       return sendAssistantMessage(categoryExplorationIntercept, {
-        currentTopic: primaryCategory || conversationTopic || conversation.metadata?.currentTopic || null,
+        currentTopic: nextTopic,
+        completedTopics: mergeCompletedTopics(conversation.metadata?.completedTopics, nextTopic),
         lastBotMessage: toPlainAssistantText(categoryExplorationIntercept),
       });
     }
 
     const recommendationOverview = buildRecommendationOverview(message, qaSession);
     if (recommendationOverview) {
+      const nextTopic = conversationTopic || conversation.metadata?.currentTopic || null;
       return sendAssistantMessage(recommendationOverview, {
-        currentTopic: conversationTopic || conversation.metadata?.currentTopic || null,
+        currentTopic: nextTopic,
+        completedTopics: mergeCompletedTopics(conversation.metadata?.completedTopics, nextTopic),
         lastBotMessage: toPlainAssistantText(recommendationOverview),
       });
     }

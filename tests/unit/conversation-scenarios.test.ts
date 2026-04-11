@@ -11,6 +11,7 @@ import {
   isPackageGuidanceMessage,
   isSimpleAffirmation,
   isStandaloneMedicalPpoRequest,
+  stripAffirmationLeadIn,
   shouldUseCategoryExplorationIntercept,
   isTopicContinuationMessage,
 } from '@/lib/qa/routing-helpers';
@@ -256,6 +257,17 @@ describe('conversation scenario regressions', () => {
       shouldUseCategoryExplorationIntercept(
         "ok let's do life next",
         "ok let's do life next",
+        'lookup',
+      ),
+    ).toBe(true);
+  });
+
+  it('strips chatty lead-ins before routing a follow-up topic pivot', () => {
+    expect(stripAffirmationLeadIn('oh! okay - yeah - life insurance info')).toBe('life insurance info');
+    expect(
+      shouldUseCategoryExplorationIntercept(
+        'oh! okay - yeah - life insurance info',
+        'oh! okay - yeah - life insurance info',
         'lookup',
       ),
     ).toBe(true);
