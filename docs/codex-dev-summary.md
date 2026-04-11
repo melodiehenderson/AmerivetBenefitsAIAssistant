@@ -1,5 +1,13 @@
 # Codex Change Summary
 
+## Structured Plan-Summary Layer
+- Files: `lib/data/amerivet-plan-summaries.ts` (new), `lib/qa/plan-detail-lookup.ts` (new), `app/api/qa/route.ts`, `tests/unit/plan-detail-lookup.test.ts` (new).
+- Added the first structured medical plan-summary layer so QA can answer plan-detail questions from explicit fields instead of only one-off intercepts.
+- The new summary objects are designed around the kinds of questions employees naturally ask from benefit summary pages: network, deductible, out-of-pocket max, primary care, specialist, urgent care, ER, in/out-of-network coinsurance, therapy, maternity, and prescription tiers.
+- Added a generic medical plan-detail lookup helper that parses the user’s question for both the target plan and the requested field, then returns a deterministic answer when the field is modeled.
+- Wired the QA route to use this lookup before broader continuation/fallback behavior, so prompts like `more info on standard`, `specialist copay on enhanced`, or `generic rx on standard` can resolve through one structured path.
+- Current limitation: Rx tiers and some service-level fields are still intentionally marked as “not yet structured” where the repo does not yet contain trustworthy canonical values. This is deliberate groundwork for a full benefits-summary data ingest rather than another round of hardcoded one-offs.
+
 ## Table Formatting
 - Files: `components/markdown.tsx`, `tests/components/markdown.test.tsx`, `vitest.config.ts`.
 - Added proper markdown table rendering and a scrollable wrapper for wide benefit tables.

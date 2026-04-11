@@ -44,6 +44,7 @@ import {
   getCoverageTierForQuery,
   isKaiserEligibleState,
 } from '@/lib/qa/medical-helpers';
+import { buildMedicalPlanDetailAnswer } from '@/lib/qa/plan-detail-lookup';
 import {
   buildAllPlansEstimateMessage,
   buildMedicalComparisonMessage,
@@ -2048,7 +2049,114 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
       return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'usage-continuation', usage } });
     }
 
-    if (deterministicConversationInterceptsEnabled && (isShortFollowUp || isTopicContinuation) && session.currentTopic) {
+    const medicalPlanDetailAnswer = deterministicConversationInterceptsEnabled
+      ? buildMedicalPlanDetailAnswer(query, session)
+      : null;
+    if (medicalPlanDetailAnswer) {
+      logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] MEDICAL-PLAN-DETAIL`);
+      const plainMsg = toPlainAssistantText(medicalPlanDetailAnswer);
+      session.currentTopic = 'Medical';
+      session.lastBotMessage = plainMsg;
+      await updateSession(sessionId, session);
+      return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'medical-plan-detail' } });
+    }
+
+    const asksOtherChoices =
+      /\b(other\s+(?:dental\s+|vision\s+|medical\s+)?choices?|other\s+(?:dental\s+|vision\s+|medical\s+)?options?|other\s+(?:dental\s+|vision\s+|medical\s+)?plans?|anything\s+else|what\s+else|any\s+more)\b/i.test(lowerQuery);
+    const asksPackageGuidance =
+      /\b(what\s+else\s+should\s+i\s+consider|what\s+should\s+i\s+think\s+about|what\s+else\s+is\s+there|what\s+should\s+i\s+look\s+at\s+next|other\s+things\s+in\s+my\s+benefits\s+package|what\s+other\s+things.*benefits\s+package|what\s+else\s+do\s+i\s+need\s+to\s+think\s+about)\b/i.test(lowerQuery);
+    const asksDependentCountChange =
+      /\b(does\s+it\s+change|what\s+if)\b/i.test(lowerQuery) &&
+      /\b(\d+)\s+(kids?|children)\b/i.test(lowerQuery);
+    const asksCriticalNeedGuidance =
+      ((session.currentTopic || '').toLowerCase().includes('critical') || /\bcritical\s+illness\b/i.test(lowerQuery)) &&
+      /\b(should\s+i|get|need|determine|how\s+should\s+i\s+determine|how\s+do\s+i\s+know|worth\s+it|when\s+would)\b/i.test(lowerQuery);
+    const asksDentalAlternatives =
+      /\bdental\b/i.test(lowerQuery) &&
+      /\b(other|another|different|multiple|more\s+than\s+one|additional)\b/i.test(lowerQuery) &&
+      /\b(plan|plans|option|options|choice|choices)\b/i.test(lowerQuery);
+    const asksPhysicalTherapy =
+      /\bphysical\s+therapy|\boutpatient\s+therapy\b|\bpt\b/i.test(lowerQuery) &&
+      /\bstandard\b/i.test(lowerQuery);
+    const asksMaternityCoverage =
+      /\b(maternity|pregnan|delivery|prenatal|postnatal|baby|birth)\b/i.test(lowerQuery) &&
+      /\b(what'?s?\s+covered|what\s+is\s+covered|covered)\b/i.test(lowerQuery);
+    const asksStandardPregnancyCost =
+      /\bstandard\b/i.test(lowerQuery) &&
+      /\b(pregnan|maternity|delivery|baby|birth)\b/i.test(lowerQuery) &&
+      /\b(how\s+much|what\s+would\s+i\s+be\s+paying|over\s+the\s+course|total\s+cost)\b/i.test(lowerQuery);
+
+    if (deterministicConversationInterceptsEnabled && asksDependentCountChange && (session.currentTopic || '').toLowerCase().includes('medical')) {
+      logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] DEPENDENT-COUNT-TIER`);
+      const msg = `Once you are covering a spouse and at least one child, the medical coverage tier stays **Employee + Family**. Whether you have 1 child or 4 children, it does not move to a different tier.\n\nIf you want, I can compare the Employee + Family medical options in more detail or estimate likely costs for that tier.`;
+      session.lastBotMessage = msg;
+      await updateSession(sessionId, session);
+      return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'dependent-count-tier' } });
+    }
+
+    if (deterministicConversationInterceptsEnabled && asksPackageGuidance) {
+      logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] PACKAGE-GUIDANCE`);
+      const remaining = getRemainingBenefits(session.decisionsTracker || {}).filter((benefit) => benefit !== session.currentTopic);
+      const msg = remaining.length > 0
+        ? `Beyond ${session.currentTopic ? session.currentTopic.toLowerCase() : 'this topic'}, the other parts of your AmeriVet benefits package worth considering are: ${remaining.join(', ')}.\n\nA practical next order is usually medical, dental/vision, life and disability, then supplemental benefits like critical illness or accident, plus HSA/FSA if they fit your situation.\n\nWhich of those would you like to look at next?`
+        : `You have already touched most of the main benefit categories. The last thing I would usually make sure we cover is whether life, disability, supplemental benefits, or HSA/FSA deserve a closer look before you enroll.\n\nWhich one do you want to review next?`;
+      session.lastBotMessage = msg;
+      await updateSession(sessionId, session);
+      return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'package-guidance' } });
+    }
+
+    if (deterministicConversationInterceptsEnabled && asksDentalAlternatives) {
+      logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] DENTAL-ALTERNATIVES`);
+      const msg = `AmeriVet offers one dental plan: **${amerivetBenefits2024_2025.dentalPlan.name}** (${amerivetBenefits2024_2025.dentalPlan.provider}). There are not multiple dental plan options to choose from.\n\nIf you want, I can help you decide whether that dental plan looks worth it for your household, or we can move on to vision, life, disability, or supplemental benefits next.`;
+      session.currentTopic = 'Dental';
+      session.lastBotMessage = msg;
+      await updateSession(sessionId, session);
+      return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'dental-alternatives' } });
+    }
+
+    if (deterministicConversationInterceptsEnabled && asksCriticalNeedGuidance) {
+      logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] CRITICAL-ILLNESS-GUIDANCE`);
+      const msg = `Critical illness coverage tends to make the most sense when one or more of these are true:\n\n- You have a high-deductible medical plan or limited emergency savings\n- A major diagnosis would create real financial strain for your household\n- You want extra cash support for travel, childcare, mortgage, or other non-medical bills during treatment\n- You prefer more financial protection around worst-case health events\n\nIt may be lower priority if your budget is tight, you already have strong savings, and you would rather put those dollars toward medical coverage, an HSA, or disability protection first.\n\nIf you want, I can help you think through it based on your budget, family situation, and risk tolerance.`;
+      session.currentTopic = 'Critical Illness';
+      session.lastBotMessage = msg;
+      await updateSession(sessionId, session);
+      return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'critical-illness-guidance' } });
+    }
+
+    if (deterministicConversationInterceptsEnabled && asksPhysicalTherapy) {
+      logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] PHYSICAL-THERAPY-COVERAGE`);
+      const msg = `I do not have a plan-specific physical therapy copay in the structured AmeriVet data I trust enough to quote as a flat number.\n\nFor the Standard HSA, therapy services are more likely to be treated like medical services that count toward the deductible and then coinsurance, rather than a simple office-visit copay, but you should confirm the exact outpatient therapy benefit in Workday before relying on that.\n\nIf you want, I can still help you compare the Standard vs Enhanced plan more generally for expected medical usage.`;
+      session.lastBotMessage = msg;
+      await updateSession(sessionId, session);
+      return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'physical-therapy-coverage' } });
+    }
+
+    if (deterministicConversationInterceptsEnabled && asksMaternityCoverage) {
+      logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] MATERNITY-COVERAGE`);
+      const msg = `On the Standard HSA, maternity care is generally handled through the plan's normal medical cost-sharing.\n\nThat usually means:\n- Prenatal visits, delivery, and postnatal care count toward your deductible and out-of-pocket maximum\n- Once the deductible is met, coinsurance applies until you reach the out-of-pocket max\n- Preventive care can be treated differently, but the major maternity expenses are typically part of your main medical cost-sharing\n\nIf you want, I can estimate the likely total cost of a typical pregnancy on the Standard plan versus the Enhanced plan for your coverage tier.`;
+      session.currentTopic = 'Medical';
+      session.lastBotMessage = msg;
+      await updateSession(sessionId, session);
+      return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'maternity-coverage' } });
+    }
+
+    if (deterministicConversationInterceptsEnabled && asksStandardPregnancyCost) {
+      logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] STANDARD-MATERNITY-COST`);
+      const coverageTier = session.coverageTierLock || 'Employee + Child(ren)';
+      const rawComparison = pricingUtils.compareMaternityCosts(coverageTier, session.userState || null);
+      const standardBlock = rawComparison.match(/Standard HSA:\n([\s\S]*?)(?:\n\n[A-Z][^\n]*:|\n\nKey considerations)/);
+      let msg = `For a typical pregnancy on the **Standard HSA** at the **${coverageTier}** tier, here is the rough estimate I can give you:\n\n`;
+      if (standardBlock?.[1]) {
+        msg += `${standardBlock[1].trim()}\n\n`;
+      }
+      msg += `These are planning estimates, not a guarantee, but they are a reasonable way to think about the Standard plan's maternity exposure.\n\nIf you want, I can compare that directly with the Enhanced plan and tell you which one gives you better maternity cost protection.`;
+      session.currentTopic = 'Medical';
+      session.lastBotMessage = msg;
+      await updateSession(sessionId, session);
+      return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'standard-maternity-cost' } });
+    }
+
+    if (deterministicConversationInterceptsEnabled && (isShortFollowUp || isTopicContinuation) && session.currentTopic && !asksOtherChoices && !asksPackageGuidance) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] CONTINUATION-HANDLER: topic=${session.currentTopic}, short=${isShortFollowUp}, topicCont=${isTopicContinuation}`);
       // Use topicLabel instead of parroting the user's query
       const topicLabel = session.currentTopic;
@@ -2086,7 +2194,6 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
       return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'portal-link-followup' } });
     }
 
-    const asksOtherChoices = /\b(other\s+choices?|other\s+options?|other\s+plans?|anything\s+else|what\s+else|any\s+more)\b/i.test(lowerQuery);
     if (deterministicConversationInterceptsEnabled && asksOtherChoices && session.currentTopic) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] OTHER-CHOICES: topic=${session.currentTopic}`);
       let msg: string | null = null;
