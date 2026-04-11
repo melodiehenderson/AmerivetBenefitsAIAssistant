@@ -1,3 +1,5 @@
+import Image from 'next/image';
+
 type AmeriVetLogoProps = {
   alt?: string;
   width?: number;
@@ -7,13 +9,16 @@ type AmeriVetLogoProps = {
   variant?: 'mark' | 'wordmark';
 };
 
+import amerivetMark from '@/public/brand/amerivet-logo.png';
+import amerivetWordmark from '@/public/brand/amerivet-wordmark-logo.png';
+
 const LOGO_SOURCES = {
   mark: {
-    src: '/brand/amerivet-logo.png',
+    src: amerivetMark,
     aspectRatio: 259 / 129,
   },
   wordmark: {
-    src: '/brand/amerivet-wordmark-logo.png',
+    src: amerivetWordmark,
     aspectRatio: 1000 / 300,
   },
 } as const;
@@ -41,13 +46,14 @@ export function AmeriVetLogo({
       aria-label={alt}
       title={alt}
     >
-      <img
+      <Image
         src={logo.src}
         alt={alt}
         width={normalizedWidth}
         height={safeHeight}
         className="block h-full w-full object-contain"
         draggable={false}
+        priority={priority}
       />
     </span>
   );
