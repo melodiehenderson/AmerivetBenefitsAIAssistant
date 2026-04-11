@@ -99,6 +99,31 @@ function buildPackageGuidance(session: Session, topic?: string | null): string {
   }
 }
 
+function isBenefitDecisionGuidanceRequest(query: string): boolean {
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  return /\b(worth\s+considering|think\s+through|help\s+me\s+decide|what\s+should\s+i\s+consider|what\s+else\s+should\s+i\s+consider|which\s+of\s+these\s+benefits|which\s+benefit\s+is\s+worth|what\s+should\s+i\s+look\s+at\s+first)\b/i.test(lower)
+    && /\b(benefit|benefits|package|coverage)\b/i.test(lower);
+}
+
+function buildBenefitDecisionGuidance(session: Session): string {
+  const hasDependents = /employee\s+\+\s+(spouse|child|family)/i.test(session.coverageTierLock || '');
+  const guidance = [
+    `If you are deciding what is actually worth attention first, I would usually think about your benefits in this order:`,
+    ``,
+    `- Medical first if you want to manage the biggest healthcare cost risk`,
+    `- Dental and vision next if you expect routine use and want predictable everyday coverage`,
+    `- Life and disability next if protecting family income matters more than routine care`,
+    `- Accident or critical illness last if you want extra cash-support protection on top of your core coverage`,
+  ];
+
+  if (hasDependents) {
+    guidance.push('', `Since you appear to be covering more than just yourself, the most important areas are usually medical first, then life/disability protection, then dental/vision if your household expects to use them.`);
+  }
+
+  guidance.push('', `If you want, tell me whether you are optimizing more for healthcare costs, family protection, or routine care, and I’ll narrow down what is most worth considering first.`);
+  return guidance.join('\n');
+}
+
 function benefitTopicFromQuery(query: string): string | null {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
   if (/\b(medical|health|hsa\s+plan|kaiser|hmo|ppo|standard\s+hsa|enhanced\s+hsa)\b/i.test(lower)) return 'Medical';
@@ -147,6 +172,36 @@ function applyDemographics(session: Session, query: string) {
   }
 
   return { age, state };
+}
+
+function isStateOnlyMessage(query: string): boolean {
+  return Boolean(extractState(query)) && !extractAge(query) && !benefitTopicFromQuery(query);
+}
+
+function buildStateOnlyReply(session: Session, priorState: string | null | undefined, query: string): string | null {
+  const extractedState = extractState(query);
+  if (!extractedState || extractAge(query) || benefitTopicFromQuery(query)) return null;
+
+  if (!priorState) {
+    if (session.userAge) {
+      return `Thanks — I’ll use ${extractedState} for plan availability and pricing going forward.`;
+    }
+    return null;
+  }
+
+  if (priorState === extractedState) {
+    return `I have you in ${extractedState}, and I’ll keep using that for any state-specific guidance.`;
+  }
+
+  if (session.currentTopic === 'Medical') {
+    return `Thanks — I’ve updated your state to ${extractedState}. Here’s the refreshed medical view:\n\n${buildTopicReply(session, 'Medical', 'medical options')}`;
+  }
+
+  if (session.currentTopic) {
+    return `Thanks — I’ve updated your state to ${extractedState}. That doesn’t materially change the ${session.currentTopic.toLowerCase()} options I just showed, but I’ll use ${extractedState} for any state-specific guidance going forward.`;
+  }
+
+  return `Thanks — I’ve updated your state to ${extractedState}, and I’ll use that going forward.`;
 }
 
 function hasDemographics(session: Session) {
@@ -204,10 +259,10 @@ function buildTopicReply(session: Session, topic: string, query: string): string
   }
 
   if (topic === 'Medical') {
+    session.coverageTierLock = getCoverageTierForQuery(query, session);
     if (isCostModelRequest(query)) {
-      const coverageTier = getCoverageTierForQuery(query, session);
       return pricingUtils.estimateCostProjection({
-        coverageTier,
+        coverageTier: session.coverageTierLock,
         usage: usageLevelFromQuery(query),
         network: normalizeNetworkPreference(query),
         state: session.userState || undefined,
@@ -217,6 +272,16 @@ function buildTopicReply(session: Session, topic: string, query: string): string
 
     const recommendation = buildRecommendationOverview(query, session);
     if (recommendation) return recommendation;
+  }
+
+  if (topic === 'HSA/FSA') {
+    const lower = query.toLowerCase();
+    if (/\bwhat\s+does\s+hsa\s+mean\b|\bwhat\s+is\s+an?\s+hsa\b/.test(lower)) {
+      return `HSA stands for **Health Savings Account**.\n\nIt is a tax-advantaged account you can use for eligible healthcare expenses when you are enrolled in an HSA-qualified medical plan like AmeriVet's **Standard HSA** or **Enhanced HSA**.\n\nThe short version is:\n- You contribute pre-tax money\n- The money can be used for eligible medical expenses\n- Unused funds roll over year to year\n- The account stays with you`;
+    }
+    if (/\bwhat\s+does\s+fsa\s+mean\b|\bwhat\s+is\s+an?\s+fsa\b/.test(lower)) {
+      return `FSA stands for **Flexible Spending Account**.\n\nIt lets you set aside pre-tax dollars for eligible healthcare expenses, but it follows different rollover and ownership rules than an HSA.\n\nThe short version is:\n- Contributions come out pre-tax\n- It can be used for eligible healthcare expenses\n- It is generally tied to the employer plan year\n- Unused funds usually have stricter rollover rules than an HSA`;
+    }
   }
 
   const categoryResponse = buildCategoryExplorationResponse({
@@ -325,6 +390,7 @@ export async function runQaV2Engine(params: {
     return { answer: stateCorrectionReply, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'state-correction-v2' } };
   }
 
+  const priorState = session.userState || null;
   if (!session.userName && query.trim() && !extractAge(query) && !extractState(query) && !benefitTopicFromQuery(query)) {
     session.userName = query.trim().split(/\s+/)[0].replace(/[^A-Za-z'-]/g, '') || 'there';
     session.hasCollectedName = true;
@@ -336,6 +402,15 @@ export async function runQaV2Engine(params: {
 
   const { age, state } = applyDemographics(session, query);
   const detectedTopic = benefitTopicFromQuery(query);
+
+  if (isStateOnlyMessage(query) && hasDemographics(session)) {
+    const stateOnlyReply = buildStateOnlyReply(session, priorState, query);
+    if (stateOnlyReply) {
+      session.lastBotMessage = stateOnlyReply;
+      session.messages.push({ role: 'assistant', content: stateOnlyReply });
+      return { answer: stateOnlyReply, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'state-only-v2' } };
+    }
+  }
 
   if (age || state) {
     session.dataConfirmed = hasDemographics(session);
@@ -354,6 +429,13 @@ export async function runQaV2Engine(params: {
     session.lastBotMessage = answer;
     session.messages.push({ role: 'assistant', content: answer });
     return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'demographic-gate-v2' } };
+  }
+
+  if (isBenefitDecisionGuidanceRequest(query)) {
+    const answer = buildBenefitDecisionGuidance(session);
+    session.lastBotMessage = answer;
+    session.messages.push({ role: 'assistant', content: answer });
+    return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'benefit-decision-guidance-v2' } };
   }
 
   if (isCostModelRequest(query) && !detectedTopic) {
