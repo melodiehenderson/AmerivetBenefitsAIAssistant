@@ -109,6 +109,7 @@ export default function SubdomainChatPage() {
     hasCollectedName?: boolean;
     disclaimerShown?: boolean;
     currentTopic?: string;
+    completedTopics?: string[];
     askedForDemographics?: boolean;
     selectedPlan?: string;
     noPricingMode?: boolean;
@@ -177,11 +178,10 @@ export default function SubdomainChatPage() {
             });
           }
           if (data.sessionContext) {
-            setCachedContext({
-              userName: data.sessionContext.userName,
-              userAge: data.sessionContext.userAge,
-              userState: data.sessionContext.userState,
-            });
+            setCachedContext((prev) => ({
+              ...prev,
+              ...data.sessionContext,
+            }));
           }
           const welcomeMessage: Message = {
             id: 'welcome-' + Date.now(),

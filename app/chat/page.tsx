@@ -39,6 +39,7 @@ function ChatPageContent() {
     hasCollectedName?: boolean;
     disclaimerShown?: boolean;
     currentTopic?: string;
+    completedTopics?: string[];
     askedForDemographics?: boolean;
     selectedPlan?: string;
     noPricingMode?: boolean;

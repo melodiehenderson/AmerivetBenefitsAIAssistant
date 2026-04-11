@@ -903,6 +903,10 @@ function buildShortCategoryAnswer(
 function buildSessionContext(session: Session) {
   return {
     userName: session.userName || null,
+    userAge: session.userAge || null,
+    userState: session.userState || null,
+    currentTopic: session.currentTopic || null,
+    coverageTierLock: session.coverageTierLock || null,
     dataConfirmed: session.dataConfirmed || false,
     noPricingMode: session.noPricingMode || false,
     decisionsTracker: session.decisionsTracker || {},
@@ -910,6 +914,14 @@ function buildSessionContext(session: Session) {
     lifeEvents: session.lifeEvents || [],
     lastDetectedLocationChange: session.lastDetectedLocationChange || null
   };
+}
+
+function markTopicCompleted(session: Session, topic?: string | null) {
+  if (!topic) return;
+  if (!session.completedTopics) session.completedTopics = [];
+  if (!session.completedTopics.includes(topic)) {
+    session.completedTopics.push(topic);
+  }
 }
 
 type IntentDomainRoute = 'policy' | 'pricing' | 'general';
@@ -1047,6 +1059,14 @@ export async function POST(req: NextRequest) {
       if (clientContext.userState && !session.userState) {
         session.userState = clientContext.userState;
         logger.debug(`[QA] Restored userState from client context`);
+      }
+      if (clientContext.currentTopic && !session.currentTopic) {
+        session.currentTopic = clientContext.currentTopic;
+        logger.debug(`[QA] Restored currentTopic from client context: ${clientContext.currentTopic}`);
+      }
+      if (Array.isArray(clientContext.completedTopics) && (!session.completedTopics || session.completedTopics.length === 0)) {
+        session.completedTopics = clientContext.completedTopics.filter((item: unknown): item is string => typeof item === 'string' && item.trim().length > 0);
+        logger.debug(`[QA] Restored completedTopics from client context: ${session.completedTopics.join(', ')}`);
       }
       // Sanitize string "undefined"/"null" values that can appear if client persisted bad state.
       // Must run HERE ΓÇö before any KAISER_STATES.has(session.userState) checks downstream.
@@ -2169,6 +2189,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
       if (topicResponse) {
         // Prepend the summaryMarkdown to the deterministic response
         const plainMsg = toPlainAssistantText(`${summaryMarkdown}\n\n${topicResponse}`);
+        markTopicCompleted(session, session.currentTopic);
         session.lastBotMessage = plainMsg;
         await updateSession(sessionId, session);
         return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'continuation-handler', topic: session.currentTopic } });
@@ -2204,9 +2225,13 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
       const topicLower = session.currentTopic.toLowerCase();
 
       if (topicLower.includes('dental')) {
-        msg = `AmeriVet offers one dental plan: **${amerivetBenefits2024_2025.dentalPlan.name}** (${amerivetBenefits2024_2025.dentalPlan.provider}). There are not multiple dental plan choices to compare.\n\nIf you want, I can give you a quick vision summary too, switch dental coverage tiers, or move on to life, disability, or supplemental benefits next.`;
+        msg = session.completedTopics?.includes('Vision')
+          ? `AmeriVet offers one dental plan: **${amerivetBenefits2024_2025.dentalPlan.name}** (${amerivetBenefits2024_2025.dentalPlan.provider}). There are not multiple dental plan choices to compare.\n\nIf you want, we can move on to life, disability, or supplemental benefits next.`
+          : `AmeriVet offers one dental plan: **${amerivetBenefits2024_2025.dentalPlan.name}** (${amerivetBenefits2024_2025.dentalPlan.provider}). There are not multiple dental plan choices to compare.\n\nIf you want, I can give you a quick vision summary too, or we can move on to life, disability, or supplemental benefits next.`;
       } else if (topicLower.includes('vision')) {
-        msg = `AmeriVet offers one vision plan: **${amerivetBenefits2024_2025.visionPlan.name}** (${amerivetBenefits2024_2025.visionPlan.provider}). There are not multiple vision plan choices to compare.\n\nIf you want, I can give you a quick dental summary too, switch vision coverage tiers, or move on to life, disability, or supplemental benefits next.`;
+        msg = session.completedTopics?.includes('Dental')
+          ? `AmeriVet offers one vision plan: **${amerivetBenefits2024_2025.visionPlan.name}** (${amerivetBenefits2024_2025.visionPlan.provider}). There are not multiple vision plan choices to compare.\n\nIf you want, we can move on to life, disability, or supplemental benefits next.`
+          : `AmeriVet offers one vision plan: **${amerivetBenefits2024_2025.visionPlan.name}** (${amerivetBenefits2024_2025.visionPlan.provider}). There are not multiple vision plan choices to compare.\n\nIf you want, I can give you a quick dental summary too, or we can move on to life, disability, or supplemental benefits next.`;
       } else if (topicLower.includes('critical') || topicLower.includes('accident') || topicLower.includes('disability') || topicLower.includes('supplemental')) {
         msg = buildCategoryExplorationResponse({
           queryLower: session.currentTopic.toLowerCase(),
@@ -2323,6 +2348,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
         logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] CATEGORY-EXPLORATION: ${normalizeBenefitCategory(lowerQuery)}`);
         // Track current topic so "no thanks" / "skip" can decline it
         session.currentTopic = normalizeBenefitCategory(lowerQuery);
+        markTopicCompleted(session, session.currentTopic);
       const plainCategoryResponse = toPlainAssistantText(applyPricingExclusion(categoryExplorationIntercept, session.noPricingMode || intent.noPricing));
         session.lastBotMessage = plainCategoryResponse;
         await updateSession(sessionId, session);
