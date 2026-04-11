@@ -31,6 +31,6 @@ describe('buildMedicalPlanDetailAnswer', () => {
 
   it('returns rx note when rx tiers are not yet structured', () => {
     const answer = buildMedicalPlanDetailAnswer('what is the generic rx cost on the standard plan?', baseSession);
-    expect(answer).toContain('Rx tier breakdown');
+    expect(answer).toContain('do not want to guess');
   });
 });
