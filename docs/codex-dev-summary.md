@@ -9,6 +9,10 @@
   - single-letter name capture
   - explicit rename / correction after a prior name was already stored
 - Intent of this change: reduce the apparent “duplicate welcome” loop that was actually caused by the collector flow not accepting short first-turn name entries.
+- Follow-up fix:
+  - blocked internal trigger tokens like `__WELCOME__` from ever being treated as user names
+  - added a self-heal pass that clears obviously bad reserved names like `WELCOME` if they were already persisted in an older session
+  - updated the subdomain chat header to use a cropped mark-only view of the real AmeriVet logo asset so the narrow header slot no longer tries to squeeze the full wordmark
 
 ## Structured Plan-Summary Layer
 - Files: `lib/data/amerivet-plan-summaries.ts` (new), `lib/qa/plan-detail-lookup.ts` (new), `app/api/qa/route.ts`, `tests/unit/plan-detail-lookup.test.ts` (new).

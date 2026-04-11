@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyChildCoverageTierLock, applyNameCapture, ensureNameForDemographics, shouldPromptForName } from '@/lib/session-logic';
+import { applyChildCoverageTierLock, applyNameCapture, ensureNameForDemographics, sanitizeSessionName, shouldPromptForName } from '@/lib/session-logic';
 import type { Session } from '@/lib/rag/session-store';
 
 describe('session-logic', () => {
@@ -78,6 +78,25 @@ describe('session-logic', () => {
     expect(result.session.userName).toBe('Q');
   });
 
+  it('does not capture welcome copy as the user name', () => {
+    const session: Session = { step: 'start', context: {} };
+
+    const result = applyNameCapture(session, 'Welcome');
+
+    expect(result.detectedName).toBeNull();
+    expect(result.session.userName).toBeUndefined();
+    expect(result.session.hasCollectedName).toBeUndefined();
+  });
+
+  it('does not capture the internal welcome trigger token as a name', () => {
+    const session: Session = { step: 'start', context: {} };
+
+    const result = applyNameCapture(session, '__WELCOME__');
+
+    expect(result.detectedName).toBeNull();
+    expect(result.session.userName).toBeUndefined();
+  });
+
   it('updates the stored name when the user explicitly corrects it later', () => {
     const session: Session = {
       step: 'active_chat',
@@ -90,5 +109,19 @@ describe('session-logic', () => {
 
     expect(result.detectedName).toBe('Melodie');
     expect(result.session.userName).toBe('Melodie');
+  });
+
+  it('self-heals a bad reserved stored name like WELCOME', () => {
+    const session: Session = {
+      step: 'awaiting_demographics',
+      context: {},
+      userName: 'WELCOME',
+      hasCollectedName: true,
+    };
+
+    sanitizeSessionName(session);
+
+    expect(session.userName).toBeUndefined();
+    expect(session.hasCollectedName).toBe(false);
   });
 });

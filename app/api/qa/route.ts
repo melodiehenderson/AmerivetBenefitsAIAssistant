@@ -21,7 +21,7 @@ import { verifyNumericalIntegrity } from '@/lib/rag/grounding-audit';
 import { pipelineLogger, createTrace } from '@/lib/services/pipeline-logger';
 import { buildPersonaDirective, detectPersona, type ResponsePersona } from '@/lib/response-persona';
 import { digestIntent, detectIntentDomain, type IntentDomain } from '@/lib/intent-digest';
-import { applyChildCoverageTierLock, applyNameCapture, applySelfHealGuest, ensureNameForDemographics, shouldPromptForName } from '@/lib/session-logic';
+import { applyChildCoverageTierLock, applyNameCapture, applySelfHealGuest, ensureNameForDemographics, sanitizeSessionName, shouldPromptForName } from '@/lib/session-logic';
 
 import { IRS_2026 } from '@/lib/data/irs-limits-2026';
 import {
@@ -1072,6 +1072,8 @@ export async function POST(req: NextRequest) {
         session.step = 'active_chat';
       }
     }
+
+    sanitizeSessionName(session);
     
     // STEP 0: Persist salary from current message so STD math works across turns
     // (session.userSalary is injected into Session_Metadata on every request)
@@ -1089,7 +1091,9 @@ export async function POST(req: NextRequest) {
     const intent = classifyInput(query);
     logger.info(`[REQ:${reqId}][STEP-2 INTENT] continuation=${intent.isContinuation} topic=${intent.isTopic} demographics=${intent.isDemographics} hasAge=${intent.hasAge} hasState=${intent.hasState} stateCode=${intent.stateCode||'none'} noPricing=${intent.noPricing} familyTier=${intent.familyTierSignal} asksPPO=${intent.asksPPOPlan}`);
 
-    const nameCapture = applyNameCapture(session, query);
+    const nameCapture = query === '__WELCOME__'
+      ? { session, detectedName: null }
+      : applyNameCapture(session, query);
     if (nameCapture.detectedName) {
       await updateSession(sessionId, session);
       logger.info(`[REQ:${reqId}][STEP-2 NAME] Captured name: ${nameCapture.detectedName}`);

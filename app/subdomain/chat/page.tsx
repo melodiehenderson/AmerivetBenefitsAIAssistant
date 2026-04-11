@@ -417,7 +417,8 @@ export default function SubdomainChatPage() {
               alt="AmeriVet"
               width={28}
               height={28}
-              className="mr-3 shrink-0"
+              variant="mark"
+              className="mr-3 shrink-0 rounded-sm"
             />
             <Button
               variant="outline"

@@ -3,6 +3,7 @@ import type { Session } from '@/lib/rag/session-store';
 const NOT_NAMES = new Set([
   'hello', 'hi', 'hlo', 'hey', 'medical', 'dental', 'vision', 'help', 'benefits',
   'insurance', 'quote', 'cost', 'ok', 'yes', 'no', 'thanks', 'thank', 'pricing',
+  'welcome', 'assistant', 'amerivet', 'plans', 'plan', 'state', 'age',
 ]);
 
 function normalizeNameToken(token: string): string {
@@ -26,6 +27,11 @@ function isReservedNameToken(token: string): boolean {
 }
 
 export function extractName(query: string): string | null {
+  const trimmedQuery = query.trim();
+  if (!trimmedQuery || /^__.+__$/.test(trimmedQuery)) {
+    return null;
+  }
+
   const explicitMatch = query.match(
     /(?:actually[, ]+)?(?:my name is|i'm called|i am called|i'm|i am|call me)\s+([a-zA-Z][a-zA-Z' -]{0,30})/i,
   );
@@ -59,6 +65,24 @@ export function applyNameCapture(session: Session, query: string) {
     session.hasCollectedName = true;
   }
   return { session, detectedName };
+}
+
+export function sanitizeSessionName(session: Session) {
+  const currentName = session.userName?.trim();
+  if (!currentName) return session;
+
+  const parts = currentName.split(/\s+/).filter(Boolean);
+  const invalid =
+    parts.length === 0 ||
+    parts.some((part) => isReservedNameToken(part)) ||
+    /^__.+__$/.test(currentName);
+
+  if (invalid) {
+    session.userName = undefined;
+    session.hasCollectedName = false;
+  }
+
+  return session;
 }
 
 export function ensureNameForDemographics(session: Session) {
