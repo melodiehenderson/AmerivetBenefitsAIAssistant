@@ -1065,8 +1065,9 @@ export async function POST(req: NextRequest) {
         logger.debug(`[QA] Restored currentTopic from client context: ${clientContext.currentTopic}`);
       }
       if (Array.isArray(clientContext.completedTopics) && (!session.completedTopics || session.completedTopics.length === 0)) {
-        session.completedTopics = clientContext.completedTopics.filter((item: unknown): item is string => typeof item === 'string' && item.trim().length > 0);
-        logger.debug(`[QA] Restored completedTopics from client context: ${session.completedTopics.join(', ')}`);
+        const restoredCompletedTopics = clientContext.completedTopics.filter((item: unknown): item is string => typeof item === 'string' && item.trim().length > 0);
+        session.completedTopics = restoredCompletedTopics;
+        logger.debug(`[QA] Restored completedTopics from client context: ${restoredCompletedTopics.join(', ')}`);
       }
       // Sanitize string "undefined"/"null" values that can appear if client persisted bad state.
       // Must run HERE ΓÇö before any KAISER_STATES.has(session.userState) checks downstream.
