@@ -75,8 +75,8 @@ export function normalizeBenefitCategory(keyword: string): string {
   if (/life/.test(lower)) return 'Life Insurance';
   if (/disability|std|ltd/.test(lower)) return 'Disability';
   if (/critical/.test(lower)) return 'Critical Illness';
-  if (/accident|ad&d/.test(lower)) return 'Accident/AD&D';
-  if (/hsa|fsa/.test(lower)) return 'HSA/FSA';
+  if (/accident|ad&d|ad\/d/.test(lower)) return 'Accident/AD&D';
+  if (/hsa\s*\/\s*fsa|hsa|fsa/.test(lower)) return 'HSA/FSA';
   return keyword.charAt(0).toUpperCase() + keyword.slice(1);
 }
 
@@ -308,11 +308,11 @@ export function shouldUseCategoryExplorationIntercept(query: string, lowerQuery:
   }
 
   const trimmed = normalizedQuery;
-  const directCategory = /^(medical|medical\s+please|medical\s+next|health|health\s+please|dental|dental\s+please|dental\s+next|vision|vision\s+please|vision\s+next|life(?:\s+insurance)?|life(?:\s+insurance)?\s+please|life(?:\s+insurance)?\s+next|life(?:\s+insurance)?\s+info|disability|disability\s+please|disability\s+next|disability\s+info|hsa|fsa|critical(?:\s+illness)?|accident|supplemental|benefits|benefits\s+overview|overview|family\s+coverage|family\s+coverage\s+options|what\s+benefits\s+do\s+i\s+have|what\s+are\s+my\s+options|show\s+me\s+benefits|i'?d\s+like\s+to\s+see\s+my\s+(medical|health|dental|vision)\s+options)$/i;
-  const lightExplore = /^(tell\s+me\s+about|show\s+me|overview\s+of|explain|what\s+can\s+you\s+tell\s+me\s+about|show\s+me\s+what\s+i\s+can\s+get\s+for|what\s+can\s+i\s+get\s+for|let'?s\s+do|let'?s\s+look\s+at|i\s+want\s+to\s+know\s+about)\s+(medical|health|dental|vision|life(?:\s+insurance)?|disability|hsa|fsa|critical(?:\s+illness)?|accident|supplemental|benefits)\b(?:\s+next|(?:\s+info)?)?/i;
-  const conversationalExplore = /\b(?:what\s+about|let'?s\s+(?:\w+\s+){0,2}(?:do|look\s+at|talk\s+about|go\s+(?:over|through)|explore|discuss|review|see)|what(?:'s|\s+is)\s+available\s+(?:for|in|under|with)|i\s+want\s+to\s+(?:know|learn|see|hear|understand)\s+about|how\s+about|talk\s+about|interested\s+in|show\s+me\s+what\s+i\s+can\s+get\s+for)\s+(?:the\s+)?(?:my\s+)?(medical|health|dental|vision|life(?:\s+insurance)?|disability|hsa|fsa|critical(?:\s+illness)?|accident|supplemental|benefits|family\s+coverage(?:\s+options)?)\b/i;
+  const directCategory = /^(medical|medical\s+please|medical\s+next|health|health\s+please|dental|dental\s+please|dental\s+next|vision|vision\s+please|vision\s+next|life(?:\s+insurance)?|life(?:\s+insurance)?\s+please|life(?:\s+insurance)?\s+next|life(?:\s+insurance)?\s+info|disability|disability\s+please|disability\s+next|disability\s+info|hsa|fsa|hsa\s*\/\s*fsa|critical(?:\s+illness)?|accident|accident\s*\/\s*ad&d|ad&d|supplemental|benefits|benefits\s+overview|overview|family\s+coverage|family\s+coverage\s+options|what\s+benefits\s+do\s+i\s+have|what\s+are\s+my\s+options|show\s+me\s+benefits|i'?d\s+like\s+to\s+see\s+my\s+(medical|health|dental|vision)\s+options)$/i;
+  const lightExplore = /^(tell\s+me\s+about|show\s+me|overview\s+of|explain|what\s+can\s+you\s+tell\s+me\s+about|show\s+me\s+what\s+i\s+can\s+get\s+for|what\s+can\s+i\s+get\s+for|let'?s\s+do|let'?s\s+look\s+at|i\s+want\s+to\s+know\s+about|can\s+you\s+tell\s+me\s+about|what\s+does|what\s+is)\s+(medical|health|dental|vision|life(?:\s+insurance)?|disability|hsa(?:\s*\/\s*fsa)?|fsa|critical(?:\s+illness)?|accident(?:\s*\/\s*ad&d)?|ad&d|supplemental|benefits)\b(?:\s+next|(?:\s+info)?|(?:\s+mean)?)?/i;
+  const conversationalExplore = /\b(?:what\s+about|let'?s\s+(?:\w+\s+){0,2}(?:do|look\s+at|talk\s+about|go\s+(?:over|through)|explore|discuss|review|see)|what(?:'s|\s+is)\s+available\s+(?:for|in|under|with)|i\s+want\s+to\s+(?:know|learn|see|hear|understand)\s+about|how\s+about|talk\s+about|interested\s+in|show\s+me\s+what\s+i\s+can\s+get\s+for|can\s+you\s+tell\s+me\s+about|what\s+does|what\s+is)\s+(?:the\s+)?(?:my\s+)?(medical|health|dental|vision|life(?:\s+insurance)?|disability|hsa(?:\s*\/\s*fsa)?|fsa|critical(?:\s+illness)?|accident(?:\s*\/\s*ad&d)?|ad&d|supplemental|benefits|family\s+coverage(?:\s+options)?)\b/i;
   const availableWithCategory = /\b(?:what(?:'s|\s+is)\s+available|what\s+(?:do\s+)?(?:i|we)\s+(?:have|get)|what\s+(?:options?|plans?|choices?)\s+(?:are|do))\b/i.test(normalizedLowerQuery)
-    && /\b(medical|health|dental|vision|life(?:\s+insurance)?|disability|hsa|fsa|critical(?:\s+illness)?|accident|supplemental|family|spouse|child|kid|dependent)\b/i.test(normalizedLowerQuery);
+    && /\b(medical|health|dental|vision|life(?:\s+insurance)?|disability|hsa(?:\s*\/\s*fsa)?|fsa|critical(?:\s+illness)?|accident|ad&d|supplemental|family|spouse|child|kid|dependent)\b/i.test(normalizedLowerQuery);
   const familyCoverageExplore = /\b(family\s+coverage|family\s+plan|spouse\s+works?\s+part[- ]?time|we\s+have\s+\w+\s+kids?|we\s+have\s+\w+\s+children|coverage\s+for\s+my\s+family|our\s+family)\b/i.test(normalizedLowerQuery);
 
   return directCategory.test(trimmed) || lightExplore.test(trimmed) || conversationalExplore.test(trimmed) || availableWithCategory || familyCoverageExplore;

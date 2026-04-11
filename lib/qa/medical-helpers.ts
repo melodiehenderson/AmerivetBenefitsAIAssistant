@@ -8,7 +8,7 @@ type KaiserUnavailableVariant = 'compare' | 'pricing' | 'redirect';
 
 function inferCoverageTierFromQuery(query: string, session: Session): string {
   const low = query.toLowerCase();
-  if (/\bchild\b|children|kid|dependent\s+child/i.test(low)) return 'Employee + Child(ren)';
+  if (/\bfamily\s*4\+|\bfamily4\+|\bspouse\b.*\b(child|children|kid|kids)\b|\b(child|children|kid|kids)\b.*\bspouse\b/i.test(low)) return 'Employee + Family';
   if (/employee\s*\+\s*family|family\s*(of|plan|coverage)|for\s*(my|the|our)\s*family/i.test(low)) return 'Employee + Family';
   if (/employee\s*\+\s*spouse|spouse|husband|wife|partner/i.test(low)) return 'Employee + Spouse';
   if (/employee\s*\+\s*child|child(?:ren)?\s*coverage|for\s*(my|the)\s*(kid|child|son|daughter)|dependent\s*child/i.test(low)) return 'Employee + Child(ren)';
@@ -169,6 +169,9 @@ export function buildMedicalPlanFallback(query: string, session: Session): strin
 
 export function buildRecommendationOverview(query: string, session: Session): string | null {
   const lower = query.toLowerCase();
+  if (/\b(calculate|estimate|project(?:ed)?|model)\b.*\b(cost|costs|expense|expenses)\b|\bhealthcare\s+costs?\b.*\b(next\s+year|\d{4}|estimate|project)\b/.test(lower)) {
+    return null;
+  }
   const recommendationSignal = /\b(recommendation|recommend|suggest|best\s+plan|best\s+option|which\s+plan|what\s+plan|what\s+do\s+you\s+recommend|what[’']?s\s+best\s+for\s+me|how\s+do\s+i\s+decide(?:\s+which\s+one)?|help\s+me\s+choose|which\s+one\s+is\s+best)\b/i.test(lower);
   const healthySignal = /\b(healthy|low\s+utilization|low\s+use|low\s+usage|rarely\s+(?:go|use))\b/i.test(lower);
   const singleSignal = /\b(single|individual|just\s+me|only\s+me|no\s+dependents|no\s+kids|no\s+children)\b/i.test(lower);

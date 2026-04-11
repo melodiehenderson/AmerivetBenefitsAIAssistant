@@ -238,6 +238,11 @@ describe('conversation scenario regressions', () => {
     expect(isTopicContinuationMessage('are there any other plans?', 'Dental')).toBe(true);
   });
 
+  it('treats hsa/fsa and accident/ad&d phrasing as category exploration', () => {
+    expect(shouldUseCategoryExplorationIntercept('can you tell me about hsa/fsa?', 'can you tell me about hsa/fsa?', 'benefits')).toBe(true);
+    expect(shouldUseCategoryExplorationIntercept('what is accident/ad&d?', 'what is accident/ad&d?', 'benefits')).toBe(true);
+  });
+
   it('detects explicit state corrections from natural phrasing', () => {
     expect(detectExplicitStateCorrection('actually im in GA', 'LA')).toEqual({ state: 'GA' });
     expect(detectExplicitStateCorrection('I meant Georgia', 'LA')).toEqual({ state: 'GA' });

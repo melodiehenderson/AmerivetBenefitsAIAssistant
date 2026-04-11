@@ -111,7 +111,8 @@ export function buildCategoryExplorationResponse({ queryLower, session, coverage
   const wantsLife = /\b(life\s+insurance|term\s+life|whole\s+life|basic\s+life|voluntary\s+life)\b/i.test(queryLower);
   const wantsDisability = /\b(disability|std|ltd|short\s*-?term|long\s*-?term)\b/i.test(queryLower);
   const wantsCritical = /\bcritical\s*illness\b/i.test(queryLower);
-  const wantsAccident = /\b(accident|ad&d)\b/i.test(queryLower);
+  const wantsAccident = /\b(accident|ad&d|ad\/d)\b/i.test(queryLower);
+  const wantsHsaFsa = /\b(hsa|fsa|hsa\s*\/\s*fsa)\b/i.test(queryLower);
   const wantsSupplemental = /\b(supplemental|voluntary)\b/i.test(queryLower);
   const wantsFamilyCoverage = /\b(family\s+coverage|family\s+plan|spouse|child|children|kid|kids|dependent)\b/i.test(queryLower);
   const wantsExplanation = /\b(what\s+is|what\s+does|what\s+can\s+you\s+tell\s+me|tell\s+me\s+about|explain|how\s+does|how\s+do|what\s+would)\b/i.test(queryLower);
@@ -264,8 +265,21 @@ export function buildCategoryExplorationResponse({ queryLower, session, coverage
     return msg;
   };
 
+  const buildHsaFsaOverview = () => {
+    let msg = `HSA/FSA overview:\n\n`;
+    msg += `- **HSA** stands for **Health Savings Account**. It works with HSA-qualified medical plans like Standard HSA and Enhanced HSA.\n`;
+    msg += `- **FSA** stands for **Flexible Spending Account**. It also uses pre-tax dollars for eligible healthcare expenses, but it follows different rollover and ownership rules.\n\n`;
+    msg += `Key difference:\n`;
+    msg += `- HSA funds roll over year to year and stay with you\n`;
+    msg += `- FSA funds are tied to the employer plan and usually have stricter year-end rules\n`;
+    msg += `- You generally cannot make full HSA contributions while covered by a general-purpose healthcare FSA\n\n`;
+    msg += `If you want, I can explain when an HSA is the better fit versus an FSA for your situation.`;
+    return msg;
+  };
+
   if (wantsDental && wantsVision) return finalize(`${buildDentalOverview()}\n\n---\n\n${buildVisionOverview()}`);
   if (wantsLife) return finalize(buildLifeOverview());
+  if (wantsHsaFsa) return finalize(buildHsaFsaOverview());
   if (wantsFamilyCoverage && !wantsMedical && !wantsDental && !wantsVision && !wantsLife && !wantsDisability && !wantsCritical && !wantsAccident && !wantsSupplemental) {
     return finalize(buildFamilyCoverageOverview());
   }

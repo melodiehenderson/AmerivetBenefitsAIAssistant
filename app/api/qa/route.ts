@@ -1340,9 +1340,11 @@ export async function POST(req: NextRequest) {
         // Scenario A: User asks "Medical PPO" or "critical injury insurance" but we don't know their State.
         // STOP THEM explicitly.
         if (intent.isTopic) {
-             logger.info(`[REQ:${reqId}][STEP-6 GATE] Topic request without data ΓåÆ asking for ${!hasState ? 'State' : 'Age'}`);
-             const missing = !hasState ? "State" : "Age";
-             const msg = `I can definitely help you with ${query}, but plan availability and costs vary by location.\n\nFirst, please tell me your ${missing} so I can give you the correct information.`;
+             const missing = !hasAge && !hasState ? 'Age and State' : (!hasState ? 'State' : 'Age');
+             logger.info(`[REQ:${reqId}][STEP-6 GATE] Topic request without data ΓåÆ asking for ${missing}`);
+             const msg = !hasAge && !hasState
+               ? `I can definitely help you with ${query}, but plan availability and costs depend on your situation.\n\nFirst, please tell me your age and state so I can give you the correct information.`
+               : `I can definitely help you with ${query}, but plan availability and costs vary by location.\n\nFirst, please tell me your ${missing} so I can give you the correct information.`;
              
              session.lastBotMessage = msg;
          await updateSession(sessionId, session);
@@ -1436,7 +1438,10 @@ export async function POST(req: NextRequest) {
         hrPhone: HR_PHONE,
       });
       if (correctedTopicResponse) {
-        const intro = `Thanks for the correction — in ${session.userState}, here’s the updated ${session.currentTopic.toLowerCase()} view:\n\n`;
+        const topicLower = session.currentTopic.toLowerCase();
+        const intro = topicLower.includes('medical')
+          ? `Thanks for the correction — in ${session.userState}, here’s the updated ${session.currentTopic.toLowerCase()} view:\n\n`
+          : `Thanks for the correction — I’ve updated your state to ${session.userState}. That does not materially change the ${session.currentTopic.toLowerCase()} options I just showed, but I’ll use ${session.userState} for any state-specific guidance going forward.\n\n`;
         const plainMsg = toPlainAssistantText(`${intro}${correctedTopicResponse}`);
         session.lastBotMessage = plainMsg;
         await updateSession(sessionId, session);
@@ -1820,19 +1825,6 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
       return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'medical-comparison' } });
     }
 
-    // CUSTOM INTERCEPT: Scenario recommendation overview (deterministic)
-    const recommendationOverview = buildRecommendationOverview(query, session);
-    if (recommendationOverview) {
-      logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] RECOMMENDATION-OVERVIEW`);
-      const plainMsg = toPlainAssistantText(applyPricingExclusion(recommendationOverview, session.noPricingMode || intent.noPricing));
-      if (/\b(hsa|kaiser|medical|health|ppo|hmo)\b/i.test(lowerQuery)) {
-        session.currentTopic = 'Medical';
-      }
-      session.lastBotMessage = plainMsg;
-      await updateSession(sessionId, session);
-      return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'recommendation-overview' } });
-    }
-
     // CUSTOM INTERCEPT: HSA / Savings recommendation (deterministic)
     // Catches "savings recommendation", "HSA advice", "tax savings" etc. that otherwise fall to RAG and hallucinate
     const savingsRequested = /\b(savings?\s*(recommend|advice|scenario|strategy|tip)|hsa\s*(recommend|advice|benefit|advantage|savings)|tax\s*(savings?|advantage|benefit)\s*(plan|account|option)?|pre-?tax\s*(dollar|saving|benefit))\b/i.test(lowerQuery);
@@ -1874,7 +1866,10 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
         // try to parse usage level
         const usageMatch = lowerQuery.match(/(low|moderate|high)\s+usage/);
         const usage: any = usageMatch ? usageMatch[1] as 'low'|'moderate'|'high' : 'moderate';
-        const coverageTier = lowerQuery.includes('family') || /family\s*(?:of)?\s*\d|family\d/i.test(lowerQuery) ? 'Employee + Family' : (lowerQuery.includes('child') ? 'Employee + Child(ren)' : 'Employee Only');
+        const coverageTier =
+          /\bfamily\s*4\+|\bfamily4\+|\bspouse\b.*\b(child|children|kid|kids)\b|\b(child|children|kid|kids)\b.*\bspouse\b|\bfamily\b|family\s*(?:of)?\s*\d/i.test(lowerQuery)
+            ? 'Employee + Family'
+            : (lowerQuery.includes('child') ? 'Employee + Child(ren)' : 'Employee Only');
         const networkMatch = lowerQuery.match(/kaiser|ppo|hsa|hmo/i);
         const network = networkMatch ? networkMatch[0] : undefined;
         const rawMsg = pricingUtils.estimateCostProjection({ coverageTier, usage, network, state: session.userState || undefined, age: session.userAge || undefined });
@@ -1884,6 +1879,19 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
         session.lastBotMessage = plainMsg;
         await updateSession(sessionId, session);
         return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'cost-model' } });
+    }
+
+    // CUSTOM INTERCEPT: Scenario recommendation overview (deterministic)
+    const recommendationOverview = buildRecommendationOverview(query, session);
+    if (recommendationOverview) {
+      logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] RECOMMENDATION-OVERVIEW`);
+      const plainMsg = toPlainAssistantText(applyPricingExclusion(recommendationOverview, session.noPricingMode || intent.noPricing));
+      if (/\b(hsa|kaiser|medical|health|ppo|hmo)\b/i.test(lowerQuery)) {
+        session.currentTopic = 'Medical';
+      }
+      session.lastBotMessage = plainMsg;
+      await updateSession(sessionId, session);
+      return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'recommendation-overview' } });
     }
 
     // CUSTOM INTERCEPT: Maternity coverage comparison

@@ -167,6 +167,31 @@ describe('category-response-builders', () => {
     expect(response).toContain('888-217-4728');
   });
 
+  it('returns a deterministic HSA/FSA overview for slash phrasing', () => {
+    const response = buildCategoryExplorationResponse({
+      queryLower: 'can you tell me about hsa/fsa?',
+      session: baseSession(),
+      coverageTier: 'Employee Only',
+      enrollmentPortalUrl: 'https://example.com/workday',
+      hrPhone: '888-217-4728',
+    });
+
+    expect(response).toContain('Health Savings Account');
+    expect(response).toContain('Flexible Spending Account');
+  });
+
+  it('returns a deterministic accident/add overview for slash phrasing', () => {
+    const response = buildCategoryExplorationResponse({
+      queryLower: 'what is accident/ad&d?',
+      session: baseSession(),
+      coverageTier: 'Employee Only',
+      enrollmentPortalUrl: 'https://example.com/workday',
+      hrPhone: '888-217-4728',
+    });
+
+    expect(response).toContain('Accident/AD&D coverage is another supplemental option');
+  });
+
   it('returns the four canonical medical coverage tiers', () => {
     const response = buildCoverageTierOptionsResponse(baseSession({ userState: 'WA' }), 'medical');
 

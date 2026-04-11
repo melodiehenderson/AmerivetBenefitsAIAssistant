@@ -160,4 +160,22 @@ describe('medical-response-builders', () => {
 
     expectContract(response, ['biggest factor is how much care you expect to use', 'low, moderate, or high'], ['contact HR']);
   });
+
+  it('infers employee plus family when the query mentions a spouse and kids', () => {
+    const response = buildRecommendationOverview(
+      'which medical plan should i pick if i have a spouse and 2 kids and we are generally healthy and want the lowest bills?',
+      makeSession({ userState: 'TX' }),
+    );
+
+    expectContract(response, ['Recommendation for Employee + Family coverage', 'My recommendation: Standard HSA'], ['Employee + Child(ren)']);
+  });
+
+  it('returns null for explicit cost-estimate requests so the cost-model intercept can answer them', () => {
+    const response = buildRecommendationOverview(
+      'Help me calculate healthcare costs for next year. My household is family4+, usage level is high, and I prefer kaiser network.',
+      makeSession({ userState: 'FL' }),
+    );
+
+    expect(response).toBeNull();
+  });
 });
