@@ -91,7 +91,7 @@ function buildPackageGuidance(session: Session, topic?: string | null): string {
         ? 'Since you have already looked at dental too, the next most useful area is usually life, disability, or supplemental protection.'
         : 'Since vision is usually a yes/no decision rather than a plan comparison, the next useful step is dental, or we can move on to life, disability, or supplemental protection.';
     case 'Life Insurance':
-      return 'If you are thinking like a counselor would, the next related areas are disability for income protection, then accident or critical illness for cash-support protection.';
+      return 'The next related areas are disability for income protection, then accident or critical illness for cash-support protection.';
     case 'Disability':
       return 'The next useful companion benefit is usually life insurance, then accident or critical illness depending on how much extra protection you want.';
     default:
@@ -126,8 +126,13 @@ function extractState(message: string): string | null {
     if (pattern.test(lower)) return code;
   }
 
-  const codeMatch = message.match(/\b(AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|IA|ID|IL|IN|KS|KY|LA|MA|MD|ME|MI|MN|MO|MS|MT|NC|ND|NE|NH|NJ|NM|NV|NY|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VA|VT|WA|WI|WV|WY)\b/i);
-  return codeMatch ? codeMatch[1].toUpperCase() : null;
+  const ageThenState = message.match(/\b(1[8-9]|[2-9][0-9])\b[\s,/-]+(AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|IA|ID|IL|IN|KS|KY|LA|MA|MD|ME|MI|MN|MO|MS|MT|NC|ND|NE|NH|NJ|NM|NV|NY|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VA|VT|WA|WI|WV|WY)\b/i);
+  if (ageThenState) return ageThenState[2].toUpperCase();
+
+  const locationCueMatch = message.match(/\b(?:in|from|live in|located in|state is|i'm in|i am in)\s+(AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|IA|ID|IL|IN|KS|KY|LA|MA|MD|ME|MI|MN|MO|MS|MT|NC|ND|NE|NH|NJ|NM|NV|NY|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VA|VT|WA|WI|WV|WY)\b/i);
+  if (locationCueMatch) return locationCueMatch[1].toUpperCase();
+
+  return null;
 }
 
 function applyDemographics(session: Session, query: string) {
@@ -176,6 +181,14 @@ function usageLevelFromQuery(query: string): 'low' | 'moderate' | 'high' {
   if (/\bhigh\s+usage\b|\bhigh\s+utilization\b|\bfrequent\b|\bongoing\b/i.test(lower)) return 'high';
   if (/\blow\s+usage\b|\bgenerally\s+healthy\b|\bhealthy\b|\blow\s+bills\b|\blow\s+medical\s+use\b/i.test(lower)) return 'low';
   return 'moderate';
+}
+
+function usageLevelFromSession(session: Session): 'low' | 'moderate' | 'high' {
+  const userMessages = (session.messages || [])
+    .filter((message) => message.role === 'user')
+    .map((message) => message.content)
+    .join(' ');
+  return usageLevelFromQuery(userMessages);
 }
 
 function buildBenefitsOverviewReply(session: Session): string {
@@ -239,6 +252,17 @@ function buildContinuationReply(session: Session, query: string): string | null 
   }
 
   if (session.currentTopic === 'Medical') {
+    if (
+      (isSimpleAffirmation(query) || /\b(compare|yes)\b/i.test(lower)) &&
+      /\blikely\s+total\s+annual\s+cost\b|\bcompare\b.*\bstandard\s+hsa\b.*\benhanced\s+hsa\b/i.test(session.lastBotMessage || '')
+    ) {
+      return pricingUtils.estimateCostProjection({
+        coverageTier: session.coverageTierLock || 'Employee Only',
+        usage: usageLevelFromSession(session),
+        state: session.userState || undefined,
+        age: session.userAge || undefined,
+      });
+    }
     if (/\b(low|moderate|high)\s+usage\b|\bgenerally\s+healthy\b|\blow\s+bills\b/i.test(lower)) {
       const recommendation = buildRecommendationOverview(query, session);
       if (recommendation) return recommendation;
@@ -250,6 +274,10 @@ function buildContinuationReply(session: Session, query: string): string | null 
 
   if (isSimpleAffirmation(query)) {
     return buildPackageGuidance(session, session.currentTopic);
+  }
+
+  if (session.currentTopic === 'Dental' && /\borthodontia\s+rider\b|\brider\b/i.test(lower)) {
+    return `An orthodontia rider means the dental plan includes an added orthodontic benefit instead of excluding braces and related treatment entirely. In practical terms, it is the part of the dental coverage that makes orthodontia available under the plan's rules.\n\nFor AmeriVet's dental plan, that means orthodontic coverage is included rather than being a separate standalone dental plan. If you want, I can explain what that means for braces and out-of-pocket costs next.`;
   }
 
   return null;
@@ -366,7 +394,7 @@ export async function runQaV2Engine(params: {
     }
   }
 
-  const answer = `I want to keep this grounded in the AmeriVet benefits package. I can help with medical, dental, vision, life, disability, accident/AD&D, critical illness, or HSA/FSA. If you want, tell me which area you want to focus on next and I’ll guide you through it like a benefits counselor.`;
+  const answer = `I want to keep this grounded in the AmeriVet benefits package. I can help with medical, dental, vision, life, disability, accident/AD&D, critical illness, or HSA/FSA. Tell me which area you want to focus on next and I’ll guide you through the options clearly.`;
   session.lastBotMessage = answer;
   session.messages.push({ role: 'assistant', content: answer });
   return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'fallback-v2' } };

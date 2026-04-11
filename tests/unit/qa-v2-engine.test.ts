@@ -60,4 +60,69 @@ describe('qa-v2 engine', () => {
     expect(correction.answer).toContain('updated your state to FL');
     expect(correction.answer).toContain('life insurance');
   });
+
+  it('does not treat ordinary words like "in" or "me" as state codes in later turns', async () => {
+    const session = makeSession({ step: 'active_chat', userName: 'Sarah', hasCollectedName: true, userAge: 45, userState: 'GA', dataConfirmed: true });
+
+    const benefits = await runQaV2Engine({
+      query: 'what are all the benefits i have access to?',
+      session,
+    });
+
+    expect(benefits.answer).toContain('45 in GA');
+    expect(benefits.answer).not.toContain('45 in ME');
+
+    const stateMention = await runQaV2Engine({
+      query: "i'm in GA",
+      session,
+    });
+
+    expect(stateMention.answer).not.toContain('IN');
+  });
+
+  it('handles "yes, please compare" after a medical compare offer', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Sarah',
+      hasCollectedName: true,
+      userAge: 45,
+      userState: 'GA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee + Family',
+      lastBotMessage: 'If you want, I can compare the likely total annual cost for Standard HSA versus Enhanced HSA based on your expected usage.',
+      messages: [
+        { role: 'user', content: 'which medical plan should i pick if i have a spouse and 2 kids and we are generally healthy and want the lowest bills?' },
+        { role: 'assistant', content: 'If you want, I can compare the likely total annual cost for Standard HSA versus Enhanced HSA based on your expected usage.' },
+      ],
+    });
+
+    const result = await runQaV2Engine({
+      query: 'yes, please compare',
+      session,
+    });
+
+    expect(result.answer).toContain('Projected Healthcare Costs for Employee + Family coverage');
+  });
+
+  it('explains orthodontia rider as a dental follow-up instead of falling back', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Sarah',
+      hasCollectedName: true,
+      userAge: 45,
+      userState: 'GA',
+      dataConfirmed: true,
+      currentTopic: 'Dental',
+      completedTopics: ['Dental'],
+    });
+
+    const result = await runQaV2Engine({
+      query: "what's an orthodontia rider?",
+      session,
+    });
+
+    expect(result.answer).toContain('orthodontia rider means');
+    expect(result.answer).toContain('braces');
+  });
 });
