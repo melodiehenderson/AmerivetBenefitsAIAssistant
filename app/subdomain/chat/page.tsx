@@ -416,9 +416,8 @@ export default function SubdomainChatPage() {
             <AmeriVetLogo
               alt="AmeriVet"
               width={28}
-              height={28}
-              variant="mark"
-              className="mr-3 shrink-0 rounded-sm"
+              height={14}
+              className="mr-3 shrink-0"
             />
             <Button
               variant="outline"
