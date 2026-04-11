@@ -22,7 +22,7 @@ export const Greeting = () => {
         transition={{ delay: 0.5 }}
         className="text-2xl font-semibold"
       >
-        Hi! I&apos;m Susie 👋
+        Hi! 👋
       </motion.div>
       <motion.div
         initial={{ opacity: 0, y: 10 }}

@@ -83,6 +83,7 @@ export function buildCategoryExplorationResponse({ queryLower, session, coverage
   const wantsAccident = /\b(accident|ad&d)\b/i.test(queryLower);
   const wantsSupplemental = /\b(supplemental|voluntary)\b/i.test(queryLower);
   const wantsFamilyCoverage = /\b(family\s+coverage|family\s+plan|spouse|child|children|kid|kids|dependent)\b/i.test(queryLower);
+  const wantsExplanation = /\b(what\s+is|what\s+does|what\s+can\s+you\s+tell\s+me|tell\s+me\s+about|explain|how\s+does|how\s+do|what\s+would)\b/i.test(queryLower);
 
   const buildDentalOverview = () => {
     const dental = catalog.dentalPlan;
@@ -238,14 +239,48 @@ export function buildCategoryExplorationResponse({ queryLower, session, coverage
   }
 
   if (wantsDisability || wantsCritical || wantsAccident || wantsSupplemental) {
-    let msg = `I can help with these benefits, but detailed plan terms are in Workday.\n\n`;
-    if (wantsDisability) msg += `- Disability: Short-Term and Long-Term Disability options are available.\n`;
-    if (wantsCritical) msg += `- Critical Illness coverage is available as a supplemental benefit.\n`;
-    if (wantsAccident) msg += `- Accident/AD&D coverage is available as a supplemental benefit.\n`;
-    if (wantsSupplemental) msg += `- Supplemental benefits include options like critical illness and accident coverage.\n`;
-    msg += `\nFor plan details, eligibility rules, and rates, please check Workday: ${enrollmentPortalUrl} or contact HR at ${hrPhone}.`;
-    msg += `\n\nIf you want, tell me which benefit to focus on and I can summarize what I have available.`;
-    return finalize(msg);
+    let msg = '';
+
+    if (wantsCritical) {
+      msg += `Critical illness coverage is a supplemental benefit that can pay a lump-sum cash benefit if you are diagnosed with a covered serious condition, such as a heart attack, stroke, or certain cancers.\n\n`;
+      msg += `What it is designed to do:\n`;
+      msg += `- Help with non-medical costs like travel, childcare, or household bills\n`;
+      msg += `- Give you extra cash on top of your medical plan if a major diagnosis happens\n`;
+      msg += `- Reduce the financial shock of a big health event when you have a high deductible or limited emergency savings\n\n`;
+      msg += `What it is not:\n`;
+      msg += `- It does not replace your medical plan\n`;
+      msg += `- It is not meant for routine care or everyday doctor visits\n`;
+      msg += `- Benefit amounts, covered conditions, and exclusions depend on the actual policy details in Workday\n`;
+    }
+
+    if (wantsAccident) {
+      if (msg) msg += `\n`;
+      msg += `Accident/AD&D coverage is another supplemental option. It generally pays benefits after covered accidental injuries, and AD&D adds benefits for severe accidental loss of life or limb.\n\n`;
+      msg += `People often look at it when:\n`;
+      msg += `- They want extra protection beyond their medical plan\n`;
+      msg += `- They have an active household or dependents\n`;
+      msg += `- They want cash help after an accidental injury\n`;
+    }
+
+    if (wantsDisability) {
+      if (msg) msg += `\n`;
+      msg += `Disability coverage is meant to protect part of your income if you cannot work because of illness or injury.\n\n`;
+      msg += `- Short-Term Disability helps with temporary time away from work\n`;
+      msg += `- Long-Term Disability helps if the disability lasts longer\n`;
+      msg += `- The specific waiting periods, percentages, and maximum benefits depend on the actual plan documents\n`;
+    }
+
+    if (wantsSupplemental && !wantsCritical && !wantsAccident && !wantsDisability) {
+      msg += `Supplemental benefits are optional coverages that sit alongside your main medical plan. For AmeriVet, that generally includes benefits like critical illness and accident protection.\n\n`;
+      msg += `They are typically meant to provide extra cash support when something significant happens, rather than replace your core medical coverage.\n`;
+    }
+
+    if (wantsExplanation || wantsCritical || wantsAccident || wantsDisability) {
+      msg += `\nIf you want, I can also help you think through when one of these benefits is worth considering for your situation.`;
+    }
+
+    msg += `\n\nFor exact rates, covered conditions, waiting periods, and exclusions, please check Workday: ${enrollmentPortalUrl} or contact HR at ${hrPhone}.`;
+    return finalize(msg.trim());
   }
 
   if (wantsDental) return finalize(buildDentalOverview());

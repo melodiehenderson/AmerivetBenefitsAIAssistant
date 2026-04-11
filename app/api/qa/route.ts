@@ -2063,6 +2063,57 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
       }
     }
 
+    const asksForBenefitsOverview =
+      !!session.dataConfirmed &&
+      /\b(all\s+(?:the\s+)?benefits|benefits\s+overview|what\s+(?:are|other)\s+(?:all\s+)?(?:the\s+)?benefits|what\s+benefits\s+do\s+i\s+(?:have|get|qualify\s+for)|what\s+other\s+benefits\s+do\s+i\s+qualify\s+for|show\s+me\s+(?:all\s+)?(?:my\s+)?benefits)\b/i.test(lowerQuery);
+    if (deterministicConversationInterceptsEnabled && asksForBenefitsOverview) {
+      logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] BENEFITS-OVERVIEW`);
+      const msg = `${ALL_BENEFITS_MENU}\n\nWhat would you like to explore first?`;
+      session.lastBotMessage = msg;
+      await updateSession(sessionId, session);
+      return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'benefits-overview' } });
+    }
+
+    const asksForPortalLink =
+      /\b(link|url|portal|workday)\b/i.test(lowerQuery) ||
+      /^can\s+you\s+give\s+me\s+that\s+link\??$/i.test(query.trim());
+    const lastBotMentionedPortal = /\bworkday|portal|enrollment\b/i.test(session.lastBotMessage || '');
+    if (deterministicConversationInterceptsEnabled && asksForPortalLink && lastBotMentionedPortal) {
+      logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] PORTAL-LINK-FOLLOWUP`);
+      const msg = `Here is the AmeriVet benefits enrollment portal: ${ENROLLMENT_PORTAL_URL}\n\nIf you want, I can also help you figure out which benefit to review before you enroll.`;
+      session.lastBotMessage = msg;
+      await updateSession(sessionId, session);
+      return NextResponse.json({ answer: msg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'portal-link-followup' } });
+    }
+
+    const asksOtherChoices = /\b(other\s+choices?|other\s+options?|other\s+plans?|anything\s+else|what\s+else|any\s+more)\b/i.test(lowerQuery);
+    if (deterministicConversationInterceptsEnabled && asksOtherChoices && session.currentTopic) {
+      logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] OTHER-CHOICES: topic=${session.currentTopic}`);
+      let msg: string | null = null;
+      const topicLower = session.currentTopic.toLowerCase();
+
+      if (topicLower.includes('dental')) {
+        msg = `AmeriVet offers one dental plan: **${amerivetBenefits2024_2025.dentalPlan.name}** (${amerivetBenefits2024_2025.dentalPlan.provider}). There are not multiple dental plan choices to compare.\n\nIf you want, I can help you compare that dental plan with vision, or we can move on to life, disability, or supplemental benefits next.`;
+      } else if (topicLower.includes('vision')) {
+        msg = `AmeriVet offers one vision plan: **${amerivetBenefits2024_2025.visionPlan.name}** (${amerivetBenefits2024_2025.visionPlan.provider}). There are not multiple vision plan choices to compare.\n\nIf you want, I can compare vision with dental, switch coverage tiers, or move on to life, disability, or supplemental benefits next.`;
+      } else if (topicLower.includes('critical') || topicLower.includes('accident') || topicLower.includes('disability') || topicLower.includes('supplemental')) {
+        msg = buildCategoryExplorationResponse({
+          queryLower: session.currentTopic.toLowerCase(),
+          session,
+          coverageTier: getCoverageTierForQuery(query, session),
+          enrollmentPortalUrl: ENROLLMENT_PORTAL_URL,
+          hrPhone: HR_PHONE,
+        });
+      }
+
+      if (msg) {
+        const plainMsg = toPlainAssistantText(applyPricingExclusion(msg, session.noPricingMode || intent.noPricing));
+        session.lastBotMessage = plainMsg;
+        await updateSession(sessionId, session);
+        return NextResponse.json({ answer: plainMsg, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'other-choices', topic: session.currentTopic } });
+      }
+    }
+
     // ========================================================================
     // FOLLOW-UP: YES to compare dental vs vision
     // ========================================================================
