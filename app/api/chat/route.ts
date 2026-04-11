@@ -22,6 +22,7 @@ import { cityToStateMap } from '@/lib/schemas/onboarding';
 import { getCatalogForPrompt, KAISER_AVAILABLE_STATE_CODES } from '@/lib/data/amerivet';
 import {
   checkL1FAQ,
+  detectExplicitStateCorrection,
   deriveConversationTopic,
   isKaiserAvailabilityQuestion,
   isLikelyFollowUpMessage,
@@ -391,6 +392,10 @@ export const POST = withAuth(undefined, [PERMISSIONS.CHAT_WITH_AI])(async (reque
       const metadata = conversation.metadata ?? {};
       const awaiting = metadata.awaiting as 'name' | 'age' | 'state' | 'division' | undefined | null;
       const normalizedMessage = message.trim().toLowerCase();
+      const explicitStateCorrection = detectExplicitStateCorrection(
+        message,
+        typeof metadata.state === 'string' ? metadata.state : null,
+      );
 
       // Step 1: Welcome and ask for name (only for brand new conversations)
       if (!metadata.userName && !awaiting) {
@@ -441,6 +446,47 @@ export const POST = withAuth(undefined, [PERMISSIONS.CHAT_WITH_AI])(async (reque
       }
 
       if (metadata.state && metadata.division && !awaiting) {
+        if (explicitStateCorrection) {
+          const correctedState = explicitStateCorrection.state.toUpperCase();
+          const updated = await conversationService.patchMetadata(conversation.id, {
+            state: correctedState,
+            ...(explicitStateCorrection.city ? { userCity: explicitStateCorrection.city } : {}),
+            lastEligibilityResetAt: new Date().toISOString(),
+            eligibilityConfirmedAt: new Date().toISOString(),
+          });
+          conversation.metadata = updated.metadata ?? {};
+
+          const currentTopic = typeof conversation.metadata?.currentTopic === 'string'
+            ? conversation.metadata.currentTopic
+            : undefined;
+
+          if (currentTopic) {
+            const correctedTopicResponse = buildCategoryExplorationResponse({
+              queryLower: currentTopic.toLowerCase(),
+              session: buildDeterministicChatSession(conversation.metadata, [], currentTopic),
+              coverageTier: getCoverageTierForQuery(`${currentTopic} ${message}`, buildDeterministicChatSession(conversation.metadata, [], currentTopic)),
+              enrollmentPortalUrl: WORKDAY_ENROLLMENT_URL,
+              hrPhone: HR_PHONE,
+            });
+
+            if (correctedTopicResponse) {
+              return sendAssistantMessage(
+                `Thanks for the correction — I updated your state to ${correctedState}. Here’s the updated ${currentTopic.toLowerCase()} view:\n\n${correctedTopicResponse}`,
+                {
+                  currentTopic,
+                  lastBotMessage: toPlainAssistantText(correctedTopicResponse),
+                },
+              );
+            }
+          }
+
+          return sendAssistantMessage(
+            `Thanks for the correction — I updated your state to ${correctedState}. What would you like to look at next?`,
+            {
+              lastBotMessage: `Thanks for the correction — I updated your state to ${correctedState}. What would you like to look at next?`,
+            },
+          );
+        }
         if (isStateChangeRequest(normalizedMessage)) {
           const updated = await conversationService.patchMetadata(conversation.id, {
             state: undefined,

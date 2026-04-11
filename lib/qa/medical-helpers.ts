@@ -169,20 +169,64 @@ export function buildMedicalPlanFallback(query: string, session: Session): strin
 
 export function buildRecommendationOverview(query: string, session: Session): string | null {
   const lower = query.toLowerCase();
-  const recommendationSignal = /\b(recommendation|recommend|suggest|best\s+plan|best\s+option|which\s+plan|what\s+plan|what\s+do\s+you\s+recommend)\b/i.test(lower);
+  const recommendationSignal = /\b(recommendation|recommend|suggest|best\s+plan|best\s+option|which\s+plan|what\s+plan|what\s+do\s+you\s+recommend|what[’']?s\s+best\s+for\s+me|how\s+do\s+i\s+decide(?:\s+which\s+one)?|help\s+me\s+choose|which\s+one\s+is\s+best)\b/i.test(lower);
   const healthySignal = /\b(healthy|low\s+utilization|low\s+use|low\s+usage|rarely\s+(?:go|use))\b/i.test(lower);
   const singleSignal = /\b(single|individual|just\s+me|only\s+me|no\s+dependents|no\s+kids|no\s+children)\b/i.test(lower);
   const savingsSignal = /\b(save\s+money|low\s+cost|cheapest|lowest\s+premium|save\s+on\s+premiums|budget)\b/i.test(lower);
-
-  if (!(recommendationSignal || healthySignal || savingsSignal)) return null;
-
+  const higherUsageSignal = /\b(high\s+usage|high\s+utilization|frequent\s+(?:doctor|specialist|care|visits?)|regular\s+(?:care|visits?)|ongoing\s+care|chronic|ongoing\s+prescriptions?|a\s+lot\s+of\s+care|more\s+medical\s+use|heavy\s+usage)\b/i.test(lower);
+  const moderateUsageSignal = /\b(moderate\s+usage|some\s+medical\s+use|occasional\s+(?:care|visits?)|a\s+few\s+visits?)\b/i.test(lower);
+  const explicitNonMedicalCategory = /\b(dental|vision|life(?:\s+insurance)?|disability|critical(?:\s+illness)?|accident|hospital\s+indemnity|hsa\/fsa|fsa)\b/i.test(lower);
+  const wantsMedicalRecommendation = /\b(medical|health|hsa|kaiser|ppo|hmo|standard\s+hsa|enhanced\s+hsa)\b/i.test(lower)
+    || (session.currentTopic || '').toLowerCase().includes('medical')
+    || /\b(standard\s+hsa|enhanced\s+hsa|kaiser\s+standard\s+hmo|medical\s+plan options|medical options|compare plans)\b/i.test(session.lastBotMessage || '')
+    || (recommendationSignal && !explicitNonMedicalCategory);
+  const mentionsIntegratedNetworkPreference = /\b(kaiser|integrated\s+network|hmo\s+style|one\s+system|one\s+network|coordinated\s+care)\b/i.test(lower);
   const coverageTier = inferCoverageTierFromQuery(query, session);
+
+  if (!(recommendationSignal || healthySignal || savingsSignal || higherUsageSignal || moderateUsageSignal)) return null;
+  if (!wantsMedicalRecommendation) return null;
+
   const { filtered } = getFilteredMedicalPricingRows(session, coverageTier);
 
   const standard = filtered.find(r => /standard\s+hsa/i.test(r.plan));
   const enhanced = filtered.find(r => /enhanced\s+hsa/i.test(r.plan));
   const kaiser = filtered.find(r => /kaiser/i.test(r.plan));
   if (!standard && !enhanced && filtered.length === 0) return null;
+
+  const usageBand = higherUsageSignal
+    ? 'high'
+    : moderateUsageSignal
+      ? 'moderate'
+      : healthySignal || savingsSignal
+        ? 'low'
+        : null;
+
+  const decidingBetweenShownPlans = /\b(which\s+one|which\s+plan|best\s+for\s+me|what[’']?s\s+best\s+for\s+me|how\s+do\s+i\s+decide|help\s+me\s+choose|what\s+do\s+you\s+recommend)\b/i.test(lower);
+
+  if (decidingBetweenShownPlans && !usageBand && !singleSignal && !mentionsIntegratedNetworkPreference) {
+    let clarifier = `I can recommend one — the biggest factor is how much care you expect to use.\n\n`;
+    clarifier += `If you expect low medical use, I usually lean **Standard HSA** for the lower premium. `;
+    clarifier += `If you expect frequent visits, ongoing prescriptions, or want a lower deductible, I usually lean **Enhanced HSA**.`;
+    if (kaiser && session.userState && isKaiserEligibleState(session.userState)) {
+      clarifier += ` If you specifically want an integrated HMO-style network in ${session.userState}, **Kaiser Standard HMO** can also make sense.`;
+    }
+    clarifier += `\n\nQuick clarifier: would you say your expected usage is **low, moderate, or high**?`;
+    return clarifier.trim();
+  }
+
+  let recommendationPlan = 'Standard HSA';
+  let recommendationReason = `it keeps premiums lowest while still giving you full HSA eligibility`;
+
+  if (usageBand === 'high' || usageBand === 'moderate') {
+    recommendationPlan = 'Enhanced HSA';
+    recommendationReason = `the lower deductible and richer cost protection usually matter more once you expect regular care`;
+  } else if (mentionsIntegratedNetworkPreference && kaiser && session.userState && isKaiserEligibleState(session.userState)) {
+    recommendationPlan = 'Kaiser Standard HMO';
+    recommendationReason = `it gives you the integrated HMO-style experience some people prefer when they want a tighter, coordinated network`;
+  } else if (singleSignal || healthySignal || savingsSignal) {
+    recommendationPlan = 'Standard HSA';
+    recommendationReason = `it is usually the cleanest fit when you want to save money and do not expect much care`;
+  }
 
   let msg = `Recommendation for ${coverageTier} coverage:\n\n`;
   if (!session.noPricingMode) {
@@ -192,9 +236,10 @@ export function buildRecommendationOverview(query: string, session: Session): st
     msg += `\n`;
   }
 
-  msg += `If you are healthy and want to keep premiums low, **Standard HSA** is usually the best fit because it has the lowest premium and is HSA-eligible. `;
+  msg += `My recommendation: ${recommendationPlan}.\n\n`;
+  msg += `Why: ${recommendationReason}. `;
   msg += `Both HSA plans use the BCBSTX nationwide PPO network. `;
-  msg += `If you expect more medical use or want a lower deductible, **Enhanced HSA** offers richer coverage at a higher premium.`;
+  msg += `In practical terms, **Standard HSA** is the lower-premium option, while **Enhanced HSA** gives you a lower deductible and better protection if you expect more care.`;
 
   if (kaiser && session.userState && isKaiserEligibleState(session.userState)) {
     msg += ` If you prefer an integrated HMO-style network and are in ${session.userState}, **Kaiser Standard HMO** is also an option.`;
@@ -202,9 +247,12 @@ export function buildRecommendationOverview(query: string, session: Session): st
 
   msg += `\n\nHSA savings highlights:\n- Pre-tax paycheck contributions\n- Tax-free growth and withdrawals for eligible care\n- Funds roll over year to year\n`;
   if (singleSignal) {
-    msg += `\nSince you mentioned being single/only covering yourself, the Standard HSA is typically the most cost-efficient starting point.`;
+    msg += `\nSince you mentioned being single/only covering yourself, **Standard HSA** is typically the most cost-efficient starting point.`;
+  }
+  if (usageBand === 'high' || usageBand === 'moderate') {
+    msg += `\nBecause you described more than minimal usage, **Enhanced HSA** is the one I would look at first.`;
   }
 
-  msg += `\n\nWant me to compare total annual costs if your usage is low, moderate, or high?`;
+  msg += `\n\nIf you want, I can compare the likely total annual cost for **Standard HSA** versus **Enhanced HSA** based on your expected usage.`;
   return msg.trim();
 }

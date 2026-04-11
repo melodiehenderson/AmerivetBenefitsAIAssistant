@@ -509,7 +509,7 @@ export function getPlanById(planId: string): BenefitPlan | undefined {
   return allPlans.find(plan => plan.id === planId);
 }
 
-const STATE_ABBREV_TO_NAME: Record<string, string> = {
+export const STATE_ABBREV_TO_NAME: Record<string, string> = {
   AL: 'Alabama', AK: 'Alaska', AZ: 'Arizona', AR: 'Arkansas',
   CA: 'California', CO: 'Colorado', CT: 'Connecticut', DE: 'Delaware',
   FL: 'Florida', GA: 'Georgia', HI: 'Hawaii', ID: 'Idaho',

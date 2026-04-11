@@ -4,12 +4,14 @@ import { checkMustContain, checkMustNotContain } from '../eval/metrics';
 import {
   buildKaiserAvailabilityFaqAnswer,
   checkL1FAQ,
+  detectExplicitStateCorrection,
   deriveConversationTopic,
   isLikelyFollowUpMessage,
   isOtherChoicesMessage,
   isPackageGuidanceMessage,
   isSimpleAffirmation,
   isStandaloneMedicalPpoRequest,
+  shouldUseCategoryExplorationIntercept,
   isTopicContinuationMessage,
 } from '@/lib/qa/routing-helpers';
 import {
@@ -118,8 +120,23 @@ describe('conversation scenario regressions', () => {
     );
 
     expect(response).toBeTruthy();
-    expectContractPhrases(response!, ['Standard HSA', 'single/only covering yourself', 'Want me to compare total annual costs'], [
+    expectContractPhrases(response!, ['My recommendation: Standard HSA', 'single/only covering yourself', 'save money'], [
       'Kaiser Standard HMO is also an option.',
+    ]);
+  });
+
+  it('asks one focused clarifier for plain-language medical recommendation requests when usage is unknown', () => {
+    const response = buildRecommendationOverview(
+      'what’s best for me?',
+      makeSession({
+        userState: 'TX',
+        currentTopic: 'Medical',
+        lastBotMessage: 'Medical plan options: Standard HSA and Enhanced HSA. Want help deciding?',
+      }),
+    );
+
+    expectContractPhrases(response!, ['biggest factor is how much care you expect to use', 'low, moderate, or high'], [
+      'contact HR',
     ]);
   });
 
@@ -218,6 +235,30 @@ describe('conversation scenario regressions', () => {
     expect(isOtherChoicesMessage('do i have any other options?')).toBe(true);
     expect(isLikelyFollowUpMessage('are there any other plans?')).toBe(true);
     expect(isTopicContinuationMessage('are there any other plans?', 'Dental')).toBe(true);
+  });
+
+  it('detects explicit state corrections from natural phrasing', () => {
+    expect(detectExplicitStateCorrection('actually im in GA', 'LA')).toEqual({ state: 'GA' });
+    expect(detectExplicitStateCorrection('I meant Georgia', 'LA')).toEqual({ state: 'GA' });
+    expect(detectExplicitStateCorrection('sorry, Colorado not Kansas', 'KS')).toEqual({ state: 'CO' });
+  });
+
+  it('treats affirmative topic pivots as category exploration instead of fallback', () => {
+    expect(
+      shouldUseCategoryExplorationIntercept(
+        'yes - show me what i can get for vision',
+        'yes - show me what i can get for vision',
+        'lookup',
+      ),
+    ).toBe(true);
+
+    expect(
+      shouldUseCategoryExplorationIntercept(
+        "ok let's do life next",
+        "ok let's do life next",
+        'lookup',
+      ),
+    ).toBe(true);
   });
 
   it('redirects non-Kaiser states back to HSA comparison instead of forcing Kaiser', () => {

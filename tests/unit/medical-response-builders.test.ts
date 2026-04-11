@@ -103,7 +103,7 @@ describe('medical-response-builders', () => {
       makeSession({ userState: 'TX' }),
     );
 
-    expectContract(response, ['Standard HSA', 'Enhanced HSA', 'lowest premium', 'lower deductible'], ['always better']);
+    expectContract(response, ['low, moderate, or high', 'Standard HSA', 'Enhanced HSA'], ['always better']);
   });
 
   it('answers deductible-difference questions for individual coverage from the shared medical fallback', () => {
@@ -136,6 +136,28 @@ describe('medical-response-builders', () => {
       makeSession({ userState: 'TX' }),
     );
 
-    expectContract(response, ['Enhanced HSA', 'lower deductible'], ['always choose']);
+    expectContract(response, ['My recommendation: Enhanced HSA', 'lower deductible'], ['always choose']);
+  });
+
+  it('gives a direct recommendation when low-usage savings context is already known', () => {
+    const response = buildRecommendationOverview(
+      "What's best for me? I'm healthy and want to save money.",
+      makeSession({ userState: 'TX', currentTopic: 'Medical' }),
+    );
+
+    expectContract(response, ['My recommendation: Standard HSA', 'save money', 'lower-premium option'], ['low, moderate, or high']);
+  });
+
+  it('uses the active medical topic to answer plain-language decision questions', () => {
+    const response = buildRecommendationOverview(
+      'How do I decide which one?',
+      makeSession({
+        userState: 'TX',
+        currentTopic: 'Medical',
+        lastBotMessage: 'Medical plan options: Standard HSA and Enhanced HSA.',
+      }),
+    );
+
+    expectContract(response, ['biggest factor is how much care you expect to use', 'low, moderate, or high'], ['contact HR']);
   });
 });

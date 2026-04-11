@@ -1,4 +1,6 @@
-import { KAISER_AVAILABLE_STATE_CODES } from '@/lib/data/amerivet';
+import { KAISER_AVAILABLE_STATE_CODES, STATE_ABBREV_TO_NAME } from '@/lib/data/amerivet';
+import { extractUserSlots } from '@/lib/rag/query-understanding';
+import { cityToStateMap } from '@/lib/schemas/onboarding';
 import type { IntentDomain } from '@/lib/intent-digest';
 
 type L1FAQArgs = {
@@ -35,6 +37,11 @@ const L1_FAQ: L1FAQEntry[] = [
 ];
 
 const KAISER_STATE_CODES = new Set<string>(KAISER_AVAILABLE_STATE_CODES);
+const STATE_NAME_TO_CODE: Record<string, string> = Object.fromEntries(
+  Object.entries(STATE_ABBREV_TO_NAME).map(([code, name]) => [name.toLowerCase(), code]),
+);
+const SORTED_STATE_NAMES = Object.keys(STATE_NAME_TO_CODE).sort((a, b) => b.length - a.length);
+const SORTED_CITY_NAMES = Object.keys(cityToStateMap).sort((a, b) => b.length - a.length);
 
 const STALE_KAISER_GEOGRAPHY_PATTERNS: RegExp[] = [
   /California,\s+Washington,\s+and\s+Oregon/gi,
@@ -78,6 +85,82 @@ export function isSimpleAffirmation(message: string): boolean {
   return /^(yes|yes please|yeah|yep|sure|ok|okay|please|do it|go ahead)$/i.test(normalized);
 }
 
+export function stripAffirmationLeadIn(message: string): string {
+  return message
+    .trim()
+    .replace(/^(?:yes|yes please|yeah|yep|sure|ok|okay|please|alright|all right)\s*[-,:]?\s*/i, '')
+    .trim();
+}
+
+function resolveStateFromFragment(fragment: string): { state: string; city?: string } | null {
+  const trimmed = fragment.trim();
+  if (!trimmed) return null;
+
+  const slotMatch = extractUserSlots(trimmed);
+  if (slotMatch.state) {
+    return {
+      state: slotMatch.state.toUpperCase(),
+      ...(slotMatch.city ? { city: slotMatch.city } : {}),
+    };
+  }
+
+  const normalized = trimmed
+    .toLowerCase()
+    .replace(/[^a-z\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  for (const city of SORTED_CITY_NAMES) {
+    const pattern = new RegExp(`\\b${city.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+    if (pattern.test(normalized)) {
+      return {
+        state: cityToStateMap[city].toUpperCase(),
+        city: city.charAt(0).toUpperCase() + city.slice(1),
+      };
+    }
+  }
+
+  for (const stateName of SORTED_STATE_NAMES) {
+    const pattern = new RegExp(`\\b${stateName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+    if (pattern.test(normalized)) {
+      return { state: STATE_NAME_TO_CODE[stateName] };
+    }
+  }
+
+  return null;
+}
+
+export function detectExplicitStateCorrection(
+  message: string,
+  currentState?: string | null,
+): { state: string; city?: string } | null {
+  if (!currentState) return null;
+
+  const currentCode = currentState.toUpperCase();
+  const trimmed = message.trim();
+  if (!trimmed) return null;
+
+  const correctionLead =
+    trimmed.match(/\b(?:actually|sorry|correction)\b[\s,:-]*(.+)$/i)?.[1] ??
+    trimmed.match(/\b(?:i\s+meant|meant)\b[\s,:-]*(.+)$/i)?.[1] ??
+    null;
+
+  if (!correctionLead) return null;
+
+  const candidate = correctionLead
+    .replace(/^(?:i(?:'m| am)|im|i live|i(?:'m| am) located|we(?:'re| are))\s+/i, '')
+    .replace(/^in\s+/i, '')
+    .split(/\b(?:not|instead of)\b/i)[0]
+    .trim();
+
+  const resolved = resolveStateFromFragment(candidate);
+  if (!resolved || resolved.state === currentCode) {
+    return null;
+  }
+
+  return resolved;
+}
+
 export function isStandaloneMedicalPpoRequest(query: string): boolean {
   const lower = query.toLowerCase();
   if (!/\bppo\b/i.test(lower)) return false;
@@ -103,14 +186,17 @@ export function buildKaiserAvailabilityFaqAnswer(userState?: string | null): str
 }
 
 export function isLikelyFollowUpMessage(normalizedMessage: string): boolean {
-  const normalized = normalizedMessage.trim().replace(/[.!?]+$/g, '');
+  const normalized = stripAffirmationLeadIn(normalizedMessage.trim().replace(/[.!?]+$/g, ''));
   return normalized.length <= 160 && /(^((yes|yes please|yeah|yep|sure|ok|okay|please|go ahead|do it|any workaround\??|what about the waiting period\??|i'?m in\s+[a-z]{2}|my usage is\s+(?:low|moderate|high)|(?:low|moderate|high)\s+usage))$|\b(more|details|difference|compare|comparison|that one|those|it|what about that|which one|go on|continue|expand|break it down|tell me more|workaround|waiting period|coverage tiers?|different coverage tier|switch coverage tiers?|my usage is|low usage|moderate usage|high usage|other choices?|other options?|anything else|what else|any more|other plans?|what else should i consider|what should i think about|what should i look at next|anything else i should know|what other things should i think about|other things in my benefits package)\b)/i.test(normalized);
 }
 
 export function isTopicContinuationMessage(query: string, currentTopic?: string): boolean {
   if (!currentTopic) return false;
 
-  const trimmed = query.trim();
+  const rawTrimmed = query.trim();
+  if (isSimpleAffirmation(rawTrimmed)) return true;
+
+  const trimmed = stripAffirmationLeadIn(rawTrimmed);
   if (trimmed.length >= 120) return false;
 
   const lowerQuery = trimmed.toLowerCase();
@@ -207,21 +293,24 @@ export function shouldUseCategoryExplorationIntercept(query: string, lowerQuery:
   if (intentDomain === 'policy') return false;
   if (query.length > 150) return false;
 
-  if (/\b(compare|difference|recommend|best|should\s+i|for\s+me|my\s+situation|if\s+|because|while|calculate|estimate|project|scenario|qle|fmla|std)\b/i.test(lowerQuery)) {
+  const normalizedQuery = stripAffirmationLeadIn(query.trim());
+  const normalizedLowerQuery = normalizedQuery.toLowerCase();
+
+  if (/\b(compare|difference|recommend|best|should\s+i|for\s+me|my\s+situation|if\s+|because|while|calculate|estimate|project|scenario|qle|fmla|std)\b/i.test(normalizedLowerQuery)) {
     return false;
   }
 
-  if (/\b(do\s+we\s+have|is\s+there|does\s+it|are\s+there|who\s+is|which\s+company|what\s+carrier|what\s+provider|how\s+much\s+should|how\s+much\s+do\s+i\s+need|how\s+much\s+life|do\s+i\s+have|am\s+i\s+covered|i\s+thought)\b/i.test(lowerQuery)) {
+  if (/\b(do\s+we\s+have|is\s+there|does\s+it|are\s+there|who\s+is|which\s+company|what\s+carrier|what\s+provider|how\s+much\s+should|how\s+much\s+do\s+i\s+need|how\s+much\s+life|do\s+i\s+have|am\s+i\s+covered|i\s+thought)\b/i.test(normalizedLowerQuery)) {
     return false;
   }
 
-  const trimmed = query.trim();
-  const directCategory = /^(medical|medical\s+please|health|health\s+please|dental|dental\s+please|vision|vision\s+please|life(?:\s+insurance)?|life(?:\s+insurance)?\s+please|disability|disability\s+please|hsa|fsa|critical(?:\s+illness)?|accident|supplemental|benefits|benefits\s+overview|overview|family\s+coverage|family\s+coverage\s+options|what\s+benefits\s+do\s+i\s+have|what\s+are\s+my\s+options|show\s+me\s+benefits|i'?d\s+like\s+to\s+see\s+my\s+(medical|health|dental|vision)\s+options)$/i;
-  const lightExplore = /^(tell\s+me\s+about|show\s+me|overview\s+of|explain|what\s+can\s+you\s+tell\s+me\s+about)\s+(medical|health|dental|vision|life(?:\s+insurance)?|disability|hsa|fsa|critical(?:\s+illness)?|accident|supplemental|benefits)\b/i;
-  const conversationalExplore = /\b(?:what\s+about|let'?s\s+(?:\w+\s+){0,2}(?:do|look\s+at|talk\s+about|go\s+(?:over|through)|explore|discuss|review|see)|what(?:'s|\s+is)\s+available\s+(?:for|in|under|with)|i\s+want\s+to\s+(?:know|learn|see|hear|understand)\s+about|how\s+about|talk\s+about|interested\s+in)\s+(?:the\s+)?(?:my\s+)?(medical|health|dental|vision|life(?:\s+insurance)?|disability|hsa|fsa|critical(?:\s+illness)?|accident|supplemental|benefits|family\s+coverage(?:\s+options)?)\b/i;
-  const availableWithCategory = /\b(?:what(?:'s|\s+is)\s+available|what\s+(?:do\s+)?(?:i|we)\s+(?:have|get)|what\s+(?:options?|plans?|choices?)\s+(?:are|do))\b/i.test(lowerQuery)
-    && /\b(medical|health|dental|vision|life(?:\s+insurance)?|disability|hsa|fsa|critical(?:\s+illness)?|accident|supplemental|family|spouse|child|kid|dependent)\b/i.test(lowerQuery);
-  const familyCoverageExplore = /\b(family\s+coverage|family\s+plan|spouse\s+works?\s+part[- ]?time|we\s+have\s+\w+\s+kids?|we\s+have\s+\w+\s+children|coverage\s+for\s+my\s+family|our\s+family)\b/i.test(lowerQuery);
+  const trimmed = normalizedQuery;
+  const directCategory = /^(medical|medical\s+please|medical\s+next|health|health\s+please|dental|dental\s+please|dental\s+next|vision|vision\s+please|vision\s+next|life(?:\s+insurance)?|life(?:\s+insurance)?\s+please|life(?:\s+insurance)?\s+next|disability|disability\s+please|disability\s+next|hsa|fsa|critical(?:\s+illness)?|accident|supplemental|benefits|benefits\s+overview|overview|family\s+coverage|family\s+coverage\s+options|what\s+benefits\s+do\s+i\s+have|what\s+are\s+my\s+options|show\s+me\s+benefits|i'?d\s+like\s+to\s+see\s+my\s+(medical|health|dental|vision)\s+options)$/i;
+  const lightExplore = /^(tell\s+me\s+about|show\s+me|overview\s+of|explain|what\s+can\s+you\s+tell\s+me\s+about|show\s+me\s+what\s+i\s+can\s+get\s+for|what\s+can\s+i\s+get\s+for|let'?s\s+do|let'?s\s+look\s+at)\s+(medical|health|dental|vision|life(?:\s+insurance)?|disability|hsa|fsa|critical(?:\s+illness)?|accident|supplemental|benefits)\b(?:\s+next)?/i;
+  const conversationalExplore = /\b(?:what\s+about|let'?s\s+(?:\w+\s+){0,2}(?:do|look\s+at|talk\s+about|go\s+(?:over|through)|explore|discuss|review|see)|what(?:'s|\s+is)\s+available\s+(?:for|in|under|with)|i\s+want\s+to\s+(?:know|learn|see|hear|understand)\s+about|how\s+about|talk\s+about|interested\s+in|show\s+me\s+what\s+i\s+can\s+get\s+for)\s+(?:the\s+)?(?:my\s+)?(medical|health|dental|vision|life(?:\s+insurance)?|disability|hsa|fsa|critical(?:\s+illness)?|accident|supplemental|benefits|family\s+coverage(?:\s+options)?)\b/i;
+  const availableWithCategory = /\b(?:what(?:'s|\s+is)\s+available|what\s+(?:do\s+)?(?:i|we)\s+(?:have|get)|what\s+(?:options?|plans?|choices?)\s+(?:are|do))\b/i.test(normalizedLowerQuery)
+    && /\b(medical|health|dental|vision|life(?:\s+insurance)?|disability|hsa|fsa|critical(?:\s+illness)?|accident|supplemental|family|spouse|child|kid|dependent)\b/i.test(normalizedLowerQuery);
+  const familyCoverageExplore = /\b(family\s+coverage|family\s+plan|spouse\s+works?\s+part[- ]?time|we\s+have\s+\w+\s+kids?|we\s+have\s+\w+\s+children|coverage\s+for\s+my\s+family|our\s+family)\b/i.test(normalizedLowerQuery);
 
   return directCategory.test(trimmed) || lightExplore.test(trimmed) || conversationalExplore.test(trimmed) || availableWithCategory || familyCoverageExplore;
 }

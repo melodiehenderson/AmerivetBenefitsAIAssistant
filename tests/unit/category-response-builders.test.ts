@@ -65,7 +65,7 @@ describe('category-response-builders', () => {
 
     expect(response).toContain('Recommendation for Employee Only coverage');
     expect(response).toContain('Standard HSA');
-    expect(response).toContain('Want me to compare total annual costs');
+    expect(response).toContain('likely total annual cost');
   });
 
   it('treats an explicit dental follow-up as a topic shift to dental instead of lingering on medical', async () => {
@@ -105,7 +105,7 @@ describe('category-response-builders', () => {
       hrPhone: '888-217-4728',
     });
 
-    expect(response).toContain('Short-Term and Long-Term Disability options are available');
+    expect(response).toContain('Short-Term Disability helps with temporary time away from work');
     expect(response).toContain('Workday');
     expect(response).toContain('888-217-4728');
   });
