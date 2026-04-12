@@ -269,6 +269,331 @@ describe('qa-v2 transcript replays', () => {
     );
   });
 
+  it('replays medical detail questions as source-backed answers instead of contextual fallback', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'medical',
+          mustContain: ['Medical plan options (Employee Only)'],
+        },
+        {
+          user: "what's a coverage tier?",
+          mustContain: ['A coverage tier is just the level of people you are enrolling', 'Employee + Family'],
+          mustNotContain: ['We can stay with medical'],
+        },
+        {
+          user: "okay, let's compare the plan tradeoffs",
+          mustContain: ['Here is the practical tradeoff across AmeriVet\'s medical options', 'Standard HSA', 'Enhanced HSA'],
+          mustNotContain: ['We can stay with medical'],
+        },
+        {
+          user: 'what are the copays for the standard plan?',
+          mustContain: ['Standard HSA', 'primary care'],
+          mustNotContain: ['We can stay with medical'],
+        },
+      ],
+      makeSession({
+        userName: 'Charlie',
+        hasCollectedName: true,
+        userAge: 49,
+        userState: 'IA',
+        dataConfirmed: true,
+        currentTopic: 'Medical',
+      }),
+    );
+  });
+
+  it('replays maternity follow-ups as medical detail answers instead of generic loops', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'my wife is pregnant',
+          mustContain: ['Here is the maternity coverage comparison', 'Standard HSA', 'Enhanced HSA'],
+          mustNotContain: ['We can stay with medical'],
+        },
+        {
+          user: 'what coverage will we get for maternity coverage on the 2 different plans?',
+          mustContain: ['Here is the maternity coverage comparison', 'Standard HSA', 'Enhanced HSA'],
+          mustNotContain: ['We can stay with medical'],
+        },
+        {
+          user: 'i want to know about maternity coverage',
+          mustContain: ['Here is the maternity coverage comparison'],
+          mustNotContain: ['We can stay with medical'],
+        },
+      ],
+      makeSession({
+        userName: 'Charlie',
+        hasCollectedName: true,
+        userAge: 49,
+        userState: 'IA',
+        dataConfirmed: true,
+        currentTopic: 'Medical',
+      }),
+    );
+  });
+
+  it('replays practical medical-detail follow-ups from the source-backed summaries instead of looping', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'medical',
+          mustContain: ['Medical plan options (Employee Only)'],
+        },
+        {
+          user: "what's a coverage tier?",
+          mustContain: ['A coverage tier is just the level of people you are enrolling'],
+          mustNotContain: ['We can stay with medical'],
+        },
+        {
+          user: "okay, let's compare the plan tradeoffs",
+          mustContain: ['Here is the practical tradeoff across AmeriVet\'s medical options'],
+          mustNotContain: ['We can stay with medical'],
+        },
+        {
+          user: 'what are the copays for the standard plan?',
+          mustContain: ['Standard HSA point-of-service cost sharing', 'Primary care'],
+          mustNotContain: ['We can stay with medical'],
+        },
+        {
+          user: 'my wife is pregnant',
+          mustContain: ['maternity', 'Standard HSA', 'Enhanced HSA'],
+          mustNotContain: ['We can stay with medical'],
+        },
+        {
+          user: 'what about prescriptions on the standard plan?',
+          mustContain: ['Standard HSA', 'do not want to guess'],
+          mustNotContain: ['We can stay with medical'],
+        },
+        {
+          user: 'what is the in-network versus out-of-network difference on these plans?',
+          mustContain: ['in-network', 'out-of-network'],
+          mustNotContain: ['We can stay with medical'],
+        },
+        {
+          user: 'what does the standard plan cover?',
+          mustContain: ['Standard HSA coverage snapshot', 'Source-backed plan features'],
+          mustNotContain: ['We can stay with medical'],
+        },
+        {
+          user: 'what about virtual visits on the standard plan?',
+          mustContain: ['Standard HSA', 'virtual visits'],
+          mustNotContain: ['We can stay with medical'],
+        },
+      ],
+      makeSession({
+        userName: 'Charlie',
+        hasCollectedName: true,
+        userAge: 49,
+        userState: 'IA',
+        dataConfirmed: true,
+        currentTopic: 'Medical',
+      }),
+    );
+  });
+
+  it('replays repeated supplemental worth-adding questions as practical guidance instead of looping', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'what is accident/ad&d?',
+          mustContain: ['Accident/AD&D coverage is another supplemental option'],
+        },
+        {
+          user: 'how do i know if i should get that?',
+          mustContain: ['usually worth considering'],
+          mustNotContain: ['We can stay with supplemental protection'],
+        },
+        {
+          user: "yeah- how do i know if it's worth adding?",
+          mustContain: ['My practical take'],
+          mustNotContain: ['usually worth considering when one of these sounds true'],
+        },
+      ],
+      makeSession({
+        userName: 'Charlie',
+        hasCollectedName: true,
+        userAge: 49,
+        userState: 'IA',
+        dataConfirmed: true,
+      }),
+    );
+  });
+
+  it('replays organic critical-illness recall after package guidance instead of falling back', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'medical',
+          mustContain: ['Medical plan options (Employee Only)'],
+        },
+        {
+          user: 'no, i’m done with medical. what else should i be thinking about?',
+          mustContain: ['dental/vision', 'life/disability'],
+        },
+        {
+          user: "wasn't there one about illness?",
+          mustContain: ['Critical illness coverage'],
+          mustNotContain: ['We can stay with medical'],
+        },
+      ],
+      makeSession({
+        userName: 'Charlie',
+        hasCollectedName: true,
+        userAge: 49,
+        userState: 'IA',
+        dataConfirmed: true,
+        currentTopic: 'Medical',
+      }),
+    );
+  });
+
+  it('replays organic worth-it follow-ups for vision and supplemental topics without looping to menus', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'vision please',
+          mustContain: ['Vision coverage: **VSP Vision Plus**'],
+        },
+        {
+          user: "how do i know if it's useful?",
+          mustContain: ['Vision is usually worth adding', 'one vision plan'],
+          mustNotContain: ['We can stay with vision'],
+        },
+        {
+          user: 'what is accident/ad&d?',
+          mustContain: ['Accident/AD&D coverage is another supplemental option'],
+        },
+        {
+          user: "yeah- how do i know if it's worth adding?",
+          mustContain: ['usually worth considering'],
+          mustNotContain: ['We can stay with supplemental protection'],
+        },
+      ],
+      makeSession({
+        userName: 'Charlie',
+        hasCollectedName: true,
+        userAge: 49,
+        userState: 'IA',
+        dataConfirmed: true,
+      }),
+    );
+  });
+
+  it('replays routine-care comparison questions in context instead of hard-pivoting back into plan cards', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'dental please',
+          mustContain: ['Dental coverage: **BCBSTX Dental PPO**'],
+        },
+        {
+          user: 'okay, tell me about your vision options',
+          mustContain: ['Vision coverage: **VSP Vision Plus**'],
+        },
+        {
+          user: 'how can i tell which one matters more?',
+          mustContain: ['deciding between dental and vision as the next add-on'],
+          mustNotContain: ['Vision coverage: **VSP Vision Plus**'],
+        },
+      ],
+      makeSession({
+        userName: 'Charlie',
+        hasCollectedName: true,
+        userAge: 49,
+        userState: 'IA',
+        dataConfirmed: true,
+      }),
+    );
+  });
+
+  it('replays organic routine-care decision questions as guidance instead of hard pivots to a plan card', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'dental please',
+          mustContain: ['Dental coverage: **BCBSTX Dental PPO**'],
+        },
+        {
+          user: 'okay, tell me about your vision options',
+          mustContain: ['Vision coverage: **VSP Vision Plus**'],
+        },
+        {
+          user: 'is that the only option?',
+          mustContain: ['one vision plan', 'worth adding at all'],
+          mustNotContain: ['We can stay with vision'],
+        },
+        {
+          user: 'do you recommend getting dental?',
+          mustContain: ['Dental is usually worth adding', 'whether to add it'],
+          mustNotContain: ['Dental coverage: **BCBSTX Dental PPO**'],
+        },
+      ],
+      makeSession({
+        userName: 'Charlie',
+        hasCollectedName: true,
+        userAge: 49,
+        userState: 'IA',
+        dataConfirmed: true,
+        completedTopics: ['Dental', 'Vision'],
+        currentTopic: 'Vision',
+      }),
+    );
+  });
+
+  it('replays supplemental worth-it follow-ups without repeating the same menu-like fallback', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'what is accident/ad&d?',
+          mustContain: ['Accident/AD&D coverage is another supplemental option'],
+        },
+        {
+          user: 'how do i know if i should get that?',
+          mustContain: ['usually worth considering'],
+          mustNotContain: ['We can stay with supplemental protection'],
+        },
+        {
+          user: "yeah- how do i know if it's worth adding?",
+          mustContain: ['My practical take'],
+          mustNotContain: ['usually worth considering when one of these sounds true'],
+        },
+      ],
+      makeSession({
+        userName: 'Charlie',
+        hasCollectedName: true,
+        userAge: 49,
+        userState: 'IA',
+        dataConfirmed: true,
+        currentTopic: 'Accident/AD&D',
+      }),
+    );
+  });
+
+  it('replays overview-style "other coverage" questions as the AmeriVet benefits lineup instead of medical-only fallback', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'medical',
+          mustContain: ['Medical plan options (Employee Only)'],
+        },
+        {
+          user: 'what are the other types of coverage available?',
+          mustContain: ['Here are the benefits available to you as an AmeriVet employee', 'Dental', 'Vision', 'Life Insurance'],
+          mustNotContain: ['We can stay with medical'],
+        },
+      ],
+      makeSession({
+        userName: 'Charlie',
+        hasCollectedName: true,
+        userAge: 49,
+        userState: 'IA',
+        dataConfirmed: true,
+        currentTopic: 'Medical',
+      }),
+    );
+  });
+
   it('replays the proactive orthodontia follow-up with an actual braces explanation', async () => {
     await replayTranscript(
       [

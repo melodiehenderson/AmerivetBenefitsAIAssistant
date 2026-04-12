@@ -1098,4 +1098,686 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
       },
     ],
   },
+  {
+    id: 'V2-TX-043',
+    category: 'medical_detail_source_backed',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+    },
+    turns: [
+      {
+        user: "what's a coverage tier?",
+        mustContain: ['A coverage tier is just the level of people you are enrolling', 'Employee + Family'],
+        mustNotContain: ['We can stay with medical'],
+      },
+      {
+        user: "okay, let's compare the plan tradeoffs",
+        mustContain: ['Here is the practical tradeoff across AmeriVet\'s medical options', 'Standard HSA', 'Enhanced HSA'],
+        mustNotContain: ['We can stay with medical'],
+      },
+      {
+        user: 'what are the copays for the standard plan?',
+        mustContain: ['Standard HSA point-of-service cost sharing', 'Primary care', 'Specialist'],
+        mustNotContain: ['We can stay with medical'],
+      },
+      {
+        user: 'what does primary care mean?',
+        mustContain: ['Primary care usually means your everyday doctor visit layer'],
+        mustNotContain: ['We can stay with medical'],
+      },
+      {
+        user: 'what does specialist mean?',
+        mustContain: ['A specialist visit means care from a doctor focused on a specific area'],
+        mustNotContain: ['We can stay with medical'],
+      },
+      {
+        user: 'what does prescription coverage mean?',
+        mustContain: ['Prescription coverage is the part of the medical plan', 'do not want to guess'],
+        mustNotContain: ['We can stay with medical'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-044',
+    category: 'maternity_medical_detail',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+    },
+    turns: [
+      {
+        user: 'my wife is pregnant',
+        mustContain: ['Here is the maternity coverage comparison', 'Standard HSA', 'Enhanced HSA'],
+        mustNotContain: ['We can stay with medical'],
+      },
+      {
+        user: 'what coverage will we get for maternity coverage on the 2 different plans?',
+        mustContain: ['Here is the maternity coverage comparison', 'Standard HSA', 'Enhanced HSA'],
+        mustNotContain: ['We can stay with medical'],
+      },
+      {
+        user: 'what about prescriptions on the standard plan?',
+        mustContain: ['Standard HSA', 'do not want to guess'],
+        mustNotContain: ['We can stay with medical'],
+      },
+      {
+        user: 'what is the in-network versus out-of-network difference on these plans?',
+        mustContain: ['in-network', 'out-of-network'],
+        mustNotContain: ['We can stay with medical'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-045',
+    category: 'worth_adding_followups',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+    },
+    turns: [
+      {
+        user: 'vision please',
+        mustContain: ['Vision coverage: **VSP Vision Plus**'],
+      },
+      {
+        user: "how do i know if it's useful?",
+        mustContain: ['Vision is usually worth adding', 'one vision plan'],
+        mustNotContain: ['We can stay with vision'],
+      },
+      {
+        user: 'what is accident/ad&d?',
+        mustContain: ['Accident/AD&D coverage is another supplemental option'],
+      },
+      {
+        user: 'how do i know if i should get that?',
+        mustContain: ['usually worth considering'],
+        mustNotContain: ['We can stay with supplemental protection'],
+      },
+      {
+        user: "yeah- how do i know if it's worth adding?",
+        mustContain: ['My practical take'],
+        mustNotContain: ['usually worth considering when one of these sounds true'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-046',
+    category: 'other_coverage_overview',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+    },
+    turns: [
+      {
+        user: 'medical',
+        mustContain: ['Medical plan options (Employee Only)'],
+      },
+      {
+        user: 'what are the other types of coverage available?',
+        mustContain: ['Here are the benefits available to you as an AmeriVet employee', 'Dental', 'Vision', 'Life Insurance'],
+        mustNotContain: ['We can stay with medical'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-047',
+    category: 'medical_plan_coverage_snapshot',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee + Spouse',
+    },
+    turns: [
+      {
+        user: 'what does the standard plan cover?',
+        mustContain: ['Standard HSA coverage snapshot', 'Source-backed plan features', 'Employee + Spouse premium'],
+        mustNotContain: ['We can stay with medical'],
+      },
+      {
+        user: 'what about virtual visits on the standard plan?',
+        mustContain: ['Standard HSA', 'virtual visits'],
+        mustNotContain: ['We can stay with medical'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-047A',
+    category: 'medical_benefits_literacy',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+    },
+    turns: [
+      {
+        user: "what's a copay?",
+        mustContain: ['A copay is the flat dollar amount', "AmeriVet's package"],
+        mustNotContain: ['We can stay with medical'],
+      },
+      {
+        user: "what's a deductible?",
+        mustContain: ['A deductible is the amount you usually pay out of pocket', "AmeriVet's medical plans"],
+        mustNotContain: ['We can stay with medical'],
+      },
+      {
+        user: "what's coinsurance?",
+        mustContain: ['Coinsurance is the percentage', "AmeriVet's package"],
+        mustNotContain: ['We can stay with medical'],
+      },
+      {
+        user: "what's an out-of-pocket max?",
+        mustContain: ['The out-of-pocket max is the ceiling', "AmeriVet's package"],
+        mustNotContain: ['We can stay with medical'],
+      },
+      {
+        user: 'what does in-network versus out-of-network mean?',
+        mustContain: ['In-network means you are using providers inside the plan', 'Out-of-network means you are going outside that network'],
+        mustNotContain: ['We can stay with medical'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-047B',
+    category: 'routine_benefit_source_backed_details',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+    },
+    turns: [
+      {
+        user: 'dental please',
+        mustContain: ['Dental coverage: **BCBSTX Dental PPO**'],
+      },
+      {
+        user: 'what does the dental plan cover for braces?',
+        mustContain: ['orthodontia is included', 'Orthodontia copay: $500'],
+        mustNotContain: ['We can stay with dental'],
+      },
+      {
+        user: 'what is the waiting period for major services?',
+        mustContain: ['Waiting period for major services is 6 months'],
+        mustNotContain: ['We can stay with dental'],
+      },
+      {
+        user: 'okay, tell me about my vision options',
+        mustContain: ['Vision coverage: **VSP Vision Plus**'],
+      },
+      {
+        user: 'what does the vision plan cover for frames and contacts?',
+        mustContain: ['practical vision perks', '$200 frame allowance', 'Contact lens allowance'],
+        mustNotContain: ['We can stay with vision'],
+      },
+      {
+        user: 'what does frame allowance mean?',
+        mustContain: ['The frame allowance is the amount the vision plan helps toward frames', '$200 frame allowance'],
+        mustNotContain: ['We can stay with vision'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-047C',
+    category: 'routine_benefit_literacy',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+    },
+    turns: [
+      {
+        user: 'dental please',
+        mustContain: ['Dental coverage: **BCBSTX Dental PPO**'],
+      },
+      {
+        user: 'what does preventive care mean?',
+        mustContain: ["In AmeriVet's dental plan, preventive care", 'routine care people expect to use'],
+        mustNotContain: ['We can stay with dental'],
+      },
+      {
+        user: 'what are major services?',
+        mustContain: ['difference is basically about how simple versus expensive the procedure is', 'Major services'],
+        mustNotContain: ['We can stay with dental'],
+      },
+      {
+        user: 'okay, tell me about my vision options',
+        mustContain: ['Vision coverage: **VSP Vision Plus**'],
+      },
+      {
+        user: 'what does lasik discount mean?',
+        mustContain: ['The LASIK discount means', 'more of a perk'],
+        mustNotContain: ['We can stay with vision'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-048',
+    category: 'supplemental_repeated_worth_it',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+    },
+    turns: [
+      {
+        user: 'what is accident/ad&d?',
+        mustContain: ['Accident/AD&D coverage is another supplemental option'],
+      },
+      {
+        user: 'how do i know if i should get that?',
+        mustContain: ['usually worth considering'],
+        mustNotContain: ['We can stay with supplemental protection'],
+      },
+      {
+        user: "yeah- how do i know if it's worth adding?",
+        mustContain: ['My practical take'],
+        mustNotContain: ['usually worth considering when one of these sounds true'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-049',
+    category: 'critical_illness_recall_after_package_guidance',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+    },
+    turns: [
+      {
+        user: 'medical',
+        mustContain: ['Medical plan options (Employee Only)'],
+      },
+      {
+        user: 'no, i’m done with medical. what else should i be thinking about?',
+        mustContain: ['dental/vision', 'life/disability'],
+      },
+      {
+        user: "wasn't there one about illness?",
+        mustContain: ['Critical illness coverage'],
+        mustNotContain: ['We can stay with medical'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-050',
+    category: 'non_medical_docs_replacement',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+    },
+    turns: [
+      {
+        user: 'life insurance info',
+        mustContain: ['Life insurance options'],
+      },
+      {
+        user: 'what does portable mean here?',
+        mustContain: ['Portable means', 'Voluntary Term Life'],
+        mustNotContain: ['I can help with life insurance'],
+      },
+      {
+        user: 'what does guaranteed issue mean?',
+        mustContain: ['Guaranteed issue means', '$150,000'],
+        mustNotContain: ['I can help with life insurance'],
+      },
+      {
+        user: 'what does cash value mean?',
+        mustContain: ['Cash value is the savings-like component', 'Whole Life'],
+        mustNotContain: ['I can help with life insurance'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-051',
+    category: 'medical_practical_followups',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+    },
+    turns: [
+      {
+        user: 'medical',
+        mustContain: ['Medical plan options'],
+      },
+      {
+        user: 'what are the copays for the standard plan?',
+        mustContain: ['Standard HSA point-of-service cost sharing', 'Primary care'],
+        mustNotContain: ['We can stay with medical'],
+      },
+      {
+        user: 'my wife is pregnant',
+        mustContain: ['maternity coverage', 'Standard HSA', 'Enhanced HSA'],
+        mustNotContain: ['We can stay with medical'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-052',
+    category: 'supplemental_compare_followthrough',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+    },
+    turns: [
+      {
+        user: 'what is accident/ad&d?',
+        mustContain: ['Accident/AD&D coverage is another supplemental option'],
+      },
+      {
+        user: 'yes, help me think through whether that is worth considering',
+        mustContain: ['Accident/AD&D is usually worth considering'],
+      },
+      {
+        user: "yes, i'd like that",
+        mustContain: ['plain-language difference between Accident/AD&D and Critical Illness'],
+        mustNotContain: ['I want to keep this grounded'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-053',
+    category: 'life_docs_replacement_detail',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+    },
+    turns: [
+      {
+        user: 'life insurance info',
+        mustContain: ['Life insurance options'],
+      },
+      {
+        user: 'what does portable mean here?',
+        mustContain: ['Portable means', 'Voluntary Term Life'],
+        mustNotContain: ['I can help with life insurance'],
+      },
+      {
+        user: 'what does guaranteed issue mean?',
+        mustContain: ['Guaranteed issue means', '$150,000'],
+        mustNotContain: ['I can help with life insurance'],
+      },
+      {
+        user: 'what does cash value mean?',
+        mustContain: ['Cash value is the savings-like component', 'Whole Life'],
+        mustNotContain: ['I can help with life insurance'],
+      },
+      {
+        user: 'how much life insurance can i get here?',
+        mustContain: ['difference across AmeriVet', 'Basic Life', '1x to 5x annual salary'],
+        mustNotContain: ['I can help with life insurance'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-054',
+    category: 'disability_docs_replacement_detail',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Disability',
+    },
+    turns: [
+      {
+        user: 'tell me about the disability stuff',
+        mustContain: ['Disability coverage is meant to protect part of your income'],
+      },
+      {
+        user: 'what is the difference between short-term and long-term disability?',
+        mustContain: ['Short-term disability and long-term disability are both income-protection benefits', 'Short-term disability helps with temporary time away from work'],
+        mustNotContain: ['We can stay with disability'],
+      },
+      {
+        user: 'how does disability work?',
+        mustContain: ['Disability is really paycheck protection'],
+        mustNotContain: ['We can stay with disability'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-055',
+    category: 'routine_package_literacy',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Vision',
+    },
+    turns: [
+      {
+        user: 'vision please',
+        mustContain: ['Vision coverage: **VSP Vision Plus**'],
+      },
+      {
+        user: 'what does frame allowance mean?',
+        mustContain: ['The frame allowance is the amount the vision plan helps toward frames', '$200 frame allowance'],
+        mustNotContain: ['We can stay with vision'],
+      },
+      {
+        user: 'what does lasik discount mean?',
+        mustContain: ['The LASIK discount means', 'more of a perk than a reason'],
+        mustNotContain: ['We can stay with vision'],
+      },
+      {
+        user: 'dental please',
+        mustContain: ['Dental coverage: **BCBSTX Dental PPO**'],
+      },
+      {
+        user: 'what are major services?',
+        mustContain: ['difference is basically about how simple versus expensive the procedure is', 'Major services'],
+        mustNotContain: ['We can stay with dental'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-056',
+    category: 'supplemental_package_literacy',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Disability',
+    },
+    turns: [
+      {
+        user: 'tell me about the disability stuff',
+        mustContain: ['Disability coverage is meant to protect part of your income'],
+      },
+      {
+        user: 'what are the disability waiting periods and maximum benefits?',
+        mustContain: ['does not list the exact disability waiting periods', 'do not want to guess'],
+        mustNotContain: ['We can stay with disability'],
+      },
+      {
+        user: 'what is accident/ad&d?',
+        mustContain: ['Accident/AD&D coverage is another supplemental option'],
+      },
+      {
+        user: 'what does ad&d mean?',
+        mustContain: ['Accident coverage and AD&D travel together', 'loss of life or limb'],
+        mustNotContain: ['We can stay with supplemental protection'],
+      },
+      {
+        user: 'what is it not for?',
+        mustContain: ['What Accident/AD&D is not', 'not a replacement for your medical plan'],
+        mustNotContain: ['We can stay with supplemental protection'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-057',
+    category: 'critical_illness_package_literacy',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Critical Illness',
+    },
+    turns: [
+      {
+        user: 'critical illness please',
+        mustContain: ['Critical illness coverage'],
+      },
+      {
+        user: 'what does lump sum mean here?',
+        mustContain: ['lump-sum style cash benefit'],
+        mustNotContain: ['We can stay with supplemental protection'],
+      },
+      {
+        user: 'what is it not for?',
+        mustContain: ['What critical illness is not', 'not a replacement for your medical plan'],
+        mustNotContain: ['We can stay with supplemental protection'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-058',
+    category: 'medical_docs_replacement_after_cost_projection',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee + Spouse',
+    },
+    turns: [
+      {
+        user: 'help me think through which one of these benefits is worth considering for my situation. okay, definitely healthcare costs - i want as little out of pocket as possible. my family is pretty healthy and my wife takes 2 prescriptions.',
+        mustContain: ['Projected Healthcare Costs for Employee + Spouse coverage'],
+      },
+      {
+        user: 'what are the copays for the standard plan?',
+        mustContain: ['Standard HSA point-of-service cost sharing', 'Primary care', 'Specialist'],
+        mustNotContain: ['We can stay with medical'],
+      },
+      {
+        user: 'my wife is pregnant',
+        mustContain: ['maternity coverage', 'Standard HSA', 'Enhanced HSA'],
+        mustNotContain: ['We can stay with medical'],
+      },
+      {
+        user: 'what coverage will we get for maternity coverage on the 2 different plans?',
+        mustContain: ['Here is the maternity coverage comparison', 'Standard HSA', 'Enhanced HSA'],
+        mustNotContain: ['We can stay with medical'],
+      },
+      {
+        user: 'what are the other types of coverage available?',
+        mustContain: ['Here are the benefits available to you as an AmeriVet employee', 'HSA/FSA Accounts'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-059',
+    category: 'routine_care_to_protection_flow',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Vision',
+      completedTopics: ['Dental', 'Vision'],
+    },
+    turns: [
+      {
+        user: 'vision please',
+        mustContain: ['Vision coverage: **VSP Vision Plus**'],
+      },
+      {
+        user: 'okay, and is that the only option?',
+        mustContain: ['whether it is worth adding at all', 'one vision plan'],
+        mustNotContain: ['We can stay with vision'],
+      },
+      {
+        user: "how do i know if it's useful?",
+        mustContain: ['Vision is usually worth adding', 'one vision plan'],
+        mustNotContain: ['We can stay with vision'],
+      },
+      {
+        user: 'do you recommend getting dental?',
+        mustContain: ['Dental is usually worth adding', 'whether to add it'],
+        mustNotContain: ['We can stay with vision'],
+      },
+      {
+        user: 'okay, tell me about the disability stuff',
+        mustContain: ['Disability coverage is meant to protect part of your income'],
+      },
+    ],
+  },
 ];

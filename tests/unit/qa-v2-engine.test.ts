@@ -32,6 +32,795 @@ describe('qa-v2 engine', () => {
     expect(result.answer).toContain('not available');
   });
 
+  it('defines coverage tiers directly when asked inside medical', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+    });
+
+    const result = await runQaV2Engine({
+      query: "what's a coverage tier?",
+      session,
+    });
+
+    expect(result.answer).toContain('A coverage tier is just the level of people you are enrolling');
+    expect(result.answer).toContain('Employee + Spouse');
+  });
+
+  it('answers medical tradeoff comparisons from structured source material', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+    });
+
+    const result = await runQaV2Engine({
+      query: "okay, let's compare the plan tradeoffs",
+      session,
+    });
+
+    expect(result.answer).toContain('Here is the practical tradeoff across AmeriVet\'s medical options');
+    expect(result.answer).toContain('Standard HSA');
+    expect(result.answer).toContain('Enhanced HSA');
+  });
+
+  it('answers plan copay questions directly from the medical summaries', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'what are the copays for the standard plan?',
+      session,
+    });
+
+    expect(result.answer).toContain('Standard HSA');
+    expect(result.answer).toContain('primary care');
+    expect(result.answer).not.toContain('We can stay with medical');
+  });
+
+  it('defines copay directly inside medical instead of looping to generic guidance', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+    });
+
+    const result = await runQaV2Engine({
+      query: "what's a copay?",
+      session,
+    });
+
+    expect(result.answer).toContain('A copay is the flat dollar amount');
+    expect(result.answer).toContain("AmeriVet's package");
+    expect(result.answer).not.toContain('We can stay with medical');
+  });
+
+  it('defines deductible directly inside medical instead of looping to generic guidance', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+    });
+
+    const result = await runQaV2Engine({
+      query: "what's a deductible?",
+      session,
+    });
+
+    expect(result.answer).toContain('A deductible is the amount you usually pay out of pocket');
+    expect(result.answer).toContain("AmeriVet's medical plans");
+    expect(result.answer).not.toContain('We can stay with medical');
+  });
+
+  it('defines coinsurance directly inside medical instead of looping to generic guidance', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+    });
+
+    const result = await runQaV2Engine({
+      query: "what's coinsurance?",
+      session,
+    });
+
+    expect(result.answer).toContain('Coinsurance is the percentage');
+    expect(result.answer).toContain("AmeriVet's package");
+    expect(result.answer).not.toContain('We can stay with medical');
+  });
+
+  it('defines out-of-pocket max directly inside medical instead of looping to generic guidance', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+    });
+
+    const result = await runQaV2Engine({
+      query: "what's an out-of-pocket max?",
+      session,
+    });
+
+    expect(result.answer).toContain('The out-of-pocket max is the ceiling');
+    expect(result.answer).toContain("AmeriVet's package");
+    expect(result.answer).not.toContain('We can stay with medical');
+  });
+
+  it('defines everyday medical literacy terms like primary care and specialist directly inside medical', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+    });
+
+    const primaryCare = await runQaV2Engine({
+      query: 'what does primary care mean?',
+      session,
+    });
+    expect(primaryCare.answer).toContain('Primary care usually means your everyday doctor visit layer');
+    expect(primaryCare.answer).not.toContain('We can stay with medical');
+
+    const specialist = await runQaV2Engine({
+      query: 'what does specialist mean?',
+      session,
+    });
+    expect(specialist.answer).toContain('A specialist visit means care from a doctor focused on a specific area');
+    expect(specialist.answer).not.toContain('We can stay with medical');
+  });
+
+  it('defines urgent care, er, and prescription coverage terms directly inside medical', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+    });
+
+    const urgentCare = await runQaV2Engine({
+      query: 'what does urgent care mean?',
+      session,
+    });
+    expect(urgentCare.answer).toContain('Urgent care is the in-between level');
+    expect(urgentCare.answer).not.toContain('We can stay with medical');
+
+    const er = await runQaV2Engine({
+      query: 'what is an er?',
+      session,
+    });
+    expect(er.answer).toContain('Emergency room coverage matters for true emergencies');
+    expect(er.answer).not.toContain('We can stay with medical');
+
+    const rx = await runQaV2Engine({
+      query: 'what does prescription coverage mean?',
+      session,
+    });
+    expect(rx.answer).toContain('Prescription coverage is the part of the medical plan');
+    expect(rx.answer).toContain('do not want to guess');
+    expect(rx.answer).not.toContain('We can stay with medical');
+  });
+
+  it('answers maternity questions across plans from structured source material', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'what coverage will we get for maternity coverage on the 2 different plans?',
+      session,
+    });
+
+    expect(result.answer).toContain('Here is the maternity coverage comparison');
+    expect(result.answer).toContain('Standard HSA');
+    expect(result.answer).toContain('Enhanced HSA');
+  });
+
+  it('infers medical detail from maternity questions even when the user does not restate medical', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+    });
+
+    const result = await runQaV2Engine({
+      query: 'my wife is pregnant',
+      session,
+    });
+
+    expect(result.answer).toContain('Here is the maternity coverage comparison');
+    expect(result.answer).toContain('Standard HSA');
+    expect(result.answer).toContain('Enhanced HSA');
+  });
+
+  it('answers practical single-plan cost questions from the medical summaries', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'what are my costs if i use the standard plan?',
+      session,
+    });
+
+    expect(result.answer).toContain('Standard HSA practical cost summary');
+    expect(result.answer).toContain('Deductible');
+    expect(result.answer).not.toContain('We can stay with medical');
+  });
+
+  it('answers prescription questions from the current medical summaries instead of falling back', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'what about prescriptions on the standard plan?',
+      session,
+    });
+
+    expect(result.answer).toContain('Standard HSA');
+    expect(result.answer).toContain('do not want to guess');
+    expect(result.answer).not.toContain('We can stay with medical');
+  });
+
+  it('answers in-network versus out-of-network questions from the current medical summaries', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'what is the in-network versus out-of-network difference on these plans?',
+      session,
+    });
+
+    expect(result.answer).toContain('in-network');
+    expect(result.answer).toContain('out-of-network');
+    expect(result.answer).not.toContain('We can stay with medical');
+  });
+
+  it('answers broad plan-coverage questions from structured AmeriVet source material', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee + Spouse',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'what does the standard plan cover?',
+      session,
+    });
+
+    expect(result.answer).toContain('Standard HSA coverage snapshot');
+    expect(result.answer).toContain('Employee + Spouse premium');
+    expect(result.answer).toContain('Source-backed plan features');
+    expect(result.answer).not.toContain('We can stay with medical');
+  });
+
+  it('answers virtual-visit questions from the structured medical source data', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'what about virtual visits on the standard plan?',
+      session,
+    });
+
+    expect(result.answer).toContain('Standard HSA');
+    expect(result.answer).toContain('virtual visits');
+    expect(result.answer).not.toContain('We can stay with medical');
+  });
+
+  it('answers overview-style "other coverage" questions with the AmeriVet benefits menu', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'what are the other types of coverage available?',
+      session,
+    });
+
+    expect(result.answer).toContain('Here are the benefits available to you as an AmeriVet employee');
+    expect(result.answer).toContain('Dental');
+    expect(result.answer).toContain('Vision');
+  });
+
+  it('answers benefits-overview questions even mid-medical conversation instead of looping to medical fallback', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      lastBotMessage: 'Projected Healthcare Costs for Employee + Spouse coverage in Iowa (low usage):',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'what are the other types of coverage available?',
+      session,
+    });
+
+    expect(result.answer).toContain('Here are the benefits available to you as an AmeriVet employee');
+    expect(result.answer).toContain('Accident/AD&D');
+    expect(result.answer).not.toContain('We can stay with medical');
+  });
+
+  it('answers coverage-tier questions directly even after a generic medical compare prompt', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      lastBotMessage: 'Medical plan options (Employee Only):\n\nWant to compare plans or switch coverage tiers?',
+    });
+
+    const result = await runQaV2Engine({
+      query: "what's a coverage tier?",
+      session,
+    });
+
+    expect(result.answer).toContain('A coverage tier is just the level of people you are enrolling');
+    expect(result.answer).toContain('Employee + Family');
+    expect(result.answer).not.toContain('We can stay with medical');
+  });
+
+  it('answers plan tradeoff prompts directly even after a generic medical compare prompt', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      lastBotMessage: 'Medical plan options (Employee Only):\n\nWant to compare plans or switch coverage tiers?',
+    });
+
+    const result = await runQaV2Engine({
+      query: "okay, let's compare the plan tradeoffs",
+      session,
+    });
+
+    expect(result.answer).toContain('Here is the practical tradeoff across AmeriVet\'s medical options');
+    expect(result.answer).toContain('Standard HSA');
+    expect(result.answer).not.toContain('We can stay with medical');
+  });
+
+  it('answers vision usefulness questions directly instead of looping to generic fallback', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Vision',
+    });
+
+    const result = await runQaV2Engine({
+      query: "how do i know if it's useful?",
+      session,
+    });
+
+    expect(result.answer).toContain('Vision is usually worth adding');
+    expect(result.answer).toContain('one vision plan');
+    expect(result.answer).not.toContain('We can stay with vision');
+  });
+
+  it('answers "is that the only option?" inside vision with a direct decision answer', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Vision',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'okay, and is that the only option?',
+      session,
+    });
+
+    expect(result.answer).toContain('AmeriVet currently offers one vision plan');
+    expect(result.answer).toContain('whether it is worth adding at all');
+    expect(result.answer).not.toContain('We can stay with vision');
+  });
+
+  it('answers "is that the only option?" inside dental with a direct decision answer', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Dental',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'is that the only option?',
+      session,
+    });
+
+    expect(result.answer).toContain('there is one dental plan');
+    expect(result.answer).toContain('whether to add it');
+    expect(result.answer).not.toContain('We can stay with dental');
+  });
+
+  it('answers dental braces details from structured source material', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Dental',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'what does the dental plan cover for braces?',
+      session,
+    });
+
+    expect(result.answer).toContain('orthodontia is included');
+    expect(result.answer).toContain('Orthodontia copay: $500');
+    expect(result.answer).not.toContain('We can stay with dental');
+  });
+
+  it('answers dental waiting-period questions from structured source material', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Dental',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'what is the waiting period for major services?',
+      session,
+    });
+
+    expect(result.answer).toContain('Waiting period for major services is 6 months');
+    expect(result.answer).not.toContain('We can stay with dental');
+  });
+
+  it('answers vision frames and contacts questions from structured source material', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Vision',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'what does the vision plan cover for frames and contacts?',
+      session,
+    });
+
+    expect(result.answer).toContain('practical vision perks');
+    expect(result.answer).toContain('$200 frame allowance');
+    expect(result.answer).toContain('Contact lens allowance');
+    expect(result.answer).not.toContain('We can stay with vision');
+  });
+
+  it('explains preventive and basic/major dental service terms from the package context', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Dental',
+    });
+
+    const preventive = await runQaV2Engine({
+      query: 'what does preventive care mean?',
+      session,
+    });
+    expect(preventive.answer).toContain("In AmeriVet's dental plan, preventive care");
+    expect(preventive.answer).not.toContain('We can stay with dental');
+
+    const services = await runQaV2Engine({
+      query: 'what are major services?',
+      session,
+    });
+    expect(services.answer).toContain('difference is basically about how simple versus expensive the procedure is');
+    expect(services.answer).toContain('Major services');
+    expect(services.answer).not.toContain('We can stay with dental');
+  });
+
+  it('explains frame allowance and lasik discount from the vision package context', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Vision',
+    });
+
+    const allowance = await runQaV2Engine({
+      query: 'what does frame allowance mean?',
+      session,
+    });
+    expect(allowance.answer).toContain('The frame allowance is the amount the vision plan helps toward frames');
+    expect(allowance.answer).toContain('$200 frame allowance');
+    expect(allowance.answer).not.toContain('We can stay with vision');
+
+    const lasik = await runQaV2Engine({
+      query: 'what does lasik discount mean?',
+      session,
+    });
+    expect(lasik.answer).toContain('The LASIK discount means');
+    expect(lasik.answer).not.toContain('We can stay with vision');
+  });
+
+  it('answers supplemental worth-adding questions directly instead of looping to generic fallback', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Accident/AD&D',
+    });
+
+    const result = await runQaV2Engine({
+      query: "yeah- how do i know if it's worth adding?",
+      session,
+    });
+
+    expect(result.answer).toContain('usually worth considering');
+    expect(result.answer).not.toContain('We can stay with supplemental protection');
+  });
+
+  it('answers repeated supplemental worth-adding questions with a practical take instead of repeating setup', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Accident/AD&D',
+      lastBotMessage: 'Accident/AD&D is usually worth considering when one of these sounds true:',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'yeah- how do i know if it is worth adding?',
+      session,
+    });
+
+    expect(result.answer).toContain('My practical take');
+    expect(result.answer).not.toContain('usually worth considering when one of these sounds true');
+  });
+
+  it('answers accident versus critical illness compare follow-through after offering it', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Accident/AD&D',
+      pendingGuidancePrompt: 'accident_vs_critical',
+      pendingGuidanceTopic: 'Accident/AD&D',
+      lastBotMessage: 'If you want, I can compare accident/AD&D versus critical illness in plain language so you can see which one is more relevant for your situation.',
+    });
+
+    const result = await runQaV2Engine({
+      query: "yes, i'd like that",
+      session,
+    });
+
+    expect(result.answer).toContain('plain-language difference between Accident/AD&D and Critical Illness');
+    expect(result.answer).not.toContain('I want to keep this grounded');
+  });
+
+  it('recovers critical illness from an organic illness reference after package guidance', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      lastBotMessage: 'From here, the most useful next step is usually dental/vision if you want routine care coverage, or life/disability if family protection matters more, then accident or critical illness if you want extra cash support.',
+    });
+
+    const result = await runQaV2Engine({
+      query: "wasn't there one about illness?",
+      session,
+    });
+
+    expect(result.answer).toContain('Critical illness coverage');
+    expect(result.answer).not.toContain('We can stay with medical');
+  });
+
+  it('can answer supplemental worth-it follow-ups from the last assistant message even if topic state is stale', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      lastBotMessage: 'Accident/AD&D coverage is another supplemental option. If you want, I can also help you think through when one of these benefits is worth considering for your situation.',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'how do i know if i should get that?',
+      session,
+    });
+
+    expect(result.answer).toContain('usually worth considering');
+    expect(result.answer).not.toContain('We can stay with supplemental protection');
+  });
+
+  it('does not just repeat the same supplemental worth-it paragraph on a second follow-up', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Accident/AD&D',
+      lastBotMessage: 'Accident/AD&D is usually worth considering when one of these sounds true:\n\n- You want extra cash support if an accidental injury happens, even with medical coverage in place',
+    });
+
+    const result = await runQaV2Engine({
+      query: "yeah- how do i know if it's worth adding?",
+      session,
+    });
+
+    expect(result.answer).toContain('My practical take');
+    expect(result.answer).not.toContain('usually worth considering when one of these sounds true');
+  });
+
+  it('turns a repeated supplemental worth-it question into a practical take after the broader fit guidance', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Accident/AD&D',
+      lastBotMessage: 'A supplemental benefit is usually worth considering when you already have your core medical decision in place and want an extra layer of cash-support protection.',
+    });
+
+    const result = await runQaV2Engine({
+      query: "yeah- how do i know if it's worth adding?",
+      session,
+    });
+
+    expect(result.answer).toContain('My practical take');
+    expect(result.answer).not.toContain('A supplemental benefit is usually worth considering');
+  });
+
+  it('answers routine-care comparison prompts in context instead of hard-pivoting topics', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Vision',
+      completedTopics: ['Dental', 'Vision'],
+    });
+
+    const result = await runQaV2Engine({
+      query: 'how can i tell which one matters more?',
+      session,
+    });
+
+    expect(result.answer).toContain('deciding between dental and vision as the next add-on');
+    expect(result.answer).not.toContain('Vision coverage: **VSP Vision Plus**');
+  });
+
   it('explains hsa/fsa questions deterministically', async () => {
     const session = makeSession({ step: 'active_chat', userName: 'Sarah', hasCollectedName: true, userAge: 35, userState: 'FL', dataConfirmed: true });
     const result = await runQaV2Engine({
@@ -204,6 +993,173 @@ describe('qa-v2 engine', () => {
 
     expect(result.answer).toContain('thinking specifically about your kids');
     expect(result.answer).toContain('If your kids are generally healthy');
+  });
+
+  it('answers life-insurance portability and guaranteed-issue questions from AmeriVet source-backed details', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+    });
+
+    const portable = await runQaV2Engine({
+      query: 'what does portable mean here?',
+      session,
+    });
+
+    expect(portable.answer).toContain('Portable means');
+    expect(portable.answer).toContain('Voluntary Term Life');
+    expect(portable.answer).not.toContain('I can help with life insurance');
+
+    const guaranteedIssue = await runQaV2Engine({
+      query: 'what does guaranteed issue mean?',
+      session,
+    });
+
+    expect(guaranteedIssue.answer).toContain('Guaranteed issue means');
+    expect(guaranteedIssue.answer).toContain('$150,000');
+    expect(guaranteedIssue.answer).not.toContain('I can help with life insurance');
+  });
+
+  it('answers whole-life cash-value questions directly from life-insurance context', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'what does cash value mean?',
+      session,
+    });
+
+    expect(result.answer).toContain('Cash value is the savings-like component');
+    expect(result.answer).toContain('Whole Life');
+    expect(result.answer).not.toContain('I can help with life insurance');
+  });
+
+  it('answers disability detail questions without falling back to generic guidance', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Disability',
+    });
+
+    const comparison = await runQaV2Engine({
+      query: 'what is the difference between short-term and long-term disability?',
+      session,
+    });
+
+    expect(comparison.answer).toContain('Short-term disability and long-term disability are both income-protection benefits');
+    expect(comparison.answer).not.toContain('We can stay with disability');
+
+    const paycheck = await runQaV2Engine({
+      query: 'how does disability protect my paycheck?',
+      session,
+    });
+
+    expect(paycheck.answer).toContain('Disability is really paycheck protection');
+    expect(paycheck.answer).not.toContain('We can stay with disability');
+
+    const waitingPeriods = await runQaV2Engine({
+      query: 'what are the disability waiting periods and maximum benefits?',
+      session,
+    });
+
+    expect(waitingPeriods.answer).toContain('does not list the exact disability waiting periods');
+    expect(waitingPeriods.answer).toContain('do not want to guess');
+    expect(waitingPeriods.answer).not.toContain('We can stay with disability');
+  });
+
+  it('answers critical-illness and accident/ad&d detail questions directly', async () => {
+    const criticalSession = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Critical Illness',
+    });
+
+    const critical = await runQaV2Engine({
+      query: 'what does lump sum mean here?',
+      session: criticalSession,
+    });
+
+    expect(critical.answer).toContain('lump-sum style cash benefit');
+    expect(critical.answer).not.toContain('We can stay with supplemental protection');
+
+    const criticalLimits = await runQaV2Engine({
+      query: 'what is it not for?',
+      session: criticalSession,
+    });
+
+    expect(criticalLimits.answer).toContain('What critical illness is not');
+    expect(criticalLimits.answer).toContain('not a replacement for your medical plan');
+    expect(criticalLimits.answer).not.toContain('We can stay with supplemental protection');
+
+    const accidentSession = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Accident/AD&D',
+    });
+
+    const accident = await runQaV2Engine({
+      query: 'what does ad&d mean?',
+      session: accidentSession,
+    });
+
+    expect(accident.answer).toContain('Accident coverage and AD&D travel together');
+    expect(accident.answer).toContain('loss of life or limb');
+    expect(accident.answer).not.toContain('We can stay with supplemental protection');
+
+    const accidentLimits = await runQaV2Engine({
+      query: 'what is it not for?',
+      session: accidentSession,
+    });
+
+    expect(accidentLimits.answer).toContain('What Accident/AD&D is not');
+    expect(accidentLimits.answer).toContain('not a replacement for your medical plan');
+    expect(accidentLimits.answer).not.toContain('We can stay with supplemental protection');
+  });
+
+  it('answers life-insurance practical coverage amount questions from the source-backed summary', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'how much life insurance can i get here?',
+      session,
+    });
+
+    expect(result.answer).toContain('difference across AmeriVet');
+    expect(result.answer).toContain('Basic Life');
+    expect(result.answer).toContain('1x to 5x annual salary');
+    expect(result.answer).not.toContain('I can help with life insurance');
   });
 
   it('answers spouse-specific medical follow-ups after a recommendation', async () => {
