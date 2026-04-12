@@ -86,6 +86,78 @@ describe('qa-v2 transcript replays', () => {
     );
   });
 
+  it('replays family-oriented narrowing after general benefit guidance', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'please help me think through which one of these benefits is worth considering for my situation.',
+          mustContain: ['what is actually worth attention first'],
+        },
+        {
+          user: 'what about for our family?',
+          mustContain: ['If protecting your family is the top priority', 'life insurance next'],
+          mustNotContain: ['Tell me which area you want to focus on next'],
+        },
+      ],
+      makeSession({
+        userName: 'Sarah',
+        hasCollectedName: true,
+        userAge: 42,
+        userState: 'FL',
+        dataConfirmed: true,
+        coverageTierLock: 'Employee + Family',
+      }),
+    );
+  });
+
+  it('replays cost-oriented narrowing after general benefit guidance', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'please help me think through which one of these benefits is worth considering for my situation.',
+          mustContain: ['what is actually worth attention first'],
+        },
+        {
+          user: 'we mostly care about cost',
+          mustContain: ['If keeping healthcare costs down is the priority', 'Focus on medical first'],
+          mustNotContain: ['Tell me which area you want to focus on next'],
+        },
+      ],
+      makeSession({
+        userName: 'Sarah',
+        hasCollectedName: true,
+        userAge: 42,
+        userState: 'FL',
+        dataConfirmed: true,
+        coverageTierLock: 'Employee + Family',
+      }),
+    );
+  });
+
+  it('replays routine-stuff shorthand into routine-care narrowing', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'please help me think through which one of these benefits is worth considering for my situation.',
+          mustContain: ['what is actually worth attention first'],
+        },
+        {
+          user: 'routine stuff',
+          mustContain: ['If routine care is what matters most', 'Look at dental next'],
+          mustNotContain: ['Tell me which area you want to focus on next'],
+        },
+      ],
+      makeSession({
+        userName: 'Sarah',
+        hasCollectedName: true,
+        userAge: 42,
+        userState: 'FL',
+        dataConfirmed: true,
+        coverageTierLock: 'Employee + Family',
+      }),
+    );
+  });
+
   it('replays hsa and supplemental follow-ups as direct explanations', async () => {
     await replayTranscript(
       [
@@ -266,6 +338,454 @@ describe('qa-v2 transcript replays', () => {
         userState: 'FL',
         dataConfirmed: true,
         currentTopic: 'Accident/AD&D',
+      }),
+    );
+  });
+
+  it('replays an organic "yes, I\'d like that" into supplemental comparison guidance', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'what is accident/ad&d?',
+          mustContain: ['Accident/AD&D coverage is another supplemental option'],
+        },
+        {
+          user: 'yes, help me think through whether that is worth considering',
+          mustContain: ['usually worth considering'],
+        },
+        {
+          user: "yes, i'd like that",
+          mustContain: ['plain-language difference between Accident/AD&D and Critical Illness', 'injury-related events', 'serious diagnosis'],
+          mustNotContain: ['Tell me which area you want to focus on next'],
+        },
+      ],
+      makeSession({
+        userName: 'Sarah',
+        hasCollectedName: true,
+        userAge: 42,
+        userState: 'FL',
+        dataConfirmed: true,
+        currentTopic: 'Accident/AD&D',
+      }),
+    );
+  });
+
+  it('replays an organic "yes, I\'d like that" into life-versus-disability guidance', async () => {
+    await replayTranscript(
+      [
+        {
+          user: "what benefit should i pay attention to first if i'm mostly worried about protecting my family?",
+          mustContain: ['protecting your family'],
+        },
+        {
+          user: "yes, i'd like that",
+          mustContain: ['simplest way to separate life insurance from disability', 'if you die'],
+          mustNotContain: ['Tell me which area you want to focus on next'],
+        },
+      ],
+      makeSession({
+        userName: 'Sarah',
+        hasCollectedName: true,
+        userAge: 42,
+        userState: 'FL',
+        dataConfirmed: true,
+        coverageTierLock: 'Employee + Family',
+      }),
+    );
+  });
+
+  it('replays family-specific follow-ups without falling back to menus', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'which medical plan should i pick if i have a spouse and 2 kids and we are generally healthy and want the lowest bills?',
+          mustContain: ['My recommendation: Standard HSA'],
+        },
+        {
+          user: 'what about for my kids?',
+          mustContain: ['thinking specifically about your kids', 'If your kids are generally healthy'],
+          mustNotContain: ['Tell me which area you want to focus on next'],
+        },
+      ],
+      makeSession({
+        userName: 'Sarah',
+        hasCollectedName: true,
+        userAge: 42,
+        userState: 'OR',
+        dataConfirmed: true,
+        coverageTierLock: 'Employee + Family',
+        currentTopic: 'Medical',
+      }),
+    );
+  });
+
+  it('replays spouse-specific follow-ups without falling back to menus', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'which medical plan should i pick if i have a spouse and 2 kids and we are generally healthy and want the lowest bills?',
+          mustContain: ['My recommendation: Standard HSA'],
+        },
+        {
+          user: 'what about for my spouse?',
+          mustContain: ['thinking specifically about your spouse', 'If your spouse is generally healthy'],
+          mustNotContain: ['Tell me which area you want to focus on next'],
+        },
+      ],
+      makeSession({
+        userName: 'Sarah',
+        hasCollectedName: true,
+        userAge: 42,
+        userState: 'OR',
+        dataConfirmed: true,
+        coverageTierLock: 'Employee + Family',
+        currentTopic: 'Medical',
+      }),
+    );
+  });
+
+  it('replays short family shorthand like "kids then?" after a medical recommendation', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'which medical plan should i pick if i have a spouse and 2 kids and we are generally healthy and want the lowest bills?',
+          mustContain: ['My recommendation: Standard HSA'],
+        },
+        {
+          user: 'kids then?',
+          mustContain: ['thinking specifically about your kids'],
+          mustNotContain: ['Tell me which area you want to focus on next'],
+        },
+      ],
+      makeSession({
+        userName: 'Sarah',
+        hasCollectedName: true,
+        userAge: 42,
+        userState: 'OR',
+        dataConfirmed: true,
+        coverageTierLock: 'Employee + Family',
+        currentTopic: 'Medical',
+      }),
+    );
+  });
+
+  it('replays a bare affirmative after supplemental comparison into the practical narrowing', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'what is accident/ad&d?',
+          mustContain: ['Accident/AD&D coverage is another supplemental option'],
+        },
+        {
+          user: 'yes, help me think through whether that is worth considering',
+          mustContain: ['usually worth considering'],
+        },
+        {
+          user: "yes, i'd like that",
+          mustContain: ['plain-language difference between Accident/AD&D and Critical Illness'],
+        },
+        {
+          user: "yes, i'd like that",
+          mustContain: ['My practical take is that I would usually choose Accident/AD&D'],
+          mustNotContain: ['Tell me which area you want to focus on next'],
+        },
+      ],
+      makeSession({
+        userName: 'Sarah',
+        hasCollectedName: true,
+        userAge: 42,
+        userState: 'FL',
+        dataConfirmed: true,
+        currentTopic: 'Accident/AD&D',
+      }),
+    );
+  });
+
+  it('replays "why would i pick that?" after routine-care comparison as a grounded practical take', async () => {
+    await replayTranscript(
+      [
+        {
+          user: "what benefit should i pay attention to first if i'm mostly worried about protecting my family?",
+          mustContain: ['protecting your family'],
+        },
+        {
+          user: 'routine care',
+          mustContain: ['If routine care is what matters most'],
+        },
+        {
+          user: 'yes, do that',
+          mustContain: ['deciding between dental and vision as the next add-on'],
+        },
+        {
+          user: 'why would i pick that?',
+          mustContain: ['My practical take is to choose dental first'],
+          mustNotContain: ['Tell me which area you want to focus on next'],
+        },
+      ],
+      makeSession({
+        userName: 'Sarah',
+        hasCollectedName: true,
+        userAge: 42,
+        userState: 'FL',
+        dataConfirmed: true,
+        coverageTierLock: 'Employee + Family',
+      }),
+    );
+  });
+
+  it('replays in-topic benefit comparison language without pivoting away from the comparison', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'dental please',
+          mustContain: ['Dental coverage: **BCBSTX Dental PPO**'],
+        },
+        {
+          user: 'is that more important than vision?',
+          mustContain: ['deciding between dental and vision as the next add-on'],
+          mustNotContain: ['Vision coverage: **VSP Vision Plus**'],
+        },
+      ],
+      makeSession({
+        userName: 'Sarah',
+        hasCollectedName: true,
+        userAge: 42,
+        userState: 'FL',
+        dataConfirmed: true,
+      }),
+    );
+  });
+
+  it('replays a short cheaper-option follow-up after a medical recommendation', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'which medical plan should i pick if i have a spouse and 2 kids and we are generally healthy and want the lowest bills?',
+          mustContain: ['My recommendation: Standard HSA'],
+        },
+        {
+          user: 'the cheaper one?',
+          mustContain: ['cheaper option', '**Standard HSA**'],
+          mustNotContain: ['Tell me which area you want to focus on next'],
+        },
+      ],
+      makeSession({
+        userName: 'Sarah',
+        hasCollectedName: true,
+        userAge: 42,
+        userState: 'OR',
+        dataConfirmed: true,
+        coverageTierLock: 'Employee + Family',
+        currentTopic: 'Medical',
+      }),
+    );
+  });
+
+  it('replays a short "that one?" follow-up after a medical recommendation', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'which medical plan should i pick if i have a spouse and 2 kids and we are generally healthy and want the lowest bills?',
+          mustContain: ['My recommendation: Standard HSA'],
+        },
+        {
+          user: 'that one?',
+          mustContain: ['My practical take is that I would usually land on **Standard HSA**'],
+          mustNotContain: ['Tell me which area you want to focus on next'],
+        },
+      ],
+      makeSession({
+        userName: 'Sarah',
+        hasCollectedName: true,
+        userAge: 42,
+        userState: 'OR',
+        dataConfirmed: true,
+        coverageTierLock: 'Employee + Family',
+        currentTopic: 'Medical',
+      }),
+    );
+  });
+
+  it('replays risk-type shorthand after accident-versus-critical comparison', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'what is accident/ad&d?',
+          mustContain: ['Accident/AD&D coverage is another supplemental option'],
+        },
+        {
+          user: 'yes, help me think through whether that is worth considering',
+          mustContain: ['usually worth considering'],
+        },
+        {
+          user: "yes, i'd like that",
+          mustContain: ['plain-language difference between Accident/AD&D and Critical Illness'],
+        },
+        {
+          user: 'more injury risk',
+          mustContain: ['lean Accident/AD&D first'],
+          mustNotContain: ['Tell me which area you want to focus on next'],
+        },
+      ],
+      makeSession({
+        userName: 'Sarah',
+        hasCollectedName: true,
+        userAge: 42,
+        userState: 'FL',
+        dataConfirmed: true,
+        currentTopic: 'Accident/AD&D',
+      }),
+    );
+  });
+
+  it('replays diagnosis-risk shorthand after accident-versus-critical comparison', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'what is accident/ad&d?',
+          mustContain: ['Accident/AD&D coverage is another supplemental option'],
+        },
+        {
+          user: 'yes, help me think through whether that is worth considering',
+          mustContain: ['usually worth considering'],
+        },
+        {
+          user: "yes, i'd like that",
+          mustContain: ['plain-language difference between Accident/AD&D and Critical Illness'],
+        },
+        {
+          user: 'more diagnosis risk',
+          mustContain: ['lean Critical Illness first'],
+          mustNotContain: ['Tell me which area you want to focus on next'],
+        },
+      ],
+      makeSession({
+        userName: 'Sarah',
+        hasCollectedName: true,
+        userAge: 42,
+        userState: 'FL',
+        dataConfirmed: true,
+        currentTopic: 'Accident/AD&D',
+      }),
+    );
+  });
+
+  it('replays "why not critical illness first?" after accident-versus-critical comparison', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'what is accident/ad&d?',
+          mustContain: ['Accident/AD&D coverage is another supplemental option'],
+        },
+        {
+          user: 'yes, help me think through whether that is worth considering',
+          mustContain: ['usually worth considering'],
+        },
+        {
+          user: "yes, i'd like that",
+          mustContain: ['plain-language difference between Accident/AD&D and Critical Illness'],
+        },
+        {
+          user: 'why not critical illness first?',
+          mustContain: ['Critical Illness can absolutely come first'],
+          mustNotContain: ['Tell me which area you want to focus on next'],
+        },
+      ],
+      makeSession({
+        userName: 'Sarah',
+        hasCollectedName: true,
+        userAge: 42,
+        userState: 'FL',
+        dataConfirmed: true,
+        currentTopic: 'Accident/AD&D',
+      }),
+    );
+  });
+
+  it('replays "why not disability first?" after family-protection comparison guidance', async () => {
+    await replayTranscript(
+      [
+        {
+          user: "what benefit should i pay attention to first if i'm mostly worried about protecting my family?",
+          mustContain: ['protecting your family'],
+        },
+        {
+          user: "yes, i'd like that",
+          mustContain: ['simplest way to separate life insurance from disability'],
+        },
+        {
+          user: 'why not disability first?',
+          mustContain: ['Disability often can come first'],
+          mustNotContain: ['Tell me which area you want to focus on next'],
+        },
+      ],
+      makeSession({
+        userName: 'Sarah',
+        hasCollectedName: true,
+        userAge: 42,
+        userState: 'FL',
+        dataConfirmed: true,
+        coverageTierLock: 'Employee + Family',
+      }),
+    );
+  });
+
+  it('replays "why not vision first?" after routine-care comparison guidance', async () => {
+    await replayTranscript(
+      [
+        {
+          user: "what benefit should i pay attention to first if i'm mostly worried about protecting my family?",
+          mustContain: ['protecting your family'],
+        },
+        {
+          user: 'routine care',
+          mustContain: ['If routine care is what matters most'],
+        },
+        {
+          user: 'yes, do that',
+          mustContain: ['deciding between dental and vision as the next add-on'],
+        },
+        {
+          user: 'why not vision first?',
+          mustContain: ['Vision can absolutely come first'],
+          mustNotContain: ['Tell me which area you want to focus on next'],
+        },
+      ],
+      makeSession({
+        userName: 'Sarah',
+        hasCollectedName: true,
+        userAge: 42,
+        userState: 'FL',
+        dataConfirmed: true,
+        coverageTierLock: 'Employee + Family',
+      }),
+    );
+  });
+
+  it('replays a follow-up fit answer after the full HSA-versus-FSA guidance', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'can you tell me about hsa/fsa?',
+          mustContain: ['Health Savings Account', 'Flexible Spending Account'],
+        },
+        {
+          user: 'yes, tell me when an hsa is the better fit',
+          mustContain: ['simplest way to think about HSA versus FSA fit'],
+        },
+        {
+          user: 'use it this year',
+          mustContain: ['FSA is usually the cleaner fit', 'current plan year'],
+          mustNotContain: ['Tell me which area you want to focus on next'],
+        },
+      ],
+      makeSession({
+        userName: 'Sarah',
+        hasCollectedName: true,
+        userAge: 42,
+        userState: 'FL',
+        dataConfirmed: true,
+        currentTopic: 'HSA/FSA',
       }),
     );
   });

@@ -94,7 +94,7 @@ describe('category-response-builders', () => {
     expect(response).toContain('Whole Life');
     expect(response).toContain('Unum');
     expect(response).toContain('Allstate');
-    expect(response).toContain('move on to disability, critical illness, or accident coverage next');
+    expect(response).toContain('the next useful comparison is usually disability first');
   });
 
   it('uses forward-looking package guidance after dental instead of pushing a dental-vs-vision comparison', () => {
@@ -106,8 +106,8 @@ describe('category-response-builders', () => {
       hrPhone: '888-217-4728',
     });
 
-    expect(response).toContain('show vision quickly too');
-    expect(response).toContain('move on to life, disability, or supplemental benefits next');
+    expect(response).toContain('vision is the most natural companion');
+    expect(response).toContain('life, disability, or supplemental benefits');
     expect(response).not.toContain('compare with vision coverage');
   });
 
@@ -120,8 +120,8 @@ describe('category-response-builders', () => {
       hrPhone: '888-217-4728',
     });
 
-    expect(response).toContain('show dental quickly too');
-    expect(response).toContain('move on to life, disability, or supplemental benefits next');
+    expect(response).toContain('dental is the most natural companion');
+    expect(response).toContain('life, disability, or supplemental benefits');
     expect(response).not.toContain('compare with dental coverage');
   });
 
@@ -134,8 +134,8 @@ describe('category-response-builders', () => {
       hrPhone: '888-217-4728',
     });
 
-    expect(response).toContain('move on to life, disability, or supplemental benefits next');
-    expect(response).not.toContain('show dental quickly too');
+    expect(response).toContain('routine care questions are settled');
+    expect(response).not.toContain('dental is the most natural companion');
     expect(response).not.toContain('switch vision coverage tiers');
   });
 
@@ -148,8 +148,8 @@ describe('category-response-builders', () => {
       hrPhone: '888-217-4728',
     });
 
-    expect(response).toContain('move on to life, disability, or supplemental benefits next');
-    expect(response).not.toContain('show vision quickly too');
+    expect(response).toContain('routine care questions are settled');
+    expect(response).not.toContain('vision is the most natural companion');
     expect(response).not.toContain('switch dental coverage tiers');
   });
 

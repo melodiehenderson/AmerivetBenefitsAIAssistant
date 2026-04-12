@@ -28,6 +28,14 @@ type EngineResult = {
 };
 
 type BenefitPriorityFocus = 'healthcare_costs' | 'family_protection' | 'routine_care';
+type SupplementalComparisonFocus = 'injury_risk' | 'diagnosis_risk';
+type HsaFitFocus = 'long_term_savings' | 'near_term_expenses';
+
+function isAffirmativeCompareFollowup(query: string): boolean {
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  return isSimpleAffirmation(query)
+    || /\b(compare|comparison|vs\.?|versus|which one|which matters more|do that|i'?d like that|yes please|tell me more)\b/i.test(lower);
+}
 
 function buildSessionContext(session: Session) {
   return {
@@ -40,6 +48,7 @@ function buildSessionContext(session: Session) {
     completedTopics: session.completedTopics || [],
     pendingGuidancePrompt: session.pendingGuidancePrompt || null,
     pendingGuidanceTopic: session.pendingGuidanceTopic || null,
+    pendingTopicSuggestion: session.pendingTopicSuggestion || null,
     askedForDemographics: session.askedForDemographics || false,
     selectedPlan: session.selectedPlan || null,
     noPricingMode: session.noPricingMode || false,
@@ -69,6 +78,25 @@ function setTopic(session: Session, topic?: string | null) {
 function clearPendingGuidance(session: Session) {
   delete session.pendingGuidancePrompt;
   delete session.pendingGuidanceTopic;
+  delete session.pendingTopicSuggestion;
+}
+
+function setPendingGuidance(
+  session: Session,
+  prompt: NonNullable<Session['pendingGuidancePrompt']>,
+  topic?: string | null,
+) {
+  session.pendingGuidancePrompt = prompt;
+  if (topic) {
+    session.pendingGuidanceTopic = topic;
+  } else {
+    delete session.pendingGuidanceTopic;
+  }
+  delete session.pendingTopicSuggestion;
+}
+
+function setPendingTopicSuggestion(session: Session, topic: string) {
+  session.pendingTopicSuggestion = topic;
 }
 
 function buildAllBenefitsMenu(): string {
@@ -119,14 +147,36 @@ function isBenefitDecisionGuidanceRequest(query: string): boolean {
 
 function detectBenefitPriorityFocus(query: string): BenefitPriorityFocus | null {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
-  if (/\b(family\s+protection|protect(?:ing)?\s+my\s+family|protect\s+my\s+family|income\s+protection)\b/i.test(lower)) {
+  if (/\b(family\s+protection|protect(?:ing)?\s+my\s+family|protect\s+my\s+family|income\s+protection|family\s+stuff|household\s+protection|protect\s+the\s+household)\b/i.test(lower)) {
     return 'family_protection';
   }
-  if (/\b(routine\s+care|everyday\s+care|dental\s+and\s+vision|glasses|contacts|cleanings)\b/i.test(lower)) {
+  if (/\b(routine\s+care|routine\s+stuff|everyday\s+care|everyday\s+stuff|day[- ]to[- ]day\s+care|dental\s+and\s+vision|glasses|contacts|cleanings)\b/i.test(lower)) {
     return 'routine_care';
   }
-  if (/\b(healthcare\s+costs|medical\s+costs|lowest\s+bills|save\s+money|keep\s+costs\s+down)\b/i.test(lower)) {
+  if (/\b(healthcare\s+costs?|medical\s+costs?|lowest\s+bills|save\s+money|keep\s+costs?\s+down|lowest\s+premium|lowest\s+premiums|lowest\s+payroll\s+deduction|monthly\s+premium|mostly\s+care\s+about\s+costs?)\b/i.test(lower)) {
     return 'healthcare_costs';
+  }
+  return null;
+}
+
+function detectSupplementalComparisonFocus(query: string): SupplementalComparisonFocus | null {
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  if (/\b(injury\s+risk|accident\s+risk|injury|accidents?|active\s+household|active\s+kids?)\b/i.test(lower)) {
+    return 'injury_risk';
+  }
+  if (/\b(diagnosis\s+risk|serious\s+diagnosis|major\s+diagnosis|illness\s+risk|cancer|heart attack|stroke)\b/i.test(lower)) {
+    return 'diagnosis_risk';
+  }
+  return null;
+}
+
+function detectHsaFitFocus(query: string): HsaFitFocus | null {
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  if (/\b(long[- ]term|savings|save it|rollover|future medical costs|build a cushion)\b/i.test(lower)) {
+    return 'long_term_savings';
+  }
+  if (/\b(near[- ]term|this year|use it soon|use it right away|near term|current plan year|spend it soon)\b/i.test(lower)) {
+    return 'near_term_expenses';
   }
   return null;
 }
@@ -134,6 +184,7 @@ function detectBenefitPriorityFocus(query: string): BenefitPriorityFocus | null 
 function buildBenefitDecisionGuidance(session: Session, focus?: BenefitPriorityFocus | null): string {
   const hasDependents = /employee\s+\+\s+(spouse|child|family)/i.test(session.coverageTierLock || '');
   if (focus === 'family_protection') {
+    setPendingGuidance(session, 'life_vs_disability', 'Life Insurance');
     return [
       `If protecting your family is the top priority, I would focus here first:`,
       ``,
@@ -147,6 +198,7 @@ function buildBenefitDecisionGuidance(session: Session, focus?: BenefitPriorityF
   }
 
   if (focus === 'routine_care') {
+    setPendingGuidance(session, 'dental_vs_vision', 'Dental');
     return [
       `If routine care is what matters most, I would usually narrow it this way:`,
       ``,
@@ -160,6 +212,7 @@ function buildBenefitDecisionGuidance(session: Session, focus?: BenefitPriorityF
   }
 
   if (focus === 'healthcare_costs') {
+    setPendingGuidance(session, 'medical_tradeoff_compare', 'Medical');
     return [
       `If keeping healthcare costs down is the priority, I would narrow it this way:`,
       ``,
@@ -204,10 +257,324 @@ function buildHsaFitGuidance(): string {
   ].join('\n');
 }
 
+function buildHsaFitSpecificReply(focus: HsaFitFocus): string {
+  if (focus === 'long_term_savings') {
+    return [
+      `If you are thinking more about long-term savings, HSA is usually the cleaner fit.`,
+      ``,
+      `That is because:`,
+      `- unused HSA funds roll over year to year`,
+      `- the account stays with you`,
+      `- it is better for building a longer-term healthcare cushion instead of spending everything in the current plan year`,
+    ].join('\n');
+  }
+
+  return [
+    `If you are thinking more about near-term expenses, FSA is usually the cleaner fit.`,
+    ``,
+    `That is because:`,
+    `- it is meant for eligible expenses you expect to pay within the current plan year`,
+    `- it still uses pre-tax dollars`,
+    `- it makes more sense when you care more about spending soon than rolling money forward long term`,
+  ].join('\n');
+}
+
+function buildAccidentVsCriticalComparison(): string {
+  return [
+    `Here is the plain-language difference between Accident/AD&D and Critical Illness:`,
+    ``,
+    `- Accident/AD&D is tied to covered accidental injuries and accidental loss-of-life or limb events`,
+    `- Critical illness is tied to covered diagnoses like a heart attack, stroke, or certain cancers`,
+    `- Accident/AD&D is usually more relevant if you want extra protection for injury-related events`,
+    `- Critical illness is usually more relevant if you are more worried about the financial shock of a serious diagnosis`,
+    ``,
+    `If your main worry is an active household and accidental injury, Accident/AD&D usually feels more relevant.`,
+    `If your main worry is a major diagnosis creating cash pressure on top of medical bills, Critical Illness usually feels more relevant.`,
+    ``,
+    `If you want, I can narrow down which one is the better fit based on whether you are more worried about injury risk or diagnosis risk.`,
+  ].join('\n');
+}
+
+function buildLifeVsDisabilityComparison(): string {
+  return [
+    `Here is the simplest way to separate life insurance from disability:`,
+    ``,
+    `- Life insurance is for protecting your household if you die`,
+    `- Disability is for protecting part of your income if you are alive but unable to work because of illness or injury`,
+    `- If people rely on your paycheck, disability often matters sooner than people expect`,
+    `- If people rely on your long-term income and would need support after your death, life insurance is essential too`,
+    ``,
+    `For many working families, disability and life are both important, but disability is often the more immediate paycheck-protection decision while life is the household-replacement decision.`,
+  ].join('\n');
+}
+
+function buildDentalVsVisionDecision(): string {
+  return [
+    `If you are deciding between dental and vision as the next add-on, I would usually frame it this way:`,
+    ``,
+    `- Choose dental first if your household expects cleanings, fillings, crowns, or orthodontic use`,
+    `- Choose vision first if you expect regular eye exams, glasses, or contacts`,
+    `- Dental usually has the bigger upside when there is known procedure use`,
+    `- Vision is usually easier to justify when you know the household uses exams and eyewear every year`,
+    ``,
+    `So the better add-on depends less on theory and more on what your household already knows it will use.`,
+  ].join('\n');
+}
+
+function buildMedicalRecommendationWhy(session: Session): string {
+  const usage = usageLevelFromSession(session);
+  const recommendationHistory = (session.messages || [])
+    .filter((message) => message.role === 'assistant')
+    .map((message) => message.content)
+    .reverse()
+    .find((content) => /My recommendation:\s*/i.test(content)) || session.lastBotMessage || '';
+  const recommendation = recommendationHistory.match(/My recommendation:\s*([A-Za-z ]+)/i)?.[1]?.trim();
+
+  if (/Enhanced HSA/i.test(recommendation || '')) {
+    return [
+      `The reason I leaned Enhanced HSA is that your usage sounds high enough that paying more in premium can still be the cleaner trade if it lowers the deductible shock when care actually happens.`,
+      ``,
+      `The practical tradeoff is:`,
+      `- Standard HSA keeps payroll cost lower`,
+      `- Enhanced HSA usually feels better once you expect regular care, prescriptions, or a meaningful chance of hitting the deductible`,
+      ``,
+      `So I would only move off the cheaper option if you think the extra premium is buying you real peace of mind against higher medical use.`,
+    ].join('\n');
+  }
+
+  if (/Kaiser Standard HMO/i.test(recommendation || '')) {
+    return [
+      `The reason I kept Kaiser in the conversation is that if you specifically want the Kaiser-style integrated network and you are in an eligible state, it can be a reasonable fit even when it is not the lowest-premium option.`,
+      ``,
+      `The tradeoff is usually about network preference more than pure savings.`,
+    ].join('\n');
+  }
+
+  return [
+    `The reason I leaned Standard HSA is that it is usually the cleaner fit when the goal is to keep payroll cost lower and you do not expect much care.`,
+    ``,
+    `The practical tradeoff is:`,
+    `- Standard HSA keeps more of the savings in your paycheck`,
+    `- Enhanced HSA can be worth the extra premium if you expect enough care for the richer protection to matter`,
+    ``,
+    usage === 'low'
+      ? `Since your expected usage sounds low, I would usually only pay more for Enhanced HSA if you strongly prefer extra deductible protection over lower premiums.`
+      : `If your usage creeps up into moderate or high territory, that is when paying more for Enhanced HSA starts to make more sense.`,
+  ].join('\n');
+}
+
+function buildMedicalWorthExtraPremiumReply(session: Session): string {
+  const usage = usageLevelFromSession(session);
+  return [
+    `Whether the richer medical option is worth the extra premium mostly comes down to expected use.`,
+    ``,
+    `- If usage is low, I would usually keep the cheaper option and avoid paying more up front`,
+    `- If usage is moderate to high, the extra premium can be worth it if it meaningfully softens the deductible and out-of-pocket risk`,
+    `- If you care most about the lowest ongoing payroll deduction, the higher-premium option is usually harder to justify`,
+    ``,
+    usage === 'high'
+      ? `Because your current context sounds closer to higher usage, I would take the richer protection more seriously.`
+      : usage === 'low'
+        ? `Because your current context sounds closer to low usage, I would usually stay with the cheaper plan unless you really want the extra protection.`
+        : `Because your current context sounds moderate, this is the gray zone where the choice is really about your comfort with risk versus premium spend.`,
+  ].join('\n');
+}
+
+function buildMedicalPracticalTake(session: Session): string {
+  const usage = usageLevelFromSession(session);
+  const recommendationHistory = (session.messages || [])
+    .filter((message) => message.role === 'assistant')
+    .map((message) => message.content)
+    .reverse()
+    .find((content) => /My recommendation:\s*/i.test(content)) || session.lastBotMessage || '';
+  const recommendation = recommendationHistory.match(/My recommendation:\s*([A-Za-z ]+)/i)?.[1]?.trim();
+  const chosen = recommendation || (usage === 'high' ? 'Enhanced HSA' : 'Standard HSA');
+
+  return [
+    `My practical take is that I would usually land on **${chosen}** for this situation.`,
+    ``,
+    chosen === 'Enhanced HSA'
+      ? `I would make that choice when I think the household is likely to use enough care that the richer protection is worth paying for up front.`
+      : `I would make that choice when I think the household is trying to keep costs down and is unlikely to use enough care to justify the richer option.`,
+    ``,
+    `So the real question is not which plan sounds nicer — it is whether you think your likely usage is high enough to make the extra premium pay for itself in peace of mind or actual cost protection.`,
+  ].join('\n');
+}
+
+function buildMedicalFamilySpecificReply(session: Session, query = ''): string {
+  const tier = coverageTierFromConversation(session) || session.coverageTierLock || 'Employee Only';
+  const usage = usageLevelFromSession(session);
+  const lower = query.toLowerCase();
+  const spouseFocused = /\bspouse\b|\bpartner\b/i.test(lower);
+  const childFocused = /\bkids?\b|\bchildren\b/i.test(lower);
+
+  if (/Employee \+ Family|Employee \+ Child/i.test(tier)) {
+    const lead = childFocused
+      ? `If you are thinking specifically about your kids, the practical question is whether the household is likely to use enough care for the richer medical plan to matter.`
+      : spouseFocused
+        ? `If you are thinking specifically about your spouse, the practical question is whether the household is likely to use enough care for the richer medical plan to matter.`
+        : `If you are thinking specifically about your household, the practical question is whether the household is likely to use enough care for the richer medical plan to matter.`;
+    return [
+      lead,
+      ``,
+      childFocused
+        ? `- If your kids are generally healthy and the household mostly needs routine visits, the lower-premium option is still usually the cleaner fit`
+        : spouseFocused
+          ? `- If your spouse is generally healthy and the household mostly needs routine visits, the lower-premium option is still usually the cleaner fit`
+          : `- If the household is generally healthy and mostly needs routine visits, the lower-premium option is still usually the cleaner fit`,
+      `- If you expect specialist care, recurring prescriptions, therapy, or a real chance of using more than routine pediatric care, the richer protection becomes easier to justify`,
+      `- If Kaiser is available in your state and you strongly prefer that integrated network for the family, that can outweigh pure premium savings`,
+      ``,
+      usage === 'high'
+        ? `Because your current context already sounds closer to higher usage, I would take the richer family protection more seriously than I would for a low-use household.`
+        : `Because your current context does not sound like heavy use, I would usually avoid paying more just in case unless you already know the family will use the plan heavily.`,
+    ].join('\n');
+  }
+
+  return [
+    `If you are really asking about household impact, I would first decide whether the medical choice is mainly about routine care, larger-risk protection, or a preferred network.`,
+    ``,
+    `That is what tells you whether the cheaper plan or the richer plan is more worth it in practice.`,
+  ].join('\n');
+}
+
+function buildSupplementalPracticalTake(topic: string): string {
+  if (topic === 'Accident/AD&D') {
+    return [
+      `My practical take is that I would usually choose Accident/AD&D before Critical Illness only if the household is especially active and I am more worried about injury risk than diagnosis risk.`,
+      ``,
+      `If the bigger fear is a serious diagnosis creating financial stress, I would usually look at Critical Illness first.`,
+    ].join('\n');
+  }
+
+  if (topic === 'Life Insurance') {
+    return [
+      `My practical take is that if people rely on your income, I would not leave life insurance as an afterthought.`,
+      ``,
+      `It usually becomes one of the first optional benefits worth tightening up once the medical choice is settled.`,
+    ].join('\n');
+  }
+
+  if (topic === 'Disability') {
+    return [
+      `My practical take is that disability is often more important than people expect, because losing part of your paycheck can create a problem long before many people think about life insurance payouts.`,
+      ``,
+      `If your household depends on your ongoing income, disability usually deserves real attention.`,
+    ].join('\n');
+  }
+
+  return [
+    `My practical take is that supplemental benefits usually come after the core medical choice, and after life or disability if income protection is the bigger issue.`,
+    ``,
+    `They become more worthwhile when you want an extra layer of protection rather than because the core package is inadequate.`,
+  ].join('\n');
+}
+
+function buildAccidentVsCriticalFocusedReply(focus: SupplementalComparisonFocus): string {
+  if (focus === 'injury_risk') {
+    return [
+      `If your concern is more about injury risk, I would usually lean Accident/AD&D first.`,
+      ``,
+      `That is the cleaner fit when the household is active and you want extra help for accidental-injury scenarios rather than diagnosis-driven scenarios.`,
+    ].join('\n');
+  }
+
+  return [
+    `If your concern is more about diagnosis risk, I would usually lean Critical Illness first.`,
+    ``,
+    `That becomes more relevant when the bigger fear is a serious diagnosis creating financial stress on top of the medical plan rather than an accidental injury event.`,
+  ].join('\n');
+}
+
+function buildComparisonFamilyReply(
+  kind: 'accident_vs_critical' | 'life_vs_disability' | 'dental_vs_vision',
+  query = '',
+): string {
+  const lower = query.toLowerCase();
+  const spouseFocused = /\bspouse\b|\bpartner\b/i.test(lower);
+  const childFocused = /\bkids?\b|\bchildren\b/i.test(lower);
+
+  if (kind === 'life_vs_disability') {
+    return [
+      childFocused
+        ? `If you are thinking about your kids first, life and disability usually work together rather than replacing each other.`
+        : spouseFocused
+          ? `If you are thinking about your spouse or partner first, life and disability usually work together rather than replacing each other.`
+          : `If you are thinking about your family or household first, life and disability usually work together rather than replacing each other.`,
+      ``,
+      `- Life insurance is the household-replacement decision if something happens to you`,
+      `- Disability is the paycheck-protection decision if you are alive but unable to work`,
+      `- For many families, disability matters sooner than people expect because an interrupted paycheck can create stress before anyone is thinking about a death benefit`,
+      ``,
+      childFocused
+        ? `So if your kids depend on your income, I would usually tighten up disability and life before I worry about smaller supplemental add-ons.`
+        : spouseFocused
+          ? `So if your spouse depends on your income, I would usually tighten up disability and life before I worry about smaller supplemental add-ons.`
+          : `So if your household depends on your income, I would usually tighten up disability and life before I worry about smaller supplemental add-ons.`,
+    ].join('\n');
+  }
+
+  if (kind === 'dental_vs_vision') {
+    return [
+      childFocused
+        ? `If you are thinking about your kids specifically, dental usually becomes the first add-on more often than vision.`
+        : spouseFocused
+          ? `If you are thinking about your spouse specifically, the better add-on depends on whether the household expects dental work or regular eyewear use first.`
+          : `If you are thinking about your household specifically, dental usually becomes the first add-on more often than vision unless regular eyewear use is already obvious.`,
+      ``,
+      `- Dental is usually easier to justify if the household will use cleanings, fillings, or orthodontic care`,
+      `- Vision becomes easier to justify when you already know the kids need regular eye exams, glasses, or contacts`,
+      `- If you do not already expect eyewear use, dental usually has the bigger family upside`,
+      ``,
+      `So for many households with kids, dental is the first routine-care add-on unless vision use is already obvious.`,
+    ].join('\n');
+  }
+
+  return [
+    `If you are thinking about your household, Accident/AD&D usually matters more when your concern is injury risk, while Critical Illness matters more when your concern is the financial shock of a serious diagnosis.`,
+    ``,
+    `For a family, I would usually only prioritize either one after the core medical choice and after life or disability if income protection is the bigger concern.`,
+  ].join('\n');
+}
+
+function buildWhyNotOtherFirstReply(kind: 'accident_vs_critical' | 'life_vs_disability' | 'dental_vs_vision', query: string): string | null {
+  const lower = query.toLowerCase();
+
+  if (kind === 'dental_vs_vision' && /\bwhy not vision first\b/i.test(lower)) {
+    return [
+      `Vision can absolutely come first if your household already knows it will use regular eye exams, glasses, or contacts.`,
+      ``,
+      `I only lean dental first by default when procedure use like cleanings, fillings, or orthodontia feels more certain than eyewear use.`,
+      `So "why not vision first?" really comes down to whether vision use is already obvious in your household.`,
+    ].join('\n');
+  }
+
+  if (kind === 'life_vs_disability' && /\bwhy not disability first\b/i.test(lower)) {
+    return [
+      `Disability often can come first, especially if your household depends heavily on your paycheck.`,
+      ``,
+      `That is because a work-stopping illness or injury can create financial stress long before anyone is thinking about a life insurance payout.`,
+      `So if paycheck interruption feels like the more immediate risk, disability first is a very reasonable way to think about it.`,
+    ].join('\n');
+  }
+
+  if (kind === 'accident_vs_critical' && /\bwhy not critical illness first\b/i.test(lower)) {
+    return [
+      `Critical Illness can absolutely come first if the bigger fear is the financial shock of a serious diagnosis rather than an accidental injury.`,
+      ``,
+      `I only lean Accident/AD&D first when the household feels more exposed to injury risk than diagnosis risk.`,
+      `So "why not critical illness first?" is really a fair question when diagnosis risk is what feels more relevant to you.`,
+    ].join('\n');
+  }
+
+  return null;
+}
+
 function buildSupplementalFitGuidance(session: Session): string {
   const topic = session.currentTopic || session.pendingGuidanceTopic || 'Supplemental';
 
   if (topic === 'Accident/AD&D') {
+    setPendingGuidance(session, 'accident_vs_critical', 'Accident/AD&D');
     return [
       `Accident/AD&D is usually worth considering when one of these sounds true:`,
       ``,
@@ -274,6 +641,25 @@ function benefitTopicFromQuery(query: string): string | null {
   if (/\b(hsa(?:\s*\/\s*fsa)?|fsa)\b/i.test(lower)) return 'HSA/FSA';
   if (/\b(all\s+benefits|benefits\s+overview|what\s+are\s+all\s+the\s+benefits|what\s+benefits\s+do\s+i\s+have)\b/i.test(lower)) return 'Benefits Overview';
   return null;
+}
+
+function comparisonKindFromTopics(topicA?: string | null, topicB?: string | null): 'dental_vs_vision' | 'life_vs_disability' | 'accident_vs_critical' | null {
+  const pair = [topicA, topicB].filter(Boolean).sort().join('|');
+  if (pair === ['Dental', 'Vision'].sort().join('|')) return 'dental_vs_vision';
+  if (pair === ['Life Insurance', 'Disability'].sort().join('|')) return 'life_vs_disability';
+  if (pair === ['Accident/AD&D', 'Critical Illness'].sort().join('|')) return 'accident_vs_critical';
+  return null;
+}
+
+function detectContextualComparisonKind(session: Session, query: string): 'dental_vs_vision' | 'life_vs_disability' | 'accident_vs_critical' | null {
+  const lower = query.toLowerCase();
+  if (!/\b(more important|matters more|which one first|which matters more|better than|more worth adding|worth adding first)\b/i.test(lower)) {
+    return null;
+  }
+
+  const current = session.currentTopic || null;
+  const mentioned = benefitTopicFromQuery(query);
+  return comparisonKindFromTopics(current, mentioned);
 }
 
 function extractAge(message: string): number | null {
@@ -374,7 +760,8 @@ function isCostModelRequest(query: string): boolean {
 
 function usageLevelFromQuery(query: string): 'low' | 'moderate' | 'high' {
   const lower = query.toLowerCase();
-  if (/\bhigh\s+usage\b|\bhigh\s+utilization\b|\bfrequent\b|\bongoing\b/i.test(lower)) return 'high';
+  if (/\bhigh\s+usage\b|\bhigh\s+utilization\b|\busage\s+level\s+is\s+high\b|\bfrequent\b|\bongoing\b/i.test(lower)) return 'high';
+  if (/\bmoderate\s+usage\b|\bmoderate\s+utilization\b|\busage\s+level\s+is\s+moderate\b/i.test(lower)) return 'moderate';
   if (/\blow\s+usage\b|\bgenerally\s+healthy\b|\bhealthy\b|\blow\s+bills\b|\blow\s+medical\s+use\b/i.test(lower)) return 'low';
   return 'moderate';
 }
@@ -453,6 +840,18 @@ function buildTopicReply(session: Session, topic: string, query: string): string
   });
 
   if (categoryResponse) {
+    if (topic === 'Dental' && !(session.completedTopics || []).includes('Vision')) {
+      setPendingTopicSuggestion(session, 'Vision');
+    } else if (topic === 'Vision' && !(session.completedTopics || []).includes('Dental')) {
+      setPendingTopicSuggestion(session, 'Dental');
+    } else if (topic === 'Life Insurance') {
+      setPendingTopicSuggestion(session, 'Disability');
+    } else if (topic === 'Disability') {
+      setPendingTopicSuggestion(session, 'Life Insurance');
+    } else {
+      delete session.pendingTopicSuggestion;
+    }
+
     if (topic === 'HSA/FSA' && /better fit versus an FSA for your situation/i.test(categoryResponse)) {
       session.pendingGuidancePrompt = 'hsa_vs_fsa';
       session.pendingGuidanceTopic = 'HSA/FSA';
@@ -468,9 +867,66 @@ function buildTopicReply(session: Session, topic: string, query: string): string
   return `I can help with ${topic.toLowerCase()}, but I want to keep it grounded in the AmeriVet benefits package. Please ask that one a little more specifically and I’ll answer directly.`;
 }
 
+function buildContextualFallback(session: Session): string {
+  if (session.currentTopic === 'Medical') {
+    return `We can stay with medical. The most useful next step is usually one of these: compare the plan tradeoff, estimate likely costs, or talk through why one option fits better for your situation.`;
+  }
+
+  if (session.currentTopic === 'Dental') {
+    return `We can stay with dental. The most useful next step is usually whether the plan is worth adding, what orthodontia means in practice, or whether dental matters more than vision for your household.`;
+  }
+
+  if (session.currentTopic === 'Vision') {
+    return `We can stay with vision. The most useful next step is usually whether it is worth adding for your household, or whether vision matters more than dental based on expected use.`;
+  }
+
+  if (session.currentTopic === 'Life Insurance') {
+    return `We can stay with life insurance. The most useful next step is usually whether life or disability matters more first, or how much protection is worth paying for if your family relies on your income.`;
+  }
+
+  if (session.currentTopic === 'Disability') {
+    return `We can stay with disability. The most useful next step is usually whether disability or life insurance deserves priority, or whether paycheck protection is worth adding for your household.`;
+  }
+
+  if (session.currentTopic === 'Accident/AD&D' || session.currentTopic === 'Critical Illness') {
+    return `We can stay with supplemental protection. The most useful next step is usually whether this is worth adding at all, or how it compares with the other supplemental options.`;
+  }
+
+  if (session.currentTopic === 'HSA/FSA') {
+    return `We can stay with HSA/FSA. The most useful next step is usually when HSA fits better, when FSA fits better, or what the tax and rollover tradeoff means in practice.`;
+  }
+
+  return `I can help you narrow this down. The usual starting points are medical if you are choosing core coverage, dental or vision for routine care, or life and disability if family protection matters more than everyday care.`;
+}
+
+function isFamilySpecificFollowup(query: string): boolean {
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  return /\b(what about|how about|for)\s+((my|our|the)\s+)?(kids|children|family|household)\b/i.test(lower)
+    || /\b(what about|how about|for)\s+((my|our)\s+)?(spouse|partner)\b/i.test(lower)
+    || /\b(my|our|the)\s+(kids|children|family|household)\b/i.test(lower)
+    || /\bmy spouse\b|\bour spouse\b|\bmy partner\b|\bour partner\b/i.test(lower)
+    || /\b(kids|children|family|household|spouse|partner)\s+then\b/i.test(lower)
+    || /\bwe mostly care about (the kids|our kids|our family|the family|our household)\b/i.test(lower);
+}
+
 function buildContinuationReply(session: Session, query: string): string | null {
   const lower = query.toLowerCase();
   const focus = detectBenefitPriorityFocus(query);
+  const hsaFitFocus = detectHsaFitFocus(query);
+  const supplementalComparisonFocus = detectSupplementalComparisonFocus(query);
+  const lastBotMessage = session.lastBotMessage || '';
+  const assistantHistory = (session.messages || [])
+    .filter((message) => message.role === 'assistant')
+    .map((message) => message.content);
+  const hasMedicalRecommendationInHistory = assistantHistory.some((content) => /My recommendation:\s*/i.test(content));
+  const wantsWhy = /\bwhy\b|\bwhy that\b|\bwhy is that\b/i.test(lower);
+  const wantsPracticalTake = /\bwhat would you do\b|\bwhich would you pick\b|\bwhat'?s your practical take\b|\bwhich one would you choose\b|\bwhich one would you pick\b/i.test(lower);
+  const wantsWorthPremium = /\bworth the extra premium\b|\bworth paying more\b|\bworth the higher premium\b|\bwhy pay more\b/i.test(lower);
+  const wantsDecisionReason = /\bwhy would i pick that\b|\bwhy pick that\b|\bwhy choose that\b|\bwhy that one\b|\bwhy that one over the other\b|\bwhy that over the other\b/i.test(lower);
+  const wantsCheaperOption = /\b(the cheaper one|cheaper one|cheaper option|lower premium one|lower premium option|lowest premium one|lowest premium option)\b/i.test(lower);
+  const wantsThatOne = /\b(that one|that plan|that option|the recommended one)\b/i.test(lower);
+  const wantsFamilySpecific = isFamilySpecificFollowup(query);
+  const contextualComparisonKind = detectContextualComparisonKind(session, query);
 
   if (session.currentTopic === 'HSA/FSA' && (/\bwhat\s+does\s+hsa\s+mean\b|\bwhat\s+is\s+an?\s+hsa\b|\bwhat\s+does\s+fsa\s+mean\b|\bwhat\s+is\s+an?\s+fsa\b/i.test(lower))) {
     return buildTopicReply(session, 'HSA/FSA', query);
@@ -479,6 +935,10 @@ function buildContinuationReply(session: Session, query: string): string | null 
   if (session.pendingGuidancePrompt === 'benefit_decision' && focus) {
     session.pendingGuidancePrompt = 'benefit_decision';
     return buildBenefitDecisionGuidance(session, focus);
+  }
+  if (session.pendingGuidancePrompt === 'benefit_decision' && wantsFamilySpecific) {
+    session.pendingGuidancePrompt = 'benefit_decision';
+    return buildBenefitDecisionGuidance(session, 'family_protection');
   }
 
   if (session.pendingGuidancePrompt === 'orthodontia_braces' && isOrthodontiaBracesFollowup(query)) {
@@ -496,6 +956,10 @@ function buildContinuationReply(session: Session, query: string): string | null 
   }
 
   if (session.pendingGuidancePrompt === 'hsa_vs_fsa') {
+    if (hsaFitFocus) {
+      clearPendingGuidance(session);
+      return buildHsaFitSpecificReply(hsaFitFocus);
+    }
     if (isSimpleAffirmation(query) || /\b(hsa|fsa|better fit|which one|long[- ]term savings|near[- ]term medical expenses)\b/i.test(lower)) {
       clearPendingGuidance(session);
       return buildHsaFitGuidance();
@@ -505,6 +969,147 @@ function buildContinuationReply(session: Session, query: string): string | null 
   if (session.pendingGuidancePrompt === 'supplemental_fit' && shouldHandleSupplementalFitFollowup(query)) {
     clearPendingGuidance(session);
     return buildSupplementalFitGuidance(session);
+  }
+
+  if (session.pendingGuidancePrompt === 'accident_vs_critical' && isAffirmativeCompareFollowup(query)) {
+    clearPendingGuidance(session);
+    return buildAccidentVsCriticalComparison();
+  }
+  if (session.pendingGuidancePrompt === 'accident_vs_critical' && supplementalComparisonFocus) {
+    clearPendingGuidance(session);
+    return buildAccidentVsCriticalFocusedReply(supplementalComparisonFocus);
+  }
+
+  if (session.pendingGuidancePrompt === 'life_vs_disability' && isAffirmativeCompareFollowup(query)) {
+    clearPendingGuidance(session);
+    return buildLifeVsDisabilityComparison();
+  }
+
+  if (session.pendingGuidancePrompt === 'dental_vs_vision' && isAffirmativeCompareFollowup(query)) {
+    clearPendingGuidance(session);
+    return buildDentalVsVisionDecision();
+  }
+
+  if (session.pendingGuidancePrompt === 'medical_tradeoff_compare' && isAffirmativeCompareFollowup(query)) {
+    clearPendingGuidance(session);
+    setTopic(session, 'Medical');
+    return pricingUtils.estimateCostProjection({
+      coverageTier: coverageTierFromConversation(session) || session.coverageTierLock || 'Employee Only',
+      usage: usageLevelFromSession(session),
+      state: session.userState || undefined,
+      age: session.userAge || undefined,
+    });
+  }
+
+  if (contextualComparisonKind) {
+    if (contextualComparisonKind === 'dental_vs_vision') {
+      return buildDentalVsVisionDecision();
+    }
+    if (contextualComparisonKind === 'life_vs_disability') {
+      return buildLifeVsDisabilityComparison();
+    }
+    if (contextualComparisonKind === 'accident_vs_critical') {
+      return buildAccidentVsCriticalComparison();
+    }
+  }
+
+  if (session.currentTopic === 'Medical' && (hasMedicalRecommendationInHistory || /My recommendation:/i.test(lastBotMessage))) {
+    if (wantsPracticalTake || wantsDecisionReason || wantsThatOne) {
+      return buildMedicalPracticalTake(session);
+    }
+    if (wantsCheaperOption) {
+      return [
+        `If you mean the cheaper option, that is usually **Standard HSA**.`,
+        ``,
+        `That is the one I would usually keep if the goal is lower payroll cost and you do not expect enough care to justify paying more up front.`,
+      ].join('\n');
+    }
+    if (wantsWhy) {
+      return buildMedicalRecommendationWhy(session);
+    }
+    if (wantsWorthPremium) {
+      return buildMedicalWorthExtraPremiumReply(session);
+    }
+    if (wantsFamilySpecific) {
+      return buildMedicalFamilySpecificReply(session, query);
+    }
+  }
+
+  if (
+    /simplest way to think about HSA versus FSA fit/i.test(lastBotMessage)
+  ) {
+    if (hsaFitFocus) {
+      return buildHsaFitSpecificReply(hsaFitFocus);
+    }
+  }
+
+  if (
+    /plain-language difference between Accident\/AD&D and Critical Illness/i.test(lastBotMessage)
+    || /simplest way to separate life insurance from disability/i.test(lastBotMessage)
+    || /deciding between dental and vision as the next add-on/i.test(lastBotMessage)
+  ) {
+    if (/Accident\/AD&D and Critical Illness/i.test(lastBotMessage)) {
+      const reply = buildWhyNotOtherFirstReply('accident_vs_critical', query);
+      if (reply) return reply;
+    }
+    if (/life insurance from disability/i.test(lastBotMessage)) {
+      const reply = buildWhyNotOtherFirstReply('life_vs_disability', query);
+      if (reply) return reply;
+    }
+    if (/dental and vision as the next add-on/i.test(lastBotMessage)) {
+      const reply = buildWhyNotOtherFirstReply('dental_vs_vision', query);
+      if (reply) return reply;
+    }
+    if (supplementalComparisonFocus && /Accident\/AD&D and Critical Illness/i.test(lastBotMessage)) {
+      return buildAccidentVsCriticalFocusedReply(supplementalComparisonFocus);
+    }
+    if (
+      wantsPracticalTake
+      || wantsDecisionReason
+      || wantsThatOne
+      || isAffirmativeCompareFollowup(query)
+      || /\bwhich matters more\b|\bwhich one is more relevant\b|\bwhich one first\b/i.test(lower)
+    ) {
+      if (/Accident\/AD&D and Critical Illness/i.test(lastBotMessage)) {
+        return buildSupplementalPracticalTake('Accident/AD&D');
+      }
+      if (/life insurance from disability/i.test(lastBotMessage)) {
+        return buildSupplementalPracticalTake('Disability');
+      }
+      if (/dental and vision as the next add-on/i.test(lastBotMessage)) {
+        return `My practical take is to choose dental first if you already expect fillings, crowns, or orthodontic use, and vision first if the household already knows it will use exams, glasses, or contacts every year. If you do not already know the household will use vision, dental usually has the bigger upside.`;
+      }
+    }
+    if (wantsFamilySpecific) {
+      if (/Accident\/AD&D and Critical Illness/i.test(lastBotMessage)) {
+        return buildComparisonFamilyReply('accident_vs_critical', query);
+      }
+      if (/life insurance from disability/i.test(lastBotMessage)) {
+        return buildComparisonFamilyReply('life_vs_disability', query);
+      }
+      if (/dental and vision as the next add-on/i.test(lastBotMessage)) {
+        return buildComparisonFamilyReply('dental_vs_vision', query);
+      }
+    }
+  }
+
+  if (isAffirmativeCompareFollowup(query)) {
+    if (/compare accident\/ad&d versus critical illness/i.test(lastBotMessage)) {
+      return buildAccidentVsCriticalComparison();
+    }
+    if (/walk you through life versus disability/i.test(lastBotMessage)) {
+      return buildLifeVsDisabilityComparison();
+    }
+    if (/decide whether dental or vision is more worth adding first/i.test(lastBotMessage)) {
+      return buildDentalVsVisionDecision();
+    }
+  }
+
+  if (session.pendingTopicSuggestion && (isSimpleAffirmation(query) || /\b(do that|do it|let'?s do that|let'?s do it|next one|show me that one)\b/i.test(lower))) {
+    const suggestedTopic = session.pendingTopicSuggestion;
+    clearPendingGuidance(session);
+    setTopic(session, suggestedTopic);
+    return buildTopicReply(session, suggestedTopic, `${suggestedTopic} options`);
   }
 
   if (!session.currentTopic && !session.pendingGuidancePrompt) return null;
@@ -654,6 +1259,14 @@ export async function runQaV2Engine(params: {
     return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'demographic-gate-v2' } };
   }
 
+  const standaloneFocus = detectBenefitPriorityFocus(query);
+  if (standaloneFocus && !benefitTopicFromQuery(query) && /^(\s*(healthcare costs|family protection|routine care)\s*)$/i.test(query)) {
+    const answer = buildBenefitDecisionGuidance(session, standaloneFocus);
+    session.lastBotMessage = answer;
+    session.messages.push({ role: 'assistant', content: answer });
+    return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'benefit-focus-shortcut-v2' } };
+  }
+
   if (isCostModelRequest(query) && !detectedTopic) {
     setTopic(session, 'Medical');
     const answer = buildTopicReply(session, 'Medical', query);
@@ -665,8 +1278,9 @@ export async function runQaV2Engine(params: {
   if (isBenefitDecisionGuidanceRequest(query)) {
     const focus = detectBenefitPriorityFocus(query);
     const answer = buildBenefitDecisionGuidance(session, focus);
-    session.pendingGuidancePrompt = 'benefit_decision';
-    session.pendingGuidanceTopic = focus || 'general';
+    if (!focus) {
+      setPendingGuidance(session, 'benefit_decision', 'general');
+    }
     session.lastBotMessage = answer;
     session.messages.push({ role: 'assistant', content: answer });
     return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'benefit-decision-guidance-v2' } };
@@ -702,7 +1316,7 @@ export async function runQaV2Engine(params: {
     }
   }
 
-  const answer = `I want to keep this grounded in the AmeriVet benefits package. I can help with medical, dental, vision, life, disability, accident/AD&D, critical illness, or HSA/FSA. Tell me which area you want to focus on next and I’ll guide you through the options clearly.`;
+  const answer = buildContextualFallback(session);
   session.lastBotMessage = answer;
   session.messages.push({ role: 'assistant', content: answer });
   return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'fallback-v2' } };

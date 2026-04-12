@@ -40,27 +40,27 @@ function buildPackageNextStepPrompt(
 
   if (topic === 'Dental') {
     if (completed.has('Vision')) {
-      return 'If you want, we can move on to life, disability, or supplemental benefits next.';
+      return 'If routine care questions are settled, the next most useful area is usually life, disability, or supplemental benefits.';
     }
-    return 'If you want, I can show vision quickly too, or move on to life, disability, or supplemental benefits next.';
+    return 'If routine care matters for your household, vision is the most natural companion to look at next. If family or income protection matters more, we can move on to life, disability, or supplemental benefits.';
   }
 
   if (topic === 'Vision') {
     if (completed.has('Dental')) {
-      return 'If you want, we can move on to life, disability, or supplemental benefits next.';
+      return 'If routine care questions are settled, the next most useful area is usually life, disability, or supplemental benefits.';
     }
-    return 'If you want, I can show dental quickly too, or move on to life, disability, or supplemental benefits next.';
+    return 'If routine care matters for your household, dental is the most natural companion to look at next. If family or income protection matters more, we can move on to life, disability, or supplemental benefits.';
   }
 
   if (topic === 'Life') {
-    return 'If you want, I can move on to disability, critical illness, or accident coverage next.';
+    return 'If you are thinking about broader protection, the next useful comparison is usually disability first, then critical illness or accident coverage.';
   }
 
   if (topic === 'Disability') {
-    return 'If you want, I can move on to life insurance, critical illness, or accident coverage next.';
+    return 'If you are thinking about broader protection, the next useful comparison is usually life insurance first, then critical illness or accident coverage.';
   }
 
-  return 'If you want, I can move on to life insurance, disability, or HSA/FSA guidance next.';
+  return 'If you want to keep going, the next useful area is usually life insurance, disability, or HSA/FSA guidance.';
 }
 
 export function buildCoverageTierOptionsResponse(
