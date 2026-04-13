@@ -21,6 +21,24 @@ describe('qa-v2 engine', () => {
     expect(result.answer).toContain('age and state');
   });
 
+  it('accepts a plain state abbreviation after age is already known during onboarding', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Matthew',
+      hasCollectedName: true,
+      userAge: 39,
+      askedForDemographics: true,
+    });
+
+    const result = await runQaV2Engine({
+      query: 'Co',
+      session,
+    });
+
+    expect(result.answer).toContain('Perfect! 39 in CO.');
+    expect(result.answer).not.toContain('I just need your state');
+  });
+
   it('routes explicit cost-model prompts into medical even without the word medical', async () => {
     const session = makeSession({ step: 'active_chat', userName: 'Sarah', hasCollectedName: true, userAge: 35, userState: 'FL', dataConfirmed: true });
     const result = await runQaV2Engine({

@@ -244,6 +244,54 @@ describe('qa-v2 transcript replays', () => {
     );
   });
 
+  it('replays partial onboarding demographics with a plain state abbreviation and later correction', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'Matthew',
+          mustContain: ['share your age and state next'],
+        },
+        {
+          user: '39, CO',
+          mustContain: ['Perfect! 39 in CO.'],
+        },
+        {
+          user: "Actually, I'm in oregon",
+          mustContain: ['updated your state to OR'],
+          mustNotContain: ['updated your state to IN', 'updated your state to ME'],
+        },
+      ],
+      makeSession(),
+    );
+
+    const partialSession = makeSession({
+      userName: 'Matthew',
+      hasCollectedName: true,
+      userAge: 39,
+      askedForDemographics: true,
+    });
+
+    await replayTranscript(
+      [
+        {
+          user: 'Co',
+          mustContain: ['Perfect! 39 in CO.'],
+          mustNotContain: ['I just need your state'],
+        },
+        {
+          user: 'Colorado',
+          mustContain: ['I have you in CO'],
+        },
+        {
+          user: 'Actually, I’m in oregon',
+          mustContain: ['updated your state to OR'],
+          mustNotContain: ['updated your state to IN', 'updated your state to ME'],
+        },
+      ],
+      partialSession,
+    );
+  });
+
   it('replays decision guidance into focused follow-ups instead of generic fallback', async () => {
     await replayTranscript(
       [

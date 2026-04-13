@@ -808,6 +808,9 @@ function extractState(message: string): string | null {
   const locationCueMatch = message.match(/\b(?:in|from|live in|located in|state is|i'm in|i am in)\s+(AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|IA|ID|IL|IN|KS|KY|LA|MA|MD|ME|MI|MN|MO|MS|MT|NC|ND|NE|NH|NJ|NM|NV|NY|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VA|VT|WA|WI|WV|WY)\b/i);
   if (locationCueMatch) return locationCueMatch[1].toUpperCase();
 
+  const exactStateOnly = message.match(/^\s*(?:ok(?:ay)?\b[\s,-]*)?(AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|IA|ID|IL|IN|KS|KY|LA|MA|MD|ME|MI|MN|MO|MS|MT|NC|ND|NE|NH|NJ|NM|NV|NY|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VA|VT|WA|WI|WV|WY)\s*$/i);
+  if (exactStateOnly) return exactStateOnly[1].toUpperCase();
+
   return null;
 }
 
@@ -835,7 +838,7 @@ function buildStateOnlyReply(session: Session, priorState: string | null | undef
 
   if (!priorState) {
     if (session.userAge) {
-      return `Thanks — I’ll use ${extractedState} for plan availability and pricing going forward.`;
+      return buildBenefitsOverviewReply(session, { onboarding: true });
     }
     return null;
   }
