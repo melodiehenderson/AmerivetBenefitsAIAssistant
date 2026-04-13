@@ -286,11 +286,17 @@ function buildTradeoffComparison(query: string, session: Session): string {
   for (const plan of plans) {
     const catalogPlan = getCatalogPlan(plan);
     const premiumNote = catalogPlan ? `; ${coverageTier} premium ${formatCoverageTierPremium(catalogPlan, coverageTier)}` : '';
-    lines.push(`- **${plan.displayName}**: ${plan.network}; deductible ${plan.deductible}; out-of-pocket max ${plan.outOfPocketMax}; primary care ${plan.primaryCare}; specialist ${plan.specialist}; in-network cost sharing ${plan.inNetworkCoinsurance}${premiumNote}`);
+    lines.push(`**${plan.displayName}**`);
+    lines.push(`- Network: ${plan.network}`);
+    lines.push(`- Deductible: ${plan.deductible}`);
+    lines.push(`- Out-of-pocket max: ${plan.outOfPocketMax}`);
+    lines.push(`- Primary care: ${plan.primaryCare}`);
+    lines.push(`- Specialist: ${plan.specialist}`);
+    lines.push(`- In-network cost sharing: ${plan.inNetworkCoinsurance}${premiumNote ? ` (${coverageTier} premium ${formatCoverageTierPremium(catalogPlan!, coverageTier)})` : ''}`);
+    lines.push('');
   }
 
   lines.push(
-    '',
     `The short version is:`,
     `- **Standard HSA** is usually the lower-premium / higher-deductible choice`,
     `- **Enhanced HSA** usually gives richer point-of-service cost sharing and a lower deductible`,

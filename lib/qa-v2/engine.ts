@@ -137,27 +137,85 @@ function buildPackageGuidance(session: Session, topic?: string | null): string {
   const completed = new Set(session.completedTopics || []);
   switch (topic) {
     case 'Medical':
-      return 'From here, the most useful next step is usually dental/vision if you want to round out routine care coverage, or life/disability if you are thinking about income and family protection.';
+      return [
+        `If you want to move on from medical, the most useful next step is usually one of these:`,
+        ``,
+        `- dental/vision if you want to round out routine care coverage`,
+        `- life/disability if you are thinking more about income and family protection`,
+      ].join('\n');
     case 'Dental':
       return completed.has('Vision')
-        ? 'Since you have already looked at vision too, the next most useful area is usually life, disability, or supplemental protection.'
-        : 'Since dental is usually a yes/no decision rather than a plan comparison, the next useful step is vision, or we can move on to life, disability, or supplemental protection.';
+        ? [
+          `Since you have already looked at vision too, the next most useful area is usually:`,
+          ``,
+          `- life, disability, or supplemental protection`,
+        ].join('\n')
+        : [
+          `Since dental is usually a yes/no decision rather than a plan comparison, the next useful step is usually:`,
+          ``,
+          `- Vision`,
+          `- Life insurance`,
+          `- Disability`,
+          `- Supplemental protection`,
+        ].join('\n');
     case 'Vision':
       return completed.has('Dental')
-        ? 'Since you have already looked at dental too, the next most useful area is usually life, disability, or supplemental protection.'
-        : 'Since vision is usually a yes/no decision rather than a plan comparison, the next useful step is dental, or we can move on to life, disability, or supplemental protection.';
+        ? [
+          `Since you have already looked at dental too, the next most useful area is usually:`,
+          ``,
+          `- life, disability, or supplemental protection`,
+        ].join('\n')
+        : [
+          `Since vision is usually a yes/no decision rather than a plan comparison, the next useful step is usually:`,
+          ``,
+          `- Dental`,
+          `- Life insurance`,
+          `- Disability`,
+          `- Supplemental protection`,
+        ].join('\n');
     case 'Life Insurance':
-      return 'The next related areas are disability for income protection, then accident or critical illness for cash-support protection.';
+      return [
+        `If you want to keep going after life insurance, the most useful next comparison is usually:`,
+        ``,
+        `- Disability for paycheck protection`,
+        `- Critical illness or accident coverage for extra cash-support protection`,
+      ].join('\n');
     case 'Disability':
-      return 'The next useful companion benefit is usually life insurance, then accident or critical illness depending on how much extra protection you want.';
+      return [
+        `If you want to keep going after disability, the most useful companion benefit is usually:`,
+        ``,
+        `- Life insurance`,
+        `- Critical illness or accident coverage depending on how much extra protection you want`,
+      ].join('\n');
     case 'Critical Illness':
-      return 'If you want to keep going, the next useful step is usually accident/AD&D if you want to compare supplemental cash-protection options, or HSA/FSA if you want to tighten the tax side of your benefits package.';
+      return [
+        `If you want to keep going after critical illness, the next useful step is usually:`,
+        ``,
+        `- Accident/AD&D if you want to compare supplemental cash-protection options`,
+        `- HSA/FSA if you want to tighten the tax side of your benefits package`,
+      ].join('\n');
     case 'Accident/AD&D':
-      return 'If you want to keep going, the next useful step is usually critical illness for a diagnosis-risk comparison, or HSA/FSA if you want to round out the tax side of the package.';
+      return [
+        `If you want to keep going after Accident/AD&D, the next useful step is usually:`,
+        ``,
+        `- Critical illness for a diagnosis-risk comparison`,
+        `- HSA/FSA if you want to round out the tax side of the package`,
+      ].join('\n');
     case 'HSA/FSA':
-      return 'From here, the most useful next step is usually going back to your medical choice so the tax account matches the plan you are leaning toward, or wrapping up with any remaining supplemental-protection questions.';
+      return [
+        `From here, the most useful next step is usually:`,
+        ``,
+        `- Going back to your medical choice so the tax account matches the plan you are leaning toward`,
+        `- Wrapping up any remaining supplemental-protection questions`,
+      ].join('\n');
     default:
-      return 'If you want, I can help you think through what to consider next based on whether you are optimizing for healthcare costs, family protection, or optional supplemental coverage.';
+      return [
+        `If you want, I can help you think through what to consider next based on one of these priorities:`,
+        ``,
+        `- Healthcare costs`,
+        `- Family protection`,
+        `- Optional supplemental coverage`,
+      ].join('\n');
   }
 }
 
@@ -310,34 +368,43 @@ function buildHsaFsaPracticalFitReply(session: Session, query: string): string |
 
   if (/\b(this\s+year|current\s+plan\s+year|spend\s+it\s+soon|use\s+it\s+soon|near[- ]term|right\s+away)\b/i.test(lower)) {
     return [
-      `If the goal is to spend the money in the current plan year, FSA is usually the cleaner fit.`,
+      `If the goal is to spend the money in the current plan year, **FSA is usually the cleaner fit.**`,
       ``,
-      `That is because it is built for near-term eligible expenses instead of long-term rollover savings.`,
-      `If you are leaning toward an HSA-qualified medical plan like Standard HSA or Enhanced HSA, HSA is still the better long-term account, but for "use it soon" spending, FSA is the more natural answer.`,
+      `Why:`,
+      `- It is built for near-term eligible expenses instead of long-term rollover savings`,
+      `- If you are leaning toward an HSA-qualified medical plan like Standard HSA or Enhanced HSA, HSA is still the better long-term account`,
+      `- But for "use it soon" spending, FSA is the more natural answer`,
     ].join('\n');
   }
 
   if (/\b(long[- ]term|rollover|save\s+it|future|build\s+a\s+cushion)\b/i.test(lower)) {
     return [
-      `If the goal is long-term rollover savings, HSA is usually the cleaner fit.`,
+      `If the goal is long-term rollover savings, **HSA is usually the cleaner fit.**`,
       ``,
-      `That is the account that stays with you and lets unused funds roll forward year to year instead of being mainly a current-plan-year spending tool.`,
+      `Why:`,
+      `- The account stays with you`,
+      `- Unused funds can roll forward year to year`,
+      `- It is the stronger fit for building a longer-term healthcare cushion`,
     ].join('\n');
   }
 
   if (/\bkaiser|hmo\b/i.test(lower) || /Kaiser Standard HMO/i.test(currentPlan)) {
     return [
-      `If you are leaning toward Kaiser Standard HMO, FSA is usually the cleaner fit.`,
+      `If you are leaning toward **Kaiser Standard HMO**, **FSA** is usually the cleaner fit.`,
       ``,
-      `That is because the practical dividing line is whether your medical plan is HSA-qualified, and Kaiser Standard HMO is the non-HSA-qualified path in AmeriVet's package.`,
+      `Why:`,
+      `- The practical dividing line is whether your medical plan is HSA-qualified`,
+      `- Kaiser Standard HMO is the non-HSA-qualified path in AmeriVet's package`,
     ].join('\n');
   }
 
   if (/Standard HSA|Enhanced HSA/i.test(currentPlan)) {
     return [
-      `Because you are already leaning toward ${currentPlan}, HSA is usually the cleaner fit.`,
+      `Because you are already leaning toward **${currentPlan}**, **HSA is usually the cleaner fit.**`,
       ``,
-      `That keeps the tax account aligned with the HSA-qualified medical plan and gives you the rollover advantage if you do not need to spend every dollar in the current plan year.`,
+      `Why:`,
+      `- It keeps the tax account aligned with the HSA-qualified medical plan`,
+      `- It gives you the rollover advantage if you do not need to spend every dollar in the current plan year`,
     ].join('\n');
   }
 
@@ -1253,31 +1320,69 @@ function buildTopicReply(session: Session, topic: string, query: string): string
 
 function buildContextualFallback(session: Session): string {
   if (session.currentTopic === 'Medical') {
-    return `We can stay with medical. The most useful next step is usually one of these: compare the plan tradeoff, estimate likely costs, or talk through why one option fits better for your situation.`;
+    return [
+      `We can stay with medical. The most useful next step is usually one of these:`,
+      ``,
+      `- Compare the plan tradeoff`,
+      `- Estimate likely costs`,
+      `- Talk through why one option fits better for your situation`,
+    ].join('\n');
   }
 
   if (session.currentTopic === 'Dental') {
-    return `We can stay with dental. The most useful next step is usually whether the plan is worth adding, what orthodontia means in practice, or whether dental matters more than vision for your household.`;
+    return [
+      `We can stay with dental. The most useful next step is usually one of these:`,
+      ``,
+      `- Whether the plan is worth adding`,
+      `- What orthodontia means in practice`,
+      `- Whether dental matters more than vision for your household`,
+    ].join('\n');
   }
 
   if (session.currentTopic === 'Vision') {
-    return `We can stay with vision. The most useful next step is usually whether it is worth adding for your household, or whether vision matters more than dental based on expected use.`;
+    return [
+      `We can stay with vision. The most useful next step is usually one of these:`,
+      ``,
+      `- Whether it is worth adding for your household`,
+      `- Whether vision matters more than dental based on expected use`,
+    ].join('\n');
   }
 
   if (session.currentTopic === 'Life Insurance') {
-    return `We can stay with life insurance. The most useful next step is usually whether life or disability matters more first, or how much protection is worth paying for if your family relies on your income.`;
+    return [
+      `We can stay with life insurance. The most useful next step is usually one of these:`,
+      ``,
+      `- Whether life or disability matters more first`,
+      `- How much protection is worth paying for if your family relies on your income`,
+    ].join('\n');
   }
 
   if (session.currentTopic === 'Disability') {
-    return `We can stay with disability. The most useful next step is usually whether disability or life insurance deserves priority, or whether paycheck protection is worth adding for your household.`;
+    return [
+      `We can stay with disability. The most useful next step is usually one of these:`,
+      ``,
+      `- Whether disability or life insurance deserves priority`,
+      `- Whether paycheck protection is worth adding for your household`,
+    ].join('\n');
   }
 
   if (session.currentTopic === 'Accident/AD&D' || session.currentTopic === 'Critical Illness') {
-    return `We can stay with supplemental protection. The most useful next step is usually whether this is worth adding at all, or how it compares with the other supplemental options.`;
+    return [
+      `We can stay with supplemental protection. The most useful next step is usually one of these:`,
+      ``,
+      `- Whether this is worth adding at all`,
+      `- How it compares with the other supplemental options`,
+    ].join('\n');
   }
 
   if (session.currentTopic === 'HSA/FSA') {
-    return `We can stay with HSA/FSA. The most useful next step is usually when HSA fits better, when FSA fits better, or what the tax and rollover tradeoff means in practice.`;
+    return [
+      `We can stay with HSA/FSA. The most useful next step is usually one of these:`,
+      ``,
+      `- When HSA fits better`,
+      `- When FSA fits better`,
+      `- What the tax and rollover tradeoff means in practice`,
+    ].join('\n');
   }
 
   return `I can help you narrow this down. The usual starting points are medical if you are choosing core coverage, dental or vision for routine care, or life and disability if family protection matters more than everyday care.`;
@@ -1342,10 +1447,12 @@ function buildSupplementalRecommendationReply(topic: string, session: Session, q
   if (topic === 'Critical Illness') {
     if (soleBreadwinner) {
       return [
-        `My practical take is that I would usually **not** make critical illness the first extra add-on if you are the sole breadwinner.`,
+        `**My practical take:** I would usually **not** make critical illness the first extra add-on if you are the sole breadwinner.`,
         ``,
-        `In that situation, I would usually prioritize the core medical decision first, then disability or life if income protection is the bigger household risk.`,
-        `I would only add critical illness after that if you want an extra diagnosis-triggered cash buffer on top of the core package.`,
+        `Why:`,
+        `- I would usually prioritize the core medical decision first`,
+        `- Then disability or life if income protection is the bigger household risk`,
+        `- I would only add critical illness after that if you want an extra diagnosis-triggered cash buffer on top of the core package`,
         ``,
         standardPlanContext
           ? `Because you are already leaning toward the lower-premium Standard HSA, I would be especially careful about adding supplemental payroll deductions before I am confident the household has the right core medical and income protection in place. So if you are asking me directly, my answer is usually **not yet**.`
@@ -1355,20 +1462,23 @@ function buildSupplementalRecommendationReply(topic: string, session: Session, q
 
     if (standardPlanContext && familyContext) {
       return [
-        `My practical take is that critical illness is usually **not** the first add-on I would tighten up when you are already leaning toward Standard HSA for the household.`,
+        `**My practical take:** critical illness is usually **not** the first add-on I would tighten up when you are already leaning toward Standard HSA for the household.`,
         ``,
-        `I would usually go medical first, then look at life or disability if income protection matters more for the household.`,
-        `Critical illness becomes more reasonable after that if you specifically want extra diagnosis-triggered cash support.`,
+        `Why:`,
+        `- I would usually go medical first`,
+        `- Then look at life or disability if income protection matters more for the household`,
+        `- Critical illness becomes more reasonable after that if you specifically want extra diagnosis-triggered cash support`,
         ``,
         `So if you are asking me directly, my answer is usually **not yet**.`,
       ].join('\n');
     }
 
     return [
-      `My practical take is that critical illness is worth adding **only if** you want extra diagnosis-triggered cash support on top of your medical plan.`,
+      `**My practical take:** critical illness is worth adding **only if** you want extra diagnosis-triggered cash support on top of your medical plan.`,
       ``,
-      `I would usually say yes when a household would feel real stress from travel, childcare, or other non-medical bills during a serious diagnosis.`,
-      `I would usually say no when the main concern is just routine care costs or when the household has bigger priorities like choosing the right medical plan first.`,
+      `Why:`,
+      `- I would usually say yes when a household would feel real stress from travel, childcare, or other non-medical bills during a serious diagnosis`,
+      `- I would usually say no when the main concern is just routine care costs or when the household has bigger priorities like choosing the right medical plan first`,
       ``,
       familyContext
         ? `Since you are asking in a family context, I would usually put medical first, then life or disability if income protection matters, and critical illness after that if you still want extra diagnosis protection. So if you are asking me directly, my answer is usually **only after** the bigger household-protection choices are settled.`
@@ -1378,9 +1488,11 @@ function buildSupplementalRecommendationReply(topic: string, session: Session, q
 
   if (topic === 'Accident/AD&D') {
     return [
-      `My practical take is that I would only add Accident/AD&D if the household feels meaningfully exposed to injury risk and you want extra cash support after a covered accident.`,
+      `**My practical take:** I would only add Accident/AD&D if the household feels meaningfully exposed to injury risk and you want extra cash support after a covered accident.`,
       ``,
-      `If the bigger concern is diagnosis risk or income protection, I would usually look at critical illness, disability, or life before accident coverage.`,
+      `Why:`,
+      `- If the bigger concern is diagnosis risk, I would usually look at critical illness first`,
+      `- If the bigger concern is income protection, I would usually look at disability or life first`,
       ``,
       `So if you are asking me directly, my answer is usually **yes only when** injury risk feels like the real gap you are trying to protect.`,
     ].join('\n');
@@ -1388,9 +1500,10 @@ function buildSupplementalRecommendationReply(topic: string, session: Session, q
 
   if (topic === 'Disability') {
     return [
-      `My practical take is that disability is often worth adding sooner than people expect if your household depends on your paycheck.`,
+      `**My practical take:** disability is often worth adding sooner than people expect if your household depends on your paycheck.`,
       ``,
-      `If missing part of your income would create a real problem, disability usually deserves more attention than smaller supplemental cash benefits.`,
+      `Why:`,
+      `- If missing part of your income would create a real problem, disability usually deserves more attention than smaller supplemental cash benefits`,
       ``,
       `So if you are asking me directly, my answer is usually **yes** when your paycheck is carrying the household.`,
     ].join('\n');
@@ -1398,9 +1511,10 @@ function buildSupplementalRecommendationReply(topic: string, session: Session, q
 
   if (topic === 'Life Insurance') {
     return [
-      `My practical take is that life insurance is usually worth tightening up if other people rely on your income and would need support if something happened to you.`,
+      `**My practical take:** life insurance is usually worth tightening up if other people rely on your income and would need support if something happened to you.`,
       ``,
-      `I would usually treat that as a more important household-protection decision than smaller supplemental add-ons.`,
+      `Why:`,
+      `- I would usually treat that as a more important household-protection decision than smaller supplemental add-ons`,
       ``,
       `So if you are asking me directly, my answer is usually **yes** when other people depend on your income.`,
     ].join('\n');

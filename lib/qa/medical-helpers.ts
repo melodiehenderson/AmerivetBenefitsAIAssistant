@@ -274,16 +274,17 @@ export function buildRecommendationOverview(query: string, session: Session): st
     msg += `\n`;
   }
 
-  msg += `My recommendation: ${recommendationPlan}.\n\n`;
-  msg += `Why: ${recommendationReason}. `;
-  msg += `Both HSA plans use the BCBSTX nationwide PPO network. `;
-  msg += `In practical terms, **Standard HSA** is the lower-premium option, while **Enhanced HSA** gives you a lower deductible and better protection if you expect more care.`;
+  msg += `**My recommendation: ${recommendationPlan}.**\n\n`;
+  msg += `**Why:** ${recommendationReason}.\n`;
+  msg += `- Both HSA plans use the BCBSTX nationwide PPO network\n`;
+  msg += `- **Standard HSA** is the lower-premium option\n`;
+  msg += `- **Enhanced HSA** gives you a lower deductible and better protection if you expect more care\n`;
 
   if (kaiser && session.userState && isKaiserEligibleState(session.userState)) {
-    msg += ` If you prefer an integrated HMO-style network and are in ${session.userState}, **Kaiser Standard HMO** is also an option.`;
+    msg += `- If you prefer an integrated HMO-style network and are in ${session.userState}, **Kaiser Standard HMO** is also an option\n`;
   }
 
-  msg += `\n\nHSA savings highlights:\n- Pre-tax paycheck contributions\n- Tax-free growth and withdrawals for eligible care\n- Funds roll over year to year\n`;
+  msg += `\n**HSA savings highlights:**\n- Pre-tax paycheck contributions\n- Tax-free growth and withdrawals for eligible care\n- Funds roll over year to year\n`;
   if (singleSignal) {
     msg += `\nSince you mentioned being single/only covering yourself, **Standard HSA** is typically the most cost-efficient starting point.`;
   }

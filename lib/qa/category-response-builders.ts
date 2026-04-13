@@ -255,10 +255,10 @@ export function buildCategoryExplorationResponse({ queryLower, session, coverage
     if (term) msg += `- **${term.name}** (${term.provider}) - ${term.description}\n`;
     if (whole) msg += `- **${whole.name}** (${whole.provider}) - ${whole.description}\n`;
 
-    const featureLines = (plan?: typeof basic) => !plan?.features?.length ? '' : plan.features.map((feature) => `  - ${feature}`).join('\n');
-    if (basic?.features?.length) msg += `\nBasic Life features:\n${featureLines(basic)}\n`;
-    if (term?.features?.length) msg += `\nVoluntary Term Life features:\n${featureLines(term)}\n`;
-    if (whole?.features?.length) msg += `\nWhole Life features:\n${featureLines(whole)}\n`;
+    const featureLines = (plan?: typeof basic) => !plan?.features?.length ? '' : plan.features.map((feature) => `- ${feature}`).join('\n');
+    if (basic?.features?.length) msg += `\n**Basic Life features:**\n${featureLines(basic)}\n`;
+    if (term?.features?.length) msg += `\n**Voluntary Term Life features:**\n${featureLines(term)}\n`;
+    if (whole?.features?.length) msg += `\n**Whole Life features:**\n${featureLines(whole)}\n`;
 
     msg += `\nVoluntary life rates are age-banded. For your exact rate and coverage amount, check Workday: ${enrollmentPortalUrl}.`;
     msg += `\n\n${buildPackageNextStepPrompt('Life', session)}`;
@@ -269,7 +269,7 @@ export function buildCategoryExplorationResponse({ queryLower, session, coverage
     let msg = `HSA/FSA overview:\n\n`;
     msg += `- **HSA** stands for **Health Savings Account**. It works with HSA-qualified medical plans like Standard HSA and Enhanced HSA.\n`;
     msg += `- **FSA** stands for **Flexible Spending Account**. It also uses pre-tax dollars for eligible healthcare expenses, but it follows different rollover and ownership rules.\n\n`;
-    msg += `Key difference:\n`;
+    msg += `**Key difference:**\n`;
     msg += `- HSA funds roll over year to year and stay with you\n`;
     msg += `- FSA funds are tied to the employer plan and usually have stricter year-end rules\n`;
     msg += `- You generally cannot make full HSA contributions while covered by a general-purpose healthcare FSA\n\n`;
@@ -289,11 +289,11 @@ export function buildCategoryExplorationResponse({ queryLower, session, coverage
 
     if (wantsCritical) {
       msg += `Critical illness coverage is a supplemental benefit that can pay a lump-sum cash benefit if you are diagnosed with a covered serious condition, such as a heart attack, stroke, or certain cancers.\n\n`;
-      msg += `What it is designed to do:\n`;
+      msg += `**What it is designed to do:**\n`;
       msg += `- Help with non-medical costs like travel, childcare, or household bills\n`;
       msg += `- Give you extra cash on top of your medical plan if a major diagnosis happens\n`;
       msg += `- Reduce the financial shock of a big health event when you have a high deductible or limited emergency savings\n\n`;
-      msg += `What it is not:\n`;
+      msg += `**What it is not:**\n`;
       msg += `- It does not replace your medical plan\n`;
       msg += `- It is not meant for routine care or everyday doctor visits\n`;
       msg += `- Benefit amounts, covered conditions, and exclusions depend on the actual policy details in Workday\n`;
@@ -302,7 +302,7 @@ export function buildCategoryExplorationResponse({ queryLower, session, coverage
     if (wantsAccident) {
       if (msg) msg += `\n`;
       msg += `Accident/AD&D coverage is another supplemental option. It generally pays benefits after covered accidental injuries, and AD&D adds benefits for severe accidental loss of life or limb.\n\n`;
-      msg += `People often look at it when:\n`;
+      msg += `**People often look at it when:**\n`;
       msg += `- They want extra protection beyond their medical plan\n`;
       msg += `- They have an active household or dependents\n`;
       msg += `- They want cash help after an accidental injury\n`;
