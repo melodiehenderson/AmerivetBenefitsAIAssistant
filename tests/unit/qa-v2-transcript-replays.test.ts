@@ -244,6 +244,97 @@ describe('qa-v2 transcript replays', () => {
     );
   });
 
+  it('replays household medical follow-ups without losing direct intent or pregnancy context', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'medical please',
+          mustContain: ['Medical plan options'],
+        },
+        {
+          user: 'my wife is pregnant',
+          mustContain: ['maternity coverage comparison', 'Standard HSA', 'Enhanced HSA'],
+          mustNotContain: ['We can stay with medical'],
+        },
+        {
+          user: 'what gives us the lowest out of pocket?',
+          mustContain: ['My recommendation: Enhanced HSA', 'lowest out-of-pocket exposure'],
+          mustNotContain: ['Quick clarifier'],
+        },
+        {
+          user: 'other than medical, what are the supplemental benefits?',
+          mustContain: ['supplemental benefits are the optional add-ons', 'Life Insurance', 'Disability'],
+          mustNotContain: ['We can stay with medical'],
+        },
+      ],
+      makeSession({
+        userName: 'Sarah',
+        hasCollectedName: true,
+        userAge: 33,
+        userState: 'GA',
+        dataConfirmed: true,
+        currentTopic: 'Medical',
+        coverageTierLock: 'Employee + Family',
+      }),
+    );
+  });
+
+  it('replays chosen-plan continuity into direct supplemental counseling', async () => {
+    await replayTranscript(
+      [
+        {
+          user: "is critical illness worth it if i'm the sole breadwinner?",
+          mustContain: ['critical illness', 'sole breadwinner', 'not yet'],
+          mustNotContain: ['Recommendation for Employee + Family coverage'],
+        },
+        {
+          user: "what's next?",
+          mustContain: ['HSA/FSA'],
+          mustNotContain: ['optional supplemental coverage'],
+        },
+      ],
+      makeSession({
+        userName: 'Sarah',
+        hasCollectedName: true,
+        userAge: 33,
+        userState: 'GA',
+        dataConfirmed: true,
+        currentTopic: 'Medical',
+        coverageTierLock: 'Employee + Family',
+        selectedPlan: 'Standard HSA',
+      }),
+    );
+  });
+
+  it('replays direct HSA/FSA fit questions as grounded practical answers', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'tell me about hsa/fsa',
+          mustContain: ['Health Savings Account', 'Flexible Spending Account'],
+        },
+        {
+          user: 'which one is better if i want to spend the money this year?',
+          mustContain: ['FSA is usually the cleaner fit'],
+          mustNotContain: ['HSA/FSA overview'],
+        },
+        {
+          user: 'what if we are leaning toward standard hsa?',
+          mustContain: ['Standard HSA', 'HSA is usually the cleaner fit'],
+          mustNotContain: ['HSA/FSA overview'],
+        },
+      ],
+      makeSession({
+        userName: 'Sarah',
+        hasCollectedName: true,
+        userAge: 33,
+        userState: 'GA',
+        dataConfirmed: true,
+        currentTopic: 'HSA/FSA',
+      }),
+    );
+  });
+
   it('replays partial onboarding demographics with a plain state abbreviation and later correction', async () => {
     await replayTranscript(
       [

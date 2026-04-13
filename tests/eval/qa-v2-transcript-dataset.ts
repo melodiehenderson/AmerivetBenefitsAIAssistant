@@ -2070,4 +2070,90 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
       },
     ],
   },
+  {
+    id: 'V2-TX-068',
+    category: 'household_direct_question_precedence',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Mandy',
+      hasCollectedName: true,
+      userAge: 33,
+      userState: 'GA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee + Family',
+    },
+    turns: [
+      {
+        user: 'my wife is pregnant',
+        mustContain: ['maternity coverage comparison', 'Standard HSA', 'Enhanced HSA'],
+      },
+      {
+        user: 'what gives us the lowest out of pocket?',
+        mustContain: ['My recommendation: Enhanced HSA', 'lowest out-of-pocket exposure'],
+        mustNotContain: ['Quick clarifier'],
+      },
+      {
+        user: 'other than medical, what are the supplemental benefits?',
+        mustContain: ['supplemental benefits are the optional add-ons', 'Life Insurance', 'Disability'],
+        mustNotContain: ['We can stay with medical'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-069',
+    category: 'chosen_plan_supplemental_continuity',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Mandy',
+      hasCollectedName: true,
+      userAge: 33,
+      userState: 'GA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee + Family',
+      selectedPlan: 'Standard HSA',
+    },
+    turns: [
+      {
+        user: "is critical illness worth it if i'm the sole breadwinner?",
+        mustContain: ['critical illness', 'sole breadwinner', 'not yet'],
+        mustNotContain: ['Recommendation for Employee + Family coverage'],
+      },
+      {
+        user: "what's next?",
+        mustContain: ['HSA/FSA'],
+        mustNotContain: ['optional supplemental coverage'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-070',
+    category: 'hsa_fsa_practical_fit_followthrough',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Mandy',
+      hasCollectedName: true,
+      userAge: 33,
+      userState: 'GA',
+      dataConfirmed: true,
+      currentTopic: 'HSA/FSA',
+    },
+    turns: [
+      {
+        user: 'tell me about hsa/fsa',
+        mustContain: ['Health Savings Account', 'Flexible Spending Account'],
+      },
+      {
+        user: 'which one is better if i want to spend the money this year?',
+        mustContain: ['FSA is usually the cleaner fit'],
+        mustNotContain: ['HSA/FSA overview'],
+      },
+      {
+        user: 'what if we are leaning toward standard hsa?',
+        mustContain: ['Standard HSA', 'HSA is usually the cleaner fit'],
+        mustNotContain: ['HSA/FSA overview'],
+      },
+    ],
+  },
 ];

@@ -492,6 +492,118 @@ describe('qa-v2 engine', () => {
     expect(result.answer).not.toContain('Perfect!');
   });
 
+  it('gives direct precedence to an explicit supplemental recommendation question over stale medical context', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Mandy',
+      hasCollectedName: true,
+      userAge: 35,
+      userState: 'GA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      lastBotMessage: 'My recommendation: Standard HSA.',
+      coverageTierLock: 'Employee + Family',
+    });
+
+    const result = await runQaV2Engine({
+      query: "should i get disability if i'm the sole breadwinner?",
+      session,
+    });
+
+    expect(result.answer).toContain('disability');
+    expect(result.answer).toContain('paycheck');
+    expect(result.answer).not.toContain('Recommendation for Employee + Family coverage');
+  });
+
+  it('answers lowest-out-of-pocket follow-ups directly from household medical context', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Mandy',
+      hasCollectedName: true,
+      userAge: 35,
+      userState: 'GA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee + Family',
+      messages: [
+        { role: 'user', content: 'my wife is pregnant' },
+        { role: 'assistant', content: 'Here is the maternity coverage comparison across the available medical plans:' },
+      ],
+    });
+
+    const result = await runQaV2Engine({
+      query: 'what gives us the lowest out of pocket?',
+      session,
+    });
+
+    expect(result.answer).toContain('My recommendation: Enhanced HSA');
+    expect(result.answer).toContain('lowest out-of-pocket exposure');
+    expect(result.answer).not.toContain('Quick clarifier');
+  });
+
+  it('keeps chosen-plan direction attached when advising on critical illness', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Mandy',
+      hasCollectedName: true,
+      userAge: 35,
+      userState: 'GA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee + Family',
+      selectedPlan: 'Standard HSA',
+    });
+
+    const result = await runQaV2Engine({
+      query: "we'll probably go with standard hsa, but is critical illness worth it for my family?",
+      session,
+    });
+
+    expect(result.answer).toContain('critical illness');
+    expect(result.answer).toContain('not yet');
+    expect(result.answer).not.toContain('ask that one a little more specifically');
+  });
+
+  it('answers HSA/FSA practical-fit questions directly instead of falling back to a broad overview', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Mandy',
+      hasCollectedName: true,
+      userAge: 35,
+      userState: 'GA',
+      dataConfirmed: true,
+      currentTopic: 'HSA/FSA',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'which one is better if i want to spend the money this year?',
+      session,
+    });
+
+    expect(result.answer).toContain('FSA is usually the cleaner fit');
+    expect(result.answer).not.toContain('I can help with hsa/fsa');
+  });
+
+  it('uses a tighter move-on answer after supplemental topics instead of generic fallback guidance', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Mandy',
+      hasCollectedName: true,
+      userAge: 35,
+      userState: 'GA',
+      dataConfirmed: true,
+      currentTopic: 'Critical Illness',
+    });
+
+    const result = await runQaV2Engine({
+      query: "what's next?",
+      session,
+    });
+
+    expect(result.answer).toContain('HSA/FSA');
+    expect(result.answer).not.toContain('optional supplemental coverage');
+  });
+
   it('does not sound like re-onboarding when benefits-overview questions are asked after demographics are already known', async () => {
     const session = makeSession({
       step: 'active_chat',

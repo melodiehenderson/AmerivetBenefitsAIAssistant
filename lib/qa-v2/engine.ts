@@ -150,6 +150,12 @@ function buildPackageGuidance(session: Session, topic?: string | null): string {
       return 'The next related areas are disability for income protection, then accident or critical illness for cash-support protection.';
     case 'Disability':
       return 'The next useful companion benefit is usually life insurance, then accident or critical illness depending on how much extra protection you want.';
+    case 'Critical Illness':
+      return 'If you want to keep going, the next useful step is usually accident/AD&D if you want to compare supplemental cash-protection options, or HSA/FSA if you want to tighten the tax side of your benefits package.';
+    case 'Accident/AD&D':
+      return 'If you want to keep going, the next useful step is usually critical illness for a diagnosis-risk comparison, or HSA/FSA if you want to round out the tax side of the package.';
+    case 'HSA/FSA':
+      return 'From here, the most useful next step is usually going back to your medical choice so the tax account matches the plan you are leaning toward, or wrapping up with any remaining supplemental-protection questions.';
     default:
       return 'If you want, I can help you think through what to consider next based on whether you are optimizing for healthcare costs, family protection, or optional supplemental coverage.';
   }
@@ -205,6 +211,57 @@ function normalizeContinuationQuery(query: string): string {
   return stripAffirmationLeadIn(trimmed) || trimmed;
 }
 
+function upsertLifeEvent(session: Session, event: string) {
+  if (!session.lifeEvents) session.lifeEvents = [];
+  if (!session.lifeEvents.includes(event)) {
+    session.lifeEvents.push(event);
+  }
+}
+
+function rememberHouseholdContext(session: Session, query: string) {
+  const lower = query.toLowerCase();
+  const details = session.familyDetails || {};
+
+  if (/\b(spouse|wife|husband|partner|married)\b/i.test(lower)) {
+    details.hasSpouse = true;
+  }
+
+  const childCountMatch = lower.match(/\b(\d+)\s+(kids?|children)\b/i);
+  if (childCountMatch) {
+    details.numChildren = Number(childCountMatch[1]);
+  } else if (/\b(kids?|children|son|daughter)\b/i.test(lower)) {
+    details.numChildren = Math.max(details.numChildren || 0, 1);
+  }
+
+  if (Object.keys(details).length > 0) {
+    session.familyDetails = details;
+  }
+
+  if (/\b(pregnan|expecting|having\s+a\s+baby|due\s+date|maternity|prenatal|postnatal|delivery|birth)\b/i.test(lower)) {
+    upsertLifeEvent(session, 'pregnancy');
+  }
+}
+
+function rememberMedicalDirection(session: Session, query: string) {
+  const lower = query.toLowerCase();
+  if (/\b(go(?:ing)? with|lean(?:ing)? toward|choose|choosing|picked|select(?:ed|ing)?|sticking with|keep|keeping|probably do|probably pick)\b[^.]*\bstandard\s+hsa\b/i.test(lower)) {
+    session.selectedPlan = 'Standard HSA';
+    return;
+  }
+  if (/\b(go(?:ing)? with|lean(?:ing)? toward|choose|choosing|picked|select(?:ed|ing)?|sticking with|keep|keeping|probably do|probably pick)\b[^.]*\benhanced\s+hsa\b/i.test(lower)) {
+    session.selectedPlan = 'Enhanced HSA';
+    return;
+  }
+  if (/\b(go(?:ing)? with|lean(?:ing)? toward|choose|choosing|picked|select(?:ed|ing)?|sticking with|keep|keeping|probably do|probably pick)\b[^.]*\bkaiser\b/i.test(lower)) {
+    session.selectedPlan = 'Kaiser Standard HMO';
+  }
+}
+
+function refreshSessionSignals(session: Session, query: string) {
+  rememberHouseholdContext(session, query);
+  rememberMedicalDirection(session, query);
+}
+
 function buildHsaFsaCompatibilityReply(query: string): string {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
   if (/\bshould\s+i\s+use\s+an?\s+fsa\b|\buse\s+an?\s+fsa\b/i.test(lower)) {
@@ -240,6 +297,55 @@ function buildHsaFsaCompatibilityReply(query: string): string {
     `- FSA is usually the cleaner fit if you are not on an HSA-qualified medical plan, or if you expect to spend the money soon rather than build a longer-term healthcare cushion`,
     `- You generally cannot make full HSA contributions while covered by a general-purpose healthcare FSA`,
   ].join('\n');
+}
+
+function isDirectHsaFsaFitQuestion(query: string): boolean {
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  return /\b(which\s+one\s+is\s+better|which\s+one\s+is\s+best|better\s+fit|best\s+fit|which\s+one\s+fits|should\s+i\s+get|should\s+i\s+use|is\s+it\s+worth\s+it|worth\s+it|worth\s+using)\b/i.test(lower);
+}
+
+function buildHsaFsaPracticalFitReply(session: Session, query: string): string | null {
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  const currentPlan = session.selectedPlan || '';
+
+  if (/\b(this\s+year|current\s+plan\s+year|spend\s+it\s+soon|use\s+it\s+soon|near[- ]term|right\s+away)\b/i.test(lower)) {
+    return [
+      `If the goal is to spend the money in the current plan year, FSA is usually the cleaner fit.`,
+      ``,
+      `That is because it is built for near-term eligible expenses instead of long-term rollover savings.`,
+      `If you are leaning toward an HSA-qualified medical plan like Standard HSA or Enhanced HSA, HSA is still the better long-term account, but for "use it soon" spending, FSA is the more natural answer.`,
+    ].join('\n');
+  }
+
+  if (/\b(long[- ]term|rollover|save\s+it|future|build\s+a\s+cushion)\b/i.test(lower)) {
+    return [
+      `If the goal is long-term rollover savings, HSA is usually the cleaner fit.`,
+      ``,
+      `That is the account that stays with you and lets unused funds roll forward year to year instead of being mainly a current-plan-year spending tool.`,
+    ].join('\n');
+  }
+
+  if (/\bkaiser|hmo\b/i.test(lower) || /Kaiser Standard HMO/i.test(currentPlan)) {
+    return [
+      `If you are leaning toward Kaiser Standard HMO, FSA is usually the cleaner fit.`,
+      ``,
+      `That is because the practical dividing line is whether your medical plan is HSA-qualified, and Kaiser Standard HMO is the non-HSA-qualified path in AmeriVet's package.`,
+    ].join('\n');
+  }
+
+  if (/Standard HSA|Enhanced HSA/i.test(currentPlan)) {
+    return [
+      `Because you are already leaning toward ${currentPlan}, HSA is usually the cleaner fit.`,
+      ``,
+      `That keeps the tax account aligned with the HSA-qualified medical plan and gives you the rollover advantage if you do not need to spend every dollar in the current plan year.`,
+    ].join('\n');
+  }
+
+  if (isDirectHsaFsaFitQuestion(query)) {
+    return buildHsaFitGuidance();
+  }
+
+  return null;
 }
 
 function isBenefitDecisionGuidanceRequest(query: string): boolean {
@@ -1072,6 +1178,10 @@ function buildTopicReply(session: Session, topic: string, query: string): string
     if (isHsaFsaCompatibilityQuestion(query)) {
       return buildHsaFsaCompatibilityReply(query);
     }
+    const practicalFitReply = buildHsaFsaPracticalFitReply(session, query);
+    if (practicalFitReply) {
+      return practicalFitReply;
+    }
     if (/\bwhat\s+does\s+hsa\s+mean\b|\bwhat\s+is\s+an?\s+hsa\b/.test(lower)) {
       return `HSA stands for **Health Savings Account**.\n\nIt is a tax-advantaged account you can use for eligible healthcare expenses when you are enrolled in an HSA-qualified medical plan like AmeriVet's **Standard HSA** or **Enhanced HSA**.\n\nThe short version is:\n- You contribute pre-tax money\n- The money can be used for eligible medical expenses\n- Unused funds roll over year to year\n- The account stays with you`;
     }
@@ -1224,9 +1334,10 @@ function buildSupplementalRecommendationReply(topic: string, session: Session, q
     .map((message) => message.content.toLowerCase())
     .join(' ');
   const combined = `${userHistory}\n${lower}`;
-  const soleBreadwinner = /\b(sole\s+bread[- ]?winner|only\s+income|husband doesn'?t work|spouse doesn'?t work|family relies on my income|rely on my income)\b/i.test(combined);
+  const normalizedCombined = combined.replace(/[^a-z0-9]+/gi, ' ');
+  const soleBreadwinner = /\b(sole\s+bread\s*winner|breadwinner|only\s+income|sole\s+provider|only\s+provider|husband\s+doesn\s*t\s+work|spouse\s+doesn\s*t\s+work|family\s+relies\s+on\s+my\s+income|rely\s+on\s+my\s+income)\b/i.test(normalizedCombined);
   const familyContext = /\b(spouse|partner|kids?|children|family|household)\b/i.test(combined);
-  const standardPlanContext = /\bstandard hsa|standard plan\b/i.test(combined);
+  const standardPlanContext = /\bstandard hsa|standard plan\b/i.test(combined) || /Standard HSA/i.test(session.selectedPlan || '');
 
   if (topic === 'Critical Illness') {
     if (soleBreadwinner) {
@@ -1239,6 +1350,17 @@ function buildSupplementalRecommendationReply(topic: string, session: Session, q
         standardPlanContext
           ? `Because you are already leaning toward the lower-premium Standard HSA, I would be especially careful about adding supplemental payroll deductions before I am confident the household has the right core medical and income protection in place. So if you are asking me directly, my answer is usually **not yet**.`
           : `So my recommendation is: treat critical illness as optional extra protection, not the first must-have decision for this household.`,
+      ].join('\n');
+    }
+
+    if (standardPlanContext && familyContext) {
+      return [
+        `My practical take is that critical illness is usually **not** the first add-on I would tighten up when you are already leaning toward Standard HSA for the household.`,
+        ``,
+        `I would usually go medical first, then look at life or disability if income protection matters more for the household.`,
+        `Critical illness becomes more reasonable after that if you specifically want extra diagnosis-triggered cash support.`,
+        ``,
+        `So if you are asking me directly, my answer is usually **not yet**.`,
       ].join('\n');
     }
 
@@ -1306,6 +1428,7 @@ function buildContinuationReply(session: Session, query: string): string | null 
   const normalizedQuery = normalizeContinuationQuery(query);
   const lower = normalizedQuery.toLowerCase();
   const activeTopic = session.currentTopic || inferTopicFromLastBotMessage(session.lastBotMessage);
+  const explicitTopic = benefitTopicFromQuery(normalizedQuery);
   const inferredSupplementalTopic = inferSupplementalTopicForFollowup(session, normalizedQuery);
   const focus = detectBenefitPriorityFocus(normalizedQuery);
   const hsaFitFocus = detectHsaFitFocus(normalizedQuery);
@@ -1337,6 +1460,31 @@ function buildContinuationReply(session: Session, query: string): string | null 
   if (isHsaFsaCompatibilityQuestion(normalizedQuery)) {
     setTopic(session, 'HSA/FSA');
     return buildTopicReply(session, 'HSA/FSA', normalizedQuery);
+  }
+
+  if (
+    explicitTopic
+    && explicitTopic !== 'Benefits Overview'
+    && explicitTopic !== activeTopic
+  ) {
+    const normalizedExplicitTopic = normalizeBenefitCategory(explicitTopic);
+    const directTopicQuestion =
+      normalizedExplicitTopic === 'Medical'
+        ? (isDirectMedicalContinuationQuestion(normalizedQuery) || isMedicalPregnancySignal(normalizedQuery))
+        : normalizedExplicitTopic === 'Dental' || normalizedExplicitTopic === 'Vision'
+          ? (isRoutineBenefitDetailQuestion(normalizedQuery) || isWorthAddingFollowup(normalizedQuery))
+          : normalizedExplicitTopic === 'HSA/FSA'
+            ? (isHsaFsaCompatibilityQuestion(normalizedQuery) || isDirectHsaFsaFitQuestion(normalizedQuery) || /\bwhat\s+does\s+(hsa|fsa)\s+mean\b|\bwhat\s+is\s+an?\s+(hsa|fsa)\b/i.test(lower))
+            : (
+              isNonMedicalDetailQuestion(normalizedExplicitTopic, normalizedQuery)
+              || isSupplementalRecommendationQuestion(normalizedQuery)
+              || isWorthAddingFollowup(normalizedQuery)
+            );
+
+    if (directTopicQuestion) {
+      setTopic(session, normalizedExplicitTopic);
+      return buildTopicReply(session, normalizedExplicitTopic, normalizedQuery);
+    }
   }
 
   if (isLifeFamilyCoverageQuestion(normalizedQuery)) {
@@ -1544,6 +1692,10 @@ function buildContinuationReply(session: Session, query: string): string | null 
     return buildTopicReply(session, 'Medical', /maternity|pregnan|baby|birth|delivery|prenatal|postnatal/i.test(lower) ? normalizedQuery : 'maternity coverage');
   }
 
+  if (activeTopic === 'HSA/FSA' && (isDirectHsaFsaFitQuestion(normalizedQuery) || hsaFitFocus)) {
+    return buildTopicReply(session, 'HSA/FSA', normalizedQuery);
+  }
+
   if (activeTopic === 'Vision' && /\bdental\b/i.test(lower) && /\b(recommend|worth|useful|should\s+i\s+add|should\s+i\s+get)\b/i.test(lower)) {
     return buildDentalWorthAddingReply();
   }
@@ -1716,6 +1868,10 @@ function buildContinuationReply(session: Session, query: string): string | null 
 
   if (!activeTopic && !session.pendingGuidancePrompt) return null;
 
+  if (/\b(what'?s\s+next|what\s+is\s+next|where\s+to\s+next|where\s+do\s+we\s+go\s+next|move\s+on|what\s+should\s+we\s+do\s+next)\b/i.test(lower)) {
+    return buildPackageGuidance(session, session.currentTopic);
+  }
+
   if (isPackageGuidanceMessage(lower)) {
     return buildPackageGuidance(session, session.currentTopic);
   }
@@ -1847,6 +2003,7 @@ export async function runQaV2Engine(params: {
   }
 
   session.messages.push({ role: 'user', content: query });
+  refreshSessionSignals(session, query);
 
   const stateCorrectionReply = buildStateCorrectionReply(session, query);
   if (stateCorrectionReply) {

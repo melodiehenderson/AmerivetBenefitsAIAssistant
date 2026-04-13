@@ -16,6 +16,27 @@ function inferCoverageTierFromQuery(query: string, session: Session): string {
   return session.coverageTierLock || 'Employee Only';
 }
 
+function getUserConversationText(session: Session): string {
+  return (session.messages || [])
+    .filter((message) => message.role === 'user')
+    .map((message) => message.content.toLowerCase())
+    .join('\n');
+}
+
+function sessionHasPregnancySignal(session: Session, query: string): boolean {
+  const conversation = `${getUserConversationText(session)}\n${query.toLowerCase()}`;
+  return /\b(pregnan|expecting|having\s+a\s+baby|maternity|prenatal|postnatal|delivery|birth)\b/i.test(conversation)
+    || (session.lifeEvents || []).includes('pregnancy');
+}
+
+function sessionHasHouseholdSignal(session: Session, query: string): boolean {
+  const conversation = `${getUserConversationText(session)}\n${query.toLowerCase()}`;
+  return /\b(spouse|wife|husband|partner|kids?|children|family|household|dependents?)\b/i.test(conversation)
+    || Boolean(session.familyDetails?.hasSpouse)
+    || Boolean((session.familyDetails?.numChildren || 0) > 0)
+    || /Employee \+ (Spouse|Child|Family)/i.test(session.coverageTierLock || '');
+}
+
 export function isKaiserEligibleState(state?: string | null): boolean {
   return !!state && KAISER_STATES.has(state.toUpperCase());
 }
@@ -176,6 +197,7 @@ export function buildRecommendationOverview(query: string, session: Session): st
   const healthySignal = /\b(healthy|low\s+utilization|low\s+use|low\s+usage|rarely\s+(?:go|use))\b/i.test(lower);
   const singleSignal = /\b(single|individual|just\s+me|only\s+me|no\s+dependents|no\s+kids|no\s+children)\b/i.test(lower);
   const savingsSignal = /\b(save\s+money|low\s+cost|cheapest|lowest\s+premium|save\s+on\s+premiums|budget)\b/i.test(lower);
+  const lowestOutOfPocketSignal = /\b(lowest|least)\s+out[- ]of[- ]pocket|\blowest\s+oop|\bminimi[sz]e\s+out[- ]of[- ]pocket\b/i.test(lower);
   const higherUsageSignal = /\b(high\s+usage|high\s+utilization|frequent\s+(?:doctor|specialist|care|visits?)|regular\s+(?:care|visits?)|ongoing\s+care|chronic|ongoing\s+prescriptions?|a\s+lot\s+of\s+care|more\s+medical\s+use|heavy\s+usage)\b/i.test(lower);
   const moderateUsageSignal = /\b(moderate\s+usage|some\s+medical\s+use|occasional\s+(?:care|visits?)|a\s+few\s+visits?)\b/i.test(lower);
   const explicitNonMedicalCategory = /\b(dental|vision|life(?:\s+insurance)?|disability|critical(?:\s+illness)?|accident|hospital\s+indemnity|hsa\/fsa|fsa)\b/i.test(lower);
@@ -185,8 +207,11 @@ export function buildRecommendationOverview(query: string, session: Session): st
     || (recommendationSignal && !explicitNonMedicalCategory);
   const mentionsIntegratedNetworkPreference = /\b(kaiser|integrated\s+network|hmo\s+style|one\s+system|one\s+network|coordinated\s+care)\b/i.test(lower);
   const coverageTier = inferCoverageTierFromQuery(query, session);
+  const pregnancySignal = sessionHasPregnancySignal(session, query);
+  const householdSignal = sessionHasHouseholdSignal(session, query);
+  const selectedPlan = session.selectedPlan || '';
 
-  if (!(recommendationSignal || healthySignal || savingsSignal || higherUsageSignal || moderateUsageSignal)) return null;
+  if (!(recommendationSignal || healthySignal || savingsSignal || lowestOutOfPocketSignal || higherUsageSignal || moderateUsageSignal || pregnancySignal)) return null;
   if (!wantsMedicalRecommendation) return null;
 
   const { filtered } = getFilteredMedicalPricingRows(session, coverageTier);
@@ -196,7 +221,9 @@ export function buildRecommendationOverview(query: string, session: Session): st
   const kaiser = filtered.find(r => /kaiser/i.test(r.plan));
   if (!standard && !enhanced && filtered.length === 0) return null;
 
-  const usageBand = higherUsageSignal
+  const usageBand = lowestOutOfPocketSignal
+    ? 'high'
+    : higherUsageSignal
     ? 'high'
     : moderateUsageSignal
       ? 'moderate'
@@ -206,7 +233,7 @@ export function buildRecommendationOverview(query: string, session: Session): st
 
   const decidingBetweenShownPlans = /\b(which\s+one|which\s+plan|best\s+for\s+me|what[’']?s\s+best\s+for\s+me|how\s+do\s+i\s+decide|help\s+me\s+choose|what\s+do\s+you\s+recommend)\b/i.test(lower);
 
-  if (decidingBetweenShownPlans && !usageBand && !singleSignal && !mentionsIntegratedNetworkPreference) {
+  if (decidingBetweenShownPlans && !usageBand && !singleSignal && !mentionsIntegratedNetworkPreference && !pregnancySignal && !selectedPlan) {
     let clarifier = `I can recommend one — the biggest factor is how much care you expect to use.\n\n`;
     clarifier += `If you expect low medical use, I usually lean **Standard HSA** for the lower premium. `;
     clarifier += `If you expect frequent visits, ongoing prescriptions, or want a lower deductible, I usually lean **Enhanced HSA**.`;
@@ -220,15 +247,23 @@ export function buildRecommendationOverview(query: string, session: Session): st
   let recommendationPlan = 'Standard HSA';
   let recommendationReason = `it keeps premiums lowest while still giving you full HSA eligibility`;
 
-  if (usageBand === 'high' || usageBand === 'moderate') {
+  if (selectedPlan && /Standard HSA|Enhanced HSA|Kaiser Standard HMO/i.test(selectedPlan) && !lowestOutOfPocketSignal) {
+    recommendationPlan = selectedPlan;
+    recommendationReason = `it matches the direction you are already leaning and keeps the recommendation consistent with the tradeoff we have been discussing`;
+  } else if (usageBand === 'high' || usageBand === 'moderate') {
     recommendationPlan = 'Enhanced HSA';
-    recommendationReason = `the lower deductible and richer cost protection usually matter more once you expect regular care`;
+    recommendationReason = lowestOutOfPocketSignal
+      ? `it is the cleaner fit when your main goal is lower out-of-pocket exposure rather than the lowest premium`
+      : `the lower deductible and richer cost protection usually matter more once you expect regular care`;
   } else if (mentionsIntegratedNetworkPreference && kaiser && session.userState && isKaiserEligibleState(session.userState)) {
     recommendationPlan = 'Kaiser Standard HMO';
     recommendationReason = `it gives you the integrated HMO-style experience some people prefer when they want a tighter, coordinated network`;
   } else if (singleSignal || healthySignal || savingsSignal) {
     recommendationPlan = 'Standard HSA';
     recommendationReason = `it is usually the cleanest fit when you want to save money and do not expect much care`;
+  } else if (pregnancySignal && householdSignal) {
+    recommendationPlan = 'Standard HSA';
+    recommendationReason = `it keeps the paycheck cost lower while still giving the household full medical coverage, which is usually the cleaner starting point unless you already expect enough extra care to justify paying more up front`;
   }
 
   let msg = `Recommendation for ${coverageTier} coverage:\n\n`;
@@ -254,6 +289,12 @@ export function buildRecommendationOverview(query: string, session: Session): st
   }
   if (usageBand === 'high' || usageBand === 'moderate') {
     msg += `\nBecause you described more than minimal usage, **Enhanced HSA** is the one I would look at first.`;
+  }
+  if (lowestOutOfPocketSignal) {
+    msg += `\nBecause you asked specifically about the lowest out-of-pocket exposure, **Enhanced HSA** is the one I would look at first.`;
+  }
+  if (pregnancySignal && householdSignal && !lowestOutOfPocketSignal) {
+    msg += `\nSince you are asking in a household or pregnancy context, I am keeping the recommendation anchored to the family tradeoff rather than resetting back to a generic plan menu.`;
   }
 
   msg += `\n\nIf you want, I can compare the likely total annual cost for **Standard HSA** versus **Enhanced HSA** based on your expected usage.`;
