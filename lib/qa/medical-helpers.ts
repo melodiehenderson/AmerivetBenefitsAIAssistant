@@ -60,7 +60,7 @@ export function buildKaiserUnavailableFallback(session: Session, variant: Kaiser
   }
   if (variant === 'redirect') {
     const nyNote = stateLabel === 'NY'
-      ? `\n\nFor New York employees, the strongest alternative is **Enhanced HSA** on the BCBSTX nationwide PPO network if you want richer coverage.`
+      ? `\n\nFor New York employees, the strongest alternative is **Enhanced HSA** on the BCBSTX nationwide PPO network if you want stronger cost protection.`
       : '';
     return `Kaiser is only available in California, Georgia, Washington, and Oregon. In ${stateLabel}, your medical options are:\n\n- Standard HSA (BCBS of Texas) ΓÇö lower premium, higher deductible, full HSA contribution eligible\n- Enhanced HSA (BCBS of Texas) ΓÇö higher premium, lower deductible, better for anticipated medical use\n\nBoth use the nationwide BCBSTX PPO network.${nyNote} Would you like a side-by-side comparison?`;
   }
@@ -247,23 +247,35 @@ export function buildRecommendationOverview(query: string, session: Session): st
   let recommendationPlan = 'Standard HSA';
   let recommendationReason = `it keeps premiums lowest while still giving you full HSA eligibility`;
 
-  if (selectedPlan && /Standard HSA|Enhanced HSA|Kaiser Standard HMO/i.test(selectedPlan) && !lowestOutOfPocketSignal) {
+  if (
+    selectedPlan
+    && /Standard HSA|Enhanced HSA|Kaiser Standard HMO/i.test(selectedPlan)
+    && !lowestOutOfPocketSignal
+    && !(pregnancySignal && householdSignal)
+  ) {
     recommendationPlan = selectedPlan;
     recommendationReason = `it matches the direction you are already leaning and keeps the recommendation consistent with the tradeoff we have been discussing`;
+  } else if (pregnancySignal && householdSignal && kaiser && session.userState && isKaiserEligibleState(session.userState)) {
+    recommendationPlan = 'Kaiser Standard HMO';
+    recommendationReason = lowestOutOfPocketSignal
+      ? `it is the strongest fit when you want the lowest likely maternity-related out-of-pocket exposure in an eligible Kaiser state`
+      : `pregnancy usually makes lower deductible and out-of-pocket exposure matter more, and Kaiser is the strongest maternity-cost starting point in an eligible state`;
+  } else if (pregnancySignal && householdSignal) {
+    recommendationPlan = 'Enhanced HSA';
+    recommendationReason = lowestOutOfPocketSignal
+      ? `it is the stronger fit when you want lower maternity-related out-of-pocket exposure but Kaiser is not available`
+      : `pregnancy usually makes lower deductible and out-of-pocket exposure matter more, so Enhanced HSA is usually the safer non-Kaiser option`;
   } else if (usageBand === 'high' || usageBand === 'moderate') {
     recommendationPlan = 'Enhanced HSA';
     recommendationReason = lowestOutOfPocketSignal
-      ? `it is the cleaner fit when your main goal is lower out-of-pocket exposure rather than the lowest premium`
-      : `the lower deductible and richer cost protection usually matter more once you expect regular care`;
+      ? `it is the better fit when your main goal is lower out-of-pocket exposure rather than the lowest premium`
+      : `the lower deductible and stronger cost protection usually matter more once you expect regular care`;
   } else if (mentionsIntegratedNetworkPreference && kaiser && session.userState && isKaiserEligibleState(session.userState)) {
     recommendationPlan = 'Kaiser Standard HMO';
     recommendationReason = `it gives you the integrated HMO-style experience some people prefer when they want a tighter, coordinated network`;
   } else if (singleSignal || healthySignal || savingsSignal) {
     recommendationPlan = 'Standard HSA';
-    recommendationReason = `it is usually the cleanest fit when you want to save money and do not expect much care`;
-  } else if (pregnancySignal && householdSignal) {
-    recommendationPlan = 'Standard HSA';
-    recommendationReason = `it keeps the paycheck cost lower while still giving the household full medical coverage, which is usually the cleaner starting point unless you already expect enough extra care to justify paying more up front`;
+    recommendationReason = `it is usually the better fit when you want to keep monthly premium lower and do not expect much care`;
   }
 
   let msg = `Recommendation for ${coverageTier} coverage:\n\n`;
@@ -278,7 +290,7 @@ export function buildRecommendationOverview(query: string, session: Session): st
   msg += `**Why:** ${recommendationReason}.\n`;
   msg += `- Both HSA plans use the BCBSTX nationwide PPO network\n`;
   msg += `- **Standard HSA** is the lower-premium option\n`;
-  msg += `- **Enhanced HSA** gives you a lower deductible and better protection if you expect more care\n`;
+  msg += `- **Enhanced HSA** gives you a lower deductible and stronger cost protection if you expect more care\n`;
 
   if (kaiser && session.userState && isKaiserEligibleState(session.userState)) {
     msg += `- If you prefer an integrated HMO-style network and are in ${session.userState}, **Kaiser Standard HMO** is also an option\n`;
@@ -292,10 +304,14 @@ export function buildRecommendationOverview(query: string, session: Session): st
     msg += `\nBecause you described more than minimal usage, **Enhanced HSA** is the one I would look at first.`;
   }
   if (lowestOutOfPocketSignal) {
-    msg += `\nBecause you asked specifically about the lowest out-of-pocket exposure, **Enhanced HSA** is the one I would look at first.`;
+    msg += recommendationPlan === 'Kaiser Standard HMO'
+      ? `\nBecause you asked specifically about the lowest out-of-pocket exposure, **Kaiser Standard HMO** is the one I would look at first.`
+      : `\nBecause you asked specifically about the lowest out-of-pocket exposure, **Enhanced HSA** is the one I would look at first.`;
   }
   if (pregnancySignal && householdSignal && !lowestOutOfPocketSignal) {
-    msg += `\nSince you are asking in a household or pregnancy context, I am keeping the recommendation anchored to the family tradeoff rather than resetting back to a generic plan menu.`;
+    msg += recommendationPlan === 'Kaiser Standard HMO'
+      ? `\nBecause pregnancy is already part of the picture, I am treating maternity cost exposure as a main factor instead of defaulting to the cheapest premium.`
+      : `\nBecause pregnancy is already part of the picture, I am treating maternity cost exposure as a main factor instead of defaulting to the cheapest premium.`;
   }
 
   msg += `\n\nIf you want, I can compare the likely total annual cost for **Standard HSA** versus **Enhanced HSA** based on your expected usage.`;

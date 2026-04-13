@@ -185,7 +185,7 @@ function buildMedicalTermExplanation(
     return [
       `A deductible is the amount you usually pay out of pocket before the plan starts sharing more of the cost for many services.`,
       ``,
-      `In AmeriVet's medical plans, the deductible is one of the biggest tradeoffs between the lower-premium and richer-coverage options.`,
+      `In AmeriVet's medical plans, the deductible is one of the biggest tradeoffs between the lower-premium option and the stronger-protection option.`,
       ``,
       `The practical way to think about it is: a higher deductible usually keeps premium lower, while a lower deductible usually means you pay more up front in payroll but get help sooner when care happens.`,
       `If you want, I can compare AmeriVet's plans specifically on deductible and out-of-pocket exposure.`,
@@ -198,7 +198,7 @@ function buildMedicalTermExplanation(
       ``,
       `So if a plan says 20% coinsurance, that usually means you are paying 20% of the allowed in-network amount and the plan is paying the rest.`,
       ``,
-      `In AmeriVet's package, coinsurance matters most when you are comparing in-network versus out-of-network cost sharing and richer versus leaner medical coverage.`,
+      `In AmeriVet's package, coinsurance matters most when you are comparing in-network versus out-of-network cost sharing and stronger versus lighter medical coverage.`,
       `If you want, I can compare the AmeriVet medical plans on coinsurance next.`,
     ].join('\n');
   }
@@ -207,7 +207,7 @@ function buildMedicalTermExplanation(
     return [
       `The out-of-pocket max is the ceiling on how much you pay for covered in-network care during the plan year before the plan takes over more fully.`,
       ``,
-      `That is why it matters so much in higher-use years: even if premium is not the cheapest, a lower out-of-pocket max can make the richer plan feel safer.`,
+      `That is why it matters so much in higher-use years: even if premium is not the cheapest, a lower out-of-pocket max can make the stronger-protection plan feel safer.`,
       ``,
       `In AmeriVet's package, this is one of the biggest guardrail numbers to compare across medical plans.`,
       `If you want, I can compare the AmeriVet plans specifically on deductible versus out-of-pocket max.`,
@@ -228,7 +228,7 @@ function buildMedicalTermExplanation(
     return [
       `A specialist visit means care from a doctor focused on a specific area like dermatology, cardiology, orthopedics, or similar specialty care.`,
       ``,
-      `In AmeriVet's package, specialist costs are one of the most practical comparisons because richer plans often make repeated specialty care feel more manageable.`,
+      `In AmeriVet's package, specialist costs are one of the most practical comparisons because the stronger-protection plans often make repeated specialty care feel more manageable.`,
       ``,
       `If you want, I can compare AmeriVet's plans specifically on specialist visit costs next.`,
     ].join('\n');
@@ -260,7 +260,7 @@ function buildMedicalTermExplanation(
       ``,
       `In AmeriVet's current source summaries, I do not have the full prescription tier table yet, so I do not want to guess at generic versus brand copays.`,
       ``,
-      `What I can say confidently is that prescription use is one of the strongest reasons to compare the leaner versus richer medical options more closely.`,
+      `What I can say confidently is that prescription use is one of the strongest reasons to compare the lower-cost versus stronger-protection medical options more closely.`,
       `If you want, I can still compare the AmeriVet plans at a high level for someone who expects ongoing prescriptions.`,
     ].join('\n');
   }
@@ -299,7 +299,7 @@ function buildTradeoffComparison(query: string, session: Session): string {
   lines.push(
     `The short version is:`,
     `- **Standard HSA** is usually the lower-premium / higher-deductible choice`,
-    `- **Enhanced HSA** usually gives richer point-of-service cost sharing and a lower deductible`,
+    `- **Enhanced HSA** usually gives stronger point-of-service cost sharing and a lower deductible`,
   );
 
   if (plans.some((plan) => plan.planKey === 'kaiser_standard_hmo')) {
@@ -627,7 +627,7 @@ export function buildMedicalPlanDetailAnswer(query: string, session: Session): s
 
   if (/\b(maternity|pregnan\w*|delivery|prenatal|postnatal|baby|birth)\b/i.test(queryLower)) {
     return summary.maternity
-      ? `${summary.displayName}: ${summary.maternity}.\n\nPractical note: pregnancy-related care still runs through the plan deductible / out-of-pocket structure, so the richer plan is often easier to justify when you already expect maternity-related use.`
+      ? `${summary.displayName}: ${summary.maternity}.\n\nPractical note: pregnancy-related care still runs through the plan deductible / out-of-pocket structure, so the stronger-protection plan is often easier to justify when you already expect maternity-related use.`
       : `${summary.displayName}: I do not have a dedicated maternity line item in my current summary, so I do not want to guess.`;
   }
 

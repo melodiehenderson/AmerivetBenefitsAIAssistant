@@ -1470,7 +1470,7 @@ describe('qa-v2 engine', () => {
     });
 
     expect(result.answer).toContain('The reason I leaned Standard HSA');
-    expect(result.answer).toContain('keeps more of the savings in your paycheck');
+    expect(result.answer).toContain('keep your own monthly premium lower');
   });
 
   it('answers "is it worth the extra premium?" after a medical recommendation', async () => {
@@ -1495,8 +1495,155 @@ describe('qa-v2 engine', () => {
       session,
     });
 
-    expect(result.answer).toContain('Whether the richer medical option is worth the extra premium');
+    expect(result.answer).toContain('Whether the higher-cost medical option is worth the extra premium');
     expect(result.answer).toContain('If usage is low, I would usually keep the cheaper option');
+  });
+
+  it('treats a direct medical recommendation follow-up as higher priority than generic family follow-up scaffolding', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Sarah',
+      hasCollectedName: true,
+      userAge: 34,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee + Spouse',
+      lastBotMessage: 'Recommendation for Employee + Spouse coverage:\n\nMy recommendation: Standard HSA.',
+      lifeEvents: ['pregnancy'],
+      familyDetails: { hasSpouse: true },
+      messages: [
+        { role: 'user', content: "my wife is pregnant and we're expecting a baby" },
+        { role: 'assistant', content: 'Recommendation for Employee + Spouse coverage:\n\nMy recommendation: Standard HSA.' },
+      ],
+    });
+
+    const result = await runQaV2Engine({
+      query: 'which one do you recommend for me and my wife if she is pregnant?',
+      session,
+    });
+
+    expect(result.answer).toContain('My recommendation: Kaiser Standard HMO');
+    expect(result.answer).not.toContain('If you are thinking specifically about your spouse');
+    expect(result.answer).not.toContain('We can stay with medical');
+  });
+
+  it('answers a why-not-kaiser follow-up with a direct pregnancy-aware correction', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Sarah',
+      hasCollectedName: true,
+      userAge: 34,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee + Spouse',
+      lastBotMessage: 'Recommendation for Employee + Spouse coverage:\n\nMy recommendation: Standard HSA.',
+      lifeEvents: ['pregnancy'],
+      familyDetails: { hasSpouse: true },
+      messages: [
+        { role: 'user', content: "my wife is pregnant and we're expecting a baby" },
+        { role: 'assistant', content: 'Recommendation for Employee + Spouse coverage:\n\nMy recommendation: Standard HSA.' },
+      ],
+    });
+
+    const result = await runQaV2Engine({
+      query: "so why didn't you recommend kaiser?",
+      session,
+    });
+
+    expect(result.answer).toContain('Kaiser Standard HMO');
+    expect(result.answer).toContain('lowest likely maternity-related out-of-pocket exposure');
+    expect(result.answer).not.toContain('payroll');
+  });
+
+  it('answers medical coverage-tier timing directly even when the stale topic is disability', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Sarah',
+      hasCollectedName: true,
+      userAge: 34,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Disability',
+      lastBotMessage: 'Disability coverage is meant to protect part of your income if you cannot work because of illness or injury.',
+      familyDetails: { hasSpouse: true },
+      lifeEvents: ['pregnancy'],
+    });
+
+    const result = await runQaV2Engine({
+      query: 'when i select my plan, do i pick employee + spouse or the family one right now if we are having a baby next february?',
+      session,
+    });
+
+    expect(result.answer).toContain('Employee + Spouse');
+    expect(result.answer).toContain('Employee + Family');
+    expect(result.answer).toContain('qualifying life event');
+    expect(result.answer).not.toContain('Disability coverage is meant');
+  });
+
+  it('returns the other-benefits overview instead of stale medical scaffolding', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Sarah',
+      hasCollectedName: true,
+      userAge: 34,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      lastBotMessage: 'Here is the practical tradeoff across AmeriVet\'s medical options:',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'what are my other benefit options?',
+      session,
+    });
+
+    expect(result.answer).toContain('other benefit areas available to you');
+    expect(result.answer).toContain('Life Insurance');
+    expect(result.answer).not.toContain('We can stay with medical');
+  });
+
+  it('pivots from vision to supplemental overview when the user asks for supplemental protection', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Sarah',
+      hasCollectedName: true,
+      userAge: 34,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Vision',
+      lastBotMessage: 'Vision coverage: **VSP Vision Plus**.',
+    });
+
+    const result = await runQaV2Engine({
+      query: "no - i'm interested in the supplemental protection",
+      session,
+    });
+
+    expect(result.answer).toContain("AmeriVet's supplemental benefits are the optional add-ons");
+    expect(result.answer).not.toContain('We can stay with vision');
+  });
+
+  it('honors skipping dental and pivots directly into the vision plan', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Sarah',
+      hasCollectedName: true,
+      userAge: 34,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Dental',
+      lastBotMessage: 'Dental coverage: **BCBSTX Dental PPO**.',
+    });
+
+    const result = await runQaV2Engine({
+      query: "i think i'll skip dental. what's the vision plan?",
+      session,
+    });
+
+    expect(result.answer).toContain('Vision coverage: **VSP Vision Plus**');
+    expect(result.answer).not.toContain('Dental coverage: **BCBSTX Dental PPO**');
   });
 
   it('answers "what would you do?" after a medical recommendation', async () => {

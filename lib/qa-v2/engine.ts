@@ -221,7 +221,7 @@ function buildPackageGuidance(session: Session, topic?: string | null): string {
 
 function isSupplementalOverviewQuestion(query: string): boolean {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
-  return /\b(supplemental benefits?|supplemental coverage|other than medical|besides medical|not medical|what else is available besides medical|what are the supplemental benefits|tell me what the supplemental benefits are|are they free)\b/i.test(lower);
+  return /\b(supplemental benefits?|supplemental coverage|supplemental protections?|supplemental options?|other than medical|besides medical|not medical|what else is available besides medical|what are the supplemental benefits|tell me what the supplemental benefits are|are they free)\b/i.test(lower);
 }
 
 function buildSupplementalBenefitsOverviewReply(): string {
@@ -244,7 +244,7 @@ function buildSupplementalBenefitsOverviewReply(): string {
 
 function isDirectMedicalRecommendationQuestion(query: string): boolean {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
-  return /\b(which\s+plan\s+is\s+best|best\s+(medical\s+)?plan|which\s+medical\s+plan|lowest\s+out[- ]of[- ]pocket|lowest\s+bills|best\s+choice\s+for\s+my\s+family|plan\s+is\s+best\s+for\s+my\s+family|best\s+for\s+my\s+family|which\s+plan\s+will\s+give\s+us\s+the\s+lowest|let'?s\s+talk\s+(?:thru|through)\s+which\s+plan\s+is\s+best|talk\s+me\s+through\s+which\s+plan\s+is\s+best)\b/i.test(lower);
+  return /\b(which\s+plan\s+is\s+best|which\s+plan\s+is\s+better|best\s+(medical\s+)?plan|which\s+medical\s+plan|which\s+one\s+do\s+you\s+recommend|what\s+do\s+you\s+recommend\s+for\s+me|lowest\s+out[- ]of[- ]pocket|lowest\s+bills|best\s+choice\s+for\s+my\s+family|plan\s+is\s+best\s+for\s+my\s+family|best\s+for\s+my\s+family|better\s+for\s+me|better\s+for\s+us|which\s+plan\s+will\s+give\s+us\s+the\s+lowest|let'?s\s+talk\s+(?:thru|through)\s+which\s+plan\s+is\s+best|talk\s+me\s+through\s+which\s+plan\s+is\s+best)\b/i.test(lower);
 }
 
 function isLifeFamilyCoverageQuestion(query: string): boolean {
@@ -261,7 +261,7 @@ function isDirectMedicalContinuationQuestion(query: string): boolean {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
   return isDirectMedicalRecommendationQuestion(query)
     || isMedicalDetailQuestion(query)
-    || /\b(which\s+plan\s+is\s+best\s+for\s+my\s+family|which\s+plan\s+is\s+best|best\s+choice\s+for\s+my\s+family|what\s+plan\s+will\s+give\s+us\s+the\s+lowest|other\s+standard\s+plan|other\s+plan|plan\s+tradeoffs?|medical\s+options|medical\s+plan\s+options|show\s+me\s+(?:my\s+)?(?:medical\s+)?options|show\s+me\s+the\s+plans|plans\s+side\s+by\s+side|side\s+by\s+side|let'?s\s+talk\s+(?:thru|through)\s+which\s+plan|talk\s+(?:thru|through)\s+which\s+plan|talk\s+me\s+through\s+which\s+plan|best\s+choice\s+for\s+my\s+family|best\s+for\s+my\s+family)\b/i.test(lower);
+    || /\b(which\s+plan\s+is\s+best\s+for\s+my\s+family|which\s+plan\s+is\s+best|which\s+plan\s+is\s+better|which\s+one\s+do\s+you\s+recommend|best\s+choice\s+for\s+my\s+family|what\s+plan\s+will\s+give\s+us\s+the\s+lowest|other\s+standard\s+plan|other\s+plan|plan\s+tradeoffs?|medical\s+options|medical\s+plan\s+options|show\s+me\s+(?:my\s+)?(?:medical\s+)?options|show\s+me\s+the\s+plans|plans\s+side\s+by\s+side|side\s+by\s+side|let'?s\s+talk\s+(?:thru|through)\s+which\s+plan|talk\s+(?:thru|through)\s+which\s+plan|talk\s+me\s+through\s+which\s+plan|talk\s+through\s+which\s+option\s+fits\s+better|which\s+option\s+fits\s+better|best\s+choice\s+for\s+my\s+family|best\s+for\s+my\s+family|better\s+for\s+me|better\s+for\s+us)\b/i.test(lower);
 }
 
 function normalizeContinuationQuery(query: string): string {
@@ -271,7 +271,7 @@ function normalizeContinuationQuery(query: string): string {
 
 function isTopicOverviewQuestion(query: string): boolean {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
-  return /\b(what'?s\s+available|what\s+is\s+available|what\s+are\s+my\s+options|what\s+are\s+the\s+options|what\s+options\s+do\s+i\s+have|what\s+do\s+i\s+have|show\s+me\s+(?:my\s+)?options|show\s+me\s+what'?s\s+available|available\s+to\s+me|what\s+are\s+my\s+benefits|what\s+benefits?\s+do\s+i\s+have|life\s+insurance\s+info|medical\s+options|medical\s+plan\s+options)\b/i.test(lower);
+  return /\b(what'?s\s+available|what\s+is\s+available|what\s+are\s+my\s+options|what\s+are\s+the\s+options|what\s+options\s+do\s+i\s+have|what\s+do\s+i\s+have|show\s+me\s+(?:my\s+)?options|show\s+me\s+what'?s\s+available|available\s+to\s+me|what\s+are\s+my\s+benefits|what\s+benefits?\s+do\s+i\s+have|life\s+insurance\s+info|medical\s+options|medical\s+plan\s+options|what\s+are\s+my\s+other\s+benefit\s+options|go\s+through\s+all\s+my\s+options|top\s+to\s+bottom|all\s+my\s+options)\b/i.test(lower);
 }
 
 function isShortTopicPivot(query: string, topic: string): boolean {
@@ -313,6 +313,22 @@ function canonicalTopicQuery(topic: string, query: string): string {
   return query;
 }
 
+function preferredTopicOverride(query: string): string | null {
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+
+  if (/\b(skip(?:ping)?|done\s+with|not\s+interested\s+in)\s+dental\b/i.test(lower) && /\bvision\b/i.test(lower)) {
+    return 'Vision';
+  }
+  if (/\b(skip(?:ping)?|done\s+with|not\s+interested\s+in)\s+vision\b/i.test(lower) && /\bdental\b/i.test(lower)) {
+    return 'Dental';
+  }
+  if (/\bsupplemental protections?\b|\bsupplemental options?\b/i.test(lower)) {
+    return 'Supplemental';
+  }
+
+  return null;
+}
+
 function isReturnToMedicalIntent(query: string): boolean {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
   return /\b(go\s+back\s+to\s+(?:my\s+)?medical|back\s+to\s+(?:my\s+)?medical|back\s+to\s+(?:my\s+)?medical\s+plan\s+options|done\s+with\s+hsa\/fsa|done\s+with\s+hsa|done\s+with\s+fsa|medical\s+plan\s+options|show\s+me\s+(?:my\s+)?medical\s+plan\s+options|show\s+me\s+(?:my\s+)?medical\s+options|show\s+me\s+my\s+options|show\s+me\s+the\s+plans|plans\s+side\s+by\s+side|side\s+by\s+side|compare\s+the\s+plans)\b/i.test(lower);
@@ -320,30 +336,30 @@ function isReturnToMedicalIntent(query: string): boolean {
 
 function isMedicalRecommendationClarificationQuestion(query: string): boolean {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
-  return /\b(what\s+do\s+you\s+mean\s+by\s+richer|what\s+do\s+you\s+mean\s+by\s+leaner|by\s+richer|by\s+leaner|more\s+expensive\s+is\s+that\s+right|do\s+you\s+mean\s+more\s+expensive|do\s+you\s+mean\s+cheaper|is\s+that\s+just\s+more\s+expensive)\b/i.test(lower);
+  return /\b(what\s+do\s+you\s+mean\s+by\s+richer|what\s+do\s+you\s+mean\s+by\s+leaner|by\s+richer|by\s+leaner|what\s+do\s+you\s+mean\s+by\s+higher[- ]cost|more\s+expensive\s+is\s+that\s+right|do\s+you\s+mean\s+more\s+expensive|do\s+you\s+mean\s+cheaper|is\s+that\s+just\s+more\s+expensive)\b/i.test(lower);
 }
 
 function buildMedicalRecommendationClarificationReply(query: string): string {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
   if (/\bleaner|cheaper\b/i.test(lower)) {
     return [
-      `By **leaner** or **cheaper**, I mean the plan costs less in payroll up front but usually leaves you with more deductible and out-of-pocket exposure when care happens.`,
+      `By **leaner** or **cheaper**, I mean the plan costs less up front each month but usually leaves you with more deductible and out-of-pocket exposure when care happens.`,
       ``,
-      `In AmeriVet's medical options, that usually points closer to **Standard HSA** than the richer options.`,
+      `In AmeriVet's medical options, that usually points closer to **Standard HSA** than the higher-cost options.`,
       ``,
       `So yes: "leaner" usually means cheaper up front, but with less cost protection if you end up using more care.`,
     ].join('\n');
   }
 
   return [
-    `By **richer**, I mean the plan gives you stronger cost protection, even though it usually costs more up front in premium.`,
+    `By **higher-cost** or **more protective**, I mean the plan gives you stronger cost protection, even though it usually costs more up front in premium.`,
     ``,
     `In practical terms, that usually means:`,
     `- lower deductible`,
     `- lower out-of-pocket exposure in a higher-use year`,
     `- less of the bill staying with you when care actually happens`,
     ``,
-    `So yes: richer usually does mean **more expensive up front**, but the tradeoff is that you may pay less when the household actually uses care.`,
+    `So yes: the higher-cost option usually does mean **more expensive up front**, but the tradeoff is that you may pay less when the household actually uses care.`,
   ].join('\n');
 }
 
@@ -692,10 +708,10 @@ function buildMedicalRecommendationWhy(session: Session): string {
 
   if (/Enhanced HSA/i.test(recommendation || '')) {
     return [
-      `The reason I leaned Enhanced HSA is that your usage sounds high enough that paying more in premium can still be the cleaner trade if it lowers the deductible shock when care actually happens.`,
+      `The reason I leaned Enhanced HSA is that your usage sounds high enough that paying more in premium can still be the better trade if it lowers the deductible shock when care actually happens.`,
       ``,
       `The practical tradeoff is:`,
-      `- Standard HSA keeps payroll cost lower`,
+      `- Standard HSA keeps your monthly premium lower`,
       `- Enhanced HSA usually feels better once you expect regular care, prescriptions, or a meaningful chance of hitting the deductible`,
       ``,
       `So I would only move off the cheaper option if you think the extra premium is buying you real peace of mind against higher medical use.`,
@@ -704,18 +720,18 @@ function buildMedicalRecommendationWhy(session: Session): string {
 
   if (/Kaiser Standard HMO/i.test(recommendation || '')) {
     return [
-      `The reason I kept Kaiser in the conversation is that if you specifically want the Kaiser-style integrated network and you are in an eligible state, it can be a reasonable fit even when it is not the lowest-premium option.`,
+      `The reason I leaned Kaiser is that if you specifically want the Kaiser-style integrated network and you are in an eligible state, it can be a reasonable fit even when it is not the lowest-premium option.`,
       ``,
-      `The tradeoff is usually about network preference more than pure savings.`,
+      `The tradeoff is usually about the network and cost-sharing structure, not just premium alone.`,
     ].join('\n');
   }
 
   return [
-    `The reason I leaned Standard HSA is that it is usually the cleaner fit when the goal is to keep payroll cost lower and you do not expect much care.`,
+    `The reason I leaned Standard HSA is that it is usually the better fit when the goal is to keep your own monthly premium lower and you do not expect much care.`,
     ``,
     `The practical tradeoff is:`,
-    `- Standard HSA keeps more of the savings in your paycheck`,
-    `- Enhanced HSA can be worth the extra premium if you expect enough care for the richer protection to matter`,
+    `- Standard HSA keeps your monthly premium lower`,
+    `- Enhanced HSA can be worth the extra premium if you expect enough care for the stronger cost protection to matter`,
     ``,
     usage === 'low'
       ? `Since your expected usage sounds low, I would usually only pay more for Enhanced HSA if you strongly prefer extra deductible protection over lower premiums.`
@@ -726,17 +742,57 @@ function buildMedicalRecommendationWhy(session: Session): string {
 function buildMedicalWorthExtraPremiumReply(session: Session): string {
   const usage = usageLevelFromSession(session);
   return [
-    `Whether the richer medical option is worth the extra premium mostly comes down to expected use.`,
+    `Whether the higher-cost medical option is worth the extra premium mostly comes down to expected use.`,
     ``,
     `- If usage is low, I would usually keep the cheaper option and avoid paying more up front`,
     `- If usage is moderate to high, the extra premium can be worth it if it meaningfully softens the deductible and out-of-pocket risk`,
-    `- If you care most about the lowest ongoing payroll deduction, the higher-premium option is usually harder to justify`,
+    `- If you care most about the lowest ongoing monthly cost, the higher-premium option is usually harder to justify`,
     ``,
     usage === 'high'
-      ? `Because your current context sounds closer to higher usage, I would take the richer protection more seriously.`
+      ? `Because your current context sounds closer to higher usage, I would take the stronger cost protection more seriously.`
       : usage === 'low'
         ? `Because your current context sounds closer to low usage, I would usually stay with the cheaper plan unless you really want the extra protection.`
         : `Because your current context sounds moderate, this is the gray zone where the choice is really about your comfort with risk versus premium spend.`,
+  ].join('\n');
+}
+
+function hasPregnancyContext(session: Session, query = ''): boolean {
+  const lower = `${query}\n${(session.messages || [])
+    .filter((message) => message.role === 'user')
+    .map((message) => message.content)
+    .join('\n')}`.toLowerCase();
+  return /\b(my wife is pregnant|i'?m pregnant|we(?:'re| are) expecting|pregnant|maternity|prenatal|postnatal|delivery|baby|birth)\b/i.test(lower)
+    || Boolean(session.lifeEvents?.includes('pregnancy'));
+}
+
+function buildWhyNotKaiserReply(session: Session): string {
+  const state = session.userState || 'your state';
+  const kaiserEligible = !!session.userState && isKaiserEligibleState(session.userState);
+
+  if (hasPregnancyContext(session) && kaiserEligible) {
+    return [
+      `If pregnancy is already part of the picture and Kaiser is available in ${state}, I would actually look at **Kaiser Standard HMO** very seriously for the lowest likely maternity-related out-of-pocket exposure.`,
+      ``,
+      `The practical tradeoff is:`,
+      `- **Kaiser Standard HMO** usually becomes the more natural answer if your top priority is lowering maternity cost exposure in a Kaiser-eligible state`,
+      `- **Standard HSA** only stays in front if your bigger priority is keeping the monthly premium lower and taking on more cost risk when care happens`,
+      ``,
+      `So in a pregnancy-heavy conversation, I would not frame Standard HSA as the default answer over Kaiser.`,
+    ].join('\n');
+  }
+
+  if (kaiserEligible) {
+    return [
+      `I would not rule out **Kaiser Standard HMO** if you prefer that integrated network in ${state}.`,
+      ``,
+      `The main question is whether you value the Kaiser network and cost-sharing structure more than the PPO flexibility in Standard HSA or Enhanced HSA.`,
+    ].join('\n');
+  }
+
+  return [
+    `I did not keep **Kaiser Standard HMO** in front because it is only available in CA, GA, WA, and OR.`,
+    ``,
+    `Outside those states, the practical comparison is really **Standard HSA** versus **Enhanced HSA**.`,
   ].join('\n');
 }
 
@@ -754,8 +810,8 @@ function buildMedicalPracticalTake(session: Session): string {
     `My practical take is that I would usually land on **${chosen}** for this situation.`,
     ``,
     chosen === 'Enhanced HSA'
-      ? `I would make that choice when I think the household is likely to use enough care that the richer protection is worth paying for up front.`
-      : `I would make that choice when I think the household is trying to keep costs down and is unlikely to use enough care to justify the richer option.`,
+      ? `I would make that choice when I think the household is likely to use enough care that the stronger cost protection is worth paying for up front.`
+      : `I would make that choice when I think the household is trying to keep costs down and is unlikely to use enough care to justify the higher-cost option.`,
     ``,
     `So the real question is not which plan sounds nicer — it is whether you think your likely usage is high enough to make the extra premium pay for itself in peace of mind or actual cost protection.`,
   ].join('\n');
@@ -770,26 +826,26 @@ function buildMedicalFamilySpecificReply(session: Session, query = ''): string {
 
   if (/Employee \+ Family|Employee \+ Child|Employee \+ Spouse/i.test(tier)) {
     const lead = childFocused
-      ? `If you are thinking specifically about your kids, the practical question is whether the household is likely to use enough care for the richer medical plan to matter.`
+      ? `If you are thinking specifically about your kids, the practical question is whether the household is likely to use enough care for the stronger medical protection to matter.`
       : spouseFocused
-        ? `If you are thinking specifically about your spouse, the practical question is whether the household is likely to use enough care for the richer medical plan to matter.`
-        : `If you are thinking specifically about your household, the practical question is whether the household is likely to use enough care for the richer medical plan to matter.`;
+        ? `If you are thinking specifically about your spouse, the practical question is whether the household is likely to use enough care for the stronger medical protection to matter.`
+        : `If you are thinking specifically about your household, the practical question is whether the household is likely to use enough care for the stronger medical protection to matter.`;
     const richerProtectionLine = /Employee \+ Spouse/i.test(tier)
-      ? `- If your spouse has recurring visits, regular prescriptions, therapy, or a strong preference for using more care than routine checkups, the richer medical protection becomes easier to justify`
-      : `- If you expect specialist care, recurring prescriptions, therapy, or a real chance of using more than routine pediatric care, the richer protection becomes easier to justify`;
+      ? `- If your spouse has recurring visits, regular prescriptions, therapy, or a strong preference for using more care than routine checkups, the stronger medical protection becomes easier to justify`
+      : `- If you expect specialist care, recurring prescriptions, therapy, or a real chance of using more than routine pediatric care, the stronger medical protection becomes easier to justify`;
     return [
       lead,
       ``,
       childFocused
-        ? `- If your kids are generally healthy and the household mostly needs routine visits, the lower-premium option is still usually the cleaner fit`
+        ? `- If your kids are generally healthy and the household mostly needs routine visits, the lower-premium option is still usually the better fit`
         : spouseFocused
-          ? `- If your spouse is generally healthy and the household mostly needs routine visits, the lower-premium option is still usually the cleaner fit`
-          : `- If the household is generally healthy and mostly needs routine visits, the lower-premium option is still usually the cleaner fit`,
+          ? `- If your spouse is generally healthy and the household mostly needs routine visits, the lower-premium option is still usually the better fit`
+          : `- If the household is generally healthy and mostly needs routine visits, the lower-premium option is still usually the better fit`,
       richerProtectionLine,
       `- If Kaiser is available in your state and you strongly prefer that integrated network for the family, that can outweigh pure premium savings`,
       ``,
       usage === 'high'
-        ? `Because your current context already sounds closer to higher usage, I would take the richer family protection more seriously than I would for a low-use household.`
+        ? `Because your current context already sounds closer to higher usage, I would take the stronger family protection more seriously than I would for a low-use household.`
         : `Because your current context does not sound like heavy use, I would usually avoid paying more just in case unless you already know the family will use the plan heavily.`,
     ].join('\n');
   }
@@ -797,7 +853,7 @@ function buildMedicalFamilySpecificReply(session: Session, query = ''): string {
   return [
     `If you are really asking about household impact, I would first decide whether the medical choice is mainly about routine care, larger-risk protection, or a preferred network.`,
     ``,
-    `That is what tells you whether the cheaper plan or the richer plan is more worth it in practice.`,
+    `That is what tells you whether the cheaper plan or the higher-cost plan is more worth it in practice.`,
   ].join('\n');
 }
 
@@ -1060,7 +1116,7 @@ function buildDentalOnlyOptionReply(): string {
 }
 
 function isOnlyOptionQuestion(query: string): boolean {
-  return /\b(is\s+that\s+the\s+only\s+(?:option|one)|that'?s\s+the\s+only\s+one|only\s+option|any\s+other\s+options|is\s+there\s+only\s+one|only\s+one\s+(?:vision|dental)\s+plan)\b/i.test(stripAffirmationLeadIn(query.trim()).toLowerCase());
+  return /\b(is\s+that\s+the\s+only\s+(?:option|one)|that'?s\s+the\s+only\s+one|only\s+option|any\s+other\s+options|is\s+there\s+only\s+one|only\s+one\s+(?:vision|dental)\s+plan|alternate\s+(?:vision|dental)\s+plan|another\s+(?:vision|dental)\s+plan|other\s+(?:vision|dental)\s+plan)\b/i.test(stripAffirmationLeadIn(query.trim()).toLowerCase());
 }
 
 function shouldHandleSupplementalFitFollowup(query: string): boolean {
@@ -1283,13 +1339,49 @@ function buildBenefitsOverviewReply(session: Session, options?: { contextual?: b
 }
 
 function isBenefitsOverviewQuestion(query: string): boolean {
-  return /\b(all\s+benefits|benefits\s+overview|what\s+are\s+all\s+the\s+benefits|what\s+benefits\s+do\s+i\s+have|other\s+types?\s+of\s+coverage|what\s+other\s+coverage|other\s+coverage\s+available|what\s+else\s+is\s+available)\b/i
+  return /\b(all\s+benefits|benefits\s+overview|what\s+are\s+all\s+the\s+benefits|what\s+benefits\s+do\s+i\s+have|other\s+types?\s+of\s+coverage|what\s+other\s+coverage|other\s+coverage\s+available|what\s+else\s+is\s+available|other\s+benefit\s+options|other\s+benefits?|all\s+my\s+options|top\s+to\s+bottom)\b/i
     .test(stripAffirmationLeadIn(query.trim()).toLowerCase());
 }
 
 function isContextualBenefitsOverviewQuestion(query: string): boolean {
-  return /\b(other\s+types?\s+of\s+coverage|what\s+other\s+coverage|other\s+coverage\s+available|what\s+else\s+is\s+available)\b/i
+  return /\b(other\s+types?\s+of\s+coverage|what\s+other\s+coverage|other\s+coverage\s+available|what\s+else\s+is\s+available|other\s+benefit\s+options|other\s+benefits?|all\s+my\s+options|top\s+to\s+bottom)\b/i
     .test(stripAffirmationLeadIn(query.trim()).toLowerCase());
+}
+
+function isMedicalCoverageTierQuestion(query: string): boolean {
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  return /\b(coverage\s+tier|which\s+tier|employee\s*\+\s*spouse|employee\s*\+\s*family|family\s+plan|spouse\s+plan|family\s+one|spouse\s+one|when\s+i\s+select\s+my\s+plan)\b/i.test(lower)
+    && /\b(spouse|wife|husband|partner|baby|pregnan|expecting|child|children|kid|kids|family|now|next\s+year|when\s+i\s+select)\b/i.test(lower);
+}
+
+function buildMedicalCoverageTierDecisionReply(session: Session, query: string): string {
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  const mentionsFutureBaby = /\b(baby|pregnan|expecting|due|birth|next\s+year|next\s+feb)\b/i.test(lower);
+  const hasSpouse = /\b(spouse|wife|husband|partner)\b/i.test(lower) || !!session.familyDetails?.hasSpouse;
+
+  if (hasSpouse && mentionsFutureBaby) {
+    return [
+      `If it is just you and your spouse on the plan right now, I would usually enroll as **Employee + Spouse** for now.`,
+      ``,
+      `Then once the baby is born, birth is a qualifying life event, so you can move to **Employee + Family** and add the baby in Workday.`,
+      ``,
+      `So the practical answer is: **Employee + Spouse now, then Employee + Family after the baby arrives.**`,
+      ``,
+      `If you want, I can also recommend which medical plan makes the most sense for that spouse-plus-baby situation.`,
+    ].join('\n');
+  }
+
+  return [
+    `A coverage tier is the level of people you are enrolling, which changes both who is covered and what you pay.`,
+    ``,
+    `AmeriVet's medical tiers are:`,
+    `- Employee Only`,
+    `- Employee + Spouse`,
+    `- Employee + Child(ren)`,
+    `- Employee + Family`,
+    ``,
+    `If you tell me who you need covered right now, I can point you to the most likely tier and then compare the medical plans inside that tier.`,
+  ].join('\n');
 }
 
 function buildTopicReply(session: Session, topic: string, query: string): string {
@@ -1644,6 +1736,11 @@ function buildContinuationReply(session: Session, query: string): string | null 
   const wantsFamilySpecific = isFamilySpecificFollowup(normalizedQuery);
   const contextualComparisonKind = detectContextualComparisonKind(session, normalizedQuery);
 
+  if (isMedicalCoverageTierQuestion(normalizedQuery)) {
+    setTopic(session, 'Medical');
+    return buildMedicalCoverageTierDecisionReply(session, normalizedQuery);
+  }
+
   if (isSupplementalOverviewQuestion(normalizedQuery)) {
     clearPendingGuidance(session);
     return buildSupplementalBenefitsOverviewReply();
@@ -1652,6 +1749,16 @@ function buildContinuationReply(session: Session, query: string): string | null 
   if (isBenefitsOverviewQuestion(normalizedQuery) && isContextualBenefitsOverviewQuestion(normalizedQuery)) {
     clearPendingGuidance(session);
     return buildBenefitsOverviewReply(session, { contextual: true });
+  }
+
+  const topicOverride = preferredTopicOverride(normalizedQuery);
+  if (topicOverride === 'Supplemental') {
+    clearPendingGuidance(session);
+    return buildSupplementalBenefitsOverviewReply();
+  }
+  if (topicOverride === 'Vision' || topicOverride === 'Dental') {
+    setTopic(session, topicOverride);
+    return buildTopicReply(session, topicOverride, canonicalTopicQuery(topicOverride, normalizedQuery));
   }
 
   if (isHsaFsaCompatibilityQuestion(normalizedQuery)) {
@@ -1685,6 +1792,9 @@ function buildContinuationReply(session: Session, query: string): string | null 
     && !explicitTopic
     && isTopicOverviewQuestion(normalizedQuery)
   ) {
+    if (activeTopic === 'Medical' && /\b(all\s+my\s+options|top\s+to\s+bottom|other\s+benefit\s+options)\b/i.test(lower)) {
+      return buildBenefitsOverviewReply(session, { contextual: true });
+    }
     setTopic(session, activeTopic);
     return buildTopicReply(session, activeTopic, canonicalTopicQuery(activeTopic, normalizedQuery));
   }
@@ -1717,6 +1827,14 @@ function buildContinuationReply(session: Session, query: string): string | null 
   if (isLifeFamilyCoverageQuestion(normalizedQuery)) {
     setTopic(session, 'Life Insurance');
     return buildTopicReply(session, 'Life Insurance', normalizedQuery);
+  }
+
+  if (
+    /(?:want|wanted)\s+to\s+compare\s+(?:those|these)\s+plans|\bcompare\s+(?:those|these)\s+plans\b/i.test(lower)
+    && /want to compare plans or switch coverage tiers/i.test(lastBotMessage)
+  ) {
+    setTopic(session, 'Medical');
+    return buildTopicReply(session, 'Medical', 'compare the plan tradeoffs');
   }
 
   if (
@@ -1904,6 +2022,9 @@ function buildContinuationReply(session: Session, query: string): string | null 
     if (isMedicalRecommendationClarificationQuestion(normalizedQuery)) {
       return buildMedicalRecommendationClarificationReply(normalizedQuery);
     }
+    if (/\bwhy\b[^.?!]*\b(?:recommend|pick|choose)\b[^.?!]*\bkaiser\b|\bwhy\s+not\s+kaiser\b|\bless\s+out[- ]of[- ]pocket\b[^.?!]*\bkaiser\b/i.test(lower)) {
+      return buildWhyNotKaiserReply(session);
+    }
     if (wantsPracticalTake || wantsDecisionReason || wantsThatOne) {
       return buildMedicalPracticalTake(session);
     }
@@ -1911,8 +2032,11 @@ function buildContinuationReply(session: Session, query: string): string | null 
       return [
         `If you mean the cheaper option, that is usually **Standard HSA**.`,
         ``,
-        `That is the one I would usually keep if the goal is lower payroll cost and you do not expect enough care to justify paying more up front.`,
+        `That is the one I would usually keep if the goal is lower monthly premium and you do not expect enough care to justify paying more up front.`,
       ].join('\n');
+    }
+    if (isDirectMedicalRecommendationQuestion(normalizedQuery)) {
+      return buildTopicReply(session, 'Medical', normalizedQuery);
     }
     if (wantsWhy) {
       return buildMedicalRecommendationWhy(session);
@@ -2096,7 +2220,7 @@ function buildContinuationReply(session: Session, query: string): string | null 
     }
   }
 
-  if (session.pendingTopicSuggestion && (isSimpleAffirmation(normalizedQuery) || /\b(do that|do this|do it|let'?s do that|let'?s do this|let'?s do it|next one|show me that one)\b/i.test(lower))) {
+  if (session.pendingTopicSuggestion && (/\b(yes|yes please|yeah|yep|sure|do that|do this|do it|let'?s do that|let'?s do this|let'?s do it|next one|show me that one)\b/i.test(lower))) {
     const suggestedTopic = session.pendingTopicSuggestion;
     clearPendingGuidance(session);
     setTopic(session, suggestedTopic);
@@ -2321,6 +2445,14 @@ export async function runQaV2Engine(params: {
     session.lastBotMessage = answer;
     session.messages.push({ role: 'assistant', content: answer });
     return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'direct-medical-recommendation-v2', topic: 'Medical' } };
+  }
+
+  if (isMedicalCoverageTierQuestion(query)) {
+    setTopic(session, 'Medical');
+    const answer = buildMedicalCoverageTierDecisionReply(session, query);
+    session.lastBotMessage = answer;
+    session.messages.push({ role: 'assistant', content: answer });
+    return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'medical-coverage-tier-v2', topic: 'Medical' } };
   }
 
   if (isSupplementalOverviewQuestion(query)) {

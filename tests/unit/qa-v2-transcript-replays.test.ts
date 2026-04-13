@@ -1589,4 +1589,64 @@ describe('qa-v2 transcript replays', () => {
       }),
     );
   });
+
+  it('replays pregnancy recommendation follow-through without falling back to stale medical scaffolding', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'which medical plan should i pick for me and my pregnant wife?',
+          mustContain: ['My recommendation: Kaiser Standard HMO'],
+          mustNotContain: ['We can stay with medical'],
+        },
+        {
+          user: "so why didn't you recommend kaiser?",
+          mustContain: ['Kaiser Standard HMO', 'lowest likely maternity-related out-of-pocket exposure'],
+          mustNotContain: ['payroll'],
+        },
+        {
+          user: 'what are my other benefit options?',
+          mustContain: ['other benefit areas available to you', 'Life Insurance'],
+          mustNotContain: ['We can stay with medical'],
+        },
+      ],
+      makeSession({
+        userName: 'Sarah',
+        hasCollectedName: true,
+        userAge: 34,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'Medical',
+        coverageTierLock: 'Employee + Spouse',
+        lifeEvents: ['pregnancy'],
+        familyDetails: { hasSpouse: true },
+      }),
+    );
+  });
+
+  it('replays supplemental and coverage-tier pivots from routine-care context', async () => {
+    await replayTranscript(
+      [
+        {
+          user: "no - i'm interested in the supplemental protection",
+          mustContain: ["AmeriVet's supplemental benefits are the optional add-ons"],
+          mustNotContain: ['We can stay with vision'],
+        },
+        {
+          user: 'when i select my plan, do i pick employee + spouse or the family one right now if we are having a baby next february?',
+          mustContain: ['Employee + Spouse', 'Employee + Family', 'qualifying life event'],
+          mustNotContain: ['We can stay with vision'],
+        },
+      ],
+      makeSession({
+        userName: 'Sarah',
+        hasCollectedName: true,
+        userAge: 34,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'Vision',
+        lifeEvents: ['pregnancy'],
+        familyDetails: { hasSpouse: true },
+      }),
+    );
+  });
 });
