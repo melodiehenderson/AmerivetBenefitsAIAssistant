@@ -48,7 +48,7 @@ function isMedicalDetailQuestion(query: string): boolean {
 function isAffirmativeCompareFollowup(query: string): boolean {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
   return isSimpleAffirmation(query)
-    || /\b(compare|comparison|vs\.?|versus|which one|which matters more|do that|i'?d like that|yes please|tell me more)\b/i.test(lower);
+    || /\b(compare|comparison|vs\.?|versus|which one|which matters more|do that|do this|do it|let'?s do that|let'?s do this|let'?s do it|i'?d like that|yes please|tell me more)\b/i.test(lower);
 }
 
 function buildSessionContext(session: Session) {
@@ -155,9 +155,99 @@ function buildPackageGuidance(session: Session, topic?: string | null): string {
   }
 }
 
+function isSupplementalOverviewQuestion(query: string): boolean {
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  return /\b(supplemental benefits?|supplemental coverage|other than medical|besides medical|not medical|what else is available besides medical|what are the supplemental benefits|tell me what the supplemental benefits are|are they free)\b/i.test(lower);
+}
+
+function buildSupplementalBenefitsOverviewReply(): string {
+  return [
+    `AmeriVet's supplemental benefits are the optional add-ons beyond your core medical, dental, and vision coverage.`,
+    ``,
+    `The main supplemental areas are:`,
+    `- Life Insurance: employer-paid basic life plus optional voluntary term and whole life`,
+    `- Disability: short-term and long-term income protection`,
+    `- Critical Illness: lump-sum style cash support after a covered serious diagnosis`,
+    `- Accident/AD&D: cash support after covered accidental injuries, with extra accidental loss-of-life or limb protection`,
+    ``,
+    `They are not all free:`,
+    `- Basic Life & AD&D is employer-paid`,
+    `- The optional voluntary life, disability, critical illness, and accident add-ons are generally employee-paid`,
+    ``,
+    `So the practical decision is usually which optional protection is worth paying for after your core medical choice is settled.`,
+  ].join('\n');
+}
+
+function isDirectMedicalRecommendationQuestion(query: string): boolean {
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  return /\b(which\s+plan\s+is\s+best|best\s+(medical\s+)?plan|which\s+medical\s+plan|lowest\s+out[- ]of[- ]pocket|lowest\s+bills|best\s+choice\s+for\s+my\s+family|plan\s+is\s+best\s+for\s+my\s+family|best\s+for\s+my\s+family|which\s+plan\s+will\s+give\s+us\s+the\s+lowest|let'?s\s+talk\s+(?:thru|through)\s+which\s+plan\s+is\s+best|talk\s+me\s+through\s+which\s+plan\s+is\s+best)\b/i.test(lower);
+}
+
+function isLifeFamilyCoverageQuestion(query: string): boolean {
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  return /\b(life(?:\s+insurance)?|term life|whole life|basic life).*\b(wife|husband|spouse|partner|kids|children|family|dependents?|cover|coverage|benefits?|qualify|portable|guaranteed issue|cash value|how much)\b|\b(wife|husband|spouse|partner|kids|children|family|dependents?|cover|coverage|benefits?|qualify|portable|guaranteed issue|cash value|how much)\b.*\b(life(?:\s+insurance)?|term life|whole life|basic life)\b/i.test(lower);
+}
+
+function isHsaFsaCompatibilityQuestion(query: string): boolean {
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  return /\b(fsa)\b.*\b(kaiser|hmo)\b|\b(kaiser|hmo)\b.*\bfsa\b|\bshould\s+i\s+use\s+an?\s+fsa\b|\bshould\s+i\s+use\s+fsa\b|\buse\s+an?\s+fsa\b|\buse\s+fsa\b/i.test(lower);
+}
+
+function isDirectMedicalContinuationQuestion(query: string): boolean {
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  return isDirectMedicalRecommendationQuestion(query)
+    || isMedicalDetailQuestion(query)
+    || /\b(which\s+plan\s+is\s+best\s+for\s+my\s+family|which\s+plan\s+is\s+best|best\s+choice\s+for\s+my\s+family|what\s+plan\s+will\s+give\s+us\s+the\s+lowest|other\s+standard\s+plan|other\s+plan|plan\s+tradeoffs?|let'?s\s+talk\s+(?:thru|through)\s+which\s+plan|talk\s+(?:thru|through)\s+which\s+plan|talk\s+me\s+through\s+which\s+plan|best\s+choice\s+for\s+my\s+family|best\s+for\s+my\s+family)\b/i.test(lower);
+}
+
+function normalizeContinuationQuery(query: string): string {
+  const trimmed = query.trim();
+  return stripAffirmationLeadIn(trimmed) || trimmed;
+}
+
+function buildHsaFsaCompatibilityReply(query: string): string {
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  if (/\bshould\s+i\s+use\s+an?\s+fsa\b|\buse\s+an?\s+fsa\b/i.test(lower)) {
+    return [
+      `I would usually use an FSA only if you expect to spend the money within the current plan year and you are not trying to keep HSA eligibility as the main priority.`,
+      ``,
+      `In AmeriVet's package, that usually means:`,
+      `- choose HSA if you are in Standard HSA or Enhanced HSA and want rollover plus longer-term savings`,
+      `- choose FSA if you are in a non-HSA-qualified setup like Kaiser Standard HMO or if your goal is near-term pre-tax spending rather than building an HSA balance`,
+      ``,
+      `So my practical take is: use FSA when you expect to spend the dollars soon; use HSA when you want the long-term tax-advantaged account.`,
+    ].join('\n');
+  }
+
+  if (/\b(kaiser|hmo)\b/i.test(lower)) {
+    return [
+      `FSA is not really about the Kaiser network itself. The practical question is whether your medical plan is HSA-qualified.`,
+      ``,
+      `For AmeriVet's package:`,
+      `- Kaiser Standard HMO is generally the kind of plan where an FSA is the cleaner pre-tax spending companion, because it is not the HSA-qualified option`,
+      `- Standard HSA and Enhanced HSA are the HSA-qualified medical plans, so that is where HSA is usually the better fit`,
+      `- You generally cannot make full HSA contributions while covered by a general-purpose healthcare FSA`,
+      ``,
+      `So if you are choosing Kaiser Standard HMO, FSA is usually the more natural pre-tax account than HSA.`,
+    ].join('\n');
+  }
+
+  return [
+    `The practical answer is that FSA makes more sense when you want pre-tax help for expenses you expect to use within the current plan year and you are not relying on an HSA-qualified medical plan.`,
+    ``,
+    `In AmeriVet's package:`,
+    `- HSA is usually the cleaner fit with Standard HSA or Enhanced HSA`,
+    `- FSA is usually the cleaner fit if you are not on an HSA-qualified medical plan, or if you expect to spend the money soon rather than build a longer-term healthcare cushion`,
+    `- You generally cannot make full HSA contributions while covered by a general-purpose healthcare FSA`,
+  ].join('\n');
+}
+
 function isBenefitDecisionGuidanceRequest(query: string): boolean {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
   if (isCostModelRequest(lower)) return false;
+  if (isDirectMedicalRecommendationQuestion(lower)) return false;
+  if (isMedicalDetailQuestion(lower)) return false;
+  if (/\b(plan|kaiser|standard hsa|enhanced hsa|maternity|pregnan|copay|prescription|deductible|coinsurance|out[- ]of[- ]pocket)\b/i.test(lower)) return false;
   return (
     /\b(worth\s+considering|think\s+through|help\s+me\s+decide|what\s+should\s+i\s+consider|what\s+else\s+should\s+i\s+consider|which\s+of\s+these\s+benefits|which\s+benefit\s+is\s+worth|what\s+should\s+i\s+look\s+at\s+first|pay\s+attention\s+to\s+first)\b/i.test(lower)
     && /\b(benefit|benefits|package|coverage)\b/i.test(lower)
@@ -964,6 +1054,10 @@ function buildTopicReply(session: Session, topic: string, query: string): string
         age: session.userAge || undefined,
       });
     }
+    if (isDirectMedicalRecommendationQuestion(query)) {
+      const recommendation = buildRecommendationOverview(query, session);
+      if (recommendation) return recommendation;
+    }
     const detailedAnswer = buildMedicalPlanDetailAnswer(query, session);
     if (detailedAnswer) return detailedAnswer;
     const medicalFallback = buildMedicalPlanFallback(query, session);
@@ -975,6 +1069,9 @@ function buildTopicReply(session: Session, topic: string, query: string): string
 
   if (topic === 'HSA/FSA') {
     const lower = query.toLowerCase();
+    if (isHsaFsaCompatibilityQuestion(query)) {
+      return buildHsaFsaCompatibilityReply(query);
+    }
     if (/\bwhat\s+does\s+hsa\s+mean\b|\bwhat\s+is\s+an?\s+hsa\b/.test(lower)) {
       return `HSA stands for **Health Savings Account**.\n\nIt is a tax-advantaged account you can use for eligible healthcare expenses when you are enrolled in an HSA-qualified medical plan like AmeriVet's **Standard HSA** or **Enhanced HSA**.\n\nThe short version is:\n- You contribute pre-tax money\n- The money can be used for eligible medical expenses\n- Unused funds roll over year to year\n- The account stays with you`;
     }
@@ -1206,12 +1303,13 @@ function isFamilySpecificFollowup(query: string): boolean {
 }
 
 function buildContinuationReply(session: Session, query: string): string | null {
-  const lower = query.toLowerCase();
+  const normalizedQuery = normalizeContinuationQuery(query);
+  const lower = normalizedQuery.toLowerCase();
   const activeTopic = session.currentTopic || inferTopicFromLastBotMessage(session.lastBotMessage);
-  const inferredSupplementalTopic = inferSupplementalTopicForFollowup(session, query);
-  const focus = detectBenefitPriorityFocus(query);
-  const hsaFitFocus = detectHsaFitFocus(query);
-  const supplementalComparisonFocus = detectSupplementalComparisonFocus(query);
+  const inferredSupplementalTopic = inferSupplementalTopicForFollowup(session, normalizedQuery);
+  const focus = detectBenefitPriorityFocus(normalizedQuery);
+  const hsaFitFocus = detectHsaFitFocus(normalizedQuery);
+  const supplementalComparisonFocus = detectSupplementalComparisonFocus(normalizedQuery);
   const lastBotMessage = session.lastBotMessage || '';
   const assistantHistory = (session.messages || [])
     .filter((message) => message.role === 'assistant')
@@ -1223,15 +1321,62 @@ function buildContinuationReply(session: Session, query: string): string | null 
   const wantsDecisionReason = /\bwhy would i pick that\b|\bwhy pick that\b|\bwhy choose that\b|\bwhy that one\b|\bwhy that one over the other\b|\bwhy that over the other\b/i.test(lower);
   const wantsCheaperOption = /\b(the cheaper one|cheaper one|cheaper option|lower premium one|lower premium option|lowest premium one|lowest premium option)\b/i.test(lower);
   const wantsThatOne = /\b(that one|that plan|that option|the recommended one)\b/i.test(lower);
-  const wantsFamilySpecific = isFamilySpecificFollowup(query);
-  const contextualComparisonKind = detectContextualComparisonKind(session, query);
+  const wantsFamilySpecific = isFamilySpecificFollowup(normalizedQuery);
+  const contextualComparisonKind = detectContextualComparisonKind(session, normalizedQuery);
+
+  if (isSupplementalOverviewQuestion(normalizedQuery)) {
+    clearPendingGuidance(session);
+    return buildSupplementalBenefitsOverviewReply();
+  }
+
+  if (isBenefitsOverviewQuestion(normalizedQuery) && isContextualBenefitsOverviewQuestion(normalizedQuery)) {
+    clearPendingGuidance(session);
+    return buildBenefitsOverviewReply(session, { contextual: true });
+  }
+
+  if (isHsaFsaCompatibilityQuestion(normalizedQuery)) {
+    setTopic(session, 'HSA/FSA');
+    return buildTopicReply(session, 'HSA/FSA', normalizedQuery);
+  }
+
+  if (isLifeFamilyCoverageQuestion(normalizedQuery)) {
+    setTopic(session, 'Life Insurance');
+    return buildTopicReply(session, 'Life Insurance', normalizedQuery);
+  }
+
+  if (
+    isDirectMedicalContinuationQuestion(normalizedQuery)
+    && /\b(plan|medical|copay|copays|deductible|coinsurance|out[- ]of[- ]pocket|maternity|pregnan|baby|birth|delivery|prenatal|postnatal|kaiser|hsa|hmo|tier|tradeoff|prescription|network)\b/i.test(lower)
+  ) {
+    setTopic(session, 'Medical');
+    return buildTopicReply(session, 'Medical', normalizedQuery);
+  }
+
+  if (
+    activeTopic === 'Medical'
+    && /\b(other\s+than\s+medical|other\s+types?\s+of\s+coverage|what\s+else\s+is\s+available|supplemental\s+benefits?)\b/i.test(lower)
+  ) {
+    clearPendingGuidance(session);
+    if (isSupplementalOverviewQuestion(normalizedQuery)) {
+      return buildSupplementalBenefitsOverviewReply();
+    }
+    return buildBenefitsOverviewReply(session, { contextual: true });
+  }
+
+  if (
+    (activeTopic === 'Medical' || inferTopicFromLastBotMessage(lastBotMessage) === 'Medical')
+    && isDirectMedicalContinuationQuestion(normalizedQuery)
+  ) {
+    setTopic(session, 'Medical');
+    return buildTopicReply(session, 'Medical', normalizedQuery);
+  }
 
   if (
     activeTopic === 'Medical'
     && inferredSupplementalTopic
-    && isSupplementalRecommendationQuestion(query)
+    && isSupplementalRecommendationQuestion(normalizedQuery)
   ) {
-    const recommendation = buildSupplementalRecommendationReply(inferredSupplementalTopic, session, query);
+    const recommendation = buildSupplementalRecommendationReply(inferredSupplementalTopic, session, normalizedQuery);
     if (recommendation) {
       setTopic(session, inferredSupplementalTopic);
       return recommendation;
@@ -1239,7 +1384,7 @@ function buildContinuationReply(session: Session, query: string): string | null 
   }
 
   if (activeTopic === 'HSA/FSA' && (/\bwhat\s+does\s+hsa\s+mean\b|\bwhat\s+is\s+an?\s+hsa\b|\bwhat\s+does\s+fsa\s+mean\b|\bwhat\s+is\s+an?\s+fsa\b/i.test(lower))) {
-    return buildTopicReply(session, 'HSA/FSA', query);
+    return buildTopicReply(session, 'HSA/FSA', normalizedQuery);
   }
 
   if (session.pendingGuidancePrompt === 'benefit_decision' && focus) {
@@ -1251,7 +1396,7 @@ function buildContinuationReply(session: Session, query: string): string | null 
     return buildBenefitDecisionGuidance(session, 'family_protection');
   }
 
-  if (session.pendingGuidancePrompt === 'orthodontia_braces' && isOrthodontiaBracesFollowup(query)) {
+  if (session.pendingGuidancePrompt === 'orthodontia_braces' && isOrthodontiaBracesFollowup(normalizedQuery)) {
     clearPendingGuidance(session);
     return [
       `For braces, the practical question is not just whether orthodontia exists on the plan, but how much of the cost the plan actually helps with.`,
@@ -1271,13 +1416,13 @@ function buildContinuationReply(session: Session, query: string): string | null 
       clearPendingGuidance(session);
       return buildHsaFitSpecificReply(hsaFitFocus);
     }
-    if (isSimpleAffirmation(query) || /\b(hsa|fsa|better fit|which one|long[- ]term savings|near[- ]term medical expenses)\b/i.test(lower)) {
+    if (isSimpleAffirmation(normalizedQuery) || /\b(hsa|fsa|better fit|which one|long[- ]term savings|near[- ]term medical expenses)\b/i.test(lower)) {
       clearPendingGuidance(session);
       return buildHsaFitGuidance();
     }
   }
 
-  if (session.pendingGuidancePrompt === 'supplemental_fit' && shouldHandleSupplementalFitFollowup(query)) {
+  if (session.pendingGuidancePrompt === 'supplemental_fit' && shouldHandleSupplementalFitFollowup(normalizedQuery)) {
     const fitTopic =
       session.pendingGuidanceTopic
       || (session.currentTopic === 'Life Insurance' || session.currentTopic === 'Disability' || session.currentTopic === 'Critical Illness' || session.currentTopic === 'Accident/AD&D'
@@ -1286,7 +1431,7 @@ function buildContinuationReply(session: Session, query: string): string | null 
     if (
       fitTopic
       && (fitTopic === 'Life Insurance' || fitTopic === 'Disability' || fitTopic === 'Critical Illness' || fitTopic === 'Accident/AD&D')
-      && isRepeatedSupplementalWorthQuestion(query)
+      && isRepeatedSupplementalWorthQuestion(normalizedQuery)
     ) {
       clearPendingGuidance(session);
       setTopic(session, fitTopic);
@@ -1299,12 +1444,12 @@ function buildContinuationReply(session: Session, query: string): string | null 
   if (
     (activeTopic === 'Accident/AD&D' || activeTopic === 'Critical Illness' || activeTopic === 'Disability' || activeTopic === 'Life Insurance'
       || inferredSupplementalTopic === 'Accident/AD&D' || inferredSupplementalTopic === 'Critical Illness' || inferredSupplementalTopic === 'Disability' || inferredSupplementalTopic === 'Life Insurance')
-    && shouldHandleSupplementalFitFollowup(query)
+    && shouldHandleSupplementalFitFollowup(normalizedQuery)
     && /worth considering for your situation|usually worth considering when one of these sounds true|usually worth considering when you want extra cash support|usually worth considering if missing part of your paycheck|people usually give it more attention when|people usually prioritize it when/i.test(lastBotMessage)
   ) {
     const fitTopic = inferredSupplementalTopic || activeTopic;
     if (fitTopic === 'Accident/AD&D' || fitTopic === 'Critical Illness' || fitTopic === 'Disability' || fitTopic === 'Life Insurance') {
-      if (isRepeatedSupplementalWorthQuestion(query)) {
+      if (isRepeatedSupplementalWorthQuestion(normalizedQuery)) {
         setTopic(session, fitTopic);
         return buildSupplementalPracticalTake(fitTopic);
       }
@@ -1313,7 +1458,7 @@ function buildContinuationReply(session: Session, query: string): string | null 
     }
   }
 
-  if (session.pendingGuidancePrompt === 'accident_vs_critical' && isAffirmativeCompareFollowup(query)) {
+  if (session.pendingGuidancePrompt === 'accident_vs_critical' && isAffirmativeCompareFollowup(normalizedQuery)) {
     if (/plain-language difference between Accident\/AD&D and Critical Illness/i.test(lastBotMessage)) {
       return buildSupplementalPracticalTake('Accident/AD&D');
     }
@@ -1325,17 +1470,17 @@ function buildContinuationReply(session: Session, query: string): string | null 
     return buildAccidentVsCriticalFocusedReply(supplementalComparisonFocus);
   }
 
-  if (session.pendingGuidancePrompt === 'life_vs_disability' && isAffirmativeCompareFollowup(query)) {
+  if (session.pendingGuidancePrompt === 'life_vs_disability' && isAffirmativeCompareFollowup(normalizedQuery)) {
     clearPendingGuidance(session);
     return buildLifeVsDisabilityComparison();
   }
 
-  if (session.pendingGuidancePrompt === 'dental_vs_vision' && isAffirmativeCompareFollowup(query)) {
+  if (session.pendingGuidancePrompt === 'dental_vs_vision' && isAffirmativeCompareFollowup(normalizedQuery)) {
     clearPendingGuidance(session);
     return buildDentalVsVisionDecision();
   }
 
-  if (session.pendingGuidancePrompt === 'medical_tradeoff_compare' && isAffirmativeCompareFollowup(query)) {
+  if (session.pendingGuidancePrompt === 'medical_tradeoff_compare' && isAffirmativeCompareFollowup(normalizedQuery)) {
     clearPendingGuidance(session);
     setTopic(session, 'Medical');
     return pricingUtils.estimateCostProjection({
@@ -1366,7 +1511,7 @@ function buildContinuationReply(session: Session, query: string): string | null 
       || inferredSupplementalTopic === 'Life Insurance')
     && /\b(should\s+i\s+get|should\s+i\s+add|do\s+you\s+recommend|would\s+you\s+recommend|with\s+my\s+situation|for\s+my\s+family|for\s+our\s+family|sole\s+bread[- ]?winner|only\s+income|bread[- ]?winner)\b/i.test(lower)
   ) {
-    const recommendation = buildSupplementalRecommendationReply(inferredSupplementalTopic, session, query);
+    const recommendation = buildSupplementalRecommendationReply(inferredSupplementalTopic, session, normalizedQuery);
     if (recommendation) {
       setTopic(session, inferredSupplementalTopic);
       return recommendation;
@@ -1391,12 +1536,12 @@ function buildContinuationReply(session: Session, query: string): string | null 
       return buildMedicalWorthExtraPremiumReply(session);
     }
     if (wantsFamilySpecific) {
-      return buildMedicalFamilySpecificReply(session, query);
+      return buildMedicalFamilySpecificReply(session, normalizedQuery);
     }
   }
 
-  if (activeTopic === 'Medical' && isMedicalPregnancySignal(query) && !isCostModelRequest(query)) {
-    return buildTopicReply(session, 'Medical', /maternity|pregnan|baby|birth|delivery|prenatal|postnatal/i.test(lower) ? query : 'maternity coverage');
+  if (activeTopic === 'Medical' && isMedicalPregnancySignal(normalizedQuery) && !isCostModelRequest(normalizedQuery)) {
+    return buildTopicReply(session, 'Medical', /maternity|pregnan|baby|birth|delivery|prenatal|postnatal/i.test(lower) ? normalizedQuery : 'maternity coverage');
   }
 
   if (activeTopic === 'Vision' && /\bdental\b/i.test(lower) && /\b(recommend|worth|useful|should\s+i\s+add|should\s+i\s+get)\b/i.test(lower)) {
@@ -1410,31 +1555,31 @@ function buildContinuationReply(session: Session, query: string): string | null 
   if (
     ((activeTopic === 'Vision' && (session.completedTopics || []).includes('Dental'))
       || (activeTopic === 'Dental' && (session.completedTopics || []).includes('Vision')))
-    && (isRoutineCareComparisonPrompt(query)
+    && (isRoutineCareComparisonPrompt(normalizedQuery)
       || /\b(dental|vision)\b/i.test(lower) && /\b(recommend|get|worth|useful|only\s+option)\b/i.test(lower))
   ) {
     return buildDentalVsVisionDecision();
   }
 
-  if (activeTopic === 'Vision' && isOnlyOptionQuestion(query)) {
+  if (activeTopic === 'Vision' && isOnlyOptionQuestion(normalizedQuery)) {
     return buildVisionOnlyOptionReply();
   }
 
-  if (activeTopic === 'Vision' && isWorthAddingFollowup(query)) {
+  if (activeTopic === 'Vision' && isWorthAddingFollowup(normalizedQuery)) {
     return buildVisionWorthAddingReply();
   }
 
-  if (activeTopic === 'Dental' && isOnlyOptionQuestion(query)) {
+  if (activeTopic === 'Dental' && isOnlyOptionQuestion(normalizedQuery)) {
     return buildDentalOnlyOptionReply();
   }
 
-  if (activeTopic === 'Dental' && isWorthAddingFollowup(query)) {
+  if (activeTopic === 'Dental' && isWorthAddingFollowup(normalizedQuery)) {
     return buildDentalWorthAddingReply();
   }
 
   if (
     (inferredSupplementalTopic === 'Accident/AD&D' || inferredSupplementalTopic === 'Critical Illness' || inferredSupplementalTopic === 'Disability' || inferredSupplementalTopic === 'Life Insurance')
-    && isRepeatedSupplementalWorthQuestion(query)
+    && isRepeatedSupplementalWorthQuestion(normalizedQuery)
   ) {
     setTopic(session, inferredSupplementalTopic);
     return buildSupplementalPracticalTake(inferredSupplementalTopic);
@@ -1442,15 +1587,15 @@ function buildContinuationReply(session: Session, query: string): string | null 
 
   if (
     (activeTopic === 'Accident/AD&D' || activeTopic === 'Critical Illness' || activeTopic === 'Disability' || activeTopic === 'Life Insurance')
-    && isRepeatedSupplementalWorthQuestion(query)
+    && isRepeatedSupplementalWorthQuestion(normalizedQuery)
   ) {
     setTopic(session, activeTopic);
     return buildSupplementalPracticalTake(activeTopic);
   }
 
-  if ((activeTopic === 'Accident/AD&D' || activeTopic === 'Critical Illness' || activeTopic === 'Disability' || activeTopic === 'Life Insurance') && isWorthAddingFollowup(query)) {
-    if (isSupplementalRecommendationQuestion(query)) {
-      const recommendation = buildSupplementalRecommendationReply(activeTopic, session, query);
+  if ((activeTopic === 'Accident/AD&D' || activeTopic === 'Critical Illness' || activeTopic === 'Disability' || activeTopic === 'Life Insurance') && isWorthAddingFollowup(normalizedQuery)) {
+    if (isSupplementalRecommendationQuestion(normalizedQuery)) {
+      const recommendation = buildSupplementalRecommendationReply(activeTopic, session, normalizedQuery);
       if (recommendation) {
         setTopic(session, activeTopic);
         return recommendation;
@@ -1460,9 +1605,9 @@ function buildContinuationReply(session: Session, query: string): string | null 
     return buildSupplementalFitGuidance(session, activeTopic);
   }
 
-  if ((inferredSupplementalTopic === 'Accident/AD&D' || inferredSupplementalTopic === 'Critical Illness' || inferredSupplementalTopic === 'Disability' || inferredSupplementalTopic === 'Life Insurance') && isWorthAddingFollowup(query)) {
-    if (isSupplementalRecommendationQuestion(query)) {
-      const recommendation = buildSupplementalRecommendationReply(inferredSupplementalTopic, session, query);
+  if ((inferredSupplementalTopic === 'Accident/AD&D' || inferredSupplementalTopic === 'Critical Illness' || inferredSupplementalTopic === 'Disability' || inferredSupplementalTopic === 'Life Insurance') && isWorthAddingFollowup(normalizedQuery)) {
+    if (isSupplementalRecommendationQuestion(normalizedQuery)) {
+      const recommendation = buildSupplementalRecommendationReply(inferredSupplementalTopic, session, normalizedQuery);
       if (recommendation) {
         setTopic(session, inferredSupplementalTopic);
         return recommendation;
@@ -1482,10 +1627,10 @@ function buildContinuationReply(session: Session, query: string): string | null 
   }
 
   if ((inferredSupplementalTopic === 'Life Insurance' || inferredSupplementalTopic === 'Disability' || inferredSupplementalTopic === 'Critical Illness' || inferredSupplementalTopic === 'Accident/AD&D')
-    && isNonMedicalDetailQuestion(inferredSupplementalTopic, query)
+    && isNonMedicalDetailQuestion(inferredSupplementalTopic, normalizedQuery)
     && !(supplementalComparisonFocus && /Accident\/AD&D and Critical Illness/i.test(lastBotMessage))) {
     setTopic(session, inferredSupplementalTopic);
-    return buildTopicReply(session, inferredSupplementalTopic, query);
+    return buildTopicReply(session, inferredSupplementalTopic, normalizedQuery);
   }
 
   if (
@@ -1494,15 +1639,15 @@ function buildContinuationReply(session: Session, query: string): string | null 
     || /deciding between dental and vision as the next add-on/i.test(lastBotMessage)
   ) {
     if (/Accident\/AD&D and Critical Illness/i.test(lastBotMessage)) {
-      const reply = buildWhyNotOtherFirstReply('accident_vs_critical', query);
+      const reply = buildWhyNotOtherFirstReply('accident_vs_critical', normalizedQuery);
       if (reply) return reply;
     }
     if (/life insurance from disability/i.test(lastBotMessage)) {
-      const reply = buildWhyNotOtherFirstReply('life_vs_disability', query);
+      const reply = buildWhyNotOtherFirstReply('life_vs_disability', normalizedQuery);
       if (reply) return reply;
     }
     if (/dental and vision as the next add-on/i.test(lastBotMessage)) {
-      const reply = buildWhyNotOtherFirstReply('dental_vs_vision', query);
+      const reply = buildWhyNotOtherFirstReply('dental_vs_vision', normalizedQuery);
       if (reply) return reply;
     }
     if (supplementalComparisonFocus && /Accident\/AD&D and Critical Illness/i.test(lastBotMessage)) {
@@ -1512,7 +1657,7 @@ function buildContinuationReply(session: Session, query: string): string | null 
       wantsPracticalTake
       || wantsDecisionReason
       || wantsThatOne
-      || isAffirmativeCompareFollowup(query)
+      || isAffirmativeCompareFollowup(normalizedQuery)
       || /\bwhich matters more\b|\bwhich one is more relevant\b|\bwhich one first\b/i.test(lower)
     ) {
       if (/Accident\/AD&D and Critical Illness/i.test(lastBotMessage)) {
@@ -1527,18 +1672,18 @@ function buildContinuationReply(session: Session, query: string): string | null 
     }
     if (wantsFamilySpecific) {
       if (/Accident\/AD&D and Critical Illness/i.test(lastBotMessage)) {
-        return buildComparisonFamilyReply('accident_vs_critical', query);
+        return buildComparisonFamilyReply('accident_vs_critical', normalizedQuery);
       }
       if (/life insurance from disability/i.test(lastBotMessage)) {
-        return buildComparisonFamilyReply('life_vs_disability', query);
+        return buildComparisonFamilyReply('life_vs_disability', normalizedQuery);
       }
       if (/dental and vision as the next add-on/i.test(lastBotMessage)) {
-        return buildComparisonFamilyReply('dental_vs_vision', query);
+        return buildComparisonFamilyReply('dental_vs_vision', normalizedQuery);
       }
     }
   }
 
-  if (isAffirmativeCompareFollowup(query)) {
+  if (isAffirmativeCompareFollowup(normalizedQuery)) {
     if (/compare accident\/ad&d versus critical illness/i.test(lastBotMessage)) {
       setPendingGuidance(session, 'accident_vs_critical', 'Accident/AD&D');
       return buildAccidentVsCriticalComparison();
@@ -1549,9 +1694,20 @@ function buildContinuationReply(session: Session, query: string): string | null 
     if (/decide whether dental or vision is more worth adding first/i.test(lastBotMessage)) {
       return buildDentalVsVisionDecision();
     }
+    if (/I can use that tier to compare the medical plans|show how pricing changes across tiers/i.test(lastBotMessage)) {
+      setTopic(session, 'Medical');
+      return buildTopicReply(session, 'Medical', 'compare the plan tradeoffs');
+    }
+    if (
+      activeTopic === 'Medical'
+      && /\b(compare the plan tradeoff|compare the plan tradeoffs|estimate likely costs|talk through why one option fits better)\b/i.test(lastBotMessage)
+    ) {
+      setTopic(session, 'Medical');
+      return buildTopicReply(session, 'Medical', 'compare the plan tradeoffs');
+    }
   }
 
-  if (session.pendingTopicSuggestion && (isSimpleAffirmation(query) || /\b(do that|do it|let'?s do that|let'?s do it|next one|show me that one)\b/i.test(lower))) {
+  if (session.pendingTopicSuggestion && (isSimpleAffirmation(normalizedQuery) || /\b(do that|do this|do it|let'?s do that|let'?s do this|let'?s do it|next one|show me that one)\b/i.test(lower))) {
     const suggestedTopic = session.pendingTopicSuggestion;
     clearPendingGuidance(session);
     setTopic(session, suggestedTopic);
@@ -1568,10 +1724,10 @@ function buildContinuationReply(session: Session, query: string): string | null 
     return buildPackageGuidance(session, session.currentTopic);
   }
 
-  const pivotTopic = benefitTopicFromQuery(query);
+  const pivotTopic = benefitTopicFromQuery(normalizedQuery);
   if (pivotTopic && pivotTopic !== 'Benefits Overview' && pivotTopic !== session.currentTopic) {
     setTopic(session, pivotTopic);
-    return buildTopicReply(session, pivotTopic, query);
+    return buildTopicReply(session, pivotTopic, normalizedQuery);
   }
 
   if (!pivotTopic && session.currentTopic !== 'Critical Illness' && /\billness\b/i.test(lower) && /critical\s+illness/i.test(lastBotMessage)) {
@@ -1592,24 +1748,29 @@ function buildContinuationReply(session: Session, query: string): string | null 
     activeTopic === 'Medical'
     && !pivotTopic
     && /\billness\b/i.test(lower)
-    && !isMedicalDetailQuestion(query)
+    && !isMedicalDetailQuestion(normalizedQuery)
   ) {
     setTopic(session, 'Critical Illness');
     return buildTopicReply(session, 'Critical Illness', 'critical illness');
   }
 
   if (activeTopic === 'Medical') {
-    if (isCostModelRequest(query)) {
-      return buildTopicReply(session, 'Medical', query);
+    if (isCostModelRequest(normalizedQuery)) {
+      return buildTopicReply(session, 'Medical', normalizedQuery);
     }
-    if (isMedicalDetailQuestion(query)) {
-      const detailedAnswer = buildMedicalPlanDetailAnswer(query, session);
+    if (
+      /\b(which\s+plan\s+is\s+best\s+for\s+my\s+family|which\s+plan\s+is\s+best|best\s+for\s+my\s+family|best\s+choice\s+for\s+my\s+family|what\s+plan\s+will\s+give\s+us\s+the\s+lowest|lowest\s+out[- ]of[- ]pocket|we'?re\s+also\s+having\s+a\s+baby|my\s+wife\s+is\s+pregnant)\b/i.test(lower)
+    ) {
+      return buildTopicReply(session, 'Medical', normalizedQuery);
+    }
+    if (isMedicalDetailQuestion(normalizedQuery)) {
+      const detailedAnswer = buildMedicalPlanDetailAnswer(normalizedQuery, session);
       if (detailedAnswer) return detailedAnswer;
-      const medicalFallback = buildMedicalPlanFallback(query, session);
+      const medicalFallback = buildMedicalPlanFallback(normalizedQuery, session);
       if (medicalFallback) return medicalFallback;
     }
     if (
-      (isSimpleAffirmation(query) || /\b(compare|yes)\b/i.test(lower)) &&
+      (isSimpleAffirmation(normalizedQuery) || /\b(compare|yes)\b/i.test(lower)) &&
       /\blikely\s+total\s+annual\s+cost\b|\bcompare\b.*\bstandard\s+hsa\b.*\benhanced\s+hsa\b/i.test(session.lastBotMessage || '')
     ) {
       return pricingUtils.estimateCostProjection({
@@ -1620,12 +1781,12 @@ function buildContinuationReply(session: Session, query: string): string | null 
       });
     }
     if (/\b(low|moderate|high)\s+usage\b|\bgenerally\s+healthy\b|\blow\s+bills\b/i.test(lower)) {
-      const recommendation = buildRecommendationOverview(query, session);
+      const recommendation = buildRecommendationOverview(normalizedQuery, session);
       if (recommendation) return recommendation;
     }
   }
 
-  if (isSimpleAffirmation(query)) {
+  if (isSimpleAffirmation(normalizedQuery)) {
     return buildPackageGuidance(session, session.currentTopic);
   }
 
@@ -1745,12 +1906,51 @@ export async function runQaV2Engine(params: {
     return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'benefit-focus-shortcut-v2' } };
   }
 
+  const continuationReply = buildContinuationReply(session, query);
+  if (continuationReply) {
+    session.lastBotMessage = continuationReply;
+    session.messages.push({ role: 'assistant', content: continuationReply });
+    return { answer: continuationReply, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'continuation-v2', topic: session.currentTopic || null } };
+  }
+
   if (isCostModelRequest(query) && !detectedTopic) {
     setTopic(session, 'Medical');
     const answer = buildTopicReply(session, 'Medical', query);
     session.lastBotMessage = answer;
     session.messages.push({ role: 'assistant', content: answer });
     return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'cost-model-v2', topic: 'Medical' } };
+  }
+
+  if (isDirectMedicalRecommendationQuestion(query)) {
+    setTopic(session, 'Medical');
+    const answer = buildTopicReply(session, 'Medical', query);
+    session.lastBotMessage = answer;
+    session.messages.push({ role: 'assistant', content: answer });
+    return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'direct-medical-recommendation-v2', topic: 'Medical' } };
+  }
+
+  if (isSupplementalOverviewQuestion(query)) {
+    clearPendingGuidance(session);
+    const answer = buildSupplementalBenefitsOverviewReply();
+    session.lastBotMessage = answer;
+    session.messages.push({ role: 'assistant', content: answer });
+    return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'supplemental-overview-v2' } };
+  }
+
+  if (isHsaFsaCompatibilityQuestion(query)) {
+    setTopic(session, 'HSA/FSA');
+    const answer = buildTopicReply(session, 'HSA/FSA', query);
+    session.lastBotMessage = answer;
+    session.messages.push({ role: 'assistant', content: answer });
+    return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'hsa-fsa-compatibility-v2', topic: 'HSA/FSA' } };
+  }
+
+  if (isLifeFamilyCoverageQuestion(query)) {
+    setTopic(session, 'Life Insurance');
+    const answer = buildTopicReply(session, 'Life Insurance', query);
+    session.lastBotMessage = answer;
+    session.messages.push({ role: 'assistant', content: answer });
+    return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'life-family-coverage-v2', topic: 'Life Insurance' } };
   }
 
   if (isBenefitDecisionGuidanceRequest(query)) {
@@ -1808,13 +2008,6 @@ export async function runQaV2Engine(params: {
     session.lastBotMessage = answer;
     session.messages.push({ role: 'assistant', content: answer });
     return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'routine-detail-v2', topic } };
-  }
-
-  const continuationReply = buildContinuationReply(session, query);
-  if (continuationReply) {
-    session.lastBotMessage = continuationReply;
-    session.messages.push({ role: 'assistant', content: continuationReply });
-    return { answer: continuationReply, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'continuation-v2', topic: session.currentTopic || null } };
   }
 
   const normalizedTopic = detectedTopic && detectedTopic !== 'Benefits Overview'

@@ -91,6 +91,27 @@ describe('qa-v2 engine', () => {
     expect(result.answer).toContain('Enhanced HSA');
   });
 
+  it('treats broad affirmations after medical tradeoff prompts as a real compare request', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      lastBotMessage: 'We can stay with medical. The most useful next step is usually one of these: compare the plan tradeoff, estimate likely costs, or talk through why one option fits better for your situation.',
+    });
+
+    const result = await runQaV2Engine({
+      query: "great, let's do this",
+      session,
+    });
+
+    expect(result.answer).toContain('Here is the practical tradeoff across AmeriVet');
+    expect(result.answer).not.toContain('We can stay with medical');
+  });
+
   it('answers plan copay questions directly from the medical summaries', async () => {
     const session = makeSession({
       step: 'active_chat',
@@ -357,6 +378,28 @@ describe('qa-v2 engine', () => {
 
     expect(result.answer).toContain('in-network');
     expect(result.answer).toContain('out-of-network');
+    expect(result.answer).not.toContain('We can stay with medical');
+  });
+
+  it('answers direct family-plan recommendation questions instead of looping back to medical scaffolding', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Mandy',
+      hasCollectedName: true,
+      userAge: 27,
+      userState: 'CT',
+      dataConfirmed: true,
+      coverageTierLock: 'Employee + Family',
+      currentTopic: 'Medical',
+    });
+
+    const result = await runQaV2Engine({
+      query: "which plan is best for my family if we're pretty healthy but we're also having a baby?",
+      session,
+    });
+
+    expect(result.answer).toContain('My recommendation');
+    expect(result.answer).toContain('Standard HSA');
     expect(result.answer).not.toContain('We can stay with medical');
   });
 
@@ -961,6 +1004,115 @@ describe('qa-v2 engine', () => {
 
     expect(result.answer).toContain('critical illness');
     expect(result.answer).not.toContain('Recommendation for Employee + Spouse coverage');
+  });
+
+  it('answers direct supplemental-overview questions even when the current topic is stale', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Thomas',
+      hasCollectedName: true,
+      userAge: 56,
+      userState: 'CO',
+      dataConfirmed: true,
+      currentTopic: 'Vision',
+      lastBotMessage: 'Vision coverage: VSP Vision Plus',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'what are the supplemental benefits? are they free?',
+      session,
+    });
+
+    expect(result.answer).toContain("AmeriVet's supplemental benefits are the optional add-ons");
+    expect(result.answer).toContain('Basic Life & AD&D is employer-paid');
+    expect(result.answer).toContain('employee-paid');
+    expect(result.answer).not.toContain('We can stay with vision');
+  });
+
+  it('answers spouse life-coverage questions directly instead of replaying the full life card', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Thomas',
+      hasCollectedName: true,
+      userAge: 56,
+      userState: 'CO',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'would the life insurance also cover my wife?',
+      session,
+    });
+
+    expect(result.answer).toContain('voluntary term life');
+    expect(result.answer).toContain('spouse');
+    expect(result.answer).not.toContain('Life insurance options:');
+  });
+
+  it('answers HSA/FSA compatibility questions directly for Kaiser instead of repeating the generic overview', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Thomas',
+      hasCollectedName: true,
+      userAge: 56,
+      userState: 'CO',
+      dataConfirmed: true,
+      currentTopic: 'HSA/FSA',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'can i use fsa with kaiser?',
+      session,
+    });
+
+    expect(result.answer).toContain('Kaiser Standard HMO');
+    expect(result.answer).toContain('FSA is usually the more natural pre-tax account');
+    expect(result.answer).not.toContain('HSA/FSA overview:');
+  });
+
+  it('answers direct life-benefit inventory questions instead of stalling in stale topic scaffolding', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Thomas',
+      hasCollectedName: true,
+      userAge: 56,
+      userState: 'CO',
+      dataConfirmed: true,
+      currentTopic: 'Vision',
+      lastBotMessage: 'We can stay with vision. The most useful next step is usually whether it is worth adding for your household.',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'what life insurance benefits do i have?',
+      session,
+    });
+
+    expect(result.answer).toContain('Life insurance options:');
+    expect(result.answer).toContain('Unum Basic Life & AD&D');
+    expect(result.answer).not.toContain('We can stay with vision');
+  });
+
+  it('answers direct medical family recommendation questions even when the current topic is stale', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Thomas',
+      hasCollectedName: true,
+      userAge: 56,
+      userState: 'CO',
+      dataConfirmed: true,
+      currentTopic: 'Vision',
+      coverageTierLock: 'Employee + Family',
+      lastBotMessage: 'Vision coverage: VSP Vision Plus',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'which plan is best for my family?',
+      session,
+    });
+
+    expect(result.answer).toMatch(/My recommendation|I can recommend one/i);
+    expect(result.answer).not.toContain('We can stay with vision');
   });
 
   it('recovers critical illness from an organic illness reference after package guidance', async () => {

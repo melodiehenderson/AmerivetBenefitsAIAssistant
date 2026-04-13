@@ -494,6 +494,110 @@ describe('qa-v2 transcript replays', () => {
     );
   });
 
+  it('replays direct family medical recommendation questions as recommendations instead of stale medical scaffolding', async () => {
+    await replayTranscript(
+      [
+        {
+          user: "which plan is best for my family if we're pretty healthy but we're also having a baby?",
+          mustContain: ['My recommendation', 'Standard HSA'],
+          mustNotContain: ['We can stay with medical'],
+        },
+      ],
+      makeSession({
+        userName: 'Mandy',
+        hasCollectedName: true,
+        userAge: 27,
+        userState: 'CT',
+        dataConfirmed: true,
+        currentTopic: 'Medical',
+        coverageTierLock: 'Employee + Family',
+      }),
+    );
+  });
+
+  it('replays direct supplemental overview questions from a stale routine-care topic without getting trapped there', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'what are the supplemental benefits? are they free?',
+          mustContain: ["AmeriVet's supplemental benefits are the optional add-ons", 'Basic Life & AD&D is employer-paid', 'employee-paid'],
+          mustNotContain: ['We can stay with vision'],
+        },
+        {
+          user: 'no, tell me what the supplemental benefits are',
+          mustContain: ['Life Insurance', 'Disability', 'Critical Illness', 'Accident/AD&D'],
+          mustNotContain: ['We can stay with vision'],
+        },
+      ],
+      makeSession({
+        userName: 'Thomas',
+        hasCollectedName: true,
+        userAge: 56,
+        userState: 'CO',
+        dataConfirmed: true,
+        currentTopic: 'Vision',
+      }),
+    );
+  });
+
+  it('replays spouse life-coverage and FSA compatibility questions as direct answers instead of broad category cards', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'life insurance info',
+          mustContain: ['Life insurance options'],
+        },
+        {
+          user: 'would the life insurance also cover my wife?',
+          mustContain: ['voluntary term life', 'spouse'],
+          mustNotContain: ['Life insurance options:'],
+        },
+        {
+          user: 'tell me about hsa/fsa',
+          mustContain: ['HSA/FSA overview'],
+        },
+        {
+          user: 'can i use fsa with kaiser?',
+          mustContain: ['Kaiser Standard HMO', 'FSA is usually the more natural pre-tax account'],
+          mustNotContain: ['HSA/FSA overview:'],
+        },
+      ],
+      makeSession({
+        userName: 'Thomas',
+        hasCollectedName: true,
+        userAge: 56,
+        userState: 'CO',
+        dataConfirmed: true,
+      }),
+    );
+  });
+
+  it('replays stale-topic direct questions as concrete answers instead of vision scaffolding', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'what life insurance benefits do i have?',
+          mustContain: ['Life insurance options:', 'Unum Basic Life & AD&D'],
+          mustNotContain: ['We can stay with vision'],
+        },
+        {
+          user: 'which plan is best for my family?',
+          mustContain: ['recommend'],
+          mustNotContain: ['We can stay with vision'],
+        },
+      ],
+      makeSession({
+        userName: 'Thomas',
+        hasCollectedName: true,
+        userAge: 56,
+        userState: 'CO',
+        dataConfirmed: true,
+        currentTopic: 'Vision',
+        coverageTierLock: 'Employee + Family',
+      }),
+    );
+  });
+
   it('replays repeated supplemental worth-adding questions as practical guidance instead of looping', async () => {
     await replayTranscript(
       [

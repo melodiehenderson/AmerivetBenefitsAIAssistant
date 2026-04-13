@@ -88,7 +88,7 @@ export function isSimpleAffirmation(message: string): boolean {
 export function stripAffirmationLeadIn(message: string): string {
   return message
     .trim()
-    .replace(/^(?:oh+[\s!,.:-]*)?(?:(?:ok|okay|alright|all right|yeah|yep|yes|yes please|sure|please)\b[\s!,.:-]*)+/i, '')
+    .replace(/^(?:oh+[\s!,.:-]*)?(?:(?:ok|okay|alright|all right|yeah|yep|yes|yes please|sure|please|no|nope|nah|actually|wait|well|so)\b[\s!,.:-]*)+/i, '')
     .trim();
 }
 

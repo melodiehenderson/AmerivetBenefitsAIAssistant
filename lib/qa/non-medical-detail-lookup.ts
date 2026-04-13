@@ -15,7 +15,7 @@ export function isNonMedicalDetailQuestion(topic: string, query: string): boolea
   const lower = query.toLowerCase();
 
   if (topic === 'Life Insurance') {
-    return /\b(portable|guaranteed issue|cash value|whole life|term life|basic life|voluntary life|age[- ]banded|rates? locked|coverage amount|how much life insurance|how much can i get|1x|5x salary|spouse coverage|partner coverage|dependent child coverage|cover my spouse|cover my partner|cover my kids|cover my children)\b/i.test(lower);
+    return /\b(portable|guaranteed issue|cash value|whole life|term life|basic life|voluntary life|age[- ]banded|rates? locked|coverage amount|how much life insurance|how much can i get|1x|5x salary|spouse coverage|partner coverage|dependent child coverage|family coverage|cover my spouse|cover my partner|cover my wife|cover my husband|cover my family|cover my kids|cover my children|cover my dependents)\b/i.test(lower);
   }
 
   if (topic === 'Disability') {
@@ -81,11 +81,11 @@ export function buildNonMedicalDetailAnswer(topic: string, query: string, _sessi
       ].join('\n');
     }
 
-    if (/\b(spouse coverage|partner coverage|dependent child coverage|cover my spouse|cover my partner|cover my kids|cover my children)\b/i.test(lower)) {
+    if (/\b(spouse coverage|partner coverage|dependent child coverage|family coverage|cover my spouse|cover my partner|cover my wife|cover my husband|cover my family|cover my kids|cover my children|cover my dependents)\b/i.test(lower)) {
       return [
         `For family members, the practical distinction is that the employer-paid basic life benefit is the employee's base coverage, while the voluntary term life option is the one whose summary explicitly says spouse and dependent child coverage are available.`,
         ``,
-        `So if you are asking about covering a spouse or kids, voluntary term life is the most relevant life-insurance option in the current AmeriVet summary.`,
+        `So if you are asking about covering a spouse, husband, wife, kids, or family members more broadly, voluntary term life is the most relevant life-insurance option in the current AmeriVet summary.`,
       ].join('\n');
     }
 
