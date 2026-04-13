@@ -27,7 +27,7 @@ export function isNonMedicalDetailQuestion(topic: string, query: string): boolea
   }
 
   if (topic === 'Accident/AD&D') {
-    return /\b(what\s+does\s+ad&d\s+mean|what\s+does\s+ad\/d\s+mean|difference between accident and ad&d|difference between accident and ad\/d|accidental death|loss of life|loss of limb|accidental injury|what does it pay for|what is it for|what is it not)\b/i.test(lower);
+    return /\b(what\s+is\s+accident(?:\/ad&d|\/ad\/d)?|what\s+is\s+ad&d|what\s+is\s+ad\/d|what\s+does\s+ad&d\s+mean|what\s+does\s+ad\/d\s+mean|difference between accident and ad&d|difference between accident and ad\/d|accidental death|loss of life|loss of limb|accidental injury|what does it pay for|what is it for|what is it not)\b/i.test(lower);
   }
 
   return false;
@@ -175,6 +175,22 @@ export function buildNonMedicalDetailAnswer(topic: string, query: string, _sessi
   }
 
   if (topic === 'Accident/AD&D') {
+    if (/\bwhat\s+is\s+accident(?:\/ad&d|\/ad\/d)?|what\s+is\s+ad&d|what\s+is\s+ad\/d\b/i.test(lower)) {
+      return [
+        `Accident/AD&D coverage is another supplemental option. It generally pays benefits after covered accidental injuries, and AD&D adds benefits for severe accidental loss of life or limb.`,
+        ``,
+        `People often look at it when:`,
+        `- They want extra protection beyond their medical plan`,
+        `- They have an active household or dependents`,
+        `- They want cash help after an accidental injury`,
+        ``,
+        `What it is not:`,
+        `- It does not replace your medical plan`,
+        `- It is not meant for routine care or everyday doctor visits`,
+        `- It is not the diagnosis-focused benefit — that is closer to critical illness`,
+      ].join('\n');
+    }
+
     if (/\b(what\s+does\s+ad&d\s+mean|what\s+does\s+ad\/d\s+mean|difference between accident and ad&d|difference between accident and ad\/d|accidental death|loss of life|loss of limb)\b/i.test(lower)) {
       return [
         `Accident coverage and AD&D travel together in this benefit, but they are not exactly the same thing.`,

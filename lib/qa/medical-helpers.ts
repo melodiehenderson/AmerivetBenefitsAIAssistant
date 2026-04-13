@@ -8,7 +8,7 @@ type KaiserUnavailableVariant = 'compare' | 'pricing' | 'redirect';
 
 function inferCoverageTierFromQuery(query: string, session: Session): string {
   const low = query.toLowerCase();
-  if (/\bfamily\s*4\+|\bfamily4\+|\bspouse\b.*\b(child|children|kid|kids)\b|\b(child|children|kid|kids)\b.*\bspouse\b/i.test(low)) return 'Employee + Family';
+  if (/\bfamily\s*4\+|\bfamily4\+|\bspouse\b.*\b(child|children|kid|kids)\b|\b(child|children|kid|kids)\b.*\bspouse\b|\bmarried\b.*\b(child|children|kid|kids)\b|\b(child|children|kid|kids)\b.*\bmarried\b|\b(husband|wife|partner)\b.*\b(child|children|kid|kids)\b|\b(child|children|kid|kids)\b.*\b(husband|wife|partner)\b/i.test(low)) return 'Employee + Family';
   if (/employee\s*\+\s*family|family\s*(of|plan|coverage)|for\s*(my|the|our)\s*family/i.test(low)) return 'Employee + Family';
   if (/employee\s*\+\s*spouse|spouse|husband|wife|partner/i.test(low)) return 'Employee + Spouse';
   if (/employee\s*\+\s*child|child(?:ren)?\s*coverage|for\s*(my|the)\s*(kid|child|son|daughter)|dependent\s*child/i.test(low)) return 'Employee + Child(ren)';

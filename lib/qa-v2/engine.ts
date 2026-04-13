@@ -75,6 +75,11 @@ function incrementTurn(session: Session) {
   session.turn = (session.turn || 0) + 1;
 }
 
+function refreshCoverageTierLock(session: Session, query: string) {
+  if (!hasDemographics(session)) return;
+  session.coverageTierLock = getCoverageTierForQuery(query, session);
+}
+
 function markTopicCompleted(session: Session, topic?: string | null) {
   if (!topic) return;
   if (!session.completedTopics) session.completedTopics = [];
@@ -422,12 +427,15 @@ function buildMedicalFamilySpecificReply(session: Session, query = ''): string {
   const spouseFocused = /\bspouse\b|\bpartner\b/i.test(lower);
   const childFocused = /\bkids?\b|\bchildren\b/i.test(lower);
 
-  if (/Employee \+ Family|Employee \+ Child/i.test(tier)) {
+  if (/Employee \+ Family|Employee \+ Child|Employee \+ Spouse/i.test(tier)) {
     const lead = childFocused
       ? `If you are thinking specifically about your kids, the practical question is whether the household is likely to use enough care for the richer medical plan to matter.`
       : spouseFocused
         ? `If you are thinking specifically about your spouse, the practical question is whether the household is likely to use enough care for the richer medical plan to matter.`
         : `If you are thinking specifically about your household, the practical question is whether the household is likely to use enough care for the richer medical plan to matter.`;
+    const richerProtectionLine = /Employee \+ Spouse/i.test(tier)
+      ? `- If your spouse has recurring visits, regular prescriptions, therapy, or a strong preference for using more care than routine checkups, the richer medical protection becomes easier to justify`
+      : `- If you expect specialist care, recurring prescriptions, therapy, or a real chance of using more than routine pediatric care, the richer protection becomes easier to justify`;
     return [
       lead,
       ``,
@@ -436,7 +444,7 @@ function buildMedicalFamilySpecificReply(session: Session, query = ''): string {
         : spouseFocused
           ? `- If your spouse is generally healthy and the household mostly needs routine visits, the lower-premium option is still usually the cleaner fit`
           : `- If the household is generally healthy and mostly needs routine visits, the lower-premium option is still usually the cleaner fit`,
-      `- If you expect specialist care, recurring prescriptions, therapy, or a real chance of using more than routine pediatric care, the richer protection becomes easier to justify`,
+      richerProtectionLine,
       `- If Kaiser is available in your state and you strongly prefer that integrated network for the family, that can outweigh pure premium savings`,
       ``,
       usage === 'high'
@@ -458,6 +466,8 @@ function buildSupplementalPracticalTake(topic: string): string {
       `My practical take is that I would usually choose Accident/AD&D before Critical Illness only if the household is especially active and I am more worried about injury risk than diagnosis risk.`,
       ``,
       `If the bigger fear is a serious diagnosis creating financial stress, I would usually look at Critical Illness first.`,
+      ``,
+      `So my recommendation is: treat Accident/AD&D as a situational add-on for injury risk, not an automatic must-have.`,
     ].join('\n');
   }
 
@@ -474,6 +484,18 @@ function buildSupplementalPracticalTake(topic: string): string {
       `My practical take is that disability is often more important than people expect, because losing part of your paycheck can create a problem long before many people think about life insurance payouts.`,
       ``,
       `If your household depends on your ongoing income, disability usually deserves real attention.`,
+      ``,
+      `So my recommendation is: if your paycheck supports the household, disability is often one of the first optional protections worth tightening up.`,
+    ].join('\n');
+  }
+
+  if (topic === 'Critical Illness') {
+    return [
+      `My practical take is that critical illness usually comes after the core medical choice, and after life or disability if income protection is the bigger issue.`,
+      ``,
+      `Critical illness becomes more worthwhile when you want diagnosis-triggered cash support on top of the core package rather than because the medical plan itself is inadequate.`,
+      ``,
+      `So my recommendation is: do not treat critical illness as a first-line replacement for the core package; add it only if you want extra diagnosis-triggered cash protection on top.`,
     ].join('\n');
   }
 
@@ -584,8 +606,8 @@ function buildWhyNotOtherFirstReply(kind: 'accident_vs_critical' | 'life_vs_disa
   return null;
 }
 
-function buildSupplementalFitGuidance(session: Session): string {
-  const topic = session.currentTopic || session.pendingGuidanceTopic || 'Supplemental';
+function buildSupplementalFitGuidance(session: Session, topicOverride?: string | null): string {
+  const topic = topicOverride || session.currentTopic || session.pendingGuidanceTopic || 'Supplemental';
 
   if (topic === 'Accident/AD&D') {
     setPendingGuidance(session, 'accident_vs_critical', 'Accident/AD&D');
@@ -603,6 +625,7 @@ function buildSupplementalFitGuidance(session: Session): string {
   }
 
   if (topic === 'Critical Illness') {
+    setPendingGuidance(session, 'supplemental_fit', 'Critical Illness');
     return [
       `Critical illness is usually worth considering when you want extra cash support if a major diagnosis happens and you are worried about the non-medical financial ripple effects.`,
       ``,
@@ -616,6 +639,7 @@ function buildSupplementalFitGuidance(session: Session): string {
   }
 
   if (topic === 'Disability') {
+    setPendingGuidance(session, 'supplemental_fit', 'Disability');
     return [
       `Disability is usually worth considering if missing part of your paycheck would create a bigger financial problem than the medical bills themselves.`,
       ``,
@@ -628,6 +652,7 @@ function buildSupplementalFitGuidance(session: Session): string {
     ].join('\n');
   }
 
+  setPendingGuidance(session, 'supplemental_fit', topic === 'Life Insurance' ? 'Life Insurance' : 'Supplemental');
   return [
     `A supplemental benefit is usually worth considering when you already have your core medical decision in place and want an extra layer of cash-support protection.`,
     ``,
@@ -639,7 +664,7 @@ function buildSupplementalFitGuidance(session: Session): string {
 
 function isWorthAddingFollowup(query: string): boolean {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
-  return /\b(how\s+do\s+i\s+know|is\s+it\s+worth|worth\s+adding|worth\s+it|should\s+i\s+get|should\s+i\s+add|useful|only\s+option|do\s+you\s+recommend)\b/i.test(lower);
+  return /\b(how\s+do\s+i\s+know|how\s+can\s+i\s+tell|is\s+it\s+worth|worth\s+adding|worth\s+it|should\s+i\s+get|should\s+i\s+add|do\s+i\s+need\s+it|useful|only\s+option|do\s+you\s+recommend|what\s+would\s+you\s+recommend|what\s+do\s+you\s+recommend)\b/i.test(lower);
 }
 
 function isRoutineCareComparisonPrompt(query: string): boolean {
@@ -660,6 +685,16 @@ function buildVisionWorthAddingReply(): string {
   ].join('\n');
 }
 
+function buildVisionOnlyOptionReply(): string {
+  return [
+    `Yes — AmeriVet currently offers one vision plan, which is **VSP Vision Plus**.`,
+    ``,
+    `So the real decision is usually not "which vision plan?" but whether it is worth adding at all for your household based on expected eye exams, glasses, or contacts use.`,
+    ``,
+    `If you want, I can help you think through whether vision is worth adding at all.`,
+  ].join('\n');
+}
+
 function buildDentalWorthAddingReply(): string {
   return [
     `Dental is usually worth adding when your household expects regular cleanings, fillings, crowns, or orthodontic use.`,
@@ -673,14 +708,24 @@ function buildDentalWorthAddingReply(): string {
   ].join('\n');
 }
 
+function buildDentalOnlyOptionReply(): string {
+  return [
+    `Yes — there is one dental plan in AmeriVet's package, which is **BCBSTX Dental PPO**.`,
+    ``,
+    `So the practical decision is usually whether to add it for your household, not which dental plan to choose.`,
+    ``,
+    `If you want, I can help you think through whether dental is worth adding at all.`,
+  ].join('\n');
+}
+
 function isOnlyOptionQuestion(query: string): boolean {
-  return /\b(is\s+that\s+the\s+only\s+option|only\s+option|any\s+other\s+options)\b/i.test(stripAffirmationLeadIn(query.trim()).toLowerCase());
+  return /\b(is\s+that\s+the\s+only\s+(?:option|one)|that'?s\s+the\s+only\s+one|only\s+option|any\s+other\s+options|is\s+there\s+only\s+one|only\s+one\s+(?:vision|dental)\s+plan)\b/i.test(stripAffirmationLeadIn(query.trim()).toLowerCase());
 }
 
 function shouldHandleSupplementalFitFollowup(query: string): boolean {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
   return isSimpleAffirmation(query)
-    || /\b(worth\s+considering|is\s+it\s+worth|should\s+i\s+get|when\s+would\s+i\s+want|tell\s+me\s+more|help\s+me\s+think\s+through)\b/i.test(lower);
+    || /\b(worth\s+considering|is\s+it\s+worth|worth\s+adding|should\s+i\s+get|should\s+i\s+add|do\s+i\s+need\s+it|when\s+would\s+i\s+want|tell\s+me\s+more|help\s+me\s+think\s+through|how\s+do\s+i\s+know|how\s+can\s+i\s+tell)\b/i.test(lower);
 }
 
 function isRepeatedSupplementalWorthQuestion(query: string): boolean {
@@ -688,17 +733,22 @@ function isRepeatedSupplementalWorthQuestion(query: string): boolean {
   return /\b(how\s+do\s+i\s+know|how\s+can\s+i\s+tell|worth\s+adding|worth\s+it|should\s+i\s+get|should\s+i\s+add)\b/i.test(lower);
 }
 
+function lastMessageHasSupplementalFitSetup(lastBotMessage?: string | null): boolean {
+  const lower = (lastBotMessage || '').toLowerCase();
+  return /usually worth considering when one of these sounds true|usually worth considering when you want extra cash support|usually worth considering if missing part of your paycheck|a supplemental benefit is usually worth considering when you already have your core medical decision in place|people usually give it more attention when|people usually prioritize it when|my practical take is that|plain-language difference between accident\/ad&d and critical illness/i.test(lower);
+}
+
 function benefitTopicFromQuery(query: string): string | null {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
   if (/\b(all\s+benefits|benefits\s+overview|what\s+are\s+all\s+the\s+benefits|what\s+benefits\s+do\s+i\s+have|other\s+types?\s+of\s+coverage|what\s+other\s+coverage|other\s+coverage\s+available|what\s+else\s+is\s+available)\b/i.test(lower)) return 'Benefits Overview';
-  if (/\b(medical|health|hsa\s+plan|kaiser|hmo|ppo|standard\s+hsa|enhanced\s+hsa)\b/i.test(lower)) return 'Medical';
-  if (/\bdental\b/i.test(lower)) return 'Dental';
-  if (/\b(vision|eye|glasses|contacts|lasik)\b/i.test(lower)) return 'Vision';
   if (/\b(life(?:\s+insurance)?|term\s+life|whole\s+life|basic\s+life)\b/i.test(lower)) return 'Life Insurance';
   if (/\b(disability|std|ltd|short[- ]?term|long[- ]?term)\b/i.test(lower)) return 'Disability';
   if (/\bcritical(?:\s+illness)?\b/i.test(lower)) return 'Critical Illness';
   if (/\b(accident|ad&d|ad\/d)\b/i.test(lower)) return 'Accident/AD&D';
   if (/\b(hsa(?:\s*\/\s*fsa)?|fsa)\b/i.test(lower)) return 'HSA/FSA';
+  if (/\bdental\b/i.test(lower)) return 'Dental';
+  if (/\b(vision|eye|glasses|contacts|lasik)\b/i.test(lower)) return 'Vision';
+  if (/\b(medical|health|hsa\s+plan|kaiser|hmo|ppo|standard\s+hsa|enhanced\s+hsa)\b/i.test(lower)) return 'Medical';
   if (/\b(coverage\s+tier|coverage\s+tiers|plan\s+tradeoffs?|tradeoffs?|maternity|pregnan\w*|prenatal|postnatal|delivery|prescriptions?|generic\s+rx|brand\s+rx|specialty\s+rx|in[- ]network|out[- ]of[- ]network|standard\s+plan|enhanced\s+plan|kaiser\s+plan)\b/i.test(lower)) return 'Medical';
   return null;
 }
@@ -711,8 +761,8 @@ function inferTopicFromLastBotMessage(lastBotMessage?: string | null): string | 
   if (/vision coverage:\s*\*\*vsp vision plus\*\*|glasses|contacts|eye exams?/.test(lower)) return 'Vision';
   if (/life insurance options|unum basic life|whole life|voluntary term life/.test(lower)) return 'Life Insurance';
   if (/disability coverage|short-term disability|long-term disability/.test(lower)) return 'Disability';
-  if (/critical illness coverage/.test(lower)) return 'Critical Illness';
   if (/accident\/ad&d coverage|accident\/ad&d is usually worth considering|accident\/ad&d versus critical illness/.test(lower)) return 'Accident/AD&D';
+  if (/critical illness coverage|what critical illness is not|critical illness is usually worth considering|plain-language difference between accident\/ad&d and critical illness/.test(lower)) return 'Critical Illness';
   if (/hsa\/fsa overview|health savings account|flexible spending account/.test(lower)) return 'HSA/FSA';
   return null;
 }
@@ -870,9 +920,15 @@ function isOrthodontiaBracesFollowup(query: string): boolean {
   return /\b(braces|orthodontic|orthodontia|out[- ]of[- ]pocket|what\s+that\s+means)\b/i.test(lower);
 }
 
-function buildBenefitsOverviewReply(session: Session): string {
+function buildBenefitsOverviewReply(session: Session, options?: { contextual?: boolean; onboarding?: boolean }): string {
+  const contextual = options?.contextual || false;
+  const onboarding = options?.onboarding || false;
   const intro = hasDemographics(session)
-    ? `Perfect! ${session.userAge} in ${session.userState}.`
+    ? onboarding
+      ? `Perfect! ${session.userAge} in ${session.userState}.`
+      : contextual
+      ? `Here are the other benefit areas available to you as an AmeriVet employee:`
+      : `Perfect! ${session.userAge} in ${session.userState}.`
     : 'Here is the AmeriVet benefits lineup:';
   return `${intro}\n\n${buildAllBenefitsMenu()}\n\nWhat would you like to explore first?`;
 }
@@ -882,11 +938,16 @@ function isBenefitsOverviewQuestion(query: string): boolean {
     .test(stripAffirmationLeadIn(query.trim()).toLowerCase());
 }
 
+function isContextualBenefitsOverviewQuestion(query: string): boolean {
+  return /\b(other\s+types?\s+of\s+coverage|what\s+other\s+coverage|other\s+coverage\s+available|what\s+else\s+is\s+available)\b/i
+    .test(stripAffirmationLeadIn(query.trim()).toLowerCase());
+}
+
 function buildTopicReply(session: Session, topic: string, query: string): string {
   clearPendingGuidance(session);
 
   if (topic === 'Benefits Overview') {
-    return buildBenefitsOverviewReply(session);
+    return buildBenefitsOverviewReply(session, { contextual: isContextualBenefitsOverviewQuestion(query) });
   }
 
   if (topic === 'Medical') {
@@ -920,13 +981,28 @@ function buildTopicReply(session: Session, topic: string, query: string): string
   }
 
   if (topic === 'Dental' || topic === 'Vision') {
+    if (isOnlyOptionQuestion(query)) {
+      return topic === 'Vision' ? buildVisionOnlyOptionReply() : buildDentalOnlyOptionReply();
+    }
+    if (isWorthAddingFollowup(query)) {
+      return topic === 'Vision' ? buildVisionWorthAddingReply() : buildDentalWorthAddingReply();
+    }
     const detailedAnswer = buildRoutineBenefitDetailAnswer(topic, query, session);
     if (detailedAnswer) return detailedAnswer;
   }
 
   if (topic === 'Life Insurance' || topic === 'Disability' || topic === 'Critical Illness' || topic === 'Accident/AD&D') {
+    if (/\b(should\s+i\s+get|should\s+i\s+add|do\s+you\s+recommend|would\s+you\s+recommend|worth\s+it|worth\s+adding|with\s+my\s+situation|for\s+my\s+family|for\s+our\s+family|sole\s+bread[- ]?winner|only\s+income|bread[- ]?winner)\b/i.test(query.toLowerCase())) {
+      const recommendation = buildSupplementalRecommendationReply(topic, session, query);
+      if (recommendation) return recommendation;
+    }
     const detailedAnswer = buildNonMedicalDetailAnswer(topic, query, session);
-    if (detailedAnswer) return detailedAnswer;
+    if (detailedAnswer) {
+      if (topic === 'Accident/AD&D' || topic === 'Critical Illness' || topic === 'Disability' || topic === 'Life Insurance') {
+        setPendingGuidance(session, 'supplemental_fit', topic);
+      }
+      return detailedAnswer;
+    }
   }
 
   const categoryResponse = buildCategoryExplorationResponse({
@@ -997,6 +1073,125 @@ function buildContextualFallback(session: Session): string {
   return `I can help you narrow this down. The usual starting points are medical if you are choosing core coverage, dental or vision for routine care, or life and disability if family protection matters more than everyday care.`;
 }
 
+function inferSupplementalTopicForFollowup(session: Session, query: string): 'Life Insurance' | 'Disability' | 'Critical Illness' | 'Accident/AD&D' | null {
+  const explicit = benefitTopicFromQuery(query);
+  if (explicit === 'Life Insurance' || explicit === 'Disability' || explicit === 'Critical Illness' || explicit === 'Accident/AD&D') {
+    return explicit;
+  }
+
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  const anaphoricFollowup = /\b(it|that|this)\b/i.test(lower) || /\bwhat\s+is\s+it\s+not\b|\bwhat\s+is\s+it\s+for\b|\bdo\s+you\s+recommend\b|\bshould\s+i\s+get\s+it\b|\bwhat\s+would\s+you\s+recommend\b/i.test(lower);
+  const pending = session.pendingGuidanceTopic;
+  if (
+    anaphoricFollowup
+    && (pending === 'Life Insurance' || pending === 'Disability' || pending === 'Critical Illness' || pending === 'Accident/AD&D')
+  ) {
+    return pending;
+  }
+
+  const current = session.currentTopic;
+  const inferred = inferTopicFromLastBotMessage(session.lastBotMessage);
+  if (
+    anaphoricFollowup
+    && current
+    && inferred
+    && current !== inferred
+    && (current === 'Life Insurance' || current === 'Disability' || current === 'Critical Illness' || current === 'Accident/AD&D')
+    && (inferred === 'Life Insurance' || inferred === 'Disability' || inferred === 'Critical Illness' || inferred === 'Accident/AD&D')
+  ) {
+    return inferred;
+  }
+  if (current === 'Life Insurance' || current === 'Disability' || current === 'Critical Illness' || current === 'Accident/AD&D') {
+    return current;
+  }
+  if (
+    anaphoricFollowup
+    && (inferred === 'Life Insurance' || inferred === 'Disability' || inferred === 'Critical Illness' || inferred === 'Accident/AD&D')
+  ) {
+    return inferred;
+  }
+  if (inferred === 'Life Insurance' || inferred === 'Disability' || inferred === 'Critical Illness' || inferred === 'Accident/AD&D') {
+    return inferred;
+  }
+
+  return null;
+}
+
+function buildSupplementalRecommendationReply(topic: string, session: Session, query: string): string | null {
+  const lower = query.toLowerCase();
+  const userHistory = (session.messages || [])
+    .filter((message) => message.role === 'user')
+    .map((message) => message.content.toLowerCase())
+    .join(' ');
+  const combined = `${userHistory}\n${lower}`;
+  const soleBreadwinner = /\b(sole\s+bread[- ]?winner|only\s+income|husband doesn'?t work|spouse doesn'?t work|family relies on my income|rely on my income)\b/i.test(combined);
+  const familyContext = /\b(spouse|partner|kids?|children|family|household)\b/i.test(combined);
+  const standardPlanContext = /\bstandard hsa|standard plan\b/i.test(combined);
+
+  if (topic === 'Critical Illness') {
+    if (soleBreadwinner) {
+      return [
+        `My practical take is that I would usually **not** make critical illness the first extra add-on if you are the sole breadwinner.`,
+        ``,
+        `In that situation, I would usually prioritize the core medical decision first, then disability or life if income protection is the bigger household risk.`,
+        `I would only add critical illness after that if you want an extra diagnosis-triggered cash buffer on top of the core package.`,
+        ``,
+        standardPlanContext
+          ? `Because you are already leaning toward the lower-premium Standard HSA, I would be especially careful about adding supplemental payroll deductions before I am confident the household has the right core medical and income protection in place. So if you are asking me directly, my answer is usually **not yet**.`
+          : `So my recommendation is: treat critical illness as optional extra protection, not the first must-have decision for this household.`,
+      ].join('\n');
+    }
+
+    return [
+      `My practical take is that critical illness is worth adding **only if** you want extra diagnosis-triggered cash support on top of your medical plan.`,
+      ``,
+      `I would usually say yes when a household would feel real stress from travel, childcare, or other non-medical bills during a serious diagnosis.`,
+      `I would usually say no when the main concern is just routine care costs or when the household has bigger priorities like choosing the right medical plan first.`,
+      ``,
+      familyContext
+        ? `Since you are asking in a family context, I would usually put medical first, then life or disability if income protection matters, and critical illness after that if you still want extra diagnosis protection. So if you are asking me directly, my answer is usually **only after** the bigger household-protection choices are settled.`
+        : `So I see critical illness as a later-layer protection decision, not one of the first core choices.`,
+    ].join('\n');
+  }
+
+  if (topic === 'Accident/AD&D') {
+    return [
+      `My practical take is that I would only add Accident/AD&D if the household feels meaningfully exposed to injury risk and you want extra cash support after a covered accident.`,
+      ``,
+      `If the bigger concern is diagnosis risk or income protection, I would usually look at critical illness, disability, or life before accident coverage.`,
+      ``,
+      `So if you are asking me directly, my answer is usually **yes only when** injury risk feels like the real gap you are trying to protect.`,
+    ].join('\n');
+  }
+
+  if (topic === 'Disability') {
+    return [
+      `My practical take is that disability is often worth adding sooner than people expect if your household depends on your paycheck.`,
+      ``,
+      `If missing part of your income would create a real problem, disability usually deserves more attention than smaller supplemental cash benefits.`,
+      ``,
+      `So if you are asking me directly, my answer is usually **yes** when your paycheck is carrying the household.`,
+    ].join('\n');
+  }
+
+  if (topic === 'Life Insurance') {
+    return [
+      `My practical take is that life insurance is usually worth tightening up if other people rely on your income and would need support if something happened to you.`,
+      ``,
+      `I would usually treat that as a more important household-protection decision than smaller supplemental add-ons.`,
+      ``,
+      `So if you are asking me directly, my answer is usually **yes** when other people depend on your income.`,
+    ].join('\n');
+  }
+
+  return null;
+}
+
+function isSupplementalRecommendationQuestion(query: string): boolean {
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  return /\b(should\s+i\s+get|should\s+i\s+add|do\s+you\s+recommend|would\s+you\s+recommend|so\s+should\s+i\s+get\s+it|so\s+should\s+i\s+add\s+it|with\s+my\s+situation|for\s+my\s+family|for\s+our\s+family|sole\s+bread[- ]?winner|only\s+income|bread[- ]?winner|what\s+would\s+you\s+recommend|what\s+do\s+you\s+recommend)\b/i.test(lower);
+}
+
 function isFamilySpecificFollowup(query: string): boolean {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
   return /\b(what about|how about|for)\s+((my|our|the)\s+)?(kids|children|family|household)\b/i.test(lower)
@@ -1010,6 +1205,7 @@ function isFamilySpecificFollowup(query: string): boolean {
 function buildContinuationReply(session: Session, query: string): string | null {
   const lower = query.toLowerCase();
   const activeTopic = session.currentTopic || inferTopicFromLastBotMessage(session.lastBotMessage);
+  const inferredSupplementalTopic = inferSupplementalTopicForFollowup(session, query);
   const focus = detectBenefitPriorityFocus(query);
   const hsaFitFocus = detectHsaFitFocus(query);
   const supplementalComparisonFocus = detectSupplementalComparisonFocus(query);
@@ -1026,6 +1222,18 @@ function buildContinuationReply(session: Session, query: string): string | null 
   const wantsThatOne = /\b(that one|that plan|that option|the recommended one)\b/i.test(lower);
   const wantsFamilySpecific = isFamilySpecificFollowup(query);
   const contextualComparisonKind = detectContextualComparisonKind(session, query);
+
+  if (
+    activeTopic === 'Medical'
+    && inferredSupplementalTopic
+    && isSupplementalRecommendationQuestion(query)
+  ) {
+    const recommendation = buildSupplementalRecommendationReply(inferredSupplementalTopic, session, query);
+    if (recommendation) {
+      setTopic(session, inferredSupplementalTopic);
+      return recommendation;
+    }
+  }
 
   if (activeTopic === 'HSA/FSA' && (/\bwhat\s+does\s+hsa\s+mean\b|\bwhat\s+is\s+an?\s+hsa\b|\bwhat\s+does\s+fsa\s+mean\b|\bwhat\s+is\s+an?\s+fsa\b/i.test(lower))) {
     return buildTopicReply(session, 'HSA/FSA', query);
@@ -1067,12 +1275,46 @@ function buildContinuationReply(session: Session, query: string): string | null 
   }
 
   if (session.pendingGuidancePrompt === 'supplemental_fit' && shouldHandleSupplementalFitFollowup(query)) {
+    const fitTopic =
+      session.pendingGuidanceTopic
+      || (session.currentTopic === 'Life Insurance' || session.currentTopic === 'Disability' || session.currentTopic === 'Critical Illness' || session.currentTopic === 'Accident/AD&D'
+        ? session.currentTopic
+        : inferTopicFromLastBotMessage(lastBotMessage));
+    if (
+      fitTopic
+      && (fitTopic === 'Life Insurance' || fitTopic === 'Disability' || fitTopic === 'Critical Illness' || fitTopic === 'Accident/AD&D')
+      && isRepeatedSupplementalWorthQuestion(query)
+    ) {
+      clearPendingGuidance(session);
+      setTopic(session, fitTopic);
+      return buildSupplementalPracticalTake(fitTopic);
+    }
     clearPendingGuidance(session);
-    return buildSupplementalFitGuidance(session);
+    return buildSupplementalFitGuidance(session, fitTopic);
+  }
+
+  if (
+    (activeTopic === 'Accident/AD&D' || activeTopic === 'Critical Illness' || activeTopic === 'Disability' || activeTopic === 'Life Insurance'
+      || inferredSupplementalTopic === 'Accident/AD&D' || inferredSupplementalTopic === 'Critical Illness' || inferredSupplementalTopic === 'Disability' || inferredSupplementalTopic === 'Life Insurance')
+    && shouldHandleSupplementalFitFollowup(query)
+    && /worth considering for your situation|usually worth considering when one of these sounds true|usually worth considering when you want extra cash support|usually worth considering if missing part of your paycheck|people usually give it more attention when|people usually prioritize it when/i.test(lastBotMessage)
+  ) {
+    const fitTopic = inferredSupplementalTopic || activeTopic;
+    if (fitTopic === 'Accident/AD&D' || fitTopic === 'Critical Illness' || fitTopic === 'Disability' || fitTopic === 'Life Insurance') {
+      if (isRepeatedSupplementalWorthQuestion(query)) {
+        setTopic(session, fitTopic);
+        return buildSupplementalPracticalTake(fitTopic);
+      }
+      setTopic(session, fitTopic);
+      return buildSupplementalFitGuidance(session, fitTopic);
+    }
   }
 
   if (session.pendingGuidancePrompt === 'accident_vs_critical' && isAffirmativeCompareFollowup(query)) {
-    clearPendingGuidance(session);
+    if (/plain-language difference between Accident\/AD&D and Critical Illness/i.test(lastBotMessage)) {
+      return buildSupplementalPracticalTake('Accident/AD&D');
+    }
+    setPendingGuidance(session, 'accident_vs_critical', 'Accident/AD&D');
     return buildAccidentVsCriticalComparison();
   }
   if (session.pendingGuidancePrompt === 'accident_vs_critical' && supplementalComparisonFocus) {
@@ -1109,7 +1351,22 @@ function buildContinuationReply(session: Session, query: string): string | null 
       return buildLifeVsDisabilityComparison();
     }
     if (contextualComparisonKind === 'accident_vs_critical') {
+      setPendingGuidance(session, 'accident_vs_critical', 'Accident/AD&D');
       return buildAccidentVsCriticalComparison();
+    }
+  }
+
+  if (
+    (inferredSupplementalTopic === 'Accident/AD&D'
+      || inferredSupplementalTopic === 'Critical Illness'
+      || inferredSupplementalTopic === 'Disability'
+      || inferredSupplementalTopic === 'Life Insurance')
+    && /\b(should\s+i\s+get|should\s+i\s+add|do\s+you\s+recommend|would\s+you\s+recommend|with\s+my\s+situation|for\s+my\s+family|for\s+our\s+family|sole\s+bread[- ]?winner|only\s+income|bread[- ]?winner)\b/i.test(lower)
+  ) {
+    const recommendation = buildSupplementalRecommendationReply(inferredSupplementalTopic, session, query);
+    if (recommendation) {
+      setTopic(session, inferredSupplementalTopic);
+      return recommendation;
     }
   }
 
@@ -1157,7 +1414,7 @@ function buildContinuationReply(session: Session, query: string): string | null 
   }
 
   if (activeTopic === 'Vision' && isOnlyOptionQuestion(query)) {
-    return buildVisionWorthAddingReply();
+    return buildVisionOnlyOptionReply();
   }
 
   if (activeTopic === 'Vision' && isWorthAddingFollowup(query)) {
@@ -1165,22 +1422,52 @@ function buildContinuationReply(session: Session, query: string): string | null 
   }
 
   if (activeTopic === 'Dental' && isOnlyOptionQuestion(query)) {
-    return buildDentalWorthAddingReply();
+    return buildDentalOnlyOptionReply();
   }
 
   if (activeTopic === 'Dental' && isWorthAddingFollowup(query)) {
     return buildDentalWorthAddingReply();
   }
 
-  if ((activeTopic === 'Accident/AD&D' || activeTopic === 'Critical Illness' || activeTopic === 'Disability' || activeTopic === 'Life Insurance') && isWorthAddingFollowup(query)) {
-    if (/usually worth considering when one of these sounds true|usually worth considering when you want extra cash support|usually worth considering if missing part of your paycheck|a supplemental benefit is usually worth considering when you already have your core medical decision in place|people usually give it more attention when|people usually prioritize it when/i.test(lastBotMessage)) {
-      return buildSupplementalPracticalTake(activeTopic);
-    }
-    return buildSupplementalFitGuidance(session);
+  if (
+    (inferredSupplementalTopic === 'Accident/AD&D' || inferredSupplementalTopic === 'Critical Illness' || inferredSupplementalTopic === 'Disability' || inferredSupplementalTopic === 'Life Insurance')
+    && isRepeatedSupplementalWorthQuestion(query)
+  ) {
+    setTopic(session, inferredSupplementalTopic);
+    return buildSupplementalPracticalTake(inferredSupplementalTopic);
   }
 
-  if ((activeTopic === 'Accident/AD&D' || activeTopic === 'Critical Illness' || activeTopic === 'Disability' || activeTopic === 'Life Insurance') && isRepeatedSupplementalWorthQuestion(query)) {
+  if (
+    (activeTopic === 'Accident/AD&D' || activeTopic === 'Critical Illness' || activeTopic === 'Disability' || activeTopic === 'Life Insurance')
+    && isRepeatedSupplementalWorthQuestion(query)
+  ) {
+    setTopic(session, activeTopic);
     return buildSupplementalPracticalTake(activeTopic);
+  }
+
+  if ((activeTopic === 'Accident/AD&D' || activeTopic === 'Critical Illness' || activeTopic === 'Disability' || activeTopic === 'Life Insurance') && isWorthAddingFollowup(query)) {
+    if (isSupplementalRecommendationQuestion(query)) {
+      const recommendation = buildSupplementalRecommendationReply(activeTopic, session, query);
+      if (recommendation) {
+        setTopic(session, activeTopic);
+        return recommendation;
+      }
+    }
+    setTopic(session, activeTopic);
+    return buildSupplementalFitGuidance(session, activeTopic);
+  }
+
+  if ((inferredSupplementalTopic === 'Accident/AD&D' || inferredSupplementalTopic === 'Critical Illness' || inferredSupplementalTopic === 'Disability' || inferredSupplementalTopic === 'Life Insurance') && isWorthAddingFollowup(query)) {
+    if (isSupplementalRecommendationQuestion(query)) {
+      const recommendation = buildSupplementalRecommendationReply(inferredSupplementalTopic, session, query);
+      if (recommendation) {
+        setTopic(session, inferredSupplementalTopic);
+        return recommendation;
+      }
+    }
+    setPendingGuidance(session, 'supplemental_fit', inferredSupplementalTopic);
+    setTopic(session, inferredSupplementalTopic);
+    return buildSupplementalFitGuidance(session, inferredSupplementalTopic);
   }
 
   if (
@@ -1191,9 +1478,11 @@ function buildContinuationReply(session: Session, query: string): string | null 
     }
   }
 
-  if ((activeTopic === 'Life Insurance' || activeTopic === 'Disability' || activeTopic === 'Critical Illness' || activeTopic === 'Accident/AD&D')
-    && isNonMedicalDetailQuestion(activeTopic, query)) {
-    return buildTopicReply(session, activeTopic, query);
+  if ((inferredSupplementalTopic === 'Life Insurance' || inferredSupplementalTopic === 'Disability' || inferredSupplementalTopic === 'Critical Illness' || inferredSupplementalTopic === 'Accident/AD&D')
+    && isNonMedicalDetailQuestion(inferredSupplementalTopic, query)
+    && !(supplementalComparisonFocus && /Accident\/AD&D and Critical Illness/i.test(lastBotMessage))) {
+    setTopic(session, inferredSupplementalTopic);
+    return buildTopicReply(session, inferredSupplementalTopic, query);
   }
 
   if (
@@ -1248,6 +1537,7 @@ function buildContinuationReply(session: Session, query: string): string | null 
 
   if (isAffirmativeCompareFollowup(query)) {
     if (/compare accident\/ad&d versus critical illness/i.test(lastBotMessage)) {
+      setPendingGuidance(session, 'accident_vs_critical', 'Accident/AD&D');
       return buildAccidentVsCriticalComparison();
     }
     if (/walk you through life versus disability/i.test(lastBotMessage)) {
@@ -1426,7 +1716,7 @@ export async function runQaV2Engine(params: {
   if (age || state) {
     session.dataConfirmed = hasDemographics(session);
     if (hasDemographics(session) && !detectedTopic) {
-      const answer = buildBenefitsOverviewReply(session);
+      const answer = buildBenefitsOverviewReply(session, { onboarding: true });
       session.lastBotMessage = answer;
       session.messages.push({ role: 'assistant', content: answer });
       return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'demographics-complete-v2' } };
@@ -1441,6 +1731,8 @@ export async function runQaV2Engine(params: {
     session.messages.push({ role: 'assistant', content: answer });
     return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'demographic-gate-v2' } };
   }
+
+  refreshCoverageTierLock(session, query);
 
   const standaloneFocus = detectBenefitPriorityFocus(query);
   if (standaloneFocus && !benefitTopicFromQuery(query) && /^(\s*(healthcare costs|family protection|routine care)\s*)$/i.test(query)) {
@@ -1470,7 +1762,7 @@ export async function runQaV2Engine(params: {
   }
 
   if (isBenefitsOverviewQuestion(query)) {
-    const answer = buildBenefitsOverviewReply(session);
+    const answer = buildBenefitsOverviewReply(session, { contextual: isContextualBenefitsOverviewQuestion(query) });
     session.lastBotMessage = answer;
     session.messages.push({ role: 'assistant', content: answer });
     return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'benefits-overview-v2' } };
@@ -1484,24 +1776,17 @@ export async function runQaV2Engine(params: {
     return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'medical-detail-v2', topic: 'Medical' } };
   }
 
+  const supplementalTopic = inferSupplementalTopicForFollowup(session, query);
+
   if (
-    ((detectedTopic === 'Life Insurance' || session.currentTopic === 'Life Insurance')
-      || (detectedTopic === 'Disability' || session.currentTopic === 'Disability')
-      || (detectedTopic === 'Critical Illness' || session.currentTopic === 'Critical Illness')
-      || (detectedTopic === 'Accident/AD&D' || session.currentTopic === 'Accident/AD&D'))
-    && isNonMedicalDetailQuestion(
-      detectedTopic === 'Life Insurance' || session.currentTopic === 'Life Insurance' ? 'Life Insurance'
-        : detectedTopic === 'Disability' || session.currentTopic === 'Disability' ? 'Disability'
-          : detectedTopic === 'Critical Illness' || session.currentTopic === 'Critical Illness' ? 'Critical Illness'
-            : 'Accident/AD&D',
-      query,
-    )
+    (supplementalTopic === 'Life Insurance'
+      || supplementalTopic === 'Disability'
+      || supplementalTopic === 'Critical Illness'
+      || supplementalTopic === 'Accident/AD&D')
+    && isNonMedicalDetailQuestion(supplementalTopic, query)
+    && !(detectSupplementalComparisonFocus(query) && /Accident\/AD&D and Critical Illness/i.test(session.lastBotMessage || ''))
   ) {
-    const topic =
-      detectedTopic === 'Life Insurance' || session.currentTopic === 'Life Insurance' ? 'Life Insurance'
-        : detectedTopic === 'Disability' || session.currentTopic === 'Disability' ? 'Disability'
-          : detectedTopic === 'Critical Illness' || session.currentTopic === 'Critical Illness' ? 'Critical Illness'
-            : 'Accident/AD&D';
+    const topic = supplementalTopic;
     setTopic(session, topic);
     const answer = buildTopicReply(session, topic, query);
     session.lastBotMessage = answer;

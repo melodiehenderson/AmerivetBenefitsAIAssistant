@@ -402,9 +402,10 @@ describe('qa-v2 engine', () => {
       session,
     });
 
-    expect(result.answer).toContain('Here are the benefits available to you as an AmeriVet employee');
+    expect(result.answer).toContain('Here are the other benefit areas available to you as an AmeriVet employee');
     expect(result.answer).toContain('Dental');
     expect(result.answer).toContain('Vision');
+    expect(result.answer).not.toContain('Perfect!');
   });
 
   it('answers benefits-overview questions even mid-medical conversation instead of looping to medical fallback', async () => {
@@ -424,9 +425,51 @@ describe('qa-v2 engine', () => {
       session,
     });
 
-    expect(result.answer).toContain('Here are the benefits available to you as an AmeriVet employee');
+    expect(result.answer).toContain('Here are the other benefit areas available to you as an AmeriVet employee');
     expect(result.answer).toContain('Accident/AD&D');
     expect(result.answer).not.toContain('We can stay with medical');
+    expect(result.answer).not.toContain('Perfect!');
+  });
+
+  it('does not sound like re-onboarding when benefits-overview questions are asked after demographics are already known', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Mandy',
+      hasCollectedName: true,
+      userAge: 27,
+      userState: 'CT',
+      dataConfirmed: true,
+      lastBotMessage: 'Here is the maternity coverage comparison across the available medical plans:',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'what are the other types of coverage available?',
+      session,
+    });
+
+    expect(result.answer).toContain('Here are the other benefit areas available to you as an AmeriVet employee');
+    expect(result.answer).not.toContain('Perfect! 27 in CT.');
+  });
+
+  it('keeps benefits-overview questions contextual after a maternity answer instead of sounding like a reset', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Mandy',
+      hasCollectedName: true,
+      userAge: 27,
+      userState: 'CT',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      lastBotMessage: 'Recommendation: If you are planning a pregnancy, consider plans with lower deductibles and out-of-pocket maximums, even if premiums are higher.',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'what are the other types of coverage available?',
+      session,
+    });
+
+    expect(result.answer).toContain('Here are the other benefit areas available to you as an AmeriVet employee');
+    expect(result.answer).not.toContain('Perfect! 27 in CT.');
   });
 
   it('answers coverage-tier questions directly even after a generic medical compare prompt', async () => {
@@ -534,6 +577,46 @@ describe('qa-v2 engine', () => {
     expect(result.answer).toContain('there is one dental plan');
     expect(result.answer).toContain('whether to add it');
     expect(result.answer).not.toContain('We can stay with dental');
+  });
+
+  it('answers direct vision one-option questions even when the user asks cold instead of as a continuation', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+    });
+
+    const result = await runQaV2Engine({
+      query: 'is there only one vision plan available?',
+      session,
+    });
+
+    expect(result.answer).toContain('one vision plan');
+    expect(result.answer).toContain('worth adding at all');
+    expect(result.answer).not.toContain('Vision is usually worth adding');
+  });
+
+  it('answers direct dental one-option questions even when the user asks cold instead of as a continuation', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+    });
+
+    const result = await runQaV2Engine({
+      query: 'is there only one dental option?',
+      session,
+    });
+
+    expect(result.answer).toContain('one dental plan');
+    expect(result.answer).toContain('whether to add it');
+    expect(result.answer).not.toContain('Dental is usually worth adding');
   });
 
   it('answers dental braces details from structured source material', async () => {
@@ -669,7 +752,7 @@ describe('qa-v2 engine', () => {
       session,
     });
 
-    expect(result.answer).toContain('usually worth considering');
+    expect(result.answer).toContain('My practical take');
     expect(result.answer).not.toContain('We can stay with supplemental protection');
   });
 
@@ -717,6 +800,151 @@ describe('qa-v2 engine', () => {
     expect(result.answer).not.toContain('I want to keep this grounded');
   });
 
+  it('keeps accident topic ownership for "what is it not for?" after accident/ad&d explanation', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Mandy',
+      hasCollectedName: true,
+      userAge: 27,
+      userState: 'CT',
+      dataConfirmed: true,
+      currentTopic: 'Critical Illness',
+      lastBotMessage: 'Accident/AD&D coverage is another supplemental option. It generally pays benefits after covered accidental injuries, and AD&D adds benefits for severe accidental loss of life or limb.',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'what is it not for?',
+      session,
+    });
+
+    expect(result.answer).toContain('What Accident/AD&D is not');
+    expect(result.answer).not.toContain('What critical illness is not');
+  });
+
+  it('answers direct critical-illness add-on questions from household context instead of asking for rephrasing', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Mandy',
+      hasCollectedName: true,
+      userAge: 27,
+      userState: 'CT',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee + Spouse',
+      messages: [
+        { role: 'assistant', content: 'My recommendation: Standard HSA.' },
+        { role: 'user', content: 'based on my family size and overall health, and the fact that i’m choosing the standard plan' },
+      ],
+    });
+
+    const result = await runQaV2Engine({
+      query: 'and should i add critical illness to that?',
+      session,
+    });
+
+    expect(result.answer).toContain('critical illness');
+    expect(result.answer).toContain('medical first');
+    expect(result.answer).not.toContain('ask that one a little more specifically');
+  });
+
+  it('answers direct critical-illness yes-no recommendation questions without snapping back to medical recommendation', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Mandy',
+      hasCollectedName: true,
+      userAge: 27,
+      userState: 'CT',
+      dataConfirmed: true,
+      currentTopic: 'Critical Illness',
+      coverageTierLock: 'Employee + Spouse',
+      messages: [
+        { role: 'user', content: "based on my family size and overall health, and the fact that i'm choosing the standard plan, should i get critical illness insurance, especially considering i'm the sole bread-winner for my family?" },
+      ],
+    });
+
+    const result = await runQaV2Engine({
+      query: 'so should i get it?',
+      session,
+    });
+
+    expect(result.answer).toContain('critical illness');
+    expect(result.answer).not.toContain('Recommendation for Employee + Spouse coverage');
+  });
+
+  it('keeps critical-illness ownership for broad recommendation follow-ups after a medical-to-supplemental handoff', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Mandy',
+      hasCollectedName: true,
+      userAge: 27,
+      userState: 'CT',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee + Spouse',
+      messages: [
+        { role: 'assistant', content: 'My recommendation: Standard HSA.' },
+        { role: 'user', content: "based on my family size and overall health, and the fact that i'm choosing the standard plan, should i get critical illness insurance, especially considering i'm the sole bread-winner for my family?" },
+        { role: 'assistant', content: 'Critical illness is usually worth considering when you want extra cash support if a major diagnosis happens and you are worried about the non-medical financial ripple effects.' },
+      ],
+      lastBotMessage: 'Critical illness is usually worth considering when you want extra cash support if a major diagnosis happens and you are worried about the non-medical financial ripple effects.',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'so... with my situation, what do you recommend?',
+      session,
+    });
+
+    expect(result.answer).toContain('critical illness');
+    expect(result.answer).not.toContain('Recommendation for Employee + Spouse coverage');
+    expect(result.answer).toMatch(/not yet|not make critical illness the first extra add-on|only after/i);
+  });
+
+  it('answers active-topic supplemental worth-it questions directly instead of falling back to generic supplemental scaffolding', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Mandy',
+      hasCollectedName: true,
+      userAge: 27,
+      userState: 'CT',
+      dataConfirmed: true,
+      currentTopic: 'Accident/AD&D',
+      lastBotMessage: 'Accident/AD&D coverage is another supplemental option. It generally pays benefits after covered accidental injuries, and AD&D adds benefits for severe accidental loss of life or limb.',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'how do i know if i should get that?',
+      session,
+    });
+
+    expect(result.answer).toContain('Accident/AD&D');
+    expect(result.answer).not.toContain('We can stay with supplemental protection');
+  });
+
+  it('keeps critical-illness recommendation ownership for broader "what would you recommend?" follow-ups', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Mandy',
+      hasCollectedName: true,
+      userAge: 27,
+      userState: 'CT',
+      dataConfirmed: true,
+      currentTopic: 'Critical Illness',
+      pendingGuidanceTopic: 'Critical Illness',
+      coverageTierLock: 'Employee + Spouse',
+      messages: [
+        { role: 'assistant', content: 'Critical illness is usually worth considering when you want extra cash support if a major diagnosis happens and you are worried about the non-medical financial ripple effects.' },
+      ],
+    });
+
+    const result = await runQaV2Engine({
+      query: "so if i go with the standard plan, and am generally healthy, but my husband doesn't work (i'm the only income) what would you recommend?",
+      session,
+    });
+
+    expect(result.answer).toContain('critical illness');
+    expect(result.answer).not.toContain('Recommendation for Employee + Spouse coverage');
+  });
+
   it('recovers critical illness from an organic illness reference after package guidance', async () => {
     const session = makeSession({
       step: 'active_chat',
@@ -754,7 +982,7 @@ describe('qa-v2 engine', () => {
       session,
     });
 
-    expect(result.answer).toContain('usually worth considering');
+    expect(result.answer).toContain('My practical take');
     expect(result.answer).not.toContain('We can stay with supplemental protection');
   });
 
@@ -1775,6 +2003,27 @@ describe('qa-v2 engine', () => {
 
     expect(result.answer).toContain('Vision can absolutely come first');
     expect(result.answer).toContain('vision use is already obvious');
+  });
+
+  it('treats "is there only one vision plan available?" as an only-option question instead of reopening the full plan card', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Vision',
+      lastBotMessage: 'Vision coverage: **VSP Vision Plus**.',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'is there only one vision plan available?',
+      session,
+    });
+
+    expect(result.answer).toContain('AmeriVet currently offers one vision plan');
+    expect(result.answer).not.toContain('Vision coverage: **VSP Vision Plus**');
   });
 
   it('treats "why that one over the other?" after a medical recommendation as a practical take request', async () => {

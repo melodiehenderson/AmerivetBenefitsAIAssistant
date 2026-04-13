@@ -275,9 +275,9 @@ function buildMedicalTermExplanation(
   ].join('\n');
 }
 
-function buildTradeoffComparison(session: Session): string {
+function buildTradeoffComparison(query: string, session: Session): string {
   const plans = availableMedicalSummaries(session);
-  const coverageTier = getCoverageTierForQuery(session.lastBotMessage || '', session);
+  const coverageTier = getCoverageTierForQuery(query, session);
   const lines = [
     `Here is the practical tradeoff across AmeriVet's medical options:`,
     ``,
@@ -442,7 +442,7 @@ export function buildMedicalPlanDetailAnswer(query: string, session: Session): s
   }
 
   if (/\b(compare(?:\s+the)?\s+plan\s+tradeoffs?|plan\s+tradeoffs?|tradeoffs?|differences?\s+between\s+the\s+plans|compare\s+the\s+plans)\b/i.test(queryLower)) {
-    return buildTradeoffComparison(session);
+    return buildTradeoffComparison(query, session);
   }
 
   if (/\b(my wife is pregnant|i'?m pregnant|we(?:'re| are) expecting)\b/i.test(queryLower) && plansFromQuery.length !== 1) {

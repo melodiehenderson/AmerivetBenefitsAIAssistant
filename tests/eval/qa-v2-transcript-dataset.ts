@@ -1205,7 +1205,7 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
       },
       {
         user: 'how do i know if i should get that?',
-        mustContain: ['usually worth considering'],
+        mustContain: ['My practical take'],
         mustNotContain: ['We can stay with supplemental protection'],
       },
       {
@@ -1402,7 +1402,7 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
       },
       {
         user: 'how do i know if i should get that?',
-        mustContain: ['usually worth considering'],
+        mustContain: ['My practical take'],
         mustNotContain: ['We can stay with supplemental protection'],
       },
       {
@@ -1777,6 +1777,296 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
       {
         user: 'okay, tell me about the disability stuff',
         mustContain: ['Disability coverage is meant to protect part of your income'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-060',
+    category: 'supplemental_topic_ownership',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Mandy',
+      hasCollectedName: true,
+      userAge: 27,
+      userState: 'CT',
+      dataConfirmed: true,
+      currentTopic: 'Critical Illness',
+      lastBotMessage: 'Accident/AD&D coverage is another supplemental option. It generally pays benefits after covered accidental injuries, and AD&D adds benefits for severe accidental loss of life or limb.',
+    },
+    turns: [
+      {
+        user: 'what is it not for?',
+        mustContain: ['What Accident/AD&D is not'],
+        mustNotContain: ['What critical illness is not'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-061',
+    category: 'supplemental_direct_addon_recommendation',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Mandy',
+      hasCollectedName: true,
+      userAge: 27,
+      userState: 'CT',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee + Spouse',
+      messages: [
+        { role: 'assistant', content: 'My recommendation: Standard HSA.' },
+        { role: 'user', content: "based on my family size and overall health, and the fact that i'm choosing the standard plan" },
+      ],
+    },
+    turns: [
+      {
+        user: 'and should i add critical illness to that?',
+        mustContain: ['critical illness', 'medical first'],
+        mustNotContain: ['ask that one a little more specifically'],
+      },
+      {
+        user: "based on my family size and overall health, and the fact that i'm choosing the standard plan, should i get critical illness insurance, especially considering i'm the sole bread-winner for my family?",
+        mustContain: ['critical illness', 'sole breadwinner'],
+        mustNotContain: ['Recommendation for Employee + Spouse coverage'],
+      },
+      {
+        user: 'so should i get it?',
+        mustContain: ['critical illness'],
+        mustNotContain: ['Recommendation for Employee + Spouse coverage'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-062',
+    category: 'contextual_benefits_overview',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Mandy',
+      hasCollectedName: true,
+      userAge: 27,
+      userState: 'CT',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      lastBotMessage: 'Here is the maternity coverage comparison across the available medical plans:',
+    },
+    turns: [
+      {
+        user: 'what are the other types of coverage available?',
+        mustContain: ['Here are the other benefit areas available to you as an AmeriVet employee'],
+        mustNotContain: ['Perfect! 27 in CT.'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-063',
+    category: 'medical_docs_replacement_progression',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Mandy',
+      hasCollectedName: true,
+      userAge: 27,
+      userState: 'CT',
+      dataConfirmed: true,
+    },
+    turns: [
+      {
+        user: 'medical',
+        mustContain: ['Medical plan options', 'Want to compare plans or switch coverage tiers?'],
+      },
+      {
+        user: "what's a coverage tier?",
+        mustContain: ['A coverage tier is just the level of people you are enrolling', 'Employee + Family'],
+      },
+      {
+        user: "I'm married and have 3 kids, thank you very much. let's compare the plan tradeoffs",
+        mustContain: ['practical tradeoff across AmeriVet', 'Employee + Family'],
+      },
+      {
+        user: "what are the copays for the standard plan?",
+        mustContain: ['Standard HSA point-of-service cost sharing', 'Primary care', 'In-network coinsurance'],
+      },
+      {
+        user: 'i am pregnant',
+        mustContain: ['maternity coverage comparison', 'Standard HSA', 'Enhanced HSA'],
+      },
+      {
+        user: 'what coverage will we get for maternity coverage on the 2 different plans?',
+        mustContain: ['maternity coverage comparison', 'Recommendation', 'Lower OOP numbers indicate better maternity cost protection'],
+      },
+      {
+        user: 'what are the other types of coverage available?',
+        mustContain: ['Here are the other benefit areas available to you as an AmeriVet employee', 'HSA/FSA Accounts'],
+        mustNotContain: ['Perfect! 27 in CT.'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-064',
+    category: 'non_medical_docs_replacement_progression',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Mandy',
+      hasCollectedName: true,
+      userAge: 27,
+      userState: 'CT',
+      dataConfirmed: true,
+    },
+    turns: [
+      {
+        user: 'life insurance info',
+        mustContain: ['Life insurance options', 'Unum Basic Life & AD&D', 'Allstate Whole Life'],
+      },
+      {
+        user: 'what does portable mean here?',
+        mustContain: ['Portable means you may be able to keep that life coverage after leaving AmeriVet', 'Voluntary Term Life'],
+      },
+      {
+        user: 'what does guaranteed issue mean?',
+        mustContain: ['Guaranteed issue means there is an amount you can elect during open enrollment without going through full medical underwriting'],
+      },
+      {
+        user: 'what does cash value mean?',
+        mustContain: ['Cash value is the savings-like component that builds inside a permanent life policy over time'],
+      },
+      {
+        user: 'how much life insurance can i get here?',
+        mustContain: ['practical difference across AmeriVet\'s life-insurance amounts', 'Voluntary Term Life'],
+      },
+      {
+        user: 'what is accident/ad&d?',
+        mustContain: ['Accident/AD&D coverage is another supplemental option', 'What it is not'],
+      },
+      {
+        user: 'what is it not for?',
+        mustContain: ['What Accident/AD&D is not'],
+        mustNotContain: ['What critical illness is not'],
+      },
+      {
+        user: 'critical illness please',
+        mustContain: ['Critical illness coverage is a supplemental benefit', 'What it is designed to do'],
+      },
+      {
+        user: 'what is it not for?',
+        mustContain: ['What critical illness is not', 'not a replacement for your medical plan'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-065',
+    category: 'routine_care_and_protection_followthrough',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Mandy',
+      hasCollectedName: true,
+      userAge: 27,
+      userState: 'CT',
+      dataConfirmed: true,
+    },
+    turns: [
+      {
+        user: 'dental please',
+        mustContain: ['Dental coverage: **BCBSTX Dental PPO**'],
+      },
+      {
+        user: 'okay, tell me about your vision options',
+        mustContain: ['Vision coverage: **VSP Vision Plus**'],
+      },
+      {
+        user: 'is that the only option?',
+        mustContain: ['one vision plan', 'worth adding at all'],
+      },
+      {
+        user: "how do i know if it's useful?",
+        mustContain: ['Vision is usually worth adding', 'one vision plan'],
+      },
+      {
+        user: 'do you recommend getting dental?',
+        mustContain: ['Dental is usually worth adding', 'whether to add it'],
+      },
+      {
+        user: 'okay, tell me about the disability stuff',
+        mustContain: ['Disability coverage is meant to protect part of your income'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-066',
+    category: 'medical_docs_replacement_chain',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Mandy',
+      hasCollectedName: true,
+      userAge: 27,
+      userState: 'CT',
+      dataConfirmed: true,
+    },
+    turns: [
+      {
+        user: 'medical',
+        mustContain: ['Medical plan options (Employee Only)'],
+      },
+      {
+        user: "what's a coverage tier?",
+        mustContain: ['A coverage tier is just the level of people you are enrolling', 'Employee Only'],
+      },
+      {
+        user: "I'm married and have 3 kids, thank you very much. let's compare the plan tradeoffs",
+        mustContain: ['practical tradeoff across AmeriVet', 'Employee + Family'],
+      },
+      {
+        user: 'what are the copays for the standard plan?',
+        mustContain: ['Standard HSA point-of-service cost sharing', 'Primary care', 'In-network coinsurance'],
+        mustNotContain: ['We can stay with medical'],
+      },
+      {
+        user: 'i am pregnant',
+        mustContain: ['maternity coverage comparison', 'Standard HSA', 'Enhanced HSA'],
+      },
+      {
+        user: 'what coverage will we get for maternity coverage on the 2 different plans?',
+        mustContain: ['maternity coverage comparison', 'Recommendation'],
+      },
+      {
+        user: 'what are the other types of coverage available?',
+        mustContain: ['Here are the other benefit areas available to you as an AmeriVet employee'],
+        mustNotContain: ['Perfect! 27 in CT.'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-067',
+    category: 'medical_to_supplemental_recommendation_followthrough',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Mandy',
+      hasCollectedName: true,
+      userAge: 27,
+      userState: 'CT',
+      dataConfirmed: true,
+    },
+    turns: [
+      {
+        user: 'medical',
+        mustContain: ['Medical plan options (Employee Only)'],
+      },
+      {
+        user: "i'm married and have 3 kids, thank you very much. let's compare the plan tradeoffs",
+        mustContain: ['Employee + Family premium', 'Standard HSA', 'Enhanced HSA'],
+      },
+      {
+        user: 'and should i add critical illness to that?',
+        mustContain: ['critical illness'],
+        mustNotContain: ['ask that one a little more specifically', 'Recommendation for Employee + Family coverage'],
+      },
+      {
+        user: "based on my family size and overall health, and the fact that i'm choosing the standard plan, should i get critical illness insurance, especially considering i'm the sole bread-winner for my family?",
+        mustContain: ['critical illness'],
+        mustNotContain: ['Recommendation for Employee + Family coverage'],
+      },
+      {
+        user: 'so... with my situation, what do you recommend?',
+        mustContain: ['critical illness'],
+        mustNotContain: ['Recommendation for Employee + Family coverage'],
       },
     ],
   },

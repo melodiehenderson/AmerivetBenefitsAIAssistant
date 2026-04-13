@@ -269,6 +269,60 @@ describe('qa-v2 transcript replays', () => {
     );
   });
 
+  it('replays accident follow-ups without drifting into critical illness ownership', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'what is accident/ad&d?',
+          mustContain: ['Accident/AD&D coverage is another supplemental option'],
+        },
+        {
+          user: 'what is it not for?',
+          mustContain: ['What Accident/AD&D is not'],
+          mustNotContain: ['What critical illness is not'],
+        },
+      ],
+      makeSession({
+        userName: 'Mandy',
+        hasCollectedName: true,
+        userAge: 27,
+        userState: 'CT',
+        dataConfirmed: true,
+        currentTopic: 'Critical Illness',
+      }),
+    );
+  });
+
+  it('replays critical illness add-on counseling without snapping back to medical recommendation', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'and should i add critical illness to that?',
+          mustContain: ['critical illness', 'medical first'],
+          mustNotContain: ['ask that one a little more specifically'],
+        },
+        {
+          user: "based on my family size and overall health, and the fact that i'm choosing the standard plan, should i get critical illness insurance, especially considering i'm the sole bread-winner for my family?",
+          mustContain: ['critical illness', 'sole breadwinner'],
+          mustNotContain: ['Recommendation for Employee + Spouse coverage'],
+        },
+      ],
+      makeSession({
+        userName: 'Mandy',
+        hasCollectedName: true,
+        userAge: 27,
+        userState: 'CT',
+        dataConfirmed: true,
+        currentTopic: 'Medical',
+        coverageTierLock: 'Employee + Spouse',
+        messages: [
+          { role: 'assistant', content: 'My recommendation: Standard HSA.' },
+          { role: 'user', content: "based on my family size and overall health, and the fact that i'm choosing the standard plan" },
+        ],
+      }),
+    );
+  });
+
   it('replays medical detail questions as source-backed answers instead of contextual fallback', async () => {
     await replayTranscript(
       [
@@ -401,7 +455,7 @@ describe('qa-v2 transcript replays', () => {
         },
         {
           user: 'how do i know if i should get that?',
-          mustContain: ['usually worth considering'],
+          mustContain: ['My practical take'],
           mustNotContain: ['We can stay with supplemental protection'],
         },
         {
@@ -466,7 +520,7 @@ describe('qa-v2 transcript replays', () => {
         },
         {
           user: "yeah- how do i know if it's worth adding?",
-          mustContain: ['usually worth considering'],
+          mustContain: ['My practical take'],
           mustNotContain: ['We can stay with supplemental protection'],
         },
       ],
@@ -475,6 +529,43 @@ describe('qa-v2 transcript replays', () => {
         hasCollectedName: true,
         userAge: 49,
         userState: 'IA',
+        dataConfirmed: true,
+      }),
+    );
+  });
+
+  it('replays medical-to-critical-illness recommendation follow-through without snapping back to medical', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'medical',
+          mustContain: ['Medical plan options (Employee Only)'],
+        },
+        {
+          user: "i'm married and have 3 kids, thank you very much. let's compare the plan tradeoffs",
+          mustContain: ['Employee + Family premium', 'Standard HSA', 'Enhanced HSA'],
+        },
+        {
+          user: 'and should i add critical illness to that?',
+          mustContain: ['critical illness'],
+          mustNotContain: ['ask that one a little more specifically', 'Recommendation for Employee + Family coverage'],
+        },
+        {
+          user: "based on my family size and overall health, and the fact that i'm choosing the standard plan, should i get critical illness insurance, especially considering i'm the sole bread-winner for my family?",
+          mustContain: ['critical illness'],
+          mustNotContain: ['Recommendation for Employee + Family coverage'],
+        },
+        {
+          user: 'so... with my situation, what do you recommend?',
+          mustContain: ['critical illness'],
+          mustNotContain: ['Recommendation for Employee + Family coverage'],
+        },
+      ],
+      makeSession({
+        userName: 'Mandy',
+        hasCollectedName: true,
+        userAge: 27,
+        userState: 'CT',
         dataConfirmed: true,
       }),
     );
@@ -550,7 +641,7 @@ describe('qa-v2 transcript replays', () => {
         },
         {
           user: 'how do i know if i should get that?',
-          mustContain: ['usually worth considering'],
+          mustContain: ['My practical take'],
           mustNotContain: ['We can stay with supplemental protection'],
         },
         {
@@ -590,6 +681,97 @@ describe('qa-v2 transcript replays', () => {
         userState: 'IA',
         dataConfirmed: true,
         currentTopic: 'Medical',
+      }),
+    );
+  });
+
+  it('replays the docs-replacement medical detail chain without resetting the conversation', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'medical',
+          mustContain: ['Medical plan options (Employee Only)'],
+        },
+        {
+          user: "what's a coverage tier?",
+          mustContain: ['A coverage tier is just the level of people you are enrolling', 'Employee Only'],
+        },
+        {
+          user: "I'm married and have 3 kids, thank you very much. let's compare the plan tradeoffs",
+          mustContain: ['practical tradeoff across AmeriVet', 'Employee + Family'],
+        },
+        {
+          user: 'what are the copays for the standard plan?',
+          mustContain: ['Standard HSA point-of-service cost sharing', 'Primary care', 'In-network coinsurance'],
+          mustNotContain: ['We can stay with medical'],
+        },
+        {
+          user: 'i am pregnant',
+          mustContain: ['maternity coverage comparison', 'Standard HSA', 'Enhanced HSA'],
+        },
+        {
+          user: 'what coverage will we get for maternity coverage on the 2 different plans?',
+          mustContain: ['maternity coverage comparison', 'Recommendation'],
+        },
+        {
+          user: 'what are the other types of coverage available?',
+          mustContain: ['Here are the other benefit areas available to you as an AmeriVet employee'],
+          mustNotContain: ['Perfect! 27 in CT.'],
+        },
+      ],
+      makeSession({
+        userName: 'Mandy',
+        hasCollectedName: true,
+        userAge: 27,
+        userState: 'CT',
+        dataConfirmed: true,
+      }),
+    );
+  });
+
+  it('replays life-detail and supplemental-followup questions as source-backed answers instead of drifting', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'life insurance info',
+          mustContain: ['Life insurance options:', 'Unum Basic Life & AD&D'],
+        },
+        {
+          user: 'what does portable mean here?',
+          mustContain: ['Portable means', 'Voluntary Term Life'],
+        },
+        {
+          user: 'what does guaranteed issue mean?',
+          mustContain: ['Guaranteed issue means', '$150,000'],
+        },
+        {
+          user: 'what does cash value mean?',
+          mustContain: ['Cash value is the savings-like component', 'Whole Life'],
+        },
+        {
+          user: 'how much life insurance can i get here?',
+          mustContain: ['difference across AmeriVet', '1x to 5x annual salary'],
+        },
+        {
+          user: 'what is accident/ad&d?',
+          mustContain: ['Accident/AD&D coverage is another supplemental option'],
+        },
+        {
+          user: 'what is it not for?',
+          mustContain: ['What Accident/AD&D is not'],
+          mustNotContain: ['What critical illness is not'],
+        },
+        {
+          user: 'critical illness please',
+          mustContain: ['Critical illness coverage is a supplemental benefit'],
+        },
+      ],
+      makeSession({
+        userName: 'Mandy',
+        hasCollectedName: true,
+        userAge: 27,
+        userState: 'CT',
+        dataConfirmed: true,
       }),
     );
   });
