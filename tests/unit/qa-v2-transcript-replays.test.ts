@@ -663,6 +663,56 @@ describe('qa-v2 transcript replays', () => {
     );
   });
 
+  it('replays hsa/fsa move-back requests into medical options instead of staying trapped in tax-account scaffolding', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'i just want to see the plans side by side',
+          mustContain: ['Here is the practical tradeoff across AmeriVet\'s medical options', 'Standard HSA', 'Enhanced HSA'],
+          mustNotContain: ['HSA/FSA overview'],
+        },
+        {
+          user: "nope. i'm done with hsa/fsa. i want to go back to my medical plan options",
+          mustContain: ['Medical plan options'],
+          mustNotContain: ['HSA/FSA overview'],
+        },
+      ],
+      makeSession({
+        userName: 'Thomas',
+        hasCollectedName: true,
+        userAge: 56,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'HSA/FSA',
+      }),
+    );
+  });
+
+  it('replays life overview and priority follow-ups without looping the same life scaffolding', async () => {
+    await replayTranscript(
+      [
+        {
+          user: "what's available to me?",
+          mustContain: ['Life insurance options:', 'Unum Basic Life & AD&D'],
+          mustNotContain: ['We can stay with life insurance'],
+        },
+        {
+          user: 'ok. which matters more first?',
+          mustContain: ['simplest way to separate life insurance from disability'],
+          mustNotContain: ['We can stay with life insurance'],
+        },
+      ],
+      makeSession({
+        userName: 'Thomas',
+        hasCollectedName: true,
+        userAge: 56,
+        userState: 'CO',
+        dataConfirmed: true,
+        currentTopic: 'Life Insurance',
+      }),
+    );
+  });
+
   it('replays stale-topic direct questions as concrete answers instead of vision scaffolding', async () => {
     await replayTranscript(
       [

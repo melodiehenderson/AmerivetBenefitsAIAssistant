@@ -1360,6 +1360,50 @@ describe('qa-v2 engine', () => {
     expect(correction.answer).toContain('life insurance');
   });
 
+  it('does not treat bare ok as Oklahoma during active hsa/fsa chat', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Sarah',
+      hasCollectedName: true,
+      userAge: 35,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'HSA/FSA',
+      lastBotMessage: 'HSA/FSA overview:\n\n- HSA stands for Health Savings Account\n- FSA stands for Flexible Spending Account',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'ok',
+      session,
+    });
+
+    expect(session.userState).toBe('WA');
+    expect(result.answer).not.toContain('updated your state to OK');
+    expect(result.answer).toContain('Going back to your medical choice');
+  });
+
+  it('refreshes medical options after a state correction instead of falling into a generic medical prompt', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Guy',
+      hasCollectedName: true,
+      userAge: 43,
+      userState: 'TX',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      lastBotMessage: 'Medical plan options (Employee Only):\n\n- Standard HSA\n- Enhanced HSA',
+    });
+
+    const result = await runQaV2Engine({
+      query: "i'm actually in WA",
+      session,
+    });
+
+    expect(result.answer).toContain('updated medical view');
+    expect(result.answer).toContain('Medical plan options');
+    expect(result.answer).not.toContain('Please ask that one a little more specifically');
+  });
+
   it('does not treat ordinary words like "in" or "me" as state codes in later turns', async () => {
     const session = makeSession({ step: 'active_chat', userName: 'Sarah', hasCollectedName: true, userAge: 45, userState: 'GA', dataConfirmed: true });
 
@@ -2355,6 +2399,32 @@ describe('qa-v2 engine', () => {
 
     expect(result.answer).toContain('cheaper option');
     expect(result.answer).toContain('**Standard HSA**');
+  });
+
+  it('explains what richer means after a medical recommendation instead of falling back to a menu', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Sarah',
+      hasCollectedName: true,
+      userAge: 45,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee + Spouse',
+      lastBotMessage: 'Recommendation for Employee + Spouse coverage:\n\nMy recommendation: Enhanced HSA.',
+      messages: [
+        { role: 'assistant', content: 'Recommendation for Employee + Spouse coverage:\n\nMy recommendation: Enhanced HSA.' },
+      ],
+    });
+
+    const result = await runQaV2Engine({
+      query: 'what do you mean by richer?',
+      session,
+    });
+
+    expect(result.answer).toContain('stronger cost protection');
+    expect(result.answer).toContain('more expensive up front');
+    expect(result.answer).not.toContain('We can stay with medical');
   });
 
   it('treats "that one?" after a medical recommendation as a practical take request', async () => {

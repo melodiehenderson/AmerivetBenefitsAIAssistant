@@ -2156,4 +2156,54 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
       },
     ],
   },
+  {
+    id: 'V2-TX-071',
+    category: 'hsa_fsa_return_to_medical',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Mandy',
+      hasCollectedName: true,
+      userAge: 33,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'HSA/FSA',
+    },
+    turns: [
+      {
+        user: 'i just want to see the plans side by side',
+        mustContain: ['Here is the practical tradeoff across AmeriVet\'s medical options', 'Standard HSA', 'Enhanced HSA'],
+        mustNotContain: ['HSA/FSA overview'],
+      },
+      {
+        user: "nope. i'm done with hsa/fsa. i want to go back to my medical plan options",
+        mustContain: ['Medical plan options'],
+        mustNotContain: ['HSA/FSA overview'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-072',
+    category: 'life_overview_priority_followthrough',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Mandy',
+      hasCollectedName: true,
+      userAge: 33,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+    },
+    turns: [
+      {
+        user: "what's available to me?",
+        mustContain: ['Life insurance options:', 'Unum Basic Life & AD&D'],
+        mustNotContain: ['We can stay with life insurance'],
+      },
+      {
+        user: 'ok. which matters more first?',
+        mustContain: ['simplest way to separate life insurance from disability'],
+        mustNotContain: ['We can stay with life insurance'],
+      },
+    ],
+  },
 ];

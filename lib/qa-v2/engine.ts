@@ -254,19 +254,97 @@ function isLifeFamilyCoverageQuestion(query: string): boolean {
 
 function isHsaFsaCompatibilityQuestion(query: string): boolean {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
-  return /\b(fsa)\b.*\b(kaiser|hmo)\b|\b(kaiser|hmo)\b.*\bfsa\b|\bshould\s+i\s+use\s+an?\s+fsa\b|\bshould\s+i\s+use\s+fsa\b|\buse\s+an?\s+fsa\b|\buse\s+fsa\b/i.test(lower);
+  return /\b(fsa)\b.*\b(kaiser|hmo)\b|\b(kaiser|hmo)\b.*\bfsa\b|\bshould\s+i\s+use\s+an?\s+fsa\b|\bshould\s+i\s+use\s+fsa\b|\buse\s+an?\s+fsa\b|\buse\s+fsa\b|\b(hsa|fsa)\b.*\b(pair\s+best\s+with|go\s+best\s+with|fit\s+best\s+with)\b|\b(pair\s+best\s+with|go\s+best\s+with|fit\s+best\s+with)\b.*\b(hsa|fsa)\b/i.test(lower);
 }
 
 function isDirectMedicalContinuationQuestion(query: string): boolean {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
   return isDirectMedicalRecommendationQuestion(query)
     || isMedicalDetailQuestion(query)
-    || /\b(which\s+plan\s+is\s+best\s+for\s+my\s+family|which\s+plan\s+is\s+best|best\s+choice\s+for\s+my\s+family|what\s+plan\s+will\s+give\s+us\s+the\s+lowest|other\s+standard\s+plan|other\s+plan|plan\s+tradeoffs?|let'?s\s+talk\s+(?:thru|through)\s+which\s+plan|talk\s+(?:thru|through)\s+which\s+plan|talk\s+me\s+through\s+which\s+plan|best\s+choice\s+for\s+my\s+family|best\s+for\s+my\s+family)\b/i.test(lower);
+    || /\b(which\s+plan\s+is\s+best\s+for\s+my\s+family|which\s+plan\s+is\s+best|best\s+choice\s+for\s+my\s+family|what\s+plan\s+will\s+give\s+us\s+the\s+lowest|other\s+standard\s+plan|other\s+plan|plan\s+tradeoffs?|medical\s+options|medical\s+plan\s+options|show\s+me\s+(?:my\s+)?(?:medical\s+)?options|show\s+me\s+the\s+plans|plans\s+side\s+by\s+side|side\s+by\s+side|let'?s\s+talk\s+(?:thru|through)\s+which\s+plan|talk\s+(?:thru|through)\s+which\s+plan|talk\s+me\s+through\s+which\s+plan|best\s+choice\s+for\s+my\s+family|best\s+for\s+my\s+family)\b/i.test(lower);
 }
 
 function normalizeContinuationQuery(query: string): string {
   const trimmed = query.trim();
   return stripAffirmationLeadIn(trimmed) || trimmed;
+}
+
+function isTopicOverviewQuestion(query: string): boolean {
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  return /\b(what'?s\s+available|what\s+is\s+available|what\s+are\s+my\s+options|what\s+are\s+the\s+options|what\s+options\s+do\s+i\s+have|what\s+do\s+i\s+have|show\s+me\s+(?:my\s+)?options|show\s+me\s+what'?s\s+available|available\s+to\s+me|what\s+are\s+my\s+benefits|what\s+benefits?\s+do\s+i\s+have|life\s+insurance\s+info|medical\s+options|medical\s+plan\s+options)\b/i.test(lower);
+}
+
+function isShortTopicPivot(query: string, topic: string): boolean {
+  const normalized = stripAffirmationLeadIn(query.trim())
+    .toLowerCase()
+    .replace(/[^a-z\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!normalized) return false;
+
+  const topicPatterns: Record<string, RegExp> = {
+    Medical: /^(medical|health|medical plans?|medical options?|kaiser|hsa plans?)$/,
+    Dental: /^dental$/,
+    Vision: /^(vision|eye|glasses|contacts)$/,
+    'Life Insurance': /^(life|life insurance|life ins|term life|whole life|basic life)$/,
+    Disability: /^(disability|std|ltd)$/,
+    'Critical Illness': /^(critical illness|illness)$/,
+    'Accident/AD&D': /^(accident|ad&d|ad d|ad\/d)$/,
+    'HSA/FSA': /^(hsa|fsa|hsa fsa|hsa\/fsa)$/,
+  };
+
+  return topicPatterns[topic]?.test(normalized) || false;
+}
+
+function canonicalTopicQuery(topic: string, query: string): string {
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  if (topic === 'Medical') {
+    if (/\b(compare|comparison|tradeoff|side\s+by\s+side)\b/i.test(lower)) return 'compare the plan tradeoffs';
+    if (/\b(cost|costs|out[- ]of[- ]pocket|oop)\b/i.test(lower)) return 'estimate likely costs';
+    return 'medical options';
+  }
+  if (topic === 'Life Insurance') return 'life insurance info';
+  if (topic === 'Disability') return 'tell me about the disability stuff';
+  if (topic === 'Critical Illness') return 'critical illness';
+  if (topic === 'Accident/AD&D') return 'what is accident/ad&d?';
+  if (topic === 'HSA/FSA') return 'tell me about hsa/fsa';
+  if (topic === 'Dental') return 'dental please';
+  if (topic === 'Vision') return 'vision please';
+  return query;
+}
+
+function isReturnToMedicalIntent(query: string): boolean {
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  return /\b(go\s+back\s+to\s+(?:my\s+)?medical|back\s+to\s+(?:my\s+)?medical|back\s+to\s+(?:my\s+)?medical\s+plan\s+options|done\s+with\s+hsa\/fsa|done\s+with\s+hsa|done\s+with\s+fsa|medical\s+plan\s+options|show\s+me\s+(?:my\s+)?medical\s+plan\s+options|show\s+me\s+(?:my\s+)?medical\s+options|show\s+me\s+my\s+options|show\s+me\s+the\s+plans|plans\s+side\s+by\s+side|side\s+by\s+side|compare\s+the\s+plans)\b/i.test(lower);
+}
+
+function isMedicalRecommendationClarificationQuestion(query: string): boolean {
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  return /\b(what\s+do\s+you\s+mean\s+by\s+richer|what\s+do\s+you\s+mean\s+by\s+leaner|by\s+richer|by\s+leaner|more\s+expensive\s+is\s+that\s+right|do\s+you\s+mean\s+more\s+expensive|do\s+you\s+mean\s+cheaper|is\s+that\s+just\s+more\s+expensive)\b/i.test(lower);
+}
+
+function buildMedicalRecommendationClarificationReply(query: string): string {
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  if (/\bleaner|cheaper\b/i.test(lower)) {
+    return [
+      `By **leaner** or **cheaper**, I mean the plan costs less in payroll up front but usually leaves you with more deductible and out-of-pocket exposure when care happens.`,
+      ``,
+      `In AmeriVet's medical options, that usually points closer to **Standard HSA** than the richer options.`,
+      ``,
+      `So yes: "leaner" usually means cheaper up front, but with less cost protection if you end up using more care.`,
+    ].join('\n');
+  }
+
+  return [
+    `By **richer**, I mean the plan gives you stronger cost protection, even though it usually costs more up front in premium.`,
+    ``,
+    `In practical terms, that usually means:`,
+    `- lower deductible`,
+    `- lower out-of-pocket exposure in a higher-use year`,
+    `- less of the bill staying with you when care actually happens`,
+    ``,
+    `So yes: richer usually does mean **more expensive up front**, but the tradeoff is that you may pay less when the household actually uses care.`,
+  ].join('\n');
 }
 
 function upsertLifeEvent(session: Session, event: string) {
@@ -1056,6 +1134,7 @@ function extractAge(message: string): number | null {
 
 function extractState(message: string): string | null {
   const lower = message.toLowerCase();
+  const normalized = message.trim().toLowerCase().replace(/[.!?]+$/g, '');
 
   for (const [name, code] of Object.entries(STATE_NAME_TO_CODE).sort((a, b) => b[0].length - a[0].length)) {
     const pattern = new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
@@ -1070,6 +1149,10 @@ function extractState(message: string): string | null {
 
   const locationCueMatch = message.match(/\b(?:in|from|live in|located in|state is|i'm in|i am in)\s+(AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|IA|ID|IL|IN|KS|KY|LA|MA|MD|ME|MI|MN|MO|MS|MT|NC|ND|NE|NH|NJ|NM|NV|NY|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VA|VT|WA|WI|WV|WY)\b/i);
   if (locationCueMatch) return locationCueMatch[1].toUpperCase();
+
+  if (normalized === 'ok' || normalized === 'okay') {
+    return null;
+  }
 
   const exactStateOnly = message.match(/^\s*(?:ok(?:ay)?\b[\s,-]*)?(AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|IA|ID|IL|IN|KS|KY|LA|MA|MD|ME|MI|MN|MO|MS|MT|NC|ND|NE|NH|NJ|NM|NV|NY|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VA|VT|WA|WI|WV|WY)\s*$/i);
   if (exactStateOnly) return exactStateOnly[1].toUpperCase();
@@ -1577,6 +1660,36 @@ function buildContinuationReply(session: Session, query: string): string | null 
   }
 
   if (
+    isReturnToMedicalIntent(normalizedQuery)
+    && (
+      activeTopic === 'HSA/FSA'
+      || activeTopic === 'Medical'
+      || /hsa\/fsa overview|health savings account|flexible spending account|medical plan options|standard hsa|enhanced hsa|kaiser standard hmo/i.test(lastBotMessage)
+    )
+  ) {
+    setTopic(session, 'Medical');
+    return buildTopicReply(session, 'Medical', canonicalTopicQuery('Medical', normalizedQuery));
+  }
+
+  if (explicitTopic && explicitTopic !== 'Benefits Overview') {
+    const normalizedExplicitTopic = normalizeBenefitCategory(explicitTopic);
+    if (isTopicOverviewQuestion(normalizedQuery) || isShortTopicPivot(normalizedQuery, normalizedExplicitTopic)) {
+      setTopic(session, normalizedExplicitTopic);
+      return buildTopicReply(session, normalizedExplicitTopic, canonicalTopicQuery(normalizedExplicitTopic, normalizedQuery));
+    }
+  }
+
+  if (
+    activeTopic
+    && activeTopic !== 'Benefits Overview'
+    && !explicitTopic
+    && isTopicOverviewQuestion(normalizedQuery)
+  ) {
+    setTopic(session, activeTopic);
+    return buildTopicReply(session, activeTopic, canonicalTopicQuery(activeTopic, normalizedQuery));
+  }
+
+  if (
     explicitTopic
     && explicitTopic !== 'Benefits Overview'
     && explicitTopic !== activeTopic
@@ -1647,6 +1760,13 @@ function buildContinuationReply(session: Session, query: string): string | null 
 
   if (activeTopic === 'HSA/FSA' && (/\bwhat\s+does\s+hsa\s+mean\b|\bwhat\s+is\s+an?\s+hsa\b|\bwhat\s+does\s+fsa\s+mean\b|\bwhat\s+is\s+an?\s+fsa\b/i.test(lower))) {
     return buildTopicReply(session, 'HSA/FSA', normalizedQuery);
+  }
+
+  if (
+    (activeTopic === 'Life Insurance' || activeTopic === 'Disability')
+    && /\b(which\s+matters\s+more|which\s+one\s+first|which\s+matters\s+more\s+first)\b/i.test(lower)
+  ) {
+    return buildLifeVsDisabilityComparison();
   }
 
   if (session.pendingGuidancePrompt === 'benefit_decision' && focus) {
@@ -1781,6 +1901,9 @@ function buildContinuationReply(session: Session, query: string): string | null 
   }
 
   if (activeTopic === 'Medical' && (hasMedicalRecommendationInHistory || /My recommendation:/i.test(lastBotMessage))) {
+    if (isMedicalRecommendationClarificationQuestion(normalizedQuery)) {
+      return buildMedicalRecommendationClarificationReply(normalizedQuery);
+    }
     if (wantsPracticalTake || wantsDecisionReason || wantsThatOne) {
       return buildMedicalPracticalTake(session);
     }
@@ -2090,11 +2213,11 @@ function buildStateCorrectionReply(session: Session, query: string): string | nu
 
   if (normalizedTopic && normalizedTopic !== 'Benefits Overview' && normalizedTopic !== session.currentTopic) {
     setTopic(session, normalizedTopic);
-    return `Thanks for the correction — I’ve updated your state to ${correction.state}. Here’s the updated ${normalizedTopic.toLowerCase()} view:\n\n${buildTopicReply(session, normalizedTopic, query)}`;
+    return `Thanks for the correction — I’ve updated your state to ${correction.state}. Here’s the updated ${normalizedTopic.toLowerCase()} view:\n\n${buildTopicReply(session, normalizedTopic, canonicalTopicQuery(normalizedTopic, query))}`;
   }
 
   if (session.currentTopic === 'Medical') {
-    return `Thanks for the correction — in ${correction.state}, here’s the updated medical view:\n\n${buildTopicReply(session, 'Medical', query)}`;
+    return `Thanks for the correction — in ${correction.state}, here’s the updated medical view:\n\n${buildTopicReply(session, 'Medical', canonicalTopicQuery('Medical', query))}`;
   }
 
   return `Thanks for the correction — I’ve updated your state to ${correction.state}. That does not materially change the ${session.currentTopic.toLowerCase()} options I just showed, but I’ll use ${correction.state} for any state-specific guidance going forward.`;
