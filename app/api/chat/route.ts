@@ -19,7 +19,7 @@ import { determineChatRoutePolicy } from '@/lib/intent-digest';
 import type { Session } from '@/lib/rag/session-store';
 import { extractUserSlots, extractAndMapEntities } from '@/lib/rag/query-understanding';
 import { cityToStateMap } from '@/lib/schemas/onboarding';
-import { getCatalogForPrompt, KAISER_AVAILABLE_STATE_CODES } from '@/lib/data/amerivet';
+import { getAmerivetBenefitsPackage, getAmerivetCatalogForPrompt } from '@/lib/data/amerivet-package';
 import {
   checkL1FAQ,
   detectExplicitStateCorrection,
@@ -40,7 +40,8 @@ import { normalizeRatesInText } from '@/lib/utils/formatRates';
 import { tryCache, writeCache } from '@/lib/services/cache-router';
 import { calculateSTDBenefit, formatSTDBenefit } from '@/lib/utils/pricing';
 
-const KAISER_ELIGIBLE_STATES = new Set<string>(KAISER_AVAILABLE_STATE_CODES);
+const ACTIVE_AMERIVET_PACKAGE = getAmerivetBenefitsPackage();
+const KAISER_ELIGIBLE_STATES = new Set<string>(ACTIVE_AMERIVET_PACKAGE.kaiserAvailableStateCodes);
 
 // Validation schema for chat request
 const chatRequestSchema = z.object({
@@ -326,7 +327,7 @@ export const POST = withAuth(undefined, [PERMISSIONS.CHAT_WITH_AI])(async (reque
 
     /** ANALYST MODE: all slots confirmed → inject full catalog + strict grounding rules. */
     const constructAnalystPrompt = (meta: Record<string, any>): string => {
-      const catalogText = getCatalogForPrompt(meta.state as string | null);
+      const catalogText = getAmerivetCatalogForPrompt(meta.state as string | null, ACTIVE_AMERIVET_PACKAGE);
       const stateCode = (meta.state as string | null) ?? 'UNKNOWN';
       const kaiserEligible = KAISER_ELIGIBLE_STATES.has(stateCode);
       const kaiserRule = kaiserEligible

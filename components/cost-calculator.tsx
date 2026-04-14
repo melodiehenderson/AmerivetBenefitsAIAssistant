@@ -12,10 +12,8 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { DollarSign, AlertCircle } from 'lucide-react';
-import { amerivetBenefits2024_2025, type BenefitTier } from '@/lib/data/amerivet';
-
-// Kaiser is available in CA, WA, OR only — must match amerivet.ts regionalAvailability
-const KAISER_STATES = ['CA', 'WA', 'OR'] as const;
+import type { BenefitTier } from '@/lib/data/amerivet';
+import { getAmerivetBenefitsPackage, isKaiserEligibleForState } from '@/lib/data/amerivet-package';
 
 // All US states for dropdown
 const US_STATES = [
@@ -57,7 +55,9 @@ interface PlanCost {
 }
 
 export function CostCalculator() {
-  const [plan, setPlan] = useState(amerivetBenefits2024_2025.medicalPlans[0]?.name || 'Standard HSA');
+  const benefitsPackage = getAmerivetBenefitsPackage();
+  const medicalPlans = benefitsPackage.catalog.medicalPlans;
+  const [plan, setPlan] = useState(medicalPlans[0]?.name || 'Standard HSA');
   const [coverage, setCoverage] = useState<CoverageTier>('Employee Only');
   const [userState, setUserState] = useState('');
   const [doctorVisits, setDoctorVisits] = useState(0);
@@ -68,7 +68,7 @@ export function CostCalculator() {
 
   const STATE_TO_REGION: Record<string, string> = { CA: 'California', WA: 'Washington', OR: 'Oregon' };
   const region = STATE_TO_REGION[userState] ?? 'nationwide';
-  const availablePlans = amerivetBenefits2024_2025.medicalPlans.filter((p) =>
+  const availablePlans = medicalPlans.filter((p) =>
     p.regionalAvailability.includes('nationwide') ||
     p.regionalAvailability.includes(region)
   );
@@ -136,8 +136,8 @@ export function CostCalculator() {
               <select className="mt-1 w-full rounded border p-2" value={userState} onChange={(e) => {
                 setUserState(e.target.value);
                 // Reset plan if Kaiser selected but not available in new state
-                if (/kaiser/i.test(plan) && !KAISER_STATES.includes(e.target.value as typeof KAISER_STATES[number])) {
-                  setPlan(amerivetBenefits2024_2025.medicalPlans[0]?.name || 'Standard HSA');
+                if (/kaiser/i.test(plan) && !isKaiserEligibleForState(e.target.value, benefitsPackage)) {
+                  setPlan(medicalPlans[0]?.name || 'Standard HSA');
                 }
               }}>
                 <option value="">Select your state...</option>

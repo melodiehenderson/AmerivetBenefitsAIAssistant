@@ -5,9 +5,33 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { SimpleChatRouter } from '../../lib/services/simple-chat-router';
+import {
+  createAmerivetBenefitsPackage,
+  getAmerivetBenefitsPackage,
+} from '../../lib/data/amerivet-package';
 
 describe('SimpleChatRouter - Enhanced Handlers', () => {
   let router: SimpleChatRouter;
+
+  function makeFixturePackage() {
+    const current = getAmerivetBenefitsPackage();
+
+    return createAmerivetBenefitsPackage({
+      ...current,
+      packageId: 'amerivet-simple-router-fixture',
+      catalog: {
+        ...current.catalog,
+        dentalPlan: {
+          ...current.catalog.dentalPlan,
+          name: 'AmeriVet Dental Core',
+        },
+        visionPlan: {
+          ...current.catalog.visionPlan,
+          name: 'AmeriVet Vision Core',
+        },
+      },
+    });
+  }
 
   beforeEach(() => {
     router = new SimpleChatRouter();
@@ -44,6 +68,16 @@ describe('SimpleChatRouter - Enhanced Handlers', () => {
       expect(response.content).toMatch(/\$[\d,]+\.?\d*\/month/);
       expect(response.content).toMatch(/\$[\d,]+\.?\d*\/year/);
       expect(response.content).toContain('per paycheck');
+    });
+
+    it('uses an injected package fixture instead of the default package names', async () => {
+      const routerWithFixture = new SimpleChatRouter(makeFixturePackage());
+      const response = await (routerWithFixture as any).handleBenefitsQuestion('show me benefits', {
+        state: 'CA',
+      });
+
+      expect(response.content).toContain('AmeriVet Dental Core');
+      expect(response.content).toContain('AmeriVet Vision Core');
     });
   });
 

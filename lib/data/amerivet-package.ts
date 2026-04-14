@@ -199,3 +199,79 @@ export function getKaiserAvailabilityCopy(
     nameAndCodeList: formatHumanList(nameAndCode),
   };
 }
+
+export function getAmerivetCatalogForPrompt(
+  stateCode?: string | null,
+  benefitsPackage: AmerivetBenefitsPackage = getAmerivetBenefitsPackage(),
+): string {
+  const { catalog } = benefitsPackage;
+  const availablePlans = getAmerivetPlansByRegion(stateCode ?? 'nationwide', benefitsPackage);
+  const biweekly = (monthly: number) => `$${((monthly * 12) / 26).toFixed(2)}`;
+
+  const lines: string[] = [
+    `=== AMERIVET BENEFITS CATALOG (${catalog.openEnrollment.year}) — IMMUTABLE LOOKUP TABLE ===`,
+    `Respond ONLY with plans listed here. Plans not listed DO NOT EXIST for AmeriVet employees.`,
+    `NOT IN CATALOG (decline politely if asked): pet insurance, legal insurance, ID theft protection,`,
+    `  gym membership, wellness reimbursement, student loan repayment, long-term care, cancer-only plans.`,
+    '',
+    '── CARRIER LOCK (immutable — never re-assign a carrier to a different plan type) ──',
+    '  UNUM       = Basic Life & AD&D, Voluntary Term Life, Short-Term Disability, Long-Term Disability ONLY.',
+    '  ALLSTATE   = Group Whole Life (Permanent), Accident Insurance, Critical Illness ONLY.',
+    '  BCBSTX     = Medical plans (Standard HSA, Enhanced HSA) and Dental PPO ONLY.',
+    '  VSP        = Vision plan ONLY.',
+    '  KAISER     = Medical HMO — California, Oregon, Washington ONLY. NEVER mention in any other state.',
+    '  RIGHTWAY   — NOT an AmeriVet carrier. NEVER mention Rightway in any response.',
+    '',
+  ];
+
+  const medicalPlans = availablePlans.filter((plan) => plan.type === 'medical');
+  if (medicalPlans.length) {
+    lines.push('── MEDICAL PLANS ──────────────────────────────────────────────────────────');
+    for (const plan of medicalPlans) {
+      lines.push(`[${plan.id}] ${plan.name} | Provider: ${plan.provider}`);
+      lines.push(`  Premiums: Employee $${plan.tiers.employeeOnly}/mo (${biweekly(plan.tiers.employeeOnly)}/bi-wk) | +Spouse $${plan.tiers.employeeSpouse}/mo | +Child $${plan.tiers.employeeChildren}/mo | Family $${plan.tiers.employeeFamily}/mo`);
+      lines.push(`  Deductible: $${plan.benefits.deductible} | OOP Max: $${plan.benefits.outOfPocketMax} | Coinsurance: ${plan.benefits.coinsurance * 100}%`);
+      lines.push(`  Key features: ${plan.features.slice(0, 3).join(' | ')}`);
+      if (plan.limitations.length) lines.push(`  Limitations: ${plan.limitations[0]}`);
+      lines.push('');
+    }
+  }
+
+  const dentalPlan = catalog.dentalPlan;
+  lines.push('── DENTAL PLAN ─────────────────────────────────────────────────────────────');
+  lines.push(`[${dentalPlan.id}] ${dentalPlan.name} | Provider: ${dentalPlan.provider}`);
+  lines.push(`  Premiums: Employee $${dentalPlan.tiers.employeeOnly}/mo | +Spouse $${dentalPlan.tiers.employeeSpouse}/mo | +Child $${dentalPlan.tiers.employeeChildren}/mo | Family $${dentalPlan.tiers.employeeFamily}/mo`);
+  lines.push(`  Deductible: $${dentalPlan.benefits.deductible}/individual | Annual Max: $${dentalPlan.benefits.outOfPocketMax}`);
+  lines.push(`  Key features: ${dentalPlan.features.join(' | ')}`);
+  lines.push('');
+
+  const visionPlan = catalog.visionPlan;
+  lines.push('── VISION PLAN ─────────────────────────────────────────────────────────────');
+  lines.push(`[${visionPlan.id}] ${visionPlan.name} | Provider: ${visionPlan.provider}`);
+  lines.push(`  Premiums: Employee $${visionPlan.tiers.employeeOnly}/mo | +Spouse $${visionPlan.tiers.employeeSpouse}/mo | +Child $${visionPlan.tiers.employeeChildren}/mo | Family $${visionPlan.tiers.employeeFamily}/mo`);
+  lines.push(`  Key features: ${visionPlan.features.join(' | ')}`);
+  lines.push('');
+
+  const voluntaryPlans = availablePlans.filter((plan) => plan.type === 'voluntary');
+  if (voluntaryPlans.length) {
+    lines.push('── VOLUNTARY / LIFE & DISABILITY ───────────────────────────────────────────');
+    for (const plan of voluntaryPlans) {
+      lines.push(`[${plan.id}] ${plan.name} | Provider: ${plan.provider}`);
+      lines.push(`  Premiums: Employee $${plan.tiers.employeeOnly}/mo | +Spouse $${plan.tiers.employeeSpouse}/mo | Family $${plan.tiers.employeeFamily}/mo`);
+      lines.push(`  Key features: ${plan.features.join(' | ')}`);
+      lines.push('');
+    }
+  }
+
+  lines.push('── SPECIAL ACCOUNTS ────────────────────────────────────────────────────────');
+  lines.push(`HSA: Employer contributes $${catalog.specialCoverage.hsa.employerContribution}/yr`);
+  lines.push(`Commuter: $${catalog.specialCoverage.commuter.monthlyBenefit}/mo benefit`);
+  lines.push('');
+
+  lines.push('── ENROLLMENT WINDOW ───────────────────────────────────────────────────────');
+  lines.push(`Open: ${catalog.openEnrollment.startDate} – ${catalog.openEnrollment.endDate} | Effective: ${catalog.openEnrollment.effectiveDate}`);
+  lines.push(`Eligibility: Full-time ≥${catalog.eligibility.fullTimeHours}h/wk. Coverage ${catalog.eligibility.coverageEffective}`);
+  lines.push(`Dependents: Spouse=${catalog.eligibility.dependents.spouse} | Children: ${catalog.eligibility.dependents.children}`);
+
+  return lines.join('\n');
+}

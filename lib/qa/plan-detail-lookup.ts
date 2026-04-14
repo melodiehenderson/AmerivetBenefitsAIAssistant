@@ -5,10 +5,14 @@ import {
   type MedicalPlanSummary,
 } from '@/lib/data/amerivet-plan-summaries';
 import {
-  amerivetBenefits2024_2025,
   type BenefitPlan,
   type BenefitTier,
 } from '@/lib/data/amerivet';
+import {
+  getAmerivetBenefitsPackage,
+  getAmerivetPlanById,
+  type AmerivetBenefitsPackage,
+} from '@/lib/data/amerivet-package';
 import { getCoverageTierForQuery, isKaiserEligibleState, sessionHasPregnancySignal } from '@/lib/qa/medical-helpers';
 import pricingUtils from '@/lib/rag/pricing-utils';
 
@@ -38,9 +42,12 @@ function normalizeCoverageTierKey(tier: string): BenefitTier {
   }
 }
 
-function getCatalogPlan(summary: MedicalPlanSummary): BenefitPlan | null {
+function getCatalogPlan(
+  summary: MedicalPlanSummary,
+  benefitsPackage: AmerivetBenefitsPackage = getAmerivetBenefitsPackage(),
+): BenefitPlan | null {
   const planId = PLAN_KEY_TO_CATALOG_ID[summary.planKey];
-  return amerivetBenefits2024_2025.medicalPlans.find((plan) => plan.id === planId) || null;
+  return getAmerivetPlanById(planId, benefitsPackage) || null;
 }
 
 function formatCoverageTierPremium(plan: BenefitPlan, coverageTier: string): string {
@@ -115,8 +122,11 @@ function inferPlansFromQuery(queryLower: string, session: Session): MedicalPlanS
   return [];
 }
 
-function buildPlanOverview(summary: MedicalPlanSummary): string {
-  const plan = getCatalogPlan(summary);
+function buildPlanOverview(
+  summary: MedicalPlanSummary,
+  benefitsPackage: AmerivetBenefitsPackage = getAmerivetBenefitsPackage(),
+): string {
+  const plan = getCatalogPlan(summary, benefitsPackage);
   const lines = [
     `${summary.displayName} (${summary.provider}) summary:`,
     ``,
@@ -522,8 +532,13 @@ function buildLowestOopConfirmationAnswer(queryLower: string, session: Session):
   return null;
 }
 
-export function buildMedicalPlanDetailAnswer(query: string, session: Session): string | null {
+export function buildMedicalPlanDetailAnswer(
+  query: string,
+  session: Session,
+  options?: { benefitsPackage?: AmerivetBenefitsPackage },
+): string | null {
   const queryLower = query.toLowerCase();
+  const benefitsPackage = options?.benefitsPackage ?? getAmerivetBenefitsPackage();
   const summaries = availableMedicalSummaries(session);
   const plansFromQuery = inferPlansFromQuery(queryLower, session);
   const summary = inferPlanFromQuery(queryLower, session);
@@ -678,10 +693,10 @@ export function buildMedicalPlanDetailAnswer(query: string, session: Session): s
   }
 
   if (!summary) return null;
-  const plan = getCatalogPlan(summary);
+  const plan = getCatalogPlan(summary, benefitsPackage);
 
   if (/\b(more\s+info|more\s+detail|details|summary|tell\s+me\s+about|show\s+me|overview)\b/i.test(queryLower)) {
-    return `${buildPlanOverview(summary)}\n\nIf you want, I can also drill into a specific part of the plan like specialist visits, coinsurance, prescriptions, maternity, or therapy coverage.`;
+    return `${buildPlanOverview(summary, benefitsPackage)}\n\nIf you want, I can also drill into a specific part of the plan like specialist visits, coinsurance, prescriptions, maternity, or therapy coverage.`;
   }
 
   if (/\b(primary\s+care|pcp|doctor\s+visit|office\s+visit)\b/i.test(queryLower)) {

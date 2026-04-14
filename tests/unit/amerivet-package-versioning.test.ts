@@ -5,6 +5,7 @@ import pricingUtils, { getDentalPlanDetails } from '@/lib/rag/pricing-utils';
 import type { Session } from '@/lib/rag/session-store';
 import {
   createAmerivetBenefitsPackage,
+  getAmerivetCatalogForPrompt,
   getAmerivetBenefitsPackage,
   isKaiserEligibleForState,
   listAmerivetBenefitsPackageIds,
@@ -107,6 +108,16 @@ describe('amerivet package versioning seam', () => {
 
     const dentalDetails = getDentalPlanDetails({ benefitsPackage: fixture });
     expect(dentalDetails.name).toBe('AmeriVet Dental Core');
+  });
+
+  it('builds the prompt catalog from the active package fixture instead of the default catalog', () => {
+    const fixture = makeFixturePackage();
+    const promptCatalog = getAmerivetCatalogForPrompt('TX', fixture);
+
+    expect(promptCatalog).toContain('AMERIVET BENEFITS CATALOG (2026-2027)');
+    expect(promptCatalog).toContain('AmeriVet Dental Core');
+    expect(promptCatalog).toContain('AmeriVet Vision Core');
+    expect(promptCatalog).toContain('Open: 2026-10-15 – 2026-10-30');
   });
 
   it('lets package state availability change medical filtering without mutating the default package', () => {

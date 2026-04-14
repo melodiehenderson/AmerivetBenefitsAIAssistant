@@ -6,7 +6,11 @@
 import { logger } from '@/lib/logger';
 import { simpleRAGSystem } from '@/lib/ai/simple-rag';
 import type { BenefitPlan } from '@/lib/data/amerivet';
-import { getPlansByRegion } from '@/lib/data/amerivet-benefits';
+import {
+  getAmerivetBenefitsPackage,
+  getAmerivetPlansByRegion,
+  type AmerivetBenefitsPackage,
+} from '@/lib/data/amerivet-package';
 import { compareMaternityCosts, estimateCostProjection } from '@/lib/rag/pricing-utils';
 import type { IntentType } from '@/lib/rag/query-understanding';
 
@@ -39,8 +43,9 @@ export class SimpleChatRouter {
     corporate: ['bcbstx-enhanced-hsa', 'kaiser-standard-hmo', 'bcbstx-dental', 'vsp-vision-plus', 'unum-basic-life'],
     retail: ['kaiser-standard-hmo', 'bcbstx-standard-hsa', 'bcbstx-dental', 'vsp-vision-plus', 'unum-basic-life']
   };
+  private conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [];
 
-  constructor() {}
+  constructor(private readonly benefitsPackage: AmerivetBenefitsPackage = getAmerivetBenefitsPackage()) {}
 
   async routeMessage(message: string, context?: ChatContext, attachments?: any[]): Promise<ChatResponse> {
     try {
@@ -366,7 +371,7 @@ export class SimpleChatRouter {
       network: network ?? undefined,
       state: context?.state,
       age: undefined // Would need to extract from conversation metadata
-    });
+    }, { benefitsPackage: this.benefitsPackage });
 
     let response = `${contextIntro}**Projected Healthcare Costs for Next Year**\n\n`;
     response += `Based on **${usageLevel} usage** assumptions`;
@@ -391,8 +396,7 @@ export class SimpleChatRouter {
 
   private extractUsageLevel(message: string): 'low' | 'moderate' | 'high' {
     // Extract usage level from conversation context
-
-    const messageLower = message.toLowerCase();
+    const messageLower = this.getContextMessage(message).toLowerCase();
     
     if (messageLower.includes('high') || messageLower.includes('heavy') || messageLower.includes('frequent')) {
       return 'high';
@@ -416,7 +420,8 @@ export class SimpleChatRouter {
   }
 
   private extractCoverageTier(message: string): string | null {
-    const messageLower = message.toLowerCase();
+    const contextMessage = this.getContextMessage(message);
+    const messageLower = contextMessage.toLowerCase();
     
     // Check for family size indicators
     const familyPatterns = [
@@ -442,16 +447,16 @@ export class SimpleChatRouter {
     ];
 
     // Most specific first (spouse/children), then broader family.
-    if (spousePatterns.some(p => p.test(message))) {
+    if (spousePatterns.some((pattern) => pattern.test(contextMessage))) {
       return 'Employee + Spouse';
     }
-    if (childPatterns.some(p => p.test(message)) || messageLower.includes('dependents')) {
+    if (childPatterns.some((pattern) => pattern.test(contextMessage)) || messageLower.includes('dependents')) {
       return 'Employee + Child(ren)';
     }
     
-    if (familyPatterns.some(p => p.test(message))) {
+    if (familyPatterns.some((pattern) => pattern.test(contextMessage))) {
       // Try to extract number
-      const numMatch = message.match(/family([0-9]+)/i);
+      const numMatch = contextMessage.match(/family([0-9]+)/i);
       if (numMatch) {
         const num = parseInt(numMatch[1]);
         if (num >= 4) return 'Employee + Family';
@@ -469,7 +474,7 @@ export class SimpleChatRouter {
   }
 
   private extractNetworkPreference(message: string): string | null {
-    const messageLower = message.toLowerCase();
+    const messageLower = this.getContextMessage(message).toLowerCase();
     
     if (messageLower.includes('kaiser')) {
       return 'Kaiser';
@@ -501,11 +506,28 @@ export class SimpleChatRouter {
     return currentMessage;
   }
 
+  private getContextMessage(message?: string): string {
+    if (typeof message === 'string' && message.trim().length > 0) {
+      return message;
+    }
+
+    for (let i = this.conversationHistory.length - 1; i >= 0; i--) {
+      const entry = this.conversationHistory[i];
+      if (entry.role === 'user' && entry.content.trim().length > 0) {
+        return entry.content;
+      }
+    }
+
+    return '';
+  }
+
   private handleMaternityQuestion(context?: ChatContext): ChatResponse {
     const contextIntro = this.buildContextIntro(context);
     const coverageTier = context?.division ? 'Employee + Family' : 'Employee Only';
     
-    const maternityComparison = compareMaternityCosts(coverageTier);
+    const maternityComparison = compareMaternityCosts(coverageTier, context?.state ?? null, {
+      benefitsPackage: this.benefitsPackage,
+    });
 
     let response = `${contextIntro}**Maternity Coverage Comparison**\n\n`;
     response += "Great question! Planning for a baby is exciting, and choosing the right plan can save you thousands.\n\n";
@@ -665,7 +687,7 @@ export class SimpleChatRouter {
     const region = (context?.state || 'nationwide').trim();
     const division = context?.division?.trim().toLowerCase();
     const divisionAllowList = division ? SimpleChatRouter.DIVISION_PLAN_MAP[division] : undefined;
-    const plans = getPlansByRegion(region).filter(plan => {
+    const plans = getAmerivetPlansByRegion(region, this.benefitsPackage).filter(plan => {
       if (!divisionAllowList) return true;
       return divisionAllowList.includes(plan.id);
     });
