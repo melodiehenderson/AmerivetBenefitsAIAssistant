@@ -15,6 +15,8 @@ import { isVitest } from '@/lib/ai/runtime';
 import { logger } from '@/lib/logger';
 import { countTokens } from '@/lib/utils/tokenCount';
 
+const useVitestMemoryMode = isVitest && process.env.RUN_RETRIEVAL_EVAL !== '1';
+
 // ============================================================================
 // Retrieval Gate Configuration
 // ============================================================================
@@ -263,7 +265,7 @@ function ensureSearchClient(): any | null {
   logger.debug(`[SEARCH] Initializing client with index: ${indexName}`);
   logger.debug(`[SEARCH] Endpoint configured: ${!!endpoint}, API Key: ${apiKey ? 'SET' : 'MISSING'}`);
 
-  if ((!endpoint || !apiKey) && !isVitest) {
+  if ((!endpoint || !apiKey) && !useVitestMemoryMode) {
     throw new Error("Azure Search credentials not configured");
   }
   
@@ -419,7 +421,7 @@ async function searchWithFilterFallback(
  */
 async function generateEmbedding(text: string): Promise<number[]> {
   // In tests, use a deterministic lightweight embedding
-  if (isVitest) {
+  if (useVitestMemoryMode) {
     const vec = new Array(128).fill(0);
     for (let i = 0; i < text.length; i++) {
       vec[i % 128] += text.charCodeAt(i) / 255;
@@ -464,7 +466,7 @@ export async function retrieveVectorTopK(
   const startTime = Date.now();
 
   // In-memory fallback for tests
-  if (!client && isVitest) {
+  if (!client && useVitestMemoryMode) {
     const queryVector = await generateEmbedding(query);
     const filtered = memoryIndex.filter(c => c.companyId === context.companyId);
     const scored = filtered
@@ -591,7 +593,7 @@ export async function retrieveBM25TopK(
   const startTime = Date.now();
 
   // In-memory fallback for tests (simple keyword matching)
-  if (!client && isVitest) {
+  if (!client && useVitestMemoryMode) {
     const filtered = memoryIndex.filter(c => c.companyId === context.companyId);
     const queryLower = query.toLowerCase();
     const scored = filtered

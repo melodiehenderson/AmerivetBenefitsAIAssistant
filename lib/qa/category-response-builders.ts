@@ -24,6 +24,17 @@ function stripPricingDetails(text: string): string {
     .trim();
 }
 
+function isDeclinedRoutineTopic(queryLower: string, topic: 'dental' | 'vision'): boolean {
+  const topicPattern = topic === 'dental'
+    ? 'dental'
+    : '(?:vision|eye|glasses|contacts|lasik)';
+
+  return new RegExp(
+    `\\b(?:skip(?:ping)?|done\\s+with|not\\s+interested\\s+in|do\\s+not\\s+want|don'?t\\s+want|dont\\s+want|not\\s+getting|without|other\\s+than)\\b[^.?!]{0,40}\\b${topicPattern}\\b|\\b${topicPattern}\\b[^.?!]{0,40}\\b(?:skip(?:ping)?|done\\s+with|not\\s+interested|do\\s+not\\s+want|don'?t\\s+want|dont\\s+want|not\\s+getting)\\b`,
+    'i',
+  ).test(queryLower);
+}
+
 type CategoryResponseArgs = {
   queryLower: string;
   session: Session;
@@ -40,27 +51,27 @@ function buildPackageNextStepPrompt(
 
   if (topic === 'Dental') {
     if (completed.has('Vision')) {
-      return 'If you want, we can move on to life, disability, or supplemental benefits next.';
+      return 'If routine care questions are settled, the next most useful area is usually life, disability, or supplemental benefits.';
     }
-    return 'If you want, I can show vision quickly too, or move on to life, disability, or supplemental benefits next.';
+    return 'If routine care matters for your household, vision is the most natural companion to look at next. If family or income protection matters more, we can move on to life, disability, or supplemental benefits.';
   }
 
   if (topic === 'Vision') {
     if (completed.has('Dental')) {
-      return 'If you want, we can move on to life, disability, or supplemental benefits next.';
+      return 'If routine care questions are settled, the next most useful area is usually life, disability, or supplemental benefits.';
     }
-    return 'If you want, I can show dental quickly too, or move on to life, disability, or supplemental benefits next.';
+    return 'If routine care matters for your household, dental is the most natural companion to look at next. If family or income protection matters more, we can move on to life, disability, or supplemental benefits.';
   }
 
   if (topic === 'Life') {
-    return 'If you want, I can move on to disability, critical illness, or accident coverage next.';
+    return 'If you are thinking about broader protection, the next useful comparison is usually disability first, then critical illness or accident coverage.';
   }
 
   if (topic === 'Disability') {
-    return 'If you want, I can move on to life insurance, critical illness, or accident coverage next.';
+    return 'If you are thinking about broader protection, the next useful comparison is usually life insurance first, then critical illness or accident coverage.';
   }
 
-  return 'If you want, I can move on to life insurance, disability, or HSA/FSA guidance next.';
+  return 'If you want to keep going, the next useful area is usually life insurance, disability, or HSA/FSA guidance.';
 }
 
 export function buildCoverageTierOptionsResponse(
@@ -105,8 +116,10 @@ export function buildCategoryExplorationResponse({ queryLower, session, coverage
     return null;
   }
 
-  const wantsDental = /\b(dental|teeth|orthodont|braces)\b/i.test(queryLower);
-  const wantsVision = /\b(vision|eye|glasses|contacts|lasik)\b/i.test(queryLower);
+  const wantsDentalRaw = /\b(dental|teeth|orthodont|braces)\b/i.test(queryLower);
+  const wantsVisionRaw = /\b(vision|eye|glasses|contacts|lasik)\b/i.test(queryLower);
+  const wantsDental = wantsDentalRaw && !isDeclinedRoutineTopic(queryLower, 'dental');
+  const wantsVision = wantsVisionRaw && !isDeclinedRoutineTopic(queryLower, 'vision');
   const wantsMedical = /\b(medical|health)\b/i.test(queryLower);
   const wantsLife = /\b(life\s+insurance|term\s+life|whole\s+life|basic\s+life|voluntary\s+life)\b/i.test(queryLower);
   const wantsDisability = /\b(disability|std|ltd|short\s*-?term|long\s*-?term)\b/i.test(queryLower);
@@ -255,10 +268,10 @@ export function buildCategoryExplorationResponse({ queryLower, session, coverage
     if (term) msg += `- **${term.name}** (${term.provider}) - ${term.description}\n`;
     if (whole) msg += `- **${whole.name}** (${whole.provider}) - ${whole.description}\n`;
 
-    const featureLines = (plan?: typeof basic) => !plan?.features?.length ? '' : plan.features.map((feature) => `  - ${feature}`).join('\n');
-    if (basic?.features?.length) msg += `\nBasic Life features:\n${featureLines(basic)}\n`;
-    if (term?.features?.length) msg += `\nVoluntary Term Life features:\n${featureLines(term)}\n`;
-    if (whole?.features?.length) msg += `\nWhole Life features:\n${featureLines(whole)}\n`;
+    const featureLines = (plan?: typeof basic) => !plan?.features?.length ? '' : plan.features.map((feature) => `- ${feature}`).join('\n');
+    if (basic?.features?.length) msg += `\n**Basic Life features:**\n${featureLines(basic)}\n`;
+    if (term?.features?.length) msg += `\n**Voluntary Term Life features:**\n${featureLines(term)}\n`;
+    if (whole?.features?.length) msg += `\n**Whole Life features:**\n${featureLines(whole)}\n`;
 
     msg += `\nVoluntary life rates are age-banded. For your exact rate and coverage amount, check Workday: ${enrollmentPortalUrl}.`;
     msg += `\n\n${buildPackageNextStepPrompt('Life', session)}`;
@@ -269,7 +282,7 @@ export function buildCategoryExplorationResponse({ queryLower, session, coverage
     let msg = `HSA/FSA overview:\n\n`;
     msg += `- **HSA** stands for **Health Savings Account**. It works with HSA-qualified medical plans like Standard HSA and Enhanced HSA.\n`;
     msg += `- **FSA** stands for **Flexible Spending Account**. It also uses pre-tax dollars for eligible healthcare expenses, but it follows different rollover and ownership rules.\n\n`;
-    msg += `Key difference:\n`;
+    msg += `**Key difference:**\n`;
     msg += `- HSA funds roll over year to year and stay with you\n`;
     msg += `- FSA funds are tied to the employer plan and usually have stricter year-end rules\n`;
     msg += `- You generally cannot make full HSA contributions while covered by a general-purpose healthcare FSA\n\n`;
@@ -289,11 +302,11 @@ export function buildCategoryExplorationResponse({ queryLower, session, coverage
 
     if (wantsCritical) {
       msg += `Critical illness coverage is a supplemental benefit that can pay a lump-sum cash benefit if you are diagnosed with a covered serious condition, such as a heart attack, stroke, or certain cancers.\n\n`;
-      msg += `What it is designed to do:\n`;
+      msg += `**What it is designed to do:**\n`;
       msg += `- Help with non-medical costs like travel, childcare, or household bills\n`;
       msg += `- Give you extra cash on top of your medical plan if a major diagnosis happens\n`;
       msg += `- Reduce the financial shock of a big health event when you have a high deductible or limited emergency savings\n\n`;
-      msg += `What it is not:\n`;
+      msg += `**What it is not:**\n`;
       msg += `- It does not replace your medical plan\n`;
       msg += `- It is not meant for routine care or everyday doctor visits\n`;
       msg += `- Benefit amounts, covered conditions, and exclusions depend on the actual policy details in Workday\n`;
@@ -302,7 +315,7 @@ export function buildCategoryExplorationResponse({ queryLower, session, coverage
     if (wantsAccident) {
       if (msg) msg += `\n`;
       msg += `Accident/AD&D coverage is another supplemental option. It generally pays benefits after covered accidental injuries, and AD&D adds benefits for severe accidental loss of life or limb.\n\n`;
-      msg += `People often look at it when:\n`;
+      msg += `**People often look at it when:**\n`;
       msg += `- They want extra protection beyond their medical plan\n`;
       msg += `- They have an active household or dependents\n`;
       msg += `- They want cash help after an accidental injury\n`;

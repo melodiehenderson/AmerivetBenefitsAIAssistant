@@ -85,6 +85,8 @@ const SUGGESTED_SCENARIOS: Scenario[] = [
   }
 ];
 
+const QA_ENDPOINT = '/api/qa-v2';
+
 export default function SubdomainChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -156,7 +158,7 @@ export default function SubdomainChatPage() {
       
       setIsLoading(true);
       try {
-        const response = await fetch('/api/qa', {
+        const response = await fetch(QA_ENDPOINT, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
@@ -306,7 +308,7 @@ export default function SubdomainChatPage() {
     setError('');
 
     try {
-      const response = await fetch('/api/qa', {
+      const response = await fetch(QA_ENDPOINT, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -336,20 +338,10 @@ export default function SubdomainChatPage() {
       
       // SERVERLESS RESILIENCE: Cache session context from response
       if (data.sessionContext) {
-        setCachedContext({
-          userName: data.sessionContext.userName,
-          userAge: data.sessionContext.userAge,
-          userState: data.sessionContext.userState,
-          hasCollectedName: data.sessionContext.hasCollectedName,
-          disclaimerShown: data.sessionContext.disclaimerShown,
-          currentTopic: data.sessionContext.currentTopic,
-          askedForDemographics: data.sessionContext.askedForDemographics,
-          selectedPlan: data.sessionContext.selectedPlan,
-          // Persist preference flags so they survive serverless restarts
-          noPricingMode: data.sessionContext.noPricingMode ?? false,
-          coverageTierLock: data.sessionContext.coverageTierLock ?? null,
-          dataConfirmed: data.sessionContext.dataConfirmed ?? false,
-        });
+        setCachedContext((prev) => ({
+          ...prev,
+          ...data.sessionContext,
+        }));
       }
       
       const assistantMessage: Message = {

@@ -74,6 +74,13 @@ vi.mock('@/lib/azure/config', () => ({
     jwtSecret: 'jwt', encryptionKey: '01234567890123456789012345678901',
     rateLimitRedisUrl: 'redis://host', resendApiKey: 'resend'
   }),
+  getOpenAIConfig: () => ({
+    endpoint: (process.env.AZURE_OPENAI_ENDPOINT || 'https://test.openai.azure.com').trim(),
+    apiKey: (process.env.AZURE_OPENAI_API_KEY || 'test-azure-key').trim(),
+    apiVersion: (process.env.AZURE_OPENAI_API_VERSION || '2024-02-01').trim(),
+    deploymentName: (process.env.AZURE_OPENAI_DEPLOYMENT_NAME || process.env.AZURE_OPENAI_DEPLOYMENT || 'gpt-4').trim(),
+    embeddingDeployment: (process.env.AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT || process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT || 'text-embedding-3-large').trim(),
+  }),
 }));
 
 // 2) Mock azure openai to avoid touching config indirectly
@@ -103,7 +110,7 @@ vi.mock('@/lib/logger', () => {
     debug: vi.fn(),
     auditEvent: vi.fn(),
   };
-  return { logger, logError: vi.fn(), default: logger };
+  return { logger, log: logger, logError: vi.fn(), default: logger };
 });
 
 // 5) Mock Application Insights SDK to prevent it from initializing in tests
