@@ -2082,6 +2082,33 @@ describe('qa-v2 transcript replays', () => {
     );
   });
 
+  it('replays a bare "yes, do that" after medical copay explanation into a grounded copay comparison', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'what is a copay?',
+          mustContain: ['A copay is the flat dollar amount you pay', 'compare AmeriVet\'s medical plans specifically on copays next'],
+          mustNotContain: ['We can stay with medical'],
+        },
+        {
+          user: 'yes, do that',
+          mustContain: ['copays and point-of-service cost sharing comparison', 'primary care', 'specialist'],
+          mustNotContain: ['We can stay with medical'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'Medical',
+        coverageTierLock: 'Employee Only',
+        lastBotMessage: 'Medical plan options (Employee Only):',
+      }),
+    );
+  });
+
   it('replays a stale hsa/fsa detour back into medical compare and a fresh heavy-usage recommendation', async () => {
     await replayTranscript(
       [

@@ -2315,6 +2315,33 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
     ],
   },
   {
+    id: 'V2-TX-075B',
+    category: 'medical_term_invite_followthrough',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee Only',
+      lastBotMessage: 'Medical plan options (Employee Only):',
+    },
+    turns: [
+      {
+        user: 'what is a copay?',
+        mustContain: ['A copay is the flat dollar amount you pay', 'compare AmeriVet\'s medical plans specifically on copays next'],
+        mustNotContain: ['We can stay with medical'],
+      },
+      {
+        user: 'yes, do that',
+        mustContain: ['copays and point-of-service cost sharing comparison', 'primary care', 'specialist'],
+        mustNotContain: ['We can stay with medical'],
+      },
+    ],
+  },
+  {
     id: 'V2-TX-076',
     category: 'supplemental_narrowing_across_topics',
     initialSession: {

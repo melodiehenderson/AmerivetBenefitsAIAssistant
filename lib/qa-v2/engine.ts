@@ -1082,6 +1082,45 @@ function buildMedicalPremiumReplayReply(session: Session, query: string): string
   return lines.join('\n');
 }
 
+function medicalInviteFollowupQuery(lastBotMessage: string): string | null {
+  const followups: Array<{ pattern: RegExp; query: string }> = [
+    {
+      pattern: /compare AmeriVet's medical plans specifically on copays next/i,
+      query: 'compare copays across the medical plans',
+    },
+    {
+      pattern: /compare the AmeriVet medical plans on coinsurance next/i,
+      query: 'compare coinsurance across the medical plans',
+    },
+    {
+      pattern: /compare the AmeriVet plans specifically on deductible versus out-of-pocket max/i,
+      query: 'compare the deductible and out-of-pocket max across the medical plans',
+    },
+    {
+      pattern: /compare AmeriVet's plans specifically on primary care visit costs next/i,
+      query: 'compare primary care visit costs across the medical plans',
+    },
+    {
+      pattern: /compare AmeriVet's plans specifically on specialist visit costs next/i,
+      query: 'compare specialist visit costs across the medical plans',
+    },
+    {
+      pattern: /compare AmeriVet's plans specifically on urgent-care cost sharing next/i,
+      query: 'compare urgent care costs across the medical plans',
+    },
+    {
+      pattern: /compare AmeriVet's plans specifically on emergency-room cost sharing next/i,
+      query: 'compare emergency room costs across the medical plans',
+    },
+    {
+      pattern: /compare AmeriVet's medical plans specifically on in-network versus out-of-network rules/i,
+      query: 'compare in-network versus out-of-network rules across the medical plans',
+    },
+  ];
+
+  return followups.find(({ pattern }) => pattern.test(lastBotMessage))?.query || null;
+}
+
 function countSupplementalTopicsMentioned(query: string): number {
   const lower = query.toLowerCase();
   let count = 0;
@@ -3275,6 +3314,13 @@ function buildContinuationReply(session: Session, query: string): string | null 
     && (isSimpleAffirmation(normalizedQuery) || isAffirmativeCompareFollowup(normalizedQuery))
   ) {
     return buildTopicReply(session, 'Medical', 'compare the deductible and out-of-pocket max across the medical plans');
+  }
+
+  if (activeTopic === 'Medical' && (isSimpleAffirmation(normalizedQuery) || isAffirmativeCompareFollowup(normalizedQuery))) {
+    const followupQuery = medicalInviteFollowupQuery(lastBotMessage);
+    if (followupQuery) {
+      return buildTopicReply(session, 'Medical', followupQuery);
+    }
   }
 
   if (

@@ -3691,6 +3691,35 @@ describe('qa-v2 engine', () => {
     expect(result.answer).not.toContain('We can stay with medical');
   });
 
+  it('supports a bare "yes, do that" after a medical term explanation offers a copay comparison next', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee Only',
+      lastBotMessage: 'Medical plan options (Employee Only):',
+    });
+
+    await runQaV2Engine({
+      query: 'what is a copay?',
+      session,
+    });
+
+    const result = await runQaV2Engine({
+      query: 'yes, do that',
+      session,
+    });
+
+    expect(result.answer).toContain('copays and point-of-service cost sharing comparison');
+    expect(result.answer).toContain('primary care');
+    expect(result.answer).toContain('specialist');
+    expect(result.answer).not.toContain('We can stay with medical');
+  });
+
   it('answers direct coverage-tier questions instead of replaying generic medical scaffolding', async () => {
     const session = makeSession({
       step: 'active_chat',
