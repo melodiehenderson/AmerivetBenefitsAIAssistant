@@ -2124,6 +2124,28 @@ describe('qa-v2 transcript replays', () => {
     );
   });
 
+  it('replays household-only medical corrections as a refreshed tiered medical view instead of generic scaffolding', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'oh okay, no i have 2 kids',
+          mustContain: ['updated the household to **Employee + Child(ren)** coverage', 'Medical plan options (Employee + Child(ren))'],
+          mustNotContain: ['We can stay with medical'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'Medical',
+        coverageTierLock: 'Employee Only',
+        lastBotMessage: 'A coverage tier is the level of people you are enrolling.',
+      }),
+    );
+  });
+
   it('replays life-versus-disability and multi-supplement narrowing as comparison guidance instead of stale topic cards', async () => {
     await replayTranscript(
       [

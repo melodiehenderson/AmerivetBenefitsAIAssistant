@@ -3721,4 +3721,30 @@ describe('qa-v2 engine', () => {
     expect(session.coverageTierLock).toBe('Employee + Child(ren)');
     expect(session.familyDetails).toEqual({ hasSpouse: false, numChildren: 2 });
   });
+
+  it('refreshes the medical view when the user corrects the household without asking a second medical question', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee Only',
+      familyDetails: {},
+      lastBotMessage: 'A coverage tier is the level of people you are enrolling.',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'oh okay, no i have 2 kids',
+      session,
+    });
+
+    expect(result.answer).toContain('updated the household to **Employee + Child(ren)** coverage');
+    expect(result.answer).toContain('Medical plan options (Employee + Child(ren))');
+    expect(result.answer).not.toContain('We can stay with medical');
+    expect(session.coverageTierLock).toBe('Employee + Child(ren)');
+    expect(session.familyDetails).toEqual({ numChildren: 2 });
+  });
 });

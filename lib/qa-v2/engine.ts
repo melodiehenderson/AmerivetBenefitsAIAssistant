@@ -2251,6 +2251,48 @@ function isStateOnlyMessage(query: string): boolean {
   return Boolean(extractState(query)) && !extractAge(query) && !benefitTopicFromQuery(query);
 }
 
+function householdSnapshot(details?: Session['familyDetails'] | null) {
+  return {
+    hasSpouse: Boolean(details?.hasSpouse),
+    numChildren: details?.numChildren || 0,
+  };
+}
+
+function householdChanged(
+  priorDetails: Session['familyDetails'] | null | undefined,
+  currentDetails: Session['familyDetails'] | null | undefined,
+): boolean {
+  const prior = householdSnapshot(priorDetails);
+  const current = householdSnapshot(currentDetails);
+  return prior.hasSpouse !== current.hasSpouse || prior.numChildren !== current.numChildren;
+}
+
+function coverageTierFromHousehold(details?: Session['familyDetails'] | null): string | null {
+  if (!details) return null;
+  const hasSpouse = Boolean(details?.hasSpouse);
+  const numChildren = details?.numChildren || 0;
+
+  if (hasSpouse && numChildren > 0) return 'Employee + Family';
+  if (hasSpouse) return 'Employee + Spouse';
+  if (numChildren > 0) return 'Employee + Child(ren)';
+  return 'Employee Only';
+}
+
+function isHouseholdOnlyMessage(query: string): boolean {
+  const trimmed = query.trim();
+  const lower = stripAffirmationLeadIn(trimmed).toLowerCase();
+  if (!/\b(spouse|wife|husband|partner|kids?|children|family|household|dependents?)\b/i.test(lower)) return false;
+  if (extractAge(query) || extractState(query) || benefitTopicFromQuery(query)) return false;
+  if (isCostModelRequest(query) || isMedicalPremiumReplayQuestion(query) || isMedicalCoverageTierQuestion(query)) return false;
+  if (/\b(show|compare|which|what\s+are|what\s+would|recommend|best|cost|costs|pricing|premium|premiums|plan|plans|medical|vision|dental|life|disability|hsa|fsa)\b/i.test(lower)) return false;
+  if (/\?|^(what|which|should|would|could|can|do|does|did|is|are|am)\b|\bwhat\s+about\b|\bwhat\s+if\b|\bfor\s+my\b|\bfor\s+our\b|\b(?:kids?|spouse|family)\s+then\b|\bmostly\s+care\b/i.test(trimmed)) {
+    return false;
+  }
+
+  return /^(?:i\s+have|we\s+have|it'?s|it\s+is|just\s+me|me\s+and|only\s+me|my\s+household|our\s+household|my\s+family|our\s+family|no\s+(?:kids?|children|spouse|partner|dependents?))\b/i.test(lower)
+    || /\b(?:now|not\s+anymore|instead|turned\s+out)\b/i.test(lower);
+}
+
 function buildStateOnlyReply(session: Session, priorState: string | null | undefined, query: string): string | null {
   const extractedState = extractState(query);
   if (!extractedState || extractAge(query) || benefitTopicFromQuery(query)) return null;
@@ -2275,6 +2317,32 @@ function buildStateOnlyReply(session: Session, priorState: string | null | undef
   }
 
   return `Thanks — I’ve updated your state to ${extractedState}.\n\n${buildBenefitsLineupPrompt(session)}`;
+}
+
+function buildHouseholdOnlyReply(
+  session: Session,
+  priorDetails: Session['familyDetails'] | null | undefined,
+  priorCoverageTier: string | null | undefined,
+  query: string,
+): string | null {
+  if (!isHouseholdOnlyMessage(query)) return null;
+  const priorTier = coverageTierFromHousehold(priorDetails) || priorCoverageTier || null;
+  const refreshedTier = coverageTierFromHousehold(session.familyDetails)
+    || getCoverageTierForQuery(query, session)
+    || priorCoverageTier
+    || 'Employee Only';
+  if (!householdChanged(priorDetails, session.familyDetails) && priorTier === refreshedTier) return null;
+
+  session.coverageTierLock = refreshedTier;
+  if (session.currentTopic === 'Medical') {
+    return `Thanks — I’ve updated the household to **${refreshedTier}** coverage. Here’s the refreshed medical view:\n\n${buildTopicReply(session, 'Medical', 'medical options')}`;
+  }
+
+  if (session.currentTopic) {
+    return `Thanks — I’ve updated the household to **${refreshedTier}** coverage. I’ll use that tier for the ${session.currentTopic.toLowerCase()} guidance going forward.`;
+  }
+
+  return `Thanks — I’ve updated the household to **${refreshedTier}** coverage.\n\n${buildBenefitsLineupPrompt(session)}`;
 }
 
 function hasDemographics(session: Session) {
@@ -3443,6 +3511,9 @@ export async function runQaV2Engine(params: {
   }
 
   session.messages.push({ role: 'user', content: query });
+  const priorState = session.userState || null;
+  const priorFamilyDetails = session.familyDetails ? { ...session.familyDetails } : null;
+  const priorCoverageTier = session.coverageTierLock || null;
   refreshSessionSignals(session, query);
 
   const profileCorrectionReply = buildProfileCorrectionReply(session, query);
@@ -3452,7 +3523,6 @@ export async function runQaV2Engine(params: {
     return { answer: profileCorrectionReply, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'profile-correction-v2' } };
   }
 
-  const priorState = session.userState || null;
   if (!session.userName && query.trim() && !extractAge(query) && !extractState(query) && !benefitTopicFromQuery(query)) {
     session.userName = query.trim().split(/\s+/)[0].replace(/[^A-Za-z'-]/g, '') || 'there';
     session.hasCollectedName = true;
@@ -3471,6 +3541,15 @@ export async function runQaV2Engine(params: {
       session.lastBotMessage = stateOnlyReply;
       session.messages.push({ role: 'assistant', content: stateOnlyReply });
       return { answer: stateOnlyReply, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'state-only-v2' } };
+    }
+  }
+
+  if (isHouseholdOnlyMessage(query) && hasDemographics(session)) {
+    const householdOnlyReply = buildHouseholdOnlyReply(session, priorFamilyDetails, priorCoverageTier, query);
+    if (householdOnlyReply) {
+      session.lastBotMessage = householdOnlyReply;
+      session.messages.push({ role: 'assistant', content: householdOnlyReply });
+      return { answer: householdOnlyReply, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'household-only-v2', topic: session.currentTopic || null } };
     }
   }
 

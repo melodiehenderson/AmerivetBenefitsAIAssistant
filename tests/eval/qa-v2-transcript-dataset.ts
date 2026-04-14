@@ -2633,6 +2633,28 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
     ],
   },
   {
+    id: 'V2-TX-079B',
+    category: 'household_only_medical_correction_refreshes_view',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee Only',
+      lastBotMessage: 'A coverage tier is the level of people you are enrolling.',
+    },
+    turns: [
+      {
+        user: 'oh okay, no i have 2 kids',
+        mustContain: ['updated the household to **Employee + Child(ren)** coverage', 'Medical plan options (Employee + Child(ren))'],
+        mustNotContain: ['We can stay with medical'],
+      },
+    ],
+  },
+  {
     id: 'V2-TX-080',
     category: 'name_correction_onboarding_continuity',
     initialSession: {
