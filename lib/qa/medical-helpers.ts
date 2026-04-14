@@ -23,7 +23,7 @@ function getUserConversationText(session: Session): string {
     .join('\n');
 }
 
-function sessionHasPregnancySignal(session: Session, query: string): boolean {
+export function sessionHasPregnancySignal(session: Session, query: string): boolean {
   const conversation = `${getUserConversationText(session)}\n${query.toLowerCase()}`;
   return /\b(pregnan|expecting|having\s+a\s+baby|maternity|prenatal|postnatal|delivery|birth)\b/i.test(conversation)
     || (session.lifeEvents || []).includes('pregnancy');

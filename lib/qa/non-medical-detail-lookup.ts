@@ -13,13 +13,16 @@ function getLifePlans() {
 export function isNonMedicalDetailQuestion(topic: string, query: string): boolean {
   if (!topic || !query) return false;
   const lower = query.toLowerCase();
+  const costQuestion = /\b(how\s+much|cost|costs|price|prices|rate|rates|premium|premiums)\b/i.test(lower);
 
   if (topic === 'Life Insurance') {
-    return /\b(portable|guaranteed issue|cash value|whole life|term life|basic life|voluntary life|age[- ]banded|rates? locked|coverage amount|how much life insurance|how much can i get|1x|5x salary|spouse coverage|partner coverage|dependent child coverage|family coverage|cover my spouse|cover my partner|cover my wife|cover my husband|cover my family|cover my kids|cover my children|cover my dependents)\b/i.test(lower);
+    return /\b(portable|guaranteed issue|cash value|whole life|term life|basic life|voluntary life|age[- ]banded|rates? locked|coverage amount|how much life insurance|how much can i get|1x|5x salary|spouse coverage|partner coverage|dependent child coverage|family coverage|cover my spouse|cover my partner|cover my wife|cover my husband|cover my family|cover my kids|cover my children|cover my dependents)\b/i.test(lower)
+      || costQuestion;
   }
 
   if (topic === 'Disability') {
-    return /\b(short[- ]term\s+disability|long[- ]term\s+disability|std|ltd|waiting periods?|percentages?|maximum benefits?|max benefits?|paycheck|income protection|how does disability work)\b/i.test(lower);
+    return /\b(short[- ]term\s+disability|long[- ]term\s+disability|std|ltd|waiting periods?|percentages?|maximum benefits?|max benefits?|paycheck|income protection|how does disability work)\b/i.test(lower)
+      || costQuestion;
   }
 
   if (topic === 'Critical Illness') {
@@ -36,6 +39,21 @@ export function isNonMedicalDetailQuestion(topic: string, query: string): boolea
 export function buildNonMedicalDetailAnswer(topic: string, query: string, _session: Session): string | null {
   const lower = query.toLowerCase();
   const { basic, term, whole } = getLifePlans();
+  const costQuestion = /\b(how\s+much|cost|costs|price|prices|rate|rates|premium|premiums)\b/i.test(lower);
+  const asksAboutLife = /\b(life(?:\s+insurance)?|term life|whole life|basic life|voluntary life)\b/i.test(lower);
+  const asksAboutDisability = /\b(disability|short[- ]term|long[- ]term|std|ltd)\b/i.test(lower);
+
+  if (costQuestion && asksAboutLife && asksAboutDisability) {
+    return [
+      `At a high level:`,
+      `- **Basic Life & AD&D** is employer-paid, so that base layer does not add an employee premium`,
+      `- **Voluntary Term Life** is employee-paid and age-banded, so the exact cost depends on your age and election amount in Workday`,
+      `- **Whole Life** is employee-paid, with rates locked at your enrollment age`,
+      `- **Disability** is also an employee-paid optional benefit, and the current AmeriVet summary does not list the exact premium inline`,
+      ``,
+      `So I can tell you which pieces are employer-paid versus employee-paid, but for the exact combined premium for life plus disability, the right source is Workday.`,
+    ].join('\n');
+  }
 
   if (topic === 'Life Insurance') {
     if (/\b(portable|portability)\b/i.test(lower)) {
@@ -102,6 +120,18 @@ export function buildNonMedicalDetailAnswer(topic: string, query: string, _sessi
       ].join('\n');
     }
 
+    if (costQuestion) {
+      return [
+        `For life-insurance cost, the practical split is:`,
+        ``,
+        `- **${basic?.name || 'Basic Life & AD&D'}** is employer-paid, so that base life benefit does not add an employee premium`,
+        `- **${term?.name || 'Voluntary Term Life'}** is employee-paid and age-banded, so the exact price depends on your age and how much coverage you elect in Workday`,
+        `- **${whole?.name || 'Whole Life'}** is also employee-paid, and its rates are described as locked at your enrollment age`,
+        ``,
+        `So I can tell you the structure confidently, but for your exact life-insurance premium, Workday is the right source.`,
+      ].join('\n');
+    }
+
     if (/\b(whole life|term life|basic life|voluntary life|difference|versus|vs\.?)\b/i.test(lower)) {
       return [
         `Here is the practical difference across AmeriVet's life insurance options:`,
@@ -116,6 +146,19 @@ export function buildNonMedicalDetailAnswer(topic: string, query: string, _sessi
   }
 
   if (topic === 'Disability') {
+    if (costQuestion) {
+      return [
+        `For disability cost, the current AmeriVet summary does **not** list the exact premium inline, so I do not want to guess.`,
+        ``,
+        `What I can say confidently is:`,
+        `- Disability is an optional employee-paid protection benefit`,
+        `- It is meant to protect part of your income if illness or injury keeps you from working`,
+        `- The exact rate and any payroll deduction are the details to confirm in Workday`,
+        ``,
+        `So the grounded answer is: disability does cost extra, but the exact premium needs to come from Workday rather than me inventing a number.`,
+      ].join('\n');
+    }
+
     if (/\b(short[- ]term(?:\s+disability)?|std)\b/i.test(lower) && /\b(long[- ]term(?:\s+disability)?|ltd)\b/i.test(lower)) {
       return [
         `Short-term disability and long-term disability are both income-protection benefits, but they solve different time horizons.`,

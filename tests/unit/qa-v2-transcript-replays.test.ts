@@ -258,7 +258,7 @@ describe('qa-v2 transcript replays', () => {
         },
         {
           user: 'what gives us the lowest out of pocket?',
-          mustContain: ['My recommendation: Enhanced HSA', 'lowest out-of-pocket exposure'],
+          mustContain: ['Kaiser Standard HMO', 'lowest likely maternity-related out-of-pocket exposure', 'Enhanced HSA'],
           mustNotContain: ['Quick clarifier'],
         },
         {
@@ -1646,6 +1646,65 @@ describe('qa-v2 transcript replays', () => {
         currentTopic: 'Vision',
         lifeEvents: ['pregnancy'],
         familyDetails: { hasSpouse: true },
+      }),
+    );
+  });
+
+  it('replays vision-only, enrollment, and human-support asks without stale vision scaffolding', async () => {
+    await replayTranscript(
+      [
+        {
+          user: "ok. i don't want dental. show me my vision options",
+          mustContain: ['Vision coverage: **VSP Vision Plus**'],
+          mustNotContain: ['Dental coverage: **BCBSTX Dental PPO**'],
+        },
+        {
+          user: 'where do i enroll?',
+          mustContain: ['Workday', '888-217-4728'],
+          mustNotContain: ['We can stay with vision'],
+        },
+        {
+          user: 'i need to talk to a real person',
+          mustContain: ['888-217-4728', 'Workday'],
+          mustNotContain: ['We can stay with vision'],
+        },
+      ],
+      makeSession({
+        userName: 'Madeline',
+        hasCollectedName: true,
+        userAge: 29,
+        userState: 'CO',
+        dataConfirmed: true,
+        currentTopic: 'Dental',
+      }),
+    );
+  });
+
+  it('replays direct HSA/FSA recommendation questions as concrete guidance instead of stale scaffolding', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'can you tell me about hsa/fsa?',
+          mustContain: ['Health Savings Account', 'Flexible Spending Account'],
+        },
+        {
+          user: 'which would you recommend for me?',
+          mustContain: ['simplest way to think about HSA versus FSA fit'],
+          mustNotContain: ['We can stay with HSA/FSA'],
+        },
+        {
+          user: 'so when does hsa fit better?',
+          mustContain: ['simplest way to think about HSA versus FSA fit'],
+          mustNotContain: ['We can stay with HSA/FSA'],
+        },
+      ],
+      makeSession({
+        userName: 'Madeline',
+        hasCollectedName: true,
+        userAge: 29,
+        userState: 'CO',
+        dataConfirmed: true,
+        currentTopic: 'HSA/FSA',
       }),
     );
   });

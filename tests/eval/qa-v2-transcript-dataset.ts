@@ -2090,7 +2090,7 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
       },
       {
         user: 'what gives us the lowest out of pocket?',
-        mustContain: ['My recommendation: Enhanced HSA', 'lowest out-of-pocket exposure'],
+        mustContain: ['Kaiser Standard HMO', 'lowest likely maternity-related out-of-pocket exposure', 'Enhanced HSA'],
         mustNotContain: ['Quick clarifier'],
       },
       {

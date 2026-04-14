@@ -19,12 +19,34 @@ function formatMonthlyPremium(monthly: number): string {
   return `$${monthly.toFixed(2)}/month`;
 }
 
+function isDeclinedRoutineTopic(queryLower: string, topic: 'dental' | 'vision'): boolean {
+  const topicPattern = topic === 'dental'
+    ? 'dental'
+    : '(?:vision|eye|glasses|contacts|lasik)';
+
+  return new RegExp(
+    `\\b(?:skip(?:ping)?|done\\s+with|not\\s+interested\\s+in|do\\s+not\\s+want|don'?t\\s+want|dont\\s+want|not\\s+getting|without|other\\s+than)\\b[^.?!]{0,40}\\b${topicPattern}\\b|\\b${topicPattern}\\b[^.?!]{0,40}\\b(?:skip(?:ping)?|done\\s+with|not\\s+interested|do\\s+not\\s+want|don'?t\\s+want|dont\\s+want|not\\s+getting)\\b`,
+    'i',
+  ).test(queryLower);
+}
+
 export function buildRoutineBenefitDetailAnswer(
   topic: 'Dental' | 'Vision',
   query: string,
   session: Session,
 ): string | null {
   const lower = query.toLowerCase();
+  const declinedDental = isDeclinedRoutineTopic(lower, 'dental');
+  const declinedVision = isDeclinedRoutineTopic(lower, 'vision');
+
+  if (topic === 'Dental' && declinedDental && /\b(vision|eye|glasses|contacts|lasik)\b/i.test(lower)) {
+    return null;
+  }
+
+  if (topic === 'Vision' && declinedVision && /\bdental\b/i.test(lower)) {
+    return null;
+  }
+
   const coverageTier = getCoverageTierForQuery(query, session);
   const tierKey = normalizeCoverageTierKey(coverageTier);
 

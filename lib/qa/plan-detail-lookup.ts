@@ -9,7 +9,7 @@ import {
   type BenefitPlan,
   type BenefitTier,
 } from '@/lib/data/amerivet';
-import { getCoverageTierForQuery, isKaiserEligibleState } from '@/lib/qa/medical-helpers';
+import { getCoverageTierForQuery, isKaiserEligibleState, sessionHasPregnancySignal } from '@/lib/qa/medical-helpers';
 import pricingUtils from '@/lib/rag/pricing-utils';
 
 function availableMedicalSummaries(session: Session): MedicalPlanSummary[] {
@@ -394,6 +394,134 @@ function buildCoverageComparisonAnswer(plans: MedicalPlanSummary[], coverageTier
   return lines.join('\n');
 }
 
+function buildAccumulatorComparisonAnswer(session: Session): string {
+  const plans = availableMedicalSummaries(session);
+  const standard = plans.find((plan) => plan.planKey === 'standard_hsa');
+  const enhanced = plans.find((plan) => plan.planKey === 'enhanced_hsa');
+  const kaiser = plans.find((plan) => plan.planKey === 'kaiser_standard_hmo');
+
+  if (kaiser && standard && enhanced) {
+    return [
+      `If you are comparing deductible and out-of-pocket guardrails only:`,
+      ``,
+      `- **${kaiser.displayName}** has the lowest deductible (${kaiser.deductible}) and the lowest out-of-pocket max (${kaiser.outOfPocketMax}) overall`,
+      `- Between the two HSA plans, **${enhanced.displayName}** is lower than **${standard.displayName}** on both deductible (${enhanced.deductible} vs ${standard.deductible}) and out-of-pocket max (${enhanced.outOfPocketMax} vs ${standard.outOfPocketMax})`,
+      ``,
+      `So the short answer is: **Kaiser Standard HMO** is lowest overall where available, and **Enhanced HSA** is the lower-exposure choice if you are comparing just the HSA options.`,
+    ].join('\n');
+  }
+
+  if (standard && enhanced) {
+    return [
+      `Between **${standard.displayName}** and **${enhanced.displayName}**, **${enhanced.displayName}** has the lower deductible (${enhanced.deductible} vs ${standard.deductible}) and the lower out-of-pocket max (${enhanced.outOfPocketMax} vs ${standard.outOfPocketMax}).`,
+      ``,
+      `So if you are comparing those two on cost protection only, **Enhanced HSA** is the stronger-protection option while **Standard HSA** is the lower-premium option.`,
+    ].join('\n');
+  }
+
+  return `I can compare deductible and out-of-pocket exposure across AmeriVet's medical plans, but I do not want to guess if I am missing one of the plans in the current summary.`;
+}
+
+function buildLowestOutOfPocketAnswer(queryLower: string, session: Session): string {
+  const plans = availableMedicalSummaries(session);
+  const standard = plans.find((plan) => plan.planKey === 'standard_hsa');
+  const enhanced = plans.find((plan) => plan.planKey === 'enhanced_hsa');
+  const kaiser = plans.find((plan) => plan.planKey === 'kaiser_standard_hmo');
+  const assistantMaternityContext = [
+    session.lastBotMessage || '',
+    ...(session.messages || [])
+      .filter((message) => message.role === 'assistant')
+      .map((message) => message.content || ''),
+  ].join('\n');
+  const pregnancySignal = sessionHasPregnancySignal(session, queryLower)
+    || /\b(maternity\s+coverage\s+comparison|pregnancy\s+is\s+already\s+expected|maternity\s+cost\s+comparison|prenatal|postnatal|delivery)\b/i.test(assistantMaternityContext);
+
+  if (pregnancySignal && kaiser && session.userState && isKaiserEligibleState(session.userState)) {
+    return [
+      `If your goal is the **lowest likely maternity-related out-of-pocket exposure** and Kaiser is available in ${session.userState}, I would look at **${kaiser.displayName}** first.`,
+      ``,
+      enhanced && standard
+        ? `Between the two HSA plans, **${enhanced.displayName}** is still lower than **${standard.displayName}** on both deductible and out-of-pocket max.`
+        : `Among the HSA options, the lower-deductible / lower-out-of-pocket path is still the stronger-protection one.`,
+      ``,
+      `So yes: the lower out-of-pocket logic points away from **Standard HSA**, but in this pregnancy scenario **Kaiser Standard HMO** is the strongest overall starting point where it is available.`,
+    ].join('\n');
+  }
+
+  if (kaiser && session.userState && isKaiserEligibleState(session.userState)) {
+    return [
+      `Across all of the medical plans available in ${session.userState}, **${kaiser.displayName}** has the lowest deductible and the lowest out-of-pocket max overall.`,
+      ``,
+      enhanced && standard
+        ? `If you are comparing only the two HSA plans, **${enhanced.displayName}** is the lower out-of-pocket option because it has both the lower deductible and the lower out-of-pocket max compared with **${standard.displayName}**.`
+        : `If you are comparing only the HSA options, the lower-deductible HSA is the one with the stronger cost protection.`,
+    ].join('\n');
+  }
+
+  if (enhanced && standard) {
+    return [
+      `Yes — if you are comparing **${standard.displayName}** versus **${enhanced.displayName}**, **${enhanced.displayName}** is the lower out-of-pocket option.`,
+      ``,
+      `That is because it has both the lower deductible (${enhanced.deductible} vs ${standard.deductible}) and the lower out-of-pocket max (${enhanced.outOfPocketMax} vs ${standard.outOfPocketMax}).`,
+      ``,
+      `The tradeoff is that **${standard.displayName}** usually keeps the monthly premium lower.`,
+    ].join('\n');
+  }
+
+  return `I can answer lowest out-of-pocket questions from the current AmeriVet plan summaries, but I do not want to guess if I am missing one of the medical options.`;
+}
+
+function buildLowestOopConfirmationAnswer(queryLower: string, session: Session): string | null {
+  const plans = availableMedicalSummaries(session);
+  const standard = plans.find((plan) => plan.planKey === 'standard_hsa');
+  const enhanced = plans.find((plan) => plan.planKey === 'enhanced_hsa');
+  const kaiser = plans.find((plan) => plan.planKey === 'kaiser_standard_hmo');
+  const asksAboutEnhanced = /\benhanced\b/i.test(queryLower);
+  const asksAboutStandard = /\bstandard\b/i.test(queryLower);
+  const asksAboutKaiser = /\bkaiser\b/i.test(queryLower);
+  const asksForConfirmation = /\b(yes|right|correct|should\s+i|so\s+if|because|am\s+i\s+right|is\s+that\s+right)\b/i.test(queryLower);
+  const asksAboutLowerOop = /\b(out[- ]of[- ]pocket|oop)\b/i.test(queryLower)
+    && /\b(lower|lowest)\b/i.test(queryLower);
+
+  if (!asksForConfirmation || !asksAboutLowerOop || !standard || !enhanced) {
+    return null;
+  }
+
+  if (asksAboutEnhanced && !asksAboutKaiser) {
+    if (kaiser && session.userState && isKaiserEligibleState(session.userState)) {
+      return [
+        `If you are comparing just the two HSA plans, **yes** — **${enhanced.displayName}** is the lower out-of-pocket choice because it has the lower deductible (${enhanced.deductible}) and the lower out-of-pocket max (${enhanced.outOfPocketMax}) compared with **${standard.displayName}**.`,
+        ``,
+        `Across all of the medical plans available in ${session.userState}, **${kaiser.displayName}** is still lower overall on deductible and out-of-pocket max.`,
+        ``,
+        `So the short answer is: **yes for the HSA comparison, but Kaiser is the overall lower-exposure option where available**.`,
+      ].join('\n');
+    }
+
+    return [
+      `**Yes** — if you are comparing **${enhanced.displayName}** versus **${standard.displayName}**, **${enhanced.displayName}** is the lower out-of-pocket choice.`,
+      ``,
+      `That is because **${enhanced.displayName}** has both the lower deductible (${enhanced.deductible}) and the lower out-of-pocket max (${enhanced.outOfPocketMax}) compared with **${standard.displayName}** (${standard.deductible} deductible / ${standard.outOfPocketMax} out-of-pocket max).`,
+      ``,
+      `The tradeoff is that **${standard.displayName}** usually keeps the monthly premium lower.`,
+    ].join('\n');
+  }
+
+  if (asksAboutKaiser && kaiser && session.userState && isKaiserEligibleState(session.userState)) {
+    return [
+      `**Yes** — in ${session.userState}, **${kaiser.displayName}** is the lowest out-of-pocket option overall.`,
+      ``,
+      `It has the lowest deductible (${kaiser.deductible}) and the lowest out-of-pocket max (${kaiser.outOfPocketMax}) among the medical plans available there.`,
+      ``,
+      enhanced && standard
+        ? `If you are comparing only the HSA plans, **${enhanced.displayName}** is still lower than **${standard.displayName}**.`
+        : `If you want, I can also compare the remaining HSA options directly.`,
+    ].join('\n');
+  }
+
+  return null;
+}
+
 export function buildMedicalPlanDetailAnswer(query: string, session: Session): string | null {
   const queryLower = query.toLowerCase();
   const summaries = availableMedicalSummaries(session);
@@ -449,6 +577,27 @@ export function buildMedicalPlanDetailAnswer(query: string, session: Session): s
 
   if (/\b(compare(?:\s+the)?\s+plan\s+tradeoffs?|plan\s+tradeoffs?|tradeoffs?|differences?\s+between\s+the\s+plans|compare\s+the\s+plans)\b/i.test(queryLower)) {
     return buildTradeoffComparison(query, session);
+  }
+
+  if (
+    /\b(which\s+one\s+has\s+the\s+lower|which\s+plan\s+has\s+the\s+lower|lower)\b/i.test(queryLower)
+    && /\bdeductible\b/i.test(queryLower)
+    && /\b(out[- ]of[- ]pocket|oop)\b/i.test(queryLower)
+    && plansFromQuery.length !== 1
+  ) {
+    return buildAccumulatorComparisonAnswer(session);
+  }
+
+  const lowestOopConfirmation = buildLowestOopConfirmationAnswer(queryLower, session);
+  if (lowestOopConfirmation) {
+    return lowestOopConfirmation;
+  }
+
+  if (
+    /\b(lowest\s+out[- ]of[- ]pocket|lowest\s+oop|lower\s+out[- ]of[- ]pocket|lower\s+oop)\b/i.test(queryLower)
+    && plansFromQuery.length !== 1
+  ) {
+    return buildLowestOutOfPocketAnswer(queryLower, session);
   }
 
   if (/\b(my wife is pregnant|i'?m pregnant|we(?:'re| are) expecting)\b/i.test(queryLower) && plansFromQuery.length !== 1) {

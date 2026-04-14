@@ -12,6 +12,7 @@ import { buildMedicalPlanDetailAnswer } from '@/lib/qa/plan-detail-lookup';
 import { buildRoutineBenefitDetailAnswer, isRoutineBenefitDetailQuestion } from '@/lib/qa/routine-benefit-detail-lookup';
 import { buildNonMedicalDetailAnswer, isNonMedicalDetailQuestion } from '@/lib/qa/non-medical-detail-lookup';
 import {
+  checkL1FAQ,
   detectExplicitStateCorrection,
   isOtherChoicesMessage,
   isPackageGuidanceMessage,
@@ -20,6 +21,7 @@ import {
   shouldUseCategoryExplorationIntercept,
   stripAffirmationLeadIn,
 } from '@/lib/qa/routing-helpers';
+import { buildLiveSupportMessage } from '@/lib/qa/policy-response-builders';
 
 const ENROLLMENT_PORTAL_URL = process.env.ENROLLMENT_PORTAL_URL || 'https://wd5.myworkday.com/amerivet/login.html';
 const HR_PHONE = process.env.HR_PHONE_NUMBER || '888-217-4728';
@@ -43,6 +45,14 @@ function isMedicalDetailQuestion(query: string): boolean {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
   return /\b(coverage\s+tier|coverage\s+tiers|copay|copays|coinsurance|deductible|out[- ]of[- ]pocket|oop\s*max|primary\s+care|pcp|specialist|urgent\s+care|emergency\s+room|er|network|in[- ]network|out[- ]of[- ]network|ppo|hmo|prescriptions?|drugs?|generic|brand|specialty|maternity|pregnan\w*|delivery|prenatal|postnatal|therapy|physical\s+therapy|virtual\s+visits?|telehealth(?:\s+visits?)?|telemedicine|tradeoffs?|differences?\s+between\s+the\s+plans|compare\s+the\s+plans|compare\s+the\s+plan\s+tradeoffs?)\b/i.test(lower)
     || (/\b(cost|costs|what\s+would\s+i\s+pay|what\s+are\s+my\s+costs|if\s+i\s+use)\b/i.test(lower) && /\b(standard|standard hsa|enhanced|enhanced hsa|kaiser|kaiser hmo)\b/i.test(lower));
+}
+
+function isMedicalAccumulatorComparisonQuestion(query: string): boolean {
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  return (
+    /\b(deductible)\b/i.test(lower)
+    && /\b(out[- ]of[- ]pocket|oop)\b/i.test(lower)
+  ) || /\b(lowest\s+out[- ]of[- ]pocket|lowest\s+oop|lower\s+out[- ]of[- ]pocket|lower\s+oop)\b/i.test(lower);
 }
 
 function isAffirmativeCompareFollowup(query: string): boolean {
@@ -244,7 +254,7 @@ function buildSupplementalBenefitsOverviewReply(): string {
 
 function isDirectMedicalRecommendationQuestion(query: string): boolean {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
-  return /\b(which\s+plan\s+is\s+best|which\s+plan\s+is\s+better|best\s+(medical\s+)?plan|which\s+medical\s+plan|which\s+one\s+do\s+you\s+recommend|what\s+do\s+you\s+recommend\s+for\s+me|lowest\s+out[- ]of[- ]pocket|lowest\s+bills|best\s+choice\s+for\s+my\s+family|plan\s+is\s+best\s+for\s+my\s+family|best\s+for\s+my\s+family|better\s+for\s+me|better\s+for\s+us|which\s+plan\s+will\s+give\s+us\s+the\s+lowest|let'?s\s+talk\s+(?:thru|through)\s+which\s+plan\s+is\s+best|talk\s+me\s+through\s+which\s+plan\s+is\s+best)\b/i.test(lower);
+  return /\b(which\s+plan\s+is\s+best|which\s+plan\s+is\s+better|best\s+(medical\s+)?plan|which\s+medical\s+plan|which\s+one\s+do\s+you\s+recommend|what\s+do\s+you\s+recommend\s+for\s+me|which\s+one\s+do\s+i\s+pick|which\s+one\s+should\s+i\s+pick|what\s+should\s+i\s+pick|which\s+option\s+should\s+i\s+pick|which\s+one\s+would\s+you\s+pick|which\s+plan\s+is\s+right\s+for\s+me|lowest\s+out[- ]of[- ]pocket|lowest\s+oop|lowest\s+bills|best\s+choice\s+for\s+my\s+family|plan\s+is\s+best\s+for\s+my\s+family|best\s+for\s+my\s+family|better\s+for\s+me|better\s+for\s+us|which\s+plan\s+will\s+give\s+us\s+the\s+lowest|let'?s\s+talk\s+(?:thru|through)\s+which\s+plan\s+is\s+best|talk\s+me\s+through\s+which\s+plan\s+is\s+best)\b/i.test(lower);
 }
 
 function isLifeFamilyCoverageQuestion(query: string): boolean {
@@ -271,7 +281,19 @@ function normalizeContinuationQuery(query: string): string {
 
 function isTopicOverviewQuestion(query: string): boolean {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
-  return /\b(what'?s\s+available|what\s+is\s+available|what\s+are\s+my\s+options|what\s+are\s+the\s+options|what\s+options\s+do\s+i\s+have|what\s+do\s+i\s+have|show\s+me\s+(?:my\s+)?options|show\s+me\s+what'?s\s+available|available\s+to\s+me|what\s+are\s+my\s+benefits|what\s+benefits?\s+do\s+i\s+have|life\s+insurance\s+info|medical\s+options|medical\s+plan\s+options|what\s+are\s+my\s+other\s+benefit\s+options|go\s+through\s+all\s+my\s+options|top\s+to\s+bottom|all\s+my\s+options)\b/i.test(lower);
+  return /\b(what'?s\s+available|what\s+is\s+available|what\s+are\s+my\s+options|what\s+are\s+the\s+options|what\s+options\s+do\s+i\s+have|what\s+do\s+i\s+have|show\s+me\s+(?:my\s+)?options|show\s+me\s+what'?s\s+available|available\s+to\s+me|what\s+are\s+my\s+benefits|what\s+benefits?\s+do\s+i\s+have|life\s+insurance\s+info|medical\s+options|medical\s+plan\s+options|what\s+are\s+my\s+other\s+benefit\s+options|go\s+through\s+all\s+my\s+options|top\s+to\s+bottom|all\s+my\s+options)\b/i.test(lower)
+    || /\b(let'?s\s+(?:look\s+at|do)|move\s+on\s+to|move\s+to|look\s+at)\s+(?:my\s+)?(?:medical|health|dental|vision|life(?:\s+insurance)?|disability|critical(?:\s+illness)?|accident(?:\/ad&d)?|ad&d|hsa|fsa|benefits?)\b/i.test(lower);
+}
+
+function isDeclinedRoutineTopic(queryLower: string, topic: 'dental' | 'vision'): boolean {
+  const topicPattern = topic === 'dental'
+    ? 'dental'
+    : '(?:vision|eye|glasses|contacts|lasik)';
+
+  return new RegExp(
+    `\\b(?:skip(?:ping)?|done\\s+with|not\\s+interested\\s+in|do\\s+not\\s+want|don'?t\\s+want|dont\\s+want|not\\s+getting|without|other\\s+than)\\b[^.?!]{0,40}\\b${topicPattern}\\b|\\b${topicPattern}\\b[^.?!]{0,40}\\b(?:skip(?:ping)?|done\\s+with|not\\s+interested|do\\s+not\\s+want|don'?t\\s+want|dont\\s+want|not\\s+getting)\\b`,
+    'i',
+  ).test(queryLower);
 }
 
 function isShortTopicPivot(query: string, topic: string): boolean {
@@ -316,10 +338,10 @@ function canonicalTopicQuery(topic: string, query: string): string {
 function preferredTopicOverride(query: string): string | null {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
 
-  if (/\b(skip(?:ping)?|done\s+with|not\s+interested\s+in)\s+dental\b/i.test(lower) && /\bvision\b/i.test(lower)) {
+  if (isDeclinedRoutineTopic(lower, 'dental') && /\b(vision|eye|glasses|contacts|lasik)\b/i.test(lower)) {
     return 'Vision';
   }
-  if (/\b(skip(?:ping)?|done\s+with|not\s+interested\s+in)\s+vision\b/i.test(lower) && /\bdental\b/i.test(lower)) {
+  if (isDeclinedRoutineTopic(lower, 'vision') && /\bdental\b/i.test(lower)) {
     return 'Dental';
   }
   if (/\bsupplemental protections?\b|\bsupplemental options?\b/i.test(lower)) {
@@ -453,7 +475,7 @@ function buildHsaFsaCompatibilityReply(query: string): string {
 
 function isDirectHsaFsaFitQuestion(query: string): boolean {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
-  return /\b(which\s+one\s+is\s+better|which\s+one\s+is\s+best|better\s+fit|best\s+fit|which\s+one\s+fits|should\s+i\s+get|should\s+i\s+use|is\s+it\s+worth\s+it|worth\s+it|worth\s+using)\b/i.test(lower);
+  return /\b(which\s+one\s+is\s+better|which\s+one\s+is\s+best|better\s+fit|best\s+fit|which\s+one\s+fits|which\s+would\s+you\s+recommend|what\s+would\s+you\s+recommend|which\s+do\s+you\s+recommend|recommend\s+(?:for|to)\s+me|when\s+does\s+hsa\s+fit\s+better|when\s+does\s+fsa\s+fit\s+better|when\s+is\s+hsa\s+better|when\s+is\s+fsa\s+better|should\s+i\s+get|should\s+i\s+use|is\s+it\s+worth\s+it|worth\s+it|worth\s+using)\b/i.test(lower);
 }
 
 function buildHsaFsaPracticalFitReply(session: Session, query: string): string | null {
@@ -1137,17 +1159,35 @@ function lastMessageHasSupplementalFitSetup(lastBotMessage?: string | null): boo
 
 function benefitTopicFromQuery(query: string): string | null {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  const declinedDental = isDeclinedRoutineTopic(lower, 'dental');
+  const declinedVision = isDeclinedRoutineTopic(lower, 'vision');
   if (/\b(all\s+benefits|benefits\s+overview|what\s+are\s+all\s+the\s+benefits|what\s+benefits\s+do\s+i\s+have|other\s+types?\s+of\s+coverage|what\s+other\s+coverage|other\s+coverage\s+available|what\s+else\s+is\s+available)\b/i.test(lower)) return 'Benefits Overview';
   if (/\b(life(?:\s+insurance)?|term\s+life|whole\s+life|basic\s+life)\b/i.test(lower)) return 'Life Insurance';
   if (/\b(disability|std|ltd|short[- ]?term|long[- ]?term)\b/i.test(lower)) return 'Disability';
   if (/\bcritical(?:\s+illness)?\b/i.test(lower)) return 'Critical Illness';
   if (/\b(accident|ad&d|ad\/d)\b/i.test(lower)) return 'Accident/AD&D';
   if (/\b(hsa(?:\s*\/\s*fsa)?|fsa)\b/i.test(lower)) return 'HSA/FSA';
-  if (/\bdental\b/i.test(lower)) return 'Dental';
-  if (/\b(vision|eye|glasses|contacts|lasik)\b/i.test(lower)) return 'Vision';
+  if (!declinedDental && /\bdental\b/i.test(lower)) return 'Dental';
+  if (!declinedVision && /\b(vision|eye|glasses|contacts|lasik)\b/i.test(lower)) return 'Vision';
   if (/\b(medical|health|hsa\s+plan|kaiser|hmo|ppo|standard\s+hsa|enhanced\s+hsa)\b/i.test(lower)) return 'Medical';
   if (/\b(coverage\s+tier|coverage\s+tiers|plan\s+tradeoffs?|tradeoffs?|maternity|pregnan\w*|prenatal|postnatal|delivery|prescriptions?|generic\s+rx|brand\s+rx|specialty\s+rx|in[- ]network|out[- ]of[- ]network|standard\s+plan|enhanced\s+plan|kaiser\s+plan)\b/i.test(lower)) return 'Medical';
   return null;
+}
+
+function isLiveSupportRequest(query: string): boolean {
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  return /\b(talk\s+to\s+(?:a\s+)?human|talk\s+to\s+(?:a\s+)?real\s+person|talk\s+to\s+someone|speak\s+with\s+someone|speak\s+to\s+someone|real\s+person|human\s+support|live\s+support|someone\s+directly|person\s+directly)\b/i.test(lower);
+}
+
+function buildDirectSupportReply(session: Session, query: string): string | null {
+  if (isLiveSupportRequest(query)) {
+    return buildLiveSupportMessage(session, HR_PHONE, ENROLLMENT_PORTAL_URL);
+  }
+
+  return checkL1FAQ(query, {
+    enrollmentPortalUrl: ENROLLMENT_PORTAL_URL,
+    hrPhone: HR_PHONE,
+  });
 }
 
 function inferTopicFromLastBotMessage(lastBotMessage?: string | null): string | null {
@@ -1401,6 +1441,10 @@ function buildTopicReply(session: Session, topic: string, query: string): string
         state: session.userState || undefined,
         age: session.userAge || undefined,
       });
+    }
+    if (isMedicalAccumulatorComparisonQuestion(query)) {
+      const detailedAnswer = buildMedicalPlanDetailAnswer(query, session);
+      if (detailedAnswer) return detailedAnswer;
     }
     if (isDirectMedicalRecommendationQuestion(query)) {
       const recommendation = buildRecommendationOverview(query, session);
@@ -2415,6 +2459,14 @@ export async function runQaV2Engine(params: {
   }
 
   refreshCoverageTierLock(session, query);
+
+  const directSupportReply = buildDirectSupportReply(session, query);
+  if (directSupportReply) {
+    clearPendingGuidance(session);
+    session.lastBotMessage = directSupportReply;
+    session.messages.push({ role: 'assistant', content: directSupportReply });
+    return { answer: directSupportReply, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'direct-support-v2', topic: session.currentTopic || null } };
+  }
 
   const standaloneFocus = detectBenefitPriorityFocus(query);
   if (standaloneFocus && !benefitTopicFromQuery(query) && /^(\s*(healthcare costs|family protection|routine care)\s*)$/i.test(query)) {

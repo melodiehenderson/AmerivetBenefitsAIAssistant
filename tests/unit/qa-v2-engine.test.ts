@@ -536,8 +536,9 @@ describe('qa-v2 engine', () => {
       session,
     });
 
-    expect(result.answer).toContain('My recommendation: Enhanced HSA');
-    expect(result.answer).toContain('lowest out-of-pocket exposure');
+    expect(result.answer).toContain('Kaiser Standard HMO');
+    expect(result.answer).toContain('lowest likely maternity-related out-of-pocket exposure');
+    expect(result.answer).toContain('Enhanced HSA');
     expect(result.answer).not.toContain('Quick clarifier');
   });
 
@@ -2804,5 +2805,225 @@ describe('qa-v2 engine', () => {
 
     expect(result.answer).toContain('We can stay with dental');
     expect(result.answer).not.toContain('medical, dental, vision, life, disability');
+  });
+
+  it('shows only vision when the user declines dental and asks for vision options', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Madeline',
+      hasCollectedName: true,
+      userAge: 29,
+      userState: 'CO',
+      dataConfirmed: true,
+      currentTopic: 'Dental',
+      lastBotMessage: 'Dental coverage: **BCBSTX Dental PPO**.',
+    });
+
+    const result = await runQaV2Engine({
+      query: "ok. i don't want dental. show me my vision options",
+      session,
+    });
+
+    expect(result.answer).toContain('Vision coverage: **VSP Vision Plus**');
+    expect(result.answer).not.toContain('Dental coverage: **BCBSTX Dental PPO**');
+  });
+
+  it('answers where-to-enroll questions directly even from stale vision context', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Madeline',
+      hasCollectedName: true,
+      userAge: 29,
+      userState: 'CO',
+      dataConfirmed: true,
+      currentTopic: 'Vision',
+      lastBotMessage: 'Vision coverage: **VSP Vision Plus**.',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'where do i enroll?',
+      session,
+    });
+
+    expect(result.answer).toContain('Workday');
+    expect(result.answer).toContain('888-217-4728');
+    expect(result.answer).not.toContain('We can stay with vision');
+  });
+
+  it('answers real-person support asks directly instead of looping on the active topic', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Madeline',
+      hasCollectedName: true,
+      userAge: 29,
+      userState: 'CO',
+      dataConfirmed: true,
+      currentTopic: 'Vision',
+      lastBotMessage: 'Vision coverage: **VSP Vision Plus**.',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'i need to talk to a real person',
+      session,
+    });
+
+    expect(result.answer).toContain('888-217-4728');
+    expect(result.answer).toContain('Workday');
+    expect(result.answer).not.toContain('We can stay with vision');
+  });
+
+  it('answers direct HSA-or-FSA recommendation asks instead of falling back to a generic hsa/fsa scaffold', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Madeline',
+      hasCollectedName: true,
+      userAge: 29,
+      userState: 'CO',
+      dataConfirmed: true,
+      currentTopic: 'HSA/FSA',
+      lastBotMessage: 'HSA/FSA overview:\n\n- HSA stands for Health Savings Account\n- FSA stands for Flexible Spending Account',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'which would you recommend for me?',
+      session,
+    });
+
+    expect(result.answer).toContain('simplest way to think about HSA versus FSA fit');
+    expect(result.answer).not.toContain('We can stay with HSA/FSA');
+  });
+
+  it('answers when-hsa-fits-better questions directly', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Madeline',
+      hasCollectedName: true,
+      userAge: 29,
+      userState: 'CO',
+      dataConfirmed: true,
+      currentTopic: 'HSA/FSA',
+      lastBotMessage: 'HSA/FSA overview:\n\n- HSA stands for Health Savings Account\n- FSA stands for Flexible Spending Account',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'so when does hsa fit better?',
+      session,
+    });
+
+    expect(result.answer).toContain('simplest way to think about HSA versus FSA fit');
+    expect(result.answer).not.toContain('We can stay with HSA/FSA');
+  });
+
+  it('answers deductible-and-out-of-pocket comparison questions directly', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Madeline',
+      hasCollectedName: true,
+      userAge: 29,
+      userState: 'CO',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee Only',
+      lastBotMessage: "Here is the practical tradeoff across AmeriVet's medical options:",
+    });
+
+    const result = await runQaV2Engine({
+      query: 'which one has the lower deductible and out of pocket max?',
+      session,
+    });
+
+    expect(result.answer).toContain('Enhanced HSA');
+    expect(result.answer).toContain('lower deductible');
+    expect(result.answer).toContain('lower out-of-pocket max');
+    expect(result.answer).not.toContain('We can stay with medical');
+  });
+
+  it('answers lowest-oop confirmation questions directly instead of falling back to a medical menu', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Madeline',
+      hasCollectedName: true,
+      userAge: 29,
+      userState: 'CO',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee Only',
+      lastBotMessage: 'Recommendation for Employee Only coverage:\n\n**My recommendation: Enhanced HSA.**',
+    });
+
+    const result = await runQaV2Engine({
+      query: "so if i want lowest oop, should i go with enhanced because it's a lower out of pocket max?",
+      session,
+    });
+
+    expect(result.answer).toContain('Yes');
+    expect(result.answer).toContain('Enhanced HSA');
+    expect(result.answer).not.toContain('We can stay with medical');
+  });
+
+  it('answers disability cost questions directly instead of repeating a generic disability explainer', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Madeline',
+      hasCollectedName: true,
+      userAge: 29,
+      userState: 'CO',
+      dataConfirmed: true,
+      currentTopic: 'Disability',
+      lastBotMessage: 'Disability coverage is meant to protect part of your income if you cannot work because of illness or injury.',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'how much will disability cost?',
+      session,
+    });
+
+    expect(result.answer).toContain('does **not** list the exact premium inline');
+    expect(result.answer).toContain('Workday');
+    expect(result.answer).not.toContain('We can stay with disability');
+  });
+
+  it('answers combined life-and-disability cost questions with a grounded pricing structure answer', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Madeline',
+      hasCollectedName: true,
+      userAge: 29,
+      userState: 'CO',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      lastBotMessage: 'Life insurance options:\n\n- **Unum Basic Life & AD&D**',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'i want to get life insurance and disability. how much will it cost?',
+      session,
+    });
+
+    expect(result.answer).toContain('Basic Life & AD&D');
+    expect(result.answer).toContain('Disability');
+    expect(result.answer).toContain('Workday');
+    expect(result.answer).not.toContain('Please ask that one a little more specifically');
+  });
+
+  it('treats "let’s look at life" as a real topic pivot instead of asking for more specificity', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Madeline',
+      hasCollectedName: true,
+      userAge: 29,
+      userState: 'CO',
+      dataConfirmed: true,
+      currentTopic: 'Vision',
+      lastBotMessage: 'Vision coverage: **VSP Vision Plus**.',
+    });
+
+    const result = await runQaV2Engine({
+      query: "sure. let's look at life",
+      session,
+    });
+
+    expect(result.answer).toContain('Life insurance options:');
+    expect(result.answer).not.toContain('Please ask that one a little more specifically');
   });
 });

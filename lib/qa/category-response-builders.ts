@@ -24,6 +24,17 @@ function stripPricingDetails(text: string): string {
     .trim();
 }
 
+function isDeclinedRoutineTopic(queryLower: string, topic: 'dental' | 'vision'): boolean {
+  const topicPattern = topic === 'dental'
+    ? 'dental'
+    : '(?:vision|eye|glasses|contacts|lasik)';
+
+  return new RegExp(
+    `\\b(?:skip(?:ping)?|done\\s+with|not\\s+interested\\s+in|do\\s+not\\s+want|don'?t\\s+want|dont\\s+want|not\\s+getting|without|other\\s+than)\\b[^.?!]{0,40}\\b${topicPattern}\\b|\\b${topicPattern}\\b[^.?!]{0,40}\\b(?:skip(?:ping)?|done\\s+with|not\\s+interested|do\\s+not\\s+want|don'?t\\s+want|dont\\s+want|not\\s+getting)\\b`,
+    'i',
+  ).test(queryLower);
+}
+
 type CategoryResponseArgs = {
   queryLower: string;
   session: Session;
@@ -105,8 +116,10 @@ export function buildCategoryExplorationResponse({ queryLower, session, coverage
     return null;
   }
 
-  const wantsDental = /\b(dental|teeth|orthodont|braces)\b/i.test(queryLower);
-  const wantsVision = /\b(vision|eye|glasses|contacts|lasik)\b/i.test(queryLower);
+  const wantsDentalRaw = /\b(dental|teeth|orthodont|braces)\b/i.test(queryLower);
+  const wantsVisionRaw = /\b(vision|eye|glasses|contacts|lasik)\b/i.test(queryLower);
+  const wantsDental = wantsDentalRaw && !isDeclinedRoutineTopic(queryLower, 'dental');
+  const wantsVision = wantsVisionRaw && !isDeclinedRoutineTopic(queryLower, 'vision');
   const wantsMedical = /\b(medical|health)\b/i.test(queryLower);
   const wantsLife = /\b(life\s+insurance|term\s+life|whole\s+life|basic\s+life|voluntary\s+life)\b/i.test(queryLower);
   const wantsDisability = /\b(disability|std|ltd|short\s*-?term|long\s*-?term)\b/i.test(queryLower);

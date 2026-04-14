@@ -54,7 +54,7 @@ Most plans require QLE actions within a limited window (commonly 30 days, someti
 
 export function buildLiveSupportMessage(session: Session, hrPhone: string, enrollmentPortalUrl: string): string {
   const nameRef = session.userName && session.userName !== 'Guest' ? session.userName : 'there';
-  return `I understand you'd like to speak with someone directly, ${nameRef}. You can reach AmeriVet's HR/Benefits team at ${hrPhone} for personalized assistance. You can also visit the enrollment portal at ${enrollmentPortalUrl} for self-service options.\n\nIs there anything else I can help you with in the meantime?`;
+  return `I understand you'd like to speak with someone directly, ${nameRef}. You can reach AmeriVet's HR/Benefits team at ${hrPhone} for personalized assistance. You can also use the Workday enrollment portal at ${enrollmentPortalUrl} for self-service options.\n\nIs there anything else I can help you with in the meantime?`;
 }
 
 export function buildAccidentPlanNamesMessage(hrPhone: string): string {
