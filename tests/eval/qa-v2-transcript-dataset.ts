@@ -2437,6 +2437,30 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
     ],
   },
   {
+    id: 'V2-TX-078B2',
+    category: 'package_guidance_after_family_medical_pricing',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'TX',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      completedTopics: ['Medical'],
+      coverageTierLock: 'Employee + Child(ren)',
+      familyDetails: { numChildren: 2 },
+      lastBotMessage: 'Medical plan options (Employee + Child(ren)):',
+    },
+    turns: [
+      {
+        user: 'what else should i consider?',
+        mustContain: ['split the next step after medical into two lanes', '**dental**', '**life insurance**', 'default nudge here is usually **dental first**'],
+        mustNotContain: ['the next most useful step after medical is usually **life insurance**'],
+      },
+    ],
+  },
+  {
     id: 'V2-TX-078C',
     category: 'package_guidance_after_routine_care_settled',
     initialSession: {
@@ -2455,7 +2479,7 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
     turns: [
       {
         user: 'what should i look at next?',
-        mustContain: ['routine care questions look more settled', 'life insurance'],
+        mustContain: ['routine care questions look more settled', 'life insurance', 'take you straight into **life insurance** next'],
         mustNotContain: ['dental is the natural companion', 'vision is the natural companion'],
       },
     ],
@@ -2535,6 +2559,48 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
         user: 'yes, do that',
         mustContain: ['Life insurance options:', 'Unum Basic Life & AD&D'],
         mustNotContain: ['routine care questions look more settled'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-078G',
+    category: 'medical_rx_self_service_lookup',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'TX',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      lastBotMessage: 'Here is the prescription coverage comparison across the available medical plans:\n\n- Standard HSA: I do not have the prescription drug tier details in the current summary, so I do not want to guess.',
+    },
+    turns: [
+      {
+        user: 'where can i go to see the rx costs myself?',
+        mustContain: ['Workday', 'prescription tiers or drug-pricing details', 'carrier formulary / drug-pricing tool'],
+        mustNotContain: ['We can stay with medical'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-078H',
+    category: 'critical_illness_cost_lookup',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'TX',
+      dataConfirmed: true,
+      currentTopic: 'Critical Illness',
+      lastBotMessage: 'Critical illness coverage is a supplemental benefit that can pay a lump-sum cash benefit if you are diagnosed with a covered serious condition.',
+    },
+    turns: [
+      {
+        user: 'can you give me a ballpark idea of what the ci insurance would cost?',
+        mustContain: ['do **not** have a grounded flat-rate premium', 'Workday'],
+        mustNotContain: ['We can stay with supplemental protection'],
       },
     ],
   },

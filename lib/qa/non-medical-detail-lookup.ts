@@ -1,6 +1,8 @@
 import type { Session } from '@/lib/rag/session-store';
 import { getAmerivetBenefitsPackage } from '@/lib/data/amerivet-package';
 
+const ENROLLMENT_PORTAL_URL = process.env.ENROLLMENT_PORTAL_URL || 'https://wd5.myworkday.com/amerivet/login.html';
+
 function getLifePlans() {
   const lifePlans = getAmerivetBenefitsPackage().catalog.voluntaryPlans.filter((plan) => plan.voluntaryType === 'life');
   return {
@@ -26,11 +28,13 @@ export function isNonMedicalDetailQuestion(topic: string, query: string): boolea
   }
 
   if (topic === 'Critical Illness') {
-    return /\b(lump sum|serious diagnosis|diagnosis|what does it pay for|what is it for|what is it not|cash benefit|heart attack|stroke|cancer)\b/i.test(lower);
+    return /\b(lump sum|serious diagnosis|diagnosis|what does it pay for|what is it for|what is it not|cash benefit|heart attack|stroke|cancer)\b/i.test(lower)
+      || costQuestion;
   }
 
   if (topic === 'Accident/AD&D') {
-    return /\b(what\s+is\s+accident(?:\/ad&d|\/ad\/d)?|what\s+is\s+ad&d|what\s+is\s+ad\/d|what\s+does\s+ad&d\s+mean|what\s+does\s+ad\/d\s+mean|difference between accident and ad&d|difference between accident and ad\/d|accidental death|loss of life|loss of limb|accidental injury|what does it pay for|what is it for|what is it not)\b/i.test(lower);
+    return /\b(what\s+is\s+accident(?:\/ad&d|\/ad\/d)?|what\s+is\s+ad&d|what\s+is\s+ad\/d|what\s+does\s+ad&d\s+mean|what\s+does\s+ad\/d\s+mean|difference between accident and ad&d|difference between accident and ad\/d|accidental death|loss of life|loss of limb|accidental injury|what does it pay for|what is it for|what is it not)\b/i.test(lower)
+      || costQuestion;
   }
 
   return false;
@@ -196,6 +200,19 @@ export function buildNonMedicalDetailAnswer(topic: string, query: string, _sessi
   }
 
   if (topic === 'Critical Illness') {
+    if (costQuestion) {
+      return [
+        `For critical illness pricing, I do **not** have a grounded flat-rate premium in the current AmeriVet summary, so I do not want to invent a ballpark.`,
+        ``,
+        `What I can say confidently is:`,
+        `- Critical illness is an optional employee-paid supplemental benefit`,
+        `- The exact payroll deduction is the part to confirm in Workday: ${ENROLLMENT_PORTAL_URL}`,
+        `- I would use Workday for the real price rather than guess at a number here`,
+        ``,
+        `If you want, I can still help you decide whether critical illness is worth pricing out for your situation before you go check it.`,
+      ].join('\n');
+    }
+
     if (/\b(lump sum|cash benefit|what does it pay for|what is it for|serious diagnosis|diagnosis|heart attack|stroke|cancer)\b/i.test(lower)) {
       return [
         `Critical illness is meant to provide a lump-sum style cash benefit if you are diagnosed with a covered serious condition, such as a heart attack, stroke, or certain cancers.`,
@@ -218,6 +235,19 @@ export function buildNonMedicalDetailAnswer(topic: string, query: string, _sessi
   }
 
   if (topic === 'Accident/AD&D') {
+    if (costQuestion) {
+      return [
+        `For accident coverage pricing, I do **not** have a grounded flat-rate premium in the current AmeriVet summary, so I do not want to invent a ballpark.`,
+        ``,
+        `What I can say confidently is:`,
+        `- Accident/AD&D is an optional employee-paid supplemental benefit`,
+        `- The exact payroll deduction is the part to confirm in Workday: ${ENROLLMENT_PORTAL_URL}`,
+        `- I would use Workday for the real price rather than guess at a number here`,
+        ``,
+        `If you want, I can still help you decide whether accident coverage is worth pricing out for your situation before you go check it.`,
+      ].join('\n');
+    }
+
     if (/\bwhat\s+is\s+accident(?:\/ad&d|\/ad\/d)?|what\s+is\s+ad&d|what\s+is\s+ad\/d\b/i.test(lower)) {
       return [
         `Accident/AD&D coverage is another supplemental option. It generally pays benefits after covered accidental injuries, and AD&D adds benefits for severe accidental loss of life or limb.`,

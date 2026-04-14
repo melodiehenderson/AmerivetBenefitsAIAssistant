@@ -628,6 +628,34 @@ describe('qa-v2 engine', () => {
     expect(result.answer).not.toContain('dental/vision if you want to round out routine care coverage');
   });
 
+  it('keeps routine-care next steps in play after family medical pricing instead of jumping straight to life insurance', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Mandy',
+      hasCollectedName: true,
+      userAge: 35,
+      userState: 'GA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      completedTopics: ['Medical'],
+      coverageTierLock: 'Employee + Child(ren)',
+      familyDetails: { numChildren: 2 },
+      lastBotMessage: 'Medical plan options (Employee + Child(ren)):',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'what else should i consider?',
+      session,
+    });
+
+    expect(result.answer).toContain('split the next step after medical into two lanes');
+    expect(result.answer).toContain('**dental**');
+    expect(result.answer).toContain('**life insurance**');
+    expect(result.answer).toContain('default nudge here is usually **dental first**');
+    expect(result.answer).toContain('take you straight into **dental** next');
+    expect(result.answer).not.toContain('the next most useful step after medical is usually **life insurance**');
+  });
+
   it('uses package guidance to move routine-care-complete households toward protection benefits', async () => {
     const session = makeSession({
       step: 'active_chat',
@@ -650,6 +678,7 @@ describe('qa-v2 engine', () => {
 
     expect(result.answer).toContain('routine care questions look more settled');
     expect(result.answer).toContain('life insurance');
+    expect(result.answer).toContain('take you straight into **life insurance** next');
     expect(result.answer).not.toContain('dental is the natural companion');
   });
 
@@ -3060,6 +3089,29 @@ describe('qa-v2 engine', () => {
     expect(result.answer).not.toContain('We can stay with vision');
   });
 
+  it('answers rx self-service lookup follow-ups directly instead of replaying medical scaffolding', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Madeline',
+      hasCollectedName: true,
+      userAge: 29,
+      userState: 'CO',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      lastBotMessage: 'Here is the prescription coverage comparison across the available medical plans:\n\n- Standard HSA: I do not have the prescription drug tier details in the current summary, so I do not want to guess.',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'where can i go to see the rx costs myself?',
+      session,
+    });
+
+    expect(result.answer).toContain('Workday');
+    expect(result.answer).toContain('prescription tiers or drug-pricing details');
+    expect(result.answer).toContain('carrier formulary / drug-pricing tool');
+    expect(result.answer).not.toContain('We can stay with medical');
+  });
+
   it('answers real-person support asks directly instead of looping on the active topic', async () => {
     const session = makeSession({
       step: 'active_chat',
@@ -3191,6 +3243,28 @@ describe('qa-v2 engine', () => {
     expect(result.answer).toContain('does **not** list the exact premium inline');
     expect(result.answer).toContain('Workday');
     expect(result.answer).not.toContain('We can stay with disability');
+  });
+
+  it('answers CI pricing questions directly even when the user uses the ci abbreviation', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Madeline',
+      hasCollectedName: true,
+      userAge: 29,
+      userState: 'CO',
+      dataConfirmed: true,
+      currentTopic: 'Critical Illness',
+      lastBotMessage: 'Critical illness coverage is a supplemental benefit that can pay a lump-sum cash benefit if you are diagnosed with a covered serious condition.',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'can you give me a ballpark idea of what the ci insurance would cost?',
+      session,
+    });
+
+    expect(result.answer).toContain('do **not** have a grounded flat-rate premium');
+    expect(result.answer).toContain('Workday');
+    expect(result.answer).not.toContain('We can stay with supplemental protection');
   });
 
   it('answers combined life-and-disability cost questions with a grounded pricing structure answer', async () => {

@@ -172,6 +172,22 @@ function nextUncoveredTopic(
   return topics.find((candidate) => !hasCoveredTopic(session, candidate, currentTopic)) || null;
 }
 
+function guidanceTopicLabel(topic: string): string {
+  if (topic === 'Life Insurance') return 'life insurance';
+  if (topic === 'Accident/AD&D') return 'accident coverage';
+  if (topic === 'HSA/FSA') return 'HSA/FSA';
+  return topic.toLowerCase();
+}
+
+function buildGuidancePivotPrompt(primaryTopic: string, alternateTopic?: string | null): string {
+  const primaryLabel = guidanceTopicLabel(primaryTopic);
+  if (!alternateTopic) {
+    return `If you want, I can take you straight into **${primaryLabel}** next.`;
+  }
+
+  return `If you want, I can take you straight into **${primaryLabel}** next, or we can jump to **${guidanceTopicLabel(alternateTopic)}** first if that matters more.`;
+}
+
 function buildPackageGuidance(session: Session, topic?: string | null): string {
   const completed = new Set(session.completedTopics || []);
   const currentTopic = topic || session.currentTopic || null;
@@ -189,19 +205,6 @@ function buildPackageGuidance(session: Session, topic?: string | null): string {
 
   switch (currentTopic) {
     case 'Medical':
-      if (hasDependents && nextProtectionTopic) {
-        setPendingTopicSuggestion(session, nextProtectionTopic);
-        return [
-          `Since you appear to be covering more than just yourself, the next most useful step after medical is usually **${nextProtectionTopic === 'Life Insurance' ? 'life insurance' : 'disability'}**.`,
-          ``,
-          `- ${nextProtectionTopic === 'Life Insurance' ? 'Life insurance helps if other people would need support or income replacement if something happened to you' : 'Disability helps if missing part of your paycheck would be the more immediate household risk'}`,
-          `- ${nextProtectionTopic === 'Life Insurance' ? 'Disability is usually the companion protection decision after that, because paycheck protection matters too' : 'Life insurance is usually the companion protection decision after that if other people depend on your income'}`,
-          nextRoutineTopic
-            ? `- ${nextRoutineTopic} can come after that if you still want to round out routine care coverage`
-            : `- After that, we can either tighten the tax-account fit or look at smaller supplemental add-ons`,
-        ].join('\n');
-      }
-
       if (!hasHsaFsa && hsaRelevantMedicalPath) {
         setPendingTopicSuggestion(session, 'HSA/FSA');
         return [
@@ -215,6 +218,36 @@ function buildPackageGuidance(session: Session, topic?: string | null): string {
           nextRoutineTopic
             ? `- ${nextRoutineTopic} is the next routine-care decision after that if you still want to round out the package`
             : `- After that, we can move to the smaller add-ons if you still want more protection`,
+          ``,
+          buildGuidancePivotPrompt('HSA/FSA', nextRoutineTopic || nextProtectionTopic),
+        ].join('\n');
+      }
+
+      if (hasDependents && nextRoutineTopic && nextProtectionTopic) {
+        setPendingTopicSuggestion(session, nextRoutineTopic);
+        return [
+          `Since you appear to be covering more than just yourself, I would usually split the next step after medical into two lanes: **${guidanceTopicLabel(nextRoutineTopic)}** for routine care and **${guidanceTopicLabel(nextProtectionTopic)}** for protection.`,
+          ``,
+          `- ${nextRoutineTopic} is usually the better next move if your household expects cleanings, eye exams, glasses, contacts, or braces and you want to round out routine care coverage`,
+          `- ${nextProtectionTopic === 'Life Insurance' ? 'Life insurance' : 'Disability'} is usually the better next move if income replacement or household protection matters more than routine care right now`,
+          `- My default nudge here is usually **${guidanceTopicLabel(nextRoutineTopic)} first**, then **${guidanceTopicLabel(nextProtectionTopic)}** after that`,
+          ``,
+          buildGuidancePivotPrompt(nextRoutineTopic, nextProtectionTopic),
+        ].join('\n');
+      }
+
+      if (hasDependents && nextProtectionTopic) {
+        setPendingTopicSuggestion(session, nextProtectionTopic);
+        return [
+          `Since you appear to be covering more than just yourself, the next most useful step after medical is usually **${nextProtectionTopic === 'Life Insurance' ? 'life insurance' : 'disability'}**.`,
+          ``,
+          `- ${nextProtectionTopic === 'Life Insurance' ? 'Life insurance helps if other people would need support or income replacement if something happened to you' : 'Disability helps if missing part of your paycheck would be the more immediate household risk'}`,
+          `- ${nextProtectionTopic === 'Life Insurance' ? 'Disability is usually the companion protection decision after that, because paycheck protection matters too' : 'Life insurance is usually the companion protection decision after that if other people depend on your income'}`,
+          nextRoutineTopic
+            ? `- ${nextRoutineTopic} can come after that if you still want to round out routine care coverage`
+            : `- After that, we can either tighten the tax-account fit or look at smaller supplemental add-ons`,
+          ``,
+          buildGuidancePivotPrompt(nextProtectionTopic, nextRoutineTopic),
         ].join('\n');
       }
 
@@ -227,6 +260,8 @@ function buildPackageGuidance(session: Session, topic?: string | null): string {
           nextProtectionTopic
             ? `- ${nextProtectionTopic === 'Life Insurance' ? 'Life insurance' : 'Disability'} is the more important move first if family or paycheck protection matters more than routine care`
             : `- If routine care is settled, we can move to protection benefits next`,
+          ``,
+          buildGuidancePivotPrompt(nextRoutineTopic, nextProtectionTopic),
         ].join('\n');
       }
 
@@ -239,6 +274,8 @@ function buildPackageGuidance(session: Session, topic?: string | null): string {
           nextSupplementalTopic
             ? `- After that, we can compare ${nextSupplementalTopic === 'Critical Illness' ? 'critical illness' : 'accident coverage'} if you want extra cash-support protection`
             : `- After that, we can either tighten the tax-account fit or wrap up the smaller add-ons`,
+          ``,
+          buildGuidancePivotPrompt(nextProtectionTopic, nextSupplementalTopic),
         ].join('\n');
       }
 
@@ -247,6 +284,8 @@ function buildPackageGuidance(session: Session, topic?: string | null): string {
         ``,
         `- HSA/FSA if you want to make sure the tax-account side matches the medical path you picked`,
         `- Accident or critical illness if you still want extra cash-support protection on top of the core package`,
+        ``,
+        `If you want, I can take you straight into **HSA/FSA** next.`,
       ].join('\n');
     case 'Dental':
       if (!hasMedical) {
@@ -280,6 +319,8 @@ function buildPackageGuidance(session: Session, topic?: string | null): string {
           nextSupplementalTopic
             ? `- After that, we can compare ${nextSupplementalTopic === 'Critical Illness' ? 'critical illness' : 'accident coverage'} if you want extra cash-support protection`
             : `- After that, we can tighten any remaining tax-account or supplemental questions`,
+          ``,
+          buildGuidancePivotPrompt(nextProtectionTopic, nextSupplementalTopic),
         ].join('\n');
       }
 
@@ -330,6 +371,8 @@ function buildPackageGuidance(session: Session, topic?: string | null): string {
           nextSupplementalTopic
             ? `- After that, we can compare ${nextSupplementalTopic === 'Critical Illness' ? 'critical illness' : 'accident coverage'} if you want extra cash-support protection`
             : `- After that, we can tighten any remaining tax-account or supplemental questions`,
+          ``,
+          buildGuidancePivotPrompt(nextProtectionTopic, nextSupplementalTopic),
         ].join('\n');
       }
 
@@ -500,6 +543,8 @@ function buildPackageGuidance(session: Session, topic?: string | null): string {
           nextRoutineTopic
             ? `- ${nextRoutineTopic} can come after that if you still want routine care coverage`
             : `- After that, we can wrap up any smaller add-on questions`,
+          ``,
+          buildGuidancePivotPrompt(nextProtectionTopic, nextRoutineTopic),
         ].join('\n');
       }
 
@@ -644,7 +689,7 @@ function isShortTopicPivot(query: string, topic: string): boolean {
     Vision: /^(vision|eye|glasses|contacts)$/,
     'Life Insurance': /^(life|life insurance|life ins|term life|whole life|basic life)$/,
     Disability: /^(disability|std|ltd)$/,
-    'Critical Illness': /^(critical illness|illness)$/,
+    'Critical Illness': /^(critical illness|illness|ci|ci insurance)$/,
     'Accident/AD&D': /^(accident|ad&d|ad d|ad\/d)$/,
     'HSA/FSA': /^(hsa|fsa|hsa fsa|hsa\/fsa)$/,
   };
@@ -657,7 +702,7 @@ function isShortTopicPivot(query: string, topic: string): boolean {
     Vision: /^(?:show me|tell me about|let s do|lets do|do|look at|move to|move on to)\s+(?:my\s+)?(?:vision|eye|glasses|contacts)(?:\s+next)?$/,
     'Life Insurance': /^(?:show me|tell me about|let s do|lets do|do|look at|move to|move on to)\s+(?:my\s+)?(?:life|life insurance|life ins|term life|whole life|basic life)(?:\s+next)?$/,
     Disability: /^(?:show me|tell me about|let s do|lets do|do|look at|move to|move on to)\s+(?:my\s+)?(?:disability|std|ltd)(?:\s+next)?$/,
-    'Critical Illness': /^(?:show me|tell me about|let s do|lets do|do|look at|move to|move on to)\s+(?:my\s+)?(?:critical illness|illness)(?:\s+next)?$/,
+    'Critical Illness': /^(?:show me|tell me about|let s do|lets do|do|look at|move to|move on to)\s+(?:my\s+)?(?:critical illness|illness|ci|ci insurance)(?:\s+next)?$/,
     'Accident/AD&D': /^(?:show me|tell me about|let s do|lets do|do|look at|move to|move on to)\s+(?:my\s+)?(?:accident|ad&d|ad d|ad\/d)(?:\s+next)?$/,
     'HSA/FSA': /^(?:show me|tell me about|let s do|lets do|do|look at|move to|move on to)\s+(?:my\s+)?(?:hsa|fsa|hsa fsa|hsa\/fsa)(?:\s+next)?$/,
   };
@@ -2029,7 +2074,7 @@ function benefitTopicFromQuery(query: string): string | null {
   if (/\b(all\s+benefits|benefits\s+overview|what\s+are\s+all\s+the\s+benefits|what\s+benefits\s+do\s+i\s+have|other\s+types?\s+of\s+coverage|what\s+other\s+coverage|other\s+coverage\s+available|what\s+else\s+is\s+available)\b/i.test(lower)) return 'Benefits Overview';
   if (/\b(life(?:\s+insurance)?|term\s+life|whole\s+life|basic\s+life)\b/i.test(lower)) return 'Life Insurance';
   if (/\b(disability|std|ltd|short[- ]?term|long[- ]?term)\b/i.test(lower)) return 'Disability';
-  if (/\bcritical(?:\s+illness)?\b/i.test(lower)) return 'Critical Illness';
+  if (/\b(?:critical(?:\s+illness)?|ci(?:\s+insurance)?)\b/i.test(lower)) return 'Critical Illness';
   if (/\b(accident|ad&d|ad\/d)\b/i.test(lower)) return 'Accident/AD&D';
   if (/\b(hsa(?:\s*\/\s*fsa)?|fsa)\b/i.test(lower)) return 'HSA/FSA';
   if (!declinedDental && /\bdental\b/i.test(lower)) return 'Dental';
@@ -2044,7 +2089,39 @@ function isLiveSupportRequest(query: string): boolean {
   return /\b(talk\s+to\s+(?:a\s+)?human|talk\s+to\s+(?:a\s+)?real\s+person|talk\s+to\s+someone|speak\s+with\s+someone|speak\s+to\s+someone|real\s+person|human\s+support|live\s+support|someone\s+directly|person\s+directly)\b/i.test(lower);
 }
 
+function isSelfServiceLookupQuestion(query: string): boolean {
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  return /\b(where\s+can\s+i|where\s+do\s+i|how\s+do\s+i|can\s+i\s+(?:see|check|find)|go\s+to\s+see|see\s+that\s+myself|see\s+it\s+myself|find\s+that\s+out|look\s+that\s+up|check\s+that\s+myself|is\s+that\s+only\s+in|only\s+in\s+(?:the\s+)?(?:guide|workday))\b/i.test(lower);
+}
+
+function buildMedicalSelfServiceReply(session: Session, query: string): string | null {
+  if (!isSelfServiceLookupQuestion(query)) return null;
+
+  const activeTopic = session.currentTopic || inferTopicFromLastBotMessage(session.lastBotMessage);
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  const lastBotMessage = (session.lastBotMessage || '').toLowerCase();
+  const hasRxContext = /\b(rx|prescriptions?|drugs?|generic|brand|specialty)\b/i.test(lower)
+    || /\bprescription|drug tier details|drug pricing|formulary\b/i.test(lastBotMessage);
+
+  if (activeTopic !== 'Medical' || !hasRxContext) {
+    return null;
+  }
+
+  return [
+    `For exact prescription tiers or drug-pricing details, I would use **Workday** as the starting point rather than guess from memory.`,
+    ``,
+    `- Open the AmeriVet medical plan materials in Workday: ${ENROLLMENT_PORTAL_URL}`,
+    `- Look for the prescription-drug section or any linked carrier formulary / drug-pricing tool for the plan you are comparing`,
+    `- If Workday does not show the exact RX detail clearly, HR at ${HR_PHONE} is the fastest way to confirm where AmeriVet wants you to check it`,
+  ].join('\n');
+}
+
 function buildDirectSupportReply(session: Session, query: string): string | null {
+  const medicalSelfServiceReply = buildMedicalSelfServiceReply(session, query);
+  if (medicalSelfServiceReply) {
+    return medicalSelfServiceReply;
+  }
+
   if (isLiveSupportRequest(query)) {
     return buildLiveSupportMessage(session, HR_PHONE, ENROLLMENT_PORTAL_URL);
   }

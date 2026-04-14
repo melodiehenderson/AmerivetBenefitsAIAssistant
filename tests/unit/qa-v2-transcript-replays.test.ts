@@ -328,12 +328,36 @@ describe('qa-v2 transcript replays', () => {
     );
   });
 
+  it('replays family medical guidance without skipping routine-care next steps', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'what else should i consider?',
+          mustContain: ['split the next step after medical into two lanes', '**dental**', '**life insurance**', 'default nudge here is usually **dental first**'],
+          mustNotContain: ['the next most useful step after medical is usually **life insurance**'],
+        },
+      ],
+      makeSession({
+        userName: 'Sarah',
+        hasCollectedName: true,
+        userAge: 33,
+        userState: 'GA',
+        dataConfirmed: true,
+        currentTopic: 'Medical',
+        completedTopics: ['Medical'],
+        coverageTierLock: 'Employee + Child(ren)',
+        familyDetails: { numChildren: 2 },
+        lastBotMessage: 'Medical plan options (Employee + Child(ren)):',
+      }),
+    );
+  });
+
   it('replays package guidance from settled routine care into household-protection next steps', async () => {
     await replayTranscript(
       [
         {
           user: 'what should i look at next?',
-          mustContain: ['routine care questions look more settled', 'life insurance'],
+          mustContain: ['routine care questions look more settled', 'life insurance', 'take you straight into **life insurance** next'],
           mustNotContain: ['dental is the natural companion', 'vision is the natural companion'],
         },
       ],
@@ -1881,6 +1905,46 @@ describe('qa-v2 transcript replays', () => {
         userState: 'CO',
         dataConfirmed: true,
         currentTopic: 'Dental',
+      }),
+    );
+  });
+
+  it('replays rx self-service and CI pricing follow-ups as direct grounded answers', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'where can i go to see the rx costs myself?',
+          mustContain: ['Workday', 'prescription tiers or drug-pricing details', 'carrier formulary / drug-pricing tool'],
+          mustNotContain: ['We can stay with medical'],
+        },
+      ],
+      makeSession({
+        userName: 'Madeline',
+        hasCollectedName: true,
+        userAge: 29,
+        userState: 'CO',
+        dataConfirmed: true,
+        currentTopic: 'Medical',
+        lastBotMessage: 'Here is the prescription coverage comparison across the available medical plans:\n\n- Standard HSA: I do not have the prescription drug tier details in the current summary, so I do not want to guess.',
+      }),
+    );
+
+    await replayTranscript(
+      [
+        {
+          user: 'can you give me a ballpark idea of what the ci insurance would cost?',
+          mustContain: ['do **not** have a grounded flat-rate premium', 'Workday'],
+          mustNotContain: ['We can stay with supplemental protection'],
+        },
+      ],
+      makeSession({
+        userName: 'Madeline',
+        hasCollectedName: true,
+        userAge: 29,
+        userState: 'CO',
+        dataConfirmed: true,
+        currentTopic: 'Critical Illness',
+        lastBotMessage: 'Critical illness coverage is a supplemental benefit that can pay a lump-sum cash benefit if you are diagnosed with a covered serious condition.',
       }),
     );
   });
