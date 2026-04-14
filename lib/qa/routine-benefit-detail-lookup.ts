@@ -1,4 +1,4 @@
-import { amerivetBenefits2024_2025 } from '@/lib/data/amerivet';
+import { getAmerivetBenefitsPackage } from '@/lib/data/amerivet-package';
 import type { Session } from '@/lib/rag/session-store';
 import { getCoverageTierForQuery } from '@/lib/qa/medical-helpers';
 
@@ -49,9 +49,10 @@ export function buildRoutineBenefitDetailAnswer(
 
   const coverageTier = getCoverageTierForQuery(query, session);
   const tierKey = normalizeCoverageTierKey(coverageTier);
+  const catalog = getAmerivetBenefitsPackage().catalog;
 
   if (topic === 'Dental') {
-    const dental = amerivetBenefits2024_2025.dentalPlan;
+    const dental = catalog.dentalPlan;
     const deductible = dental.coverage?.deductibles?.individual ?? dental.benefits.deductible;
     const familyDeductible = dental.coverage?.deductibles?.family ?? dental.benefits.deductible * 3;
     const preventiveCovered = dental.coverage?.coinsurance?.preventive !== undefined
@@ -139,7 +140,7 @@ export function buildRoutineBenefitDetailAnswer(
   }
 
   if (topic === 'Vision') {
-    const vision = amerivetBenefits2024_2025.visionPlan;
+    const vision = catalog.visionPlan;
     const examCopay = vision.coverage?.copays?.exam;
     const lensesCopay = vision.coverage?.copays?.lenses;
     const premium = vision.tiers[tierKey];

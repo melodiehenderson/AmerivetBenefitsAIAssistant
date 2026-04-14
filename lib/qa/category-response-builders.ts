@@ -1,8 +1,12 @@
 import type { Session } from '@/lib/rag/session-store';
 import pricingUtils from '@/lib/rag/pricing-utils';
 import { classifyQueryIntent } from '@/lib/rag/query-intent-classifier';
-import { amerivetBenefits2024_2025 } from '@/lib/data/amerivet';
-import { isKaiserEligibleState } from '@/lib/qa/medical-helpers';
+import {
+  getAmerivetBenefitsPackage,
+  getKaiserAvailabilityCopy,
+  isKaiserEligibleForState,
+  type AmerivetBenefitsPackage,
+} from '@/lib/data/amerivet-package';
 
 function buildTierPricingLines(tiers: { employeeOnly: number; employeeSpouse: number; employeeChildren: number; employeeFamily: number }) {
   return [
@@ -41,6 +45,7 @@ type CategoryResponseArgs = {
   coverageTier: string;
   enrollmentPortalUrl: string;
   hrPhone: string;
+  benefitsPackage?: AmerivetBenefitsPackage;
 };
 
 function buildPackageNextStepPrompt(
@@ -102,10 +107,18 @@ export function buildCoverageTierOptionsResponse(
   return `These are the available vision coverage tiers:\n\n${tierLines}\n\nTell me which tier you want and I’ll show the vision pricing/details for that level.`;
 }
 
-export function buildCategoryExplorationResponse({ queryLower, session, coverageTier, enrollmentPortalUrl, hrPhone }: CategoryResponseArgs): string | null {
+export function buildCategoryExplorationResponse({
+  queryLower,
+  session,
+  coverageTier,
+  enrollmentPortalUrl,
+  hrPhone,
+  benefitsPackage = getAmerivetBenefitsPackage(),
+}: CategoryResponseArgs): string | null {
   const noPricingMode = !!session.noPricingMode;
   const finalize = (response: string) => noPricingMode ? stripPricingDetails(response) : response;
-  const catalog = amerivetBenefits2024_2025;
+  const catalog = benefitsPackage.catalog;
+  const kaiserCopy = getKaiserAvailabilityCopy(benefitsPackage);
 
   if (/per[\s-]*pay(?:check|period)?|deduct(?:ion|ed)|enroll\s+in\s+all|total\s+cost|how\s+much\s+would|maternity|pregnan|orthodont|braces|qle|qualifying\s+life\s+event|how\s+many\s+days|deadline|window|fmla|short\s*[- ]?term\s+disability|pre-?existing|clause|dhmo/i.test(queryLower)) {
     return null;
@@ -188,9 +201,9 @@ export function buildCategoryExplorationResponse({ queryLower, session, coverage
   const buildMedicalOverview = () => {
     const coverageTierLabel = coverageTier || 'Employee Only';
     const payPeriods = session.payPeriods || 26;
-    const rows = pricingUtils.buildPerPaycheckBreakdown(coverageTierLabel, payPeriods);
+    const rows = pricingUtils.buildPerPaycheckBreakdown(coverageTierLabel, payPeriods, { benefitsPackage });
     const medRows = rows.filter((row) => !/dental|vision/i.test(row.plan) && row.provider !== 'VSP');
-    const filtered = session.userState && !isKaiserEligibleState(session.userState)
+    const filtered = session.userState && !isKaiserEligibleForState(session.userState, benefitsPackage)
       ? medRows.filter((row) => !/kaiser/i.test(row.plan))
       : medRows;
 
@@ -206,7 +219,7 @@ export function buildCategoryExplorationResponse({ queryLower, session, coverage
       msg += `\nPricing is currently hidden. Say "show pricing" to include premiums.\n`;
     }
     if (filtered.length < medRows.length) {
-      msg += `\nNote: Kaiser Standard HMO is only available in CA, GA, WA, and OR.\n`;
+      msg += `\nNote: Kaiser Standard HMO is only available in ${kaiserCopy.codeList}.\n`;
     }
     msg += `\nWant to compare plans or switch coverage tiers?`;
     return msg;
@@ -222,9 +235,9 @@ export function buildCategoryExplorationResponse({ queryLower, session, coverage
           : 'Employee + Family';
 
     const payPeriods = session.payPeriods || 26;
-    const rows = pricingUtils.buildPerPaycheckBreakdown(inferredTier, payPeriods);
+    const rows = pricingUtils.buildPerPaycheckBreakdown(inferredTier, payPeriods, { benefitsPackage });
     const medicalRows = rows.filter((row) => !/dental|vision/i.test(row.plan) && row.provider !== 'VSP');
-    const filteredMedical = session.userState && !isKaiserEligibleState(session.userState)
+    const filteredMedical = session.userState && !isKaiserEligibleForState(session.userState, benefitsPackage)
       ? medicalRows.filter((row) => !/kaiser/i.test(row.plan))
       : medicalRows;
     const dental = catalog.dentalPlan;
@@ -241,7 +254,7 @@ export function buildCategoryExplorationResponse({ queryLower, session, coverage
     }
 
     if (filteredMedical.length < medicalRows.length) {
-      msg += `\nKaiser is only available in CA, GA, WA, and OR.\n`;
+      msg += `\nKaiser is only available in ${kaiserCopy.codeList}.\n`;
     }
 
     msg += `\nFamily-supporting benefits at the same tier:\n`;
@@ -349,9 +362,9 @@ export function buildCategoryExplorationResponse({ queryLower, session, coverage
 
   if (/\b(benefits\s+overview|benefits|overview)\b/i.test(queryLower)) {
     const msg = `Here is a quick overview of your core benefit categories:\n\n` +
-      `- Medical (BCBSTX Standard HSA, Enhanced HSA; Kaiser Standard HMO in CA/GA/WA/OR)\n` +
-      `- Dental (BCBSTX Dental PPO)\n` +
-      `- Vision (VSP Vision Plus)\n` +
+      `- Medical (BCBSTX Standard HSA, Enhanced HSA; Kaiser Standard HMO in ${kaiserCopy.codeSlashList})\n` +
+      `- Dental (${catalog.dentalPlan.name})\n` +
+      `- Vision (${catalog.visionPlan.name})\n` +
       `- Life and voluntary coverage (Unum and Allstate options)\n\n` +
       `Which category would you like to explore first?`;
     return finalize(msg);
@@ -360,9 +373,13 @@ export function buildCategoryExplorationResponse({ queryLower, session, coverage
   return null;
 }
 
-export function buildDentalVisionComparisonResponse(session: Session): string {
-  const dental = amerivetBenefits2024_2025.dentalPlan;
-  const vision = amerivetBenefits2024_2025.visionPlan;
+export function buildDentalVisionComparisonResponse(
+  session: Session,
+  options?: { benefitsPackage?: AmerivetBenefitsPackage },
+): string {
+  const benefitsPackage = options?.benefitsPackage ?? getAmerivetBenefitsPackage();
+  const dental = benefitsPackage.catalog.dentalPlan;
+  const vision = benefitsPackage.catalog.visionPlan;
   const dentalCoins = dental.coverage?.coinsurance ?? {};
   const toCoveredPercent = (coinsurance?: number) => {
     if (typeof coinsurance !== 'number') return null;

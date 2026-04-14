@@ -1,7 +1,13 @@
-import { KAISER_AVAILABLE_STATE_CODES, STATE_ABBREV_TO_NAME } from '@/lib/data/amerivet';
+import {
+  getAmerivetBenefitsPackage,
+  getKaiserAvailabilityCopy,
+} from '@/lib/data/amerivet-package';
 import { extractUserSlots } from '@/lib/rag/query-understanding';
 import { cityToStateMap } from '@/lib/schemas/onboarding';
 import type { IntentDomain } from '@/lib/intent-digest';
+
+const ACTIVE_PACKAGE = getAmerivetBenefitsPackage();
+const KAISER_COPY = getKaiserAvailabilityCopy(ACTIVE_PACKAGE);
 
 type L1FAQArgs = {
   enrollmentPortalUrl: string;
@@ -28,7 +34,7 @@ const L1_FAQ: L1FAQEntry[] = [
   },
   {
     patterns: [/\bkaiser\b.*\b(only|available|states?|where|which\s+states?|limited|regions?)\b|\b(only|available|states?|where|which\s+states?|limited|regions?)\b.*\bkaiser\b/i],
-    answer: () => `Kaiser HMO is only available in California (CA), Georgia (GA), Washington (WA), and Oregon (OR) through AmeriVet. It is not available in any other state. In all other states, your medical options are Standard HSA and Enhanced HSA (both through BCBS of Texas, nationwide PPO network).`,
+    answer: () => `Kaiser HMO is only available in ${KAISER_COPY.nameAndCodeList} through AmeriVet. It is not available in any other state. In all other states, your medical options are Standard HSA and Enhanced HSA (both through BCBS of Texas, nationwide PPO network).`,
   },
   {
     patterns: [/\b(receptionist|office\s*(staff|personnel|directory)|name\s*of.*(?:dentist|doctor|office|staff)|staff\s*(name|list|directory)|who\s*is\s*(?:the|my)\s*(?:dentist|doctor|hr\s*rep|benefits\s*rep))\b/i],
@@ -36,9 +42,9 @@ const L1_FAQ: L1FAQEntry[] = [
   },
 ];
 
-const KAISER_STATE_CODES = new Set<string>(KAISER_AVAILABLE_STATE_CODES);
+const KAISER_STATE_CODES = new Set<string>(KAISER_COPY.stateCodes);
 const STATE_NAME_TO_CODE: Record<string, string> = Object.fromEntries(
-  Object.entries(STATE_ABBREV_TO_NAME).map(([code, name]) => [name.toLowerCase(), code]),
+  Object.entries(ACTIVE_PACKAGE.stateAbbrevToName).map(([code, name]) => [name.toLowerCase(), code]),
 );
 const SORTED_STATE_NAMES = Object.keys(STATE_NAME_TO_CODE).sort((a, b) => b.length - a.length);
 const SORTED_CITY_NAMES = Object.keys(cityToStateMap).sort((a, b) => b.length - a.length);
@@ -56,12 +62,12 @@ export function isRightwayQuery(query: string): boolean {
 export function normalizeStaticBenefitAnswer(answer: string): string {
   let normalized = answer;
   for (const pattern of STALE_KAISER_GEOGRAPHY_PATTERNS) {
-    normalized = normalized.replace(pattern, "California, Georgia, Washington, and Oregon");
+    normalized = normalized.replace(pattern, KAISER_COPY.nameList);
   }
 
   normalized = normalized.replace(
     /Kaiser HMO is only available in California \(CA\), Washington \(WA\), and Oregon \(OR\)/gi,
-    "Kaiser HMO is only available in California (CA), Georgia (GA), Washington (WA), and Oregon (OR)"
+    `Kaiser HMO is only available in ${KAISER_COPY.nameAndCodeList}`
   );
 
   return normalized;
@@ -177,12 +183,12 @@ export function buildKaiserAvailabilityFaqAnswer(userState?: string | null): str
   if (userState) {
     const normalized = userState.toUpperCase();
     if (KAISER_STATE_CODES.has(normalized)) {
-      return `Yes — Kaiser HMO is available in ${normalized}. AmeriVet offers Kaiser in California (CA), Georgia (GA), Washington (WA), and Oregon (OR).`;
+      return `Yes — Kaiser HMO is available in ${normalized}. AmeriVet offers Kaiser in ${KAISER_COPY.nameAndCodeList}.`;
     }
-    return `Kaiser HMO is only available in California (CA), Georgia (GA), Washington (WA), and Oregon (OR) — it is not available in ${normalized}. In ${normalized}, your medical options are Standard HSA and Enhanced HSA through BCBSTX.`;
+    return `Kaiser HMO is only available in ${KAISER_COPY.nameAndCodeList} — it is not available in ${normalized}. In ${normalized}, your medical options are Standard HSA and Enhanced HSA through BCBSTX.`;
   }
 
-  return `Kaiser HMO is only available in California (CA), Georgia (GA), Washington (WA), and Oregon (OR) through AmeriVet. It is not available in any other state. In all other states, your medical options are Standard HSA and Enhanced HSA (both through BCBS of Texas, nationwide PPO network).`;
+  return `Kaiser HMO is only available in ${KAISER_COPY.nameAndCodeList} through AmeriVet. It is not available in any other state. In all other states, your medical options are Standard HSA and Enhanced HSA (both through BCBS of Texas, nationwide PPO network).`;
 }
 
 export function isLikelyFollowUpMessage(normalizedMessage: string): boolean {

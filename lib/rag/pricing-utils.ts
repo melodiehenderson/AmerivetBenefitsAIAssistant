@@ -2,7 +2,12 @@
 // IMPORTANT: Use the canonical AmeriVet plan catalog as the source of truth.
 // This avoids drift between the chat, admin analytics, and the cost comparison tool.
 
-import { amerivetBenefits2024_2025, type BenefitPlan, type BenefitTier } from '@/lib/data/amerivet';
+import type { BenefitPlan, BenefitTier } from '@/lib/data/amerivet';
+import {
+  getAllAmerivetBenefitPlans,
+  getAmerivetBenefitsPackage,
+  type AmerivetBenefitsPackage,
+} from '@/lib/data/amerivet-package';
 
 const DEFAULT_PAY_PERIODS = 26; // biweekly
 
@@ -28,17 +33,17 @@ function normalizePlanToken(input: string): string {
     .trim();
 }
 
-const ALL_PLANS: BenefitPlan[] = [
-  ...amerivetBenefits2024_2025.medicalPlans,
-  amerivetBenefits2024_2025.dentalPlan,
-  amerivetBenefits2024_2025.visionPlan,
-  ...amerivetBenefits2024_2025.voluntaryPlans,
-];
+type PricingPackageOptions = {
+  benefitsPackage?: AmerivetBenefitsPackage;
+};
 
-const PLAN_BY_ID = new Map<string, BenefitPlan>(ALL_PLANS.map((p) => [p.id, p]));
-const PLAN_BY_NAME = new Map<string, BenefitPlan>(
-  ALL_PLANS.map((p) => [normalizePlanToken(p.name), p])
-);
+type PlanLookups = {
+  allPlans: BenefitPlan[];
+  planById: Map<string, BenefitPlan>;
+  planByName: Map<string, BenefitPlan>;
+};
+
+const PLAN_LOOKUP_CACHE = new Map<string, PlanLookups>();
 
 // Common aliases seen in UI copy, legacy code, and admin analytics.
 const PLAN_ALIASES: Record<string, string> = {
@@ -58,20 +63,43 @@ const PLAN_ALIASES: Record<string, string> = {
   'ppo standard': 'standard hsa',
 };
 
-function resolvePlan(planNameOrId: string): BenefitPlan | null {
+function resolveBenefitsPackage(options?: PricingPackageOptions): AmerivetBenefitsPackage {
+  return options?.benefitsPackage ?? getAmerivetBenefitsPackage();
+}
+
+function getPlanLookups(benefitsPackage: AmerivetBenefitsPackage): PlanLookups {
+  const cached = PLAN_LOOKUP_CACHE.get(benefitsPackage.packageId);
+  if (cached) return cached;
+
+  const allPlans = getAllAmerivetBenefitPlans(benefitsPackage);
+  const lookups: PlanLookups = {
+    allPlans,
+    planById: new Map<string, BenefitPlan>(allPlans.map((plan) => [plan.id, plan])),
+    planByName: new Map<string, BenefitPlan>(
+      allPlans.map((plan) => [normalizePlanToken(plan.name), plan]),
+    ),
+  };
+
+  PLAN_LOOKUP_CACHE.set(benefitsPackage.packageId, lookups);
+  return lookups;
+}
+
+function resolvePlan(planNameOrId: string, options?: PricingPackageOptions): BenefitPlan | null {
   if (!planNameOrId) return null;
 
+  const benefitsPackage = resolveBenefitsPackage(options);
+  const { planById, planByName } = getPlanLookups(benefitsPackage);
   const trimmed = planNameOrId.trim();
-  const byId = PLAN_BY_ID.get(trimmed);
+  const byId = planById.get(trimmed);
   if (byId) return byId;
 
   const norm = normalizePlanToken(trimmed);
   const alias = PLAN_ALIASES[norm] ?? norm;
-  const direct = PLAN_BY_NAME.get(alias);
+  const direct = planByName.get(alias);
   if (direct) return direct;
 
   // Last-chance fuzzy match: if token contains a known plan name, pick that plan.
-  for (const [nameKey, plan] of PLAN_BY_NAME.entries()) {
+  for (const [nameKey, plan] of planByName.entries()) {
     if (alias.includes(nameKey)) return plan;
   }
   return null;
@@ -103,8 +131,12 @@ export function normalizeCoverageToken(token: string | null): string {
   }
 }
 
-export function monthlyPremiumForPlan(planName: string, coverageTier: string = 'Employee Only'): number | null {
-  const plan = resolvePlan(planName);
+export function monthlyPremiumForPlan(
+  planName: string,
+  coverageTier: string = 'Employee Only',
+  options?: PricingPackageOptions,
+): number | null {
+  const plan = resolvePlan(planName, options);
   if (!plan) return null;
   const tier = normalizeCoverageTierToBenefitTier(coverageTier);
   const amount = plan.tiers?.[tier];
@@ -123,16 +155,22 @@ export function perPaycheckFromMonthly(monthly: number, payPeriods: number = 24)
 }
 
 // Build a deterministic per-paycheck breakdown for all standard plans
-export function buildPerPaycheckBreakdown(coverageTier: string, payPeriods: number = 24) {
+export function buildPerPaycheckBreakdown(
+  coverageTier: string,
+  payPeriods: number = 24,
+  options?: PricingPackageOptions,
+) {
   const pp = payPeriods || DEFAULT_PAY_PERIODS;
   const tier = normalizeCoverageTierToBenefitTier(coverageTier);
   const rows: Array<{ plan: string; perPaycheck: number; perMonth: number; annually: number; planId: string; provider: string }> = [];
+  const benefitsPackage = resolveBenefitsPackage(options);
+  const { catalog } = benefitsPackage;
 
   // Deterministic ordering: medical plans first, then dental/vision.
   const plans = [
-    ...amerivetBenefits2024_2025.medicalPlans,
-    amerivetBenefits2024_2025.dentalPlan,
-    amerivetBenefits2024_2025.visionPlan,
+    ...catalog.medicalPlans,
+    catalog.dentalPlan,
+    catalog.visionPlan,
   ];
 
   for (const p of plans) {
@@ -145,7 +183,11 @@ export function buildPerPaycheckBreakdown(coverageTier: string, payPeriods: numb
 }
 
 // Given a decisionsTracker (category -> {status,value}), sum known monthly premiums
-export function computeTotalMonthlyFromSelections(decisionsTracker: Record<string, any>, coverageTier: string = 'Employee Only') {
+export function computeTotalMonthlyFromSelections(
+  decisionsTracker: Record<string, any>,
+  coverageTier: string = 'Employee Only',
+  options?: PricingPackageOptions,
+) {
   if (!decisionsTracker) return 0;
   let total = 0;
   for (const [category, entry] of Object.entries(decisionsTracker)) {
@@ -156,7 +198,7 @@ export function computeTotalMonthlyFromSelections(decisionsTracker: Record<strin
 
     const value = typeof e === 'string' ? e : (e?.value ?? '');
     const planName = (value || '').toString();
-    const monthly = monthlyPremiumForPlan(planName, coverageTier);
+    const monthly = monthlyPremiumForPlan(planName, coverageTier, options);
     if (typeof monthly === 'number' && Number.isFinite(monthly)) total += monthly;
   }
   return Number(total.toFixed(2));
@@ -249,11 +291,16 @@ export interface CostProjectionParams {
   age?: number;
 }
 
-export function estimateCostProjection(params: CostProjectionParams): string {
+export function estimateCostProjection(
+  params: CostProjectionParams,
+  options?: PricingPackageOptions,
+): string {
   const { coverageTier, usage, network, state } = params;
   const tier = normalizeCoverageTierToBenefitTier(coverageTier);
+  const benefitsPackage = resolveBenefitsPackage(options);
+  const { catalog, stateAbbrevToName } = benefitsPackage;
 
-  const stateName = state ? (STATE_CODE_TO_NAME[state.toUpperCase()] || state) : null;
+  const stateName = state ? (stateAbbrevToName[state.toUpperCase()] || state) : null;
   let msg = `Projected Healthcare Costs for ${coverageTier} coverage`;
   if (stateName) msg += ` in ${stateName}`;
   msg += ` (${usage} usage):\n\n`;
@@ -261,7 +308,7 @@ export function estimateCostProjection(params: CostProjectionParams): string {
   const usageFactor = usage === 'low' ? 0.25 : usage === 'high' ? 0.75 : 0.5;
 
   // Step 1: Filter by state availability (Kaiser only in CA)
-  let plans = amerivetBenefits2024_2025.medicalPlans.filter((p) => {
+  let plans = catalog.medicalPlans.filter((p) => {
     if (stateName && p.provider.toLowerCase().includes('kaiser')) {
       const allowed = p.regionalAvailability.some((r) => {
         const rLow = r.toLowerCase();
@@ -315,15 +362,21 @@ export function estimateCostProjection(params: CostProjectionParams): string {
 }
 
 // Compare maternity exposure across plans (assumes typical $10k maternity cost)
-export function compareMaternityCosts(coverageTier: string, userState?: string | null): string {
+export function compareMaternityCosts(
+  coverageTier: string,
+  userState?: string | null,
+  options?: PricingPackageOptions,
+): string {
   const typical = 10000;
   const tier = normalizeCoverageTierToBenefitTier(coverageTier);
+  const benefitsPackage = resolveBenefitsPackage(options);
+  const { catalog, stateAbbrevToName } = benefitsPackage;
   let msg = `Maternity Cost Comparison (${coverageTier}):\n\n`;
   msg += `Assumptions: Typical maternity care costs ~$10,000 (prenatal visits, delivery, postnatal care).\n\n`;
 
   // Filter Kaiser for users outside CA/WA/OR (Issue 5 fix)
-  const stateName = userState ? (STATE_CODE_TO_NAME[userState.toUpperCase()] || userState) : null;
-  const plans = amerivetBenefits2024_2025.medicalPlans.filter((p) => {
+  const stateName = userState ? (stateAbbrevToName[userState.toUpperCase()] || userState) : null;
+  const plans = catalog.medicalPlans.filter((p) => {
     if (stateName && p.provider.toLowerCase().includes('kaiser')) {
       const allowed = p.regionalAvailability.some((r) => {
         const rLow = r.toLowerCase();
@@ -370,8 +423,9 @@ export function compareMaternityCosts(coverageTier: string, userState?: string |
   return msg;
 }
 // Extract canonical dental plan details for deterministic ortho/dental responses
-export function getDentalPlanDetails() {
-  const dental = amerivetBenefits2024_2025.dentalPlan;
+export function getDentalPlanDetails(options?: PricingPackageOptions) {
+  const benefitsPackage = resolveBenefitsPackage(options);
+  const dental = benefitsPackage.catalog.dentalPlan;
   return {
     name: dental.name,
     provider: dental.provider,

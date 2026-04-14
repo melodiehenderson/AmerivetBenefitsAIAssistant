@@ -1,4 +1,9 @@
 import pricingUtils from '@/lib/rag/pricing-utils';
+import {
+  getAmerivetBenefitsPackage,
+  getKaiserAvailabilityCopy,
+  type AmerivetBenefitsPackage,
+} from '@/lib/data/amerivet-package';
 
 export type PricingRow = ReturnType<typeof pricingUtils.buildPerPaycheckBreakdown>[number];
 
@@ -75,9 +80,16 @@ type MedicalComparisonArgs = {
   filtered: PricingRow[];
   hasHiddenKaiser: boolean;
   noPricingMode: boolean;
+  benefitsPackage?: AmerivetBenefitsPackage;
 };
 
-export function buildMedicalComparisonMessage({ coverageTier, filtered, hasHiddenKaiser, noPricingMode }: MedicalComparisonArgs): string {
+export function buildMedicalComparisonMessage({
+  coverageTier,
+  filtered,
+  hasHiddenKaiser,
+  noPricingMode,
+  benefitsPackage = getAmerivetBenefitsPackage(),
+}: MedicalComparisonArgs): string {
   let msg = `Here are the available medical plans for the ${coverageTier} tier:\n\n`;
 
   for (const row of filtered) {
@@ -89,7 +101,7 @@ export function buildMedicalComparisonMessage({ coverageTier, filtered, hasHidde
   }
 
   if (hasHiddenKaiser) {
-    msg += `\nNote: Kaiser Standard HMO is available only in California, Georgia, Washington, and Oregon.\n`;
+    msg += `\nNote: Kaiser Standard HMO is available only in ${getKaiserAvailabilityCopy(benefitsPackage).nameList}.\n`;
   }
 
   msg += `\nWould you like more detail on any plan, a different coverage tier, or to move on to Dental/Vision?`;

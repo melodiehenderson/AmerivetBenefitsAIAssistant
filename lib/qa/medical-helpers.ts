@@ -1,10 +1,17 @@
 import type { Session } from '@/lib/rag/session-store';
 import pricingUtils from '@/lib/rag/pricing-utils';
-import { amerivetBenefits2024_2025, KAISER_AVAILABLE_STATE_CODES, type BenefitPlan } from '@/lib/data/amerivet';
-
-const KAISER_STATES = new Set<string>(KAISER_AVAILABLE_STATE_CODES);
+import type { BenefitPlan } from '@/lib/data/amerivet';
+import {
+  getAmerivetBenefitsPackage,
+  getKaiserAvailabilityCopy,
+  isKaiserEligibleForState,
+  type AmerivetBenefitsPackage,
+} from '@/lib/data/amerivet-package';
 
 type KaiserUnavailableVariant = 'compare' | 'pricing' | 'redirect';
+type MedicalHelperOptions = {
+  benefitsPackage?: AmerivetBenefitsPackage;
+};
 
 const CHILD_NUMBER_WORDS: Record<string, number> = {
   one: 1,
@@ -136,11 +143,15 @@ function sessionHasHouseholdSignal(session: Session, query: string): boolean {
 }
 
 export function isKaiserEligibleState(state?: string | null): boolean {
-  return !!state && KAISER_STATES.has(state.toUpperCase());
+  return isKaiserEligibleForState(state);
 }
 
-export function buildPpoClarificationForState(state?: string | null): string {
-  if (state && isKaiserEligibleState(state)) {
+export function buildPpoClarificationForState(
+  state?: string | null,
+  options?: MedicalHelperOptions,
+): string {
+  const benefitsPackage = options?.benefitsPackage ?? getAmerivetBenefitsPackage();
+  if (state && isKaiserEligibleForState(state, benefitsPackage)) {
     return `AmeriVet does not offer a standalone PPO medical plan. Your medical options are Standard HSA and Enhanced HSA (BCBSTX) plus Kaiser Standard HMO in ${state}. The HSA plans use a nationwide PPO network, but they are HDHP/HSA plans, not a traditional PPO.`;
   }
   const stateNote = state ? ` In ${state}, your medical options are Standard HSA and Enhanced HSA (BCBSTX).` : '';
@@ -151,22 +162,28 @@ export function buildPpoClarificationFallback(session: Pick<Session, 'userState'
   return buildPpoClarificationForState(session.userState);
 }
 
-export function buildKaiserUnavailableFallback(session: Session, variant: KaiserUnavailableVariant): string {
+export function buildKaiserUnavailableFallback(
+  session: Session,
+  variant: KaiserUnavailableVariant,
+  options?: MedicalHelperOptions,
+): string {
   const stateLabel = (session.userState || 'your state').toUpperCase();
+  const benefitsPackage = options?.benefitsPackage ?? getAmerivetBenefitsPackage();
+  const kaiserCopy = getKaiserAvailabilityCopy(benefitsPackage);
   if (variant === 'pricing') {
-    return `Kaiser Standard HMO is only available in California, Georgia, Washington, and Oregon. Since you're in ${stateLabel}, your medical plan options are **Standard HSA** and **Enhanced HSA**. Would you like pricing for those?`;
+    return `Kaiser Standard HMO is only available in ${kaiserCopy.nameList}. Since you're in ${stateLabel}, your medical plan options are **Standard HSA** and **Enhanced HSA**. Would you like pricing for those?`;
   }
   if (variant === 'redirect') {
     const nyNote = stateLabel === 'NY'
       ? `\n\nFor New York employees, the strongest alternative is **Enhanced HSA** on the BCBSTX nationwide PPO network if you want stronger cost protection.`
       : '';
-    return `Kaiser is only available in California, Georgia, Washington, and Oregon. In ${stateLabel}, your medical options are:\n\n- Standard HSA (BCBS of Texas) ΓÇö lower premium, higher deductible, full HSA contribution eligible\n- Enhanced HSA (BCBS of Texas) ΓÇö higher premium, lower deductible, better for anticipated medical use\n\nBoth use the nationwide BCBSTX PPO network.${nyNote} Would you like a side-by-side comparison?`;
+    return `Kaiser is only available in ${kaiserCopy.nameList}. In ${stateLabel}, your medical options are:\n\n- Standard HSA (BCBS of Texas) ΓÇö lower premium, higher deductible, full HSA contribution eligible\n- Enhanced HSA (BCBS of Texas) ΓÇö higher premium, lower deductible, better for anticipated medical use\n\nBoth use the nationwide BCBSTX PPO network.${nyNote} Would you like a side-by-side comparison?`;
   }
-  return `Kaiser Standard HMO is only available in California, Georgia, Washington, and Oregon. Since you're in ${stateLabel}, your medical options are **Standard HSA** and **Enhanced HSA**. Would you like to compare those two instead?`;
+  return `Kaiser Standard HMO is only available in ${kaiserCopy.nameList}. Since you're in ${stateLabel}, your medical options are **Standard HSA** and **Enhanced HSA**. Would you like to compare those two instead?`;
 }
 
-function getMedicalPlansCatalog() {
-  const medicalPlans = amerivetBenefits2024_2025.medicalPlans;
+function getMedicalPlansCatalog(benefitsPackage: AmerivetBenefitsPackage = getAmerivetBenefitsPackage()) {
+  const medicalPlans = benefitsPackage.catalog.medicalPlans;
   const findPlan = (name: string) => medicalPlans.find((p) => p.name.toLowerCase() === name.toLowerCase()) || null;
   return {
     standard: findPlan('Standard HSA'),
@@ -175,11 +192,15 @@ function getMedicalPlansCatalog() {
   };
 }
 
-function getFilteredMedicalPricingRows(session: Session, coverageTier: string) {
+function getFilteredMedicalPricingRows(
+  session: Session,
+  coverageTier: string,
+  benefitsPackage: AmerivetBenefitsPackage = getAmerivetBenefitsPackage(),
+) {
   const payPeriods = session.payPeriods || 26;
-  const rows = pricingUtils.buildPerPaycheckBreakdown(coverageTier, payPeriods);
+  const rows = pricingUtils.buildPerPaycheckBreakdown(coverageTier, payPeriods, { benefitsPackage });
   const medRows = rows.filter(r => !/dental|vision/i.test(r.plan) && r.provider !== 'VSP');
-  const filtered = session.userState && !isKaiserEligibleState(session.userState)
+  const filtered = session.userState && !isKaiserEligibleForState(session.userState, benefitsPackage)
     ? medRows.filter(r => !/kaiser/i.test(r.plan))
     : medRows;
   return { payPeriods, rows, filtered };
@@ -213,18 +234,23 @@ export function buildCrossBenefitDeductibleAnswer(query: string): string | null 
 export function getAvailablePricingRows(
   session: Session,
   coverageTier: string,
-  options?: { includeNonMedical?: boolean },
+  options?: { includeNonMedical?: boolean; benefitsPackage?: AmerivetBenefitsPackage },
 ) {
+  const benefitsPackage = options?.benefitsPackage ?? getAmerivetBenefitsPackage();
   const payPeriods = session.payPeriods || 26;
-  const rows = pricingUtils.buildPerPaycheckBreakdown(coverageTier, payPeriods);
+  const rows = pricingUtils.buildPerPaycheckBreakdown(coverageTier, payPeriods, { benefitsPackage });
   const baseRows = options?.includeNonMedical ? rows : rows.filter(r => !/dental|vision/i.test(r.plan) && r.provider !== 'VSP');
-  const filtered = session.userState && !isKaiserEligibleState(session.userState)
+  const filtered = session.userState && !isKaiserEligibleForState(session.userState, benefitsPackage)
     ? baseRows.filter(r => !/kaiser/i.test(r.plan))
     : baseRows;
   return { payPeriods, rows, filtered };
 }
 
-export function buildMedicalPlanFallback(query: string, session: Session): string | null {
+export function buildMedicalPlanFallback(
+  query: string,
+  session: Session,
+  options?: MedicalHelperOptions,
+): string | null {
   const lower = query.toLowerCase();
   const wantsCompare = /compare|comparison|difference|vs\.?|versus|side\s*by\s*side|both\s+plans|two\s+plans/i.test(lower);
   const mentionsStandard = /standard\s*hsa/.test(lower);
@@ -234,7 +260,9 @@ export function buildMedicalPlanFallback(query: string, session: Session): strin
   const wantsOop = /out\s*of\s*pocket|oop\s*max|max\s*(?:out\s*of\s*pocket|oop)/i.test(lower);
   const wantsCoinsurance = /coinsurance|co\s*insurance/i.test(lower);
 
-  const { standard, enhanced, kaiser } = getMedicalPlansCatalog();
+  const benefitsPackage = options?.benefitsPackage ?? getAmerivetBenefitsPackage();
+  const kaiserCopy = getKaiserAvailabilityCopy(benefitsPackage);
+  const { standard, enhanced, kaiser } = getMedicalPlansCatalog(benefitsPackage);
 
   const selected: BenefitPlan[] = [];
   if (mentionsStandard && standard) selected.push(standard);
@@ -245,7 +273,7 @@ export function buildMedicalPlanFallback(query: string, session: Session): strin
     const comparePlans = selected.length > 0 ? selected : [standard, enhanced].filter(Boolean) as BenefitPlan[];
     if (comparePlans.length === 0) return null;
     const coverageTier = inferCoverageTierFromQuery(query, session);
-    const { rows } = getFilteredMedicalPricingRows(session, coverageTier);
+    const { rows } = getFilteredMedicalPricingRows(session, coverageTier, benefitsPackage);
     let msg = `Here is a side-by-side comparison for ${coverageTier} coverage:\n\n`;
     msg += `| Plan | Deductible | Out-of-pocket max | Coinsurance |`;
     if (!session.noPricingMode) msg += ` Monthly premium |`;
@@ -261,8 +289,8 @@ export function buildMedicalPlanFallback(query: string, session: Session): strin
       msg += `\n`;
     }
 
-    if (comparePlans.some((p) => /kaiser/i.test(p.name)) && session.userState && !isKaiserEligibleState(session.userState)) {
-      msg += `\nNote: Kaiser Standard HMO is only available in CA, GA, WA, and OR. Since you are in ${session.userState}, it may not be available.`;
+    if (comparePlans.some((p) => /kaiser/i.test(p.name)) && session.userState && !isKaiserEligibleForState(session.userState, benefitsPackage)) {
+      msg += `\nNote: Kaiser Standard HMO is only available in ${kaiserCopy.codeList}. Since you are in ${session.userState}, it may not be available.`;
     }
     return msg.trim();
   }
@@ -287,14 +315,18 @@ export function buildMedicalPlanFallback(query: string, session: Session): strin
   msg += `- Coinsurance: ${Math.round(coins * 100)}% (in-network)\n`;
   if (!session.noPricingMode) {
     const coverageTier = inferCoverageTierFromQuery(query, session);
-    const { rows } = getFilteredMedicalPricingRows(session, coverageTier);
+    const { rows } = getFilteredMedicalPricingRows(session, coverageTier, benefitsPackage);
     const premium = rows.find((r) => r.plan === target.name)?.perMonth ?? null;
     if (premium !== null) msg += `- Monthly premium (${coverageTier}): $${pricingUtils.formatMoney(premium)}\n`;
   }
   return msg.trim();
 }
 
-export function buildRecommendationOverview(query: string, session: Session): string | null {
+export function buildRecommendationOverview(
+  query: string,
+  session: Session,
+  options?: MedicalHelperOptions,
+): string | null {
   const lower = query.toLowerCase();
   if (/\b(calculate|estimate|project(?:ed)?|model)\b.*\b(cost|costs|expense|expenses)\b|\bhealthcare\s+costs?\b.*\b(next\s+year|\d{4}|estimate|project)\b/.test(lower)) {
     return null;
@@ -322,7 +354,8 @@ export function buildRecommendationOverview(query: string, session: Session): st
   if (!(recommendationSignal || healthySignal || savingsSignal || lowestOutOfPocketSignal || higherUsageSignal || moderateUsageSignal || pregnancySignal)) return null;
   if (!wantsMedicalRecommendation) return null;
 
-  const { filtered } = getFilteredMedicalPricingRows(session, coverageTier);
+  const benefitsPackage = options?.benefitsPackage ?? getAmerivetBenefitsPackage();
+  const { filtered } = getFilteredMedicalPricingRows(session, coverageTier, benefitsPackage);
 
   const standard = filtered.find(r => /standard\s+hsa/i.test(r.plan));
   const enhanced = filtered.find(r => /enhanced\s+hsa/i.test(r.plan));
@@ -345,7 +378,7 @@ export function buildRecommendationOverview(query: string, session: Session): st
     let clarifier = `I can recommend one — the biggest factor is how much care you expect to use.\n\n`;
     clarifier += `If you expect low medical use, I usually lean **Standard HSA** for the lower premium. `;
     clarifier += `If you expect frequent visits, ongoing prescriptions, or want a lower deductible, I usually lean **Enhanced HSA**.`;
-    if (kaiser && session.userState && isKaiserEligibleState(session.userState)) {
+    if (kaiser && session.userState && isKaiserEligibleForState(session.userState, benefitsPackage)) {
       clarifier += ` If you specifically want an integrated HMO-style network in ${session.userState}, **Kaiser Standard HMO** can also make sense.`;
     }
     clarifier += `\n\nQuick clarifier: would you say your expected usage is **low, moderate, or high**?`;
@@ -375,7 +408,7 @@ export function buildRecommendationOverview(query: string, session: Session): st
   ) {
     recommendationPlan = selectedPlan;
     recommendationReason = `it matches the direction you are already leaning and keeps the recommendation consistent with the tradeoff we have been discussing`;
-  } else if (pregnancySignal && householdSignal && kaiser && session.userState && isKaiserEligibleState(session.userState)) {
+  } else if (pregnancySignal && householdSignal && kaiser && session.userState && isKaiserEligibleForState(session.userState, benefitsPackage)) {
     recommendationPlan = 'Kaiser Standard HMO';
     recommendationReason = lowestOutOfPocketSignal
       ? `it is the strongest fit when you want the lowest likely maternity-related out-of-pocket exposure in an eligible Kaiser state`
@@ -390,7 +423,7 @@ export function buildRecommendationOverview(query: string, session: Session): st
     recommendationReason = lowestOutOfPocketSignal
       ? `it is the better fit when your main goal is lower out-of-pocket exposure rather than the lowest premium`
       : `the lower deductible and stronger cost protection usually matter more once you expect regular care`;
-  } else if (mentionsIntegratedNetworkPreference && kaiser && session.userState && isKaiserEligibleState(session.userState)) {
+  } else if (mentionsIntegratedNetworkPreference && kaiser && session.userState && isKaiserEligibleForState(session.userState, benefitsPackage)) {
     recommendationPlan = 'Kaiser Standard HMO';
     recommendationReason = `it gives you the integrated HMO-style experience some people prefer when they want a tighter, coordinated network`;
   } else if (singleSignal || healthySignal || savingsSignal) {
@@ -412,13 +445,16 @@ export function buildRecommendationOverview(query: string, session: Session): st
   msg += `- **Standard HSA** is the lower-premium option\n`;
   msg += `- **Enhanced HSA** gives you a lower deductible and stronger cost protection if you expect more care\n`;
 
-  if (kaiser && session.userState && isKaiserEligibleState(session.userState)) {
+  if (kaiser && session.userState && isKaiserEligibleForState(session.userState, benefitsPackage)) {
     msg += `- If you prefer an integrated HMO-style network and are in ${session.userState}, **Kaiser Standard HMO** is also an option\n`;
   }
 
   msg += `\n**HSA savings highlights:**\n- Pre-tax paycheck contributions\n- Tax-free growth and withdrawals for eligible care\n- Funds roll over year to year\n`;
   if (singleSignal) {
     msg += `\nSince you mentioned being single/only covering yourself, **Standard HSA** is typically the most cost-efficient starting point.`;
+  }
+  if (savingsSignal) {
+    msg += `\nBecause you mentioned wanting to save money, **Standard HSA** is usually the cleanest place to start if you do not expect much care.`;
   }
   if (usageBand === 'high' || usageBand === 'moderate') {
     msg += `\nBecause you described more than minimal usage, **Enhanced HSA** is the one I would look at first.`;

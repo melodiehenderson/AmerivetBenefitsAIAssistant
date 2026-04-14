@@ -1,8 +1,8 @@
 import type { Session } from '@/lib/rag/session-store';
-import { amerivetBenefits2024_2025 } from '@/lib/data/amerivet';
+import { getAmerivetBenefitsPackage } from '@/lib/data/amerivet-package';
 
 function getLifePlans() {
-  const lifePlans = amerivetBenefits2024_2025.voluntaryPlans.filter((plan) => plan.voluntaryType === 'life');
+  const lifePlans = getAmerivetBenefitsPackage().catalog.voluntaryPlans.filter((plan) => plan.voluntaryType === 'life');
   return {
     basic: lifePlans.find((plan) => /basic life/i.test(plan.name)),
     term: lifePlans.find((plan) => /term life/i.test(plan.name)),
