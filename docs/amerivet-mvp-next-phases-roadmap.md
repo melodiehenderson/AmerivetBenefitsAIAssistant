@@ -206,7 +206,7 @@ Current file:
 - `tests/eval/eval-dataset.jsonl`
 
 Current state at time of writing:
-- file already contains `108` rows
+- file currently contains `105` rows
 
 Coverage should include:
 - carrier identification
