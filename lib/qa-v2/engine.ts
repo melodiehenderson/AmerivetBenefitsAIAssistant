@@ -1235,6 +1235,17 @@ function buildHighPriorityIntentReply(session: Session, query: string): EngineRe
     return { answer: buildQleTimingReply(session, normalizedQuery), metadata: { intercept: 'qle-timing-v2' } };
   }
 
+  if (
+    (explicitTopic === 'HSA/FSA' || activeTopic === 'HSA/FSA')
+    && (isDirectHsaFsaFitQuestion(normalizedQuery) || isHsaFsaCompatibilityQuestion(normalizedQuery) || isHsaFsaRuleQuestion(normalizedQuery))
+  ) {
+    setTopic(session, 'HSA/FSA');
+    return {
+      answer: buildTopicReply(session, 'HSA/FSA', normalizedQuery),
+      metadata: { intercept: 'direct-hsa-fsa-priority-v2', topic: 'HSA/FSA' },
+    };
+  }
+
   if (explicitTopic && explicitTopic !== 'Benefits Overview') {
     const normalizedExplicitTopic = normalizeBenefitCategory(explicitTopic);
     if (isExplicitTopicDirectQuestion(normalizedExplicitTopic, normalizedQuery)) {
@@ -1288,17 +1299,6 @@ function buildHighPriorityIntentReply(session: Session, query: string): EngineRe
     return {
       answer: buildMedicalCoverageTierDecisionReply(session, normalizedQuery),
       metadata: { intercept: 'medical-coverage-tier-priority-v2', topic: 'Medical' },
-    };
-  }
-
-  if (
-    (explicitTopic === 'HSA/FSA' || activeTopic === 'HSA/FSA')
-    && (isDirectHsaFsaFitQuestion(normalizedQuery) || isHsaFsaCompatibilityQuestion(normalizedQuery))
-  ) {
-    setTopic(session, 'HSA/FSA');
-    return {
-      answer: buildTopicReply(session, 'HSA/FSA', normalizedQuery),
-      metadata: { intercept: 'direct-hsa-fsa-priority-v2', topic: 'HSA/FSA' },
     };
   }
 
@@ -1372,6 +1372,68 @@ function buildHsaFsaCompatibilityReply(query: string): string {
   ].join('\n');
 }
 
+function isHsaFsaRuleQuestion(query: string): boolean {
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  const rolloverPattern = /\b(roll(?:\s+over|\s+forward)|rollover|carry\s+over|carryover)\b/i;
+  return /\b(how\s+much\s+can\s+i\s+put\s+in\s+my\s+hsa|hsa\s+contribution\s+limits?|irs\s+hsa\s+limits?|catch[- ]?up\s+contribution|contribute\s+to\s+an?\s+hsa)\b/i.test(lower)
+    || /\b(limit|cap|max|maximum)\b[^.?!]{0,60}\b(roll(?:\s+over|\s+forward)|rollover|carry\s+over|carryover|unused\s+(?:funds|money|balance))\b/i.test(lower)
+    || /\b(roll(?:\s+over|\s+forward)|rollover|carry\s+over|carryover|unused\s+(?:funds|money|balance))\b[^.?!]{0,80}\b(limit|cap|max|maximum)\b/i.test(lower)
+    || (/\b(tax|taxes)\b/i.test(lower) && rolloverPattern.test(lower))
+    || /\b(use[- ]it[- ]or[- ]lose[- ]it)\b/i.test(lower);
+}
+
+function buildHsaFsaRuleReply(query: string): string | null {
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  const rolloverPattern = /\b(roll(?:\s+over|\s+forward)|rollover|carry\s+over|carryover)\b/i;
+
+  if (/\b(how\s+much\s+can\s+i\s+put\s+in\s+my\s+hsa|hsa\s+contribution\s+limits?|irs\s+hsa\s+limits?|catch[- ]?up\s+contribution|contribute\s+to\s+an?\s+hsa)\b/i.test(lower)) {
+    return [
+      `For **2025**, the **IRS HSA contribution limits** are **$4,300** for **self-only** coverage and **$8,550** for **family** coverage.`,
+      ``,
+      `A couple practical notes:`,
+      `- If you are **55 or older**, you can add another **$1,000** catch-up contribution`,
+      `- AmeriVet also contributes **$750/year** to your HSA when you are enrolled in an HSA-qualified medical plan`,
+      `- Those are contribution limits for new money going in, not a cap on already-accumulated HSA dollars rolling forward`,
+    ].join('\n');
+  }
+
+  if (/\b(tax|taxes)\b/i.test(lower) && rolloverPattern.test(lower)) {
+    return [
+      `Here is what the **tax and rollover tradeoff** means in practice:`,
+      ``,
+      `- **HSA** is the stronger long-term tax account when you are on **Standard HSA** or **Enhanced HSA**`,
+      `- Unused **HSA** money stays with you and can **roll forward year to year**`,
+      `- **FSA** still uses pre-tax dollars for eligible expenses, but it is more of a plan-year spending account with much stricter carryover or use-it-or-lose-it rules`,
+      `- So if your goal is long-term savings, HSA is usually the cleaner fit; if your goal is near-term spending, FSA is usually the cleaner fit`,
+    ].join('\n');
+  }
+
+  if (/\b(limit|cap|max|maximum)\b[^.?!]{0,60}\b(roll(?:\s+over|\s+forward)|rollover|carry\s+over|carryover|unused\s+(?:funds|money|balance))\b/i.test(lower)
+    || /\b(roll(?:\s+over|\s+forward)|rollover|carry\s+over|carryover|unused\s+(?:funds|money|balance))\b[^.?!]{0,80}\b(limit|cap|max|maximum)\b/i.test(lower)) {
+    return [
+      `If you mean the **HSA** balance itself, unused HSA money generally **rolls forward year to year** instead of expiring at the end of the plan year.`,
+      ``,
+      `The practical distinction is:`,
+      `- There is not a separate AmeriVet rollover cap on the HSA balance itself`,
+      `- The limit that usually matters is the **IRS annual contribution limit** for new money going in`,
+      `- For **2025**, those HSA contribution limits are **$4,300** for self-only coverage and **$8,550** for family coverage, plus **$1,000** catch-up at age 55+`,
+      `- **FSA** is the account with the stricter carryover or use-it-or-lose-it rules`,
+    ].join('\n');
+  }
+
+  if (/\b(use[- ]it[- ]or[- ]lose[- ]it)\b/i.test(lower)) {
+    return [
+      `That phrase is much more about **FSA** than **HSA**.`,
+      ``,
+      `- **HSA** funds roll forward year to year and stay with you`,
+      `- **FSA** follows much stricter plan-year carryover rules, which is why people describe it as a use-it-or-lose-it account`,
+      `- If you need the exact AmeriVet FSA carryover handling for the current plan year, I would confirm that specific rule in Workday`,
+    ].join('\n');
+  }
+
+  return null;
+}
+
 function isDirectHsaFsaFitQuestion(query: string): boolean {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
   return /\b(which\s+one\s+is\s+better|which\s+one\s+is\s+best|better\s+fit|best\s+fit|which\s+one\s+fits|which\s+would\s+you\s+recommend|what\s+would\s+you\s+recommend|which\s+do\s+you\s+recommend|recommend\s+(?:for|to)\s+me|when\s+does\s+hsa\s+fit\s+better|when\s+does\s+fsa\s+fit\s+better|when\s+is\s+hsa\s+better|when\s+is\s+fsa\s+better|should\s+i\s+get|should\s+i\s+use|is\s+it\s+worth\s+it|worth\s+it|worth\s+using)\b/i.test(lower);
@@ -1409,7 +1471,7 @@ function buildHsaFsaPracticalFitReply(session: Session, query: string): string |
       ``,
       `Why:`,
       `- The account stays with you`,
-      `- Unused funds can roll forward year to year`,
+      `- Unused funds can roll over year to year`,
       `- It is the stronger fit for building a longer-term healthcare cushion`,
     ].join('\n');
   }
@@ -2530,6 +2592,10 @@ function buildTopicReply(session: Session, topic: string, query: string): string
 
   if (topic === 'HSA/FSA') {
     const lower = query.toLowerCase();
+    const ruleReply = buildHsaFsaRuleReply(query);
+    if (ruleReply) {
+      return ruleReply;
+    }
     const practicalFitReply = buildHsaFsaPracticalFitReply(session, query);
     if (practicalFitReply) {
       return practicalFitReply;
@@ -2891,6 +2957,11 @@ function buildContinuationReply(session: Session, query: string): string | null 
     return buildTopicReply(session, 'HSA/FSA', normalizedQuery);
   }
 
+  if (activeTopic === 'HSA/FSA' && (isHsaFsaRuleQuestion(normalizedQuery) || isDirectHsaFsaFitQuestion(normalizedQuery) || hsaFitFocus)) {
+    setTopic(session, 'HSA/FSA');
+    return buildTopicReply(session, 'HSA/FSA', normalizedQuery);
+  }
+
   if (explicitTopic && explicitTopic !== 'Benefits Overview') {
     const normalizedExplicitTopic = normalizeBenefitCategory(explicitTopic);
     if (isTopicOverviewQuestion(normalizedQuery) || isShortTopicPivot(normalizedQuery, normalizedExplicitTopic)) {
@@ -2924,7 +2995,7 @@ function buildContinuationReply(session: Session, query: string): string | null 
         : normalizedExplicitTopic === 'Dental' || normalizedExplicitTopic === 'Vision'
           ? (isRoutineBenefitDetailQuestion(normalizedQuery) || isWorthAddingFollowup(normalizedQuery))
           : normalizedExplicitTopic === 'HSA/FSA'
-            ? (isHsaFsaCompatibilityQuestion(normalizedQuery) || isDirectHsaFsaFitQuestion(normalizedQuery) || /\bwhat\s+does\s+(hsa|fsa)\s+mean\b|\bwhat\s+is\s+an?\s+(hsa|fsa)\b/i.test(lower))
+            ? (isHsaFsaCompatibilityQuestion(normalizedQuery) || isDirectHsaFsaFitQuestion(normalizedQuery) || isHsaFsaRuleQuestion(normalizedQuery) || /\bwhat\s+does\s+(hsa|fsa)\s+mean\b|\bwhat\s+is\s+an?\s+(hsa|fsa)\b/i.test(lower))
             : (
               isNonMedicalDetailQuestion(normalizedExplicitTopic, normalizedQuery)
               || isSupplementalRecommendationQuestion(normalizedQuery)
@@ -2951,6 +3022,9 @@ function buildContinuationReply(session: Session, query: string): string | null 
   }
 
   if (
+    activeTopic !== 'HSA/FSA'
+    && explicitTopic !== 'HSA/FSA'
+    && 
     isDirectMedicalContinuationQuestion(normalizedQuery)
     && /\b(plan|medical|copay|copays|deductible|coinsurance|out[- ]of[- ]pocket|maternity|pregnan|baby|birth|delivery|prenatal|postnatal|kaiser|hsa|hmo|tier|tradeoff|prescription|network)\b/i.test(lower)
   ) {
@@ -3170,7 +3244,7 @@ function buildContinuationReply(session: Session, query: string): string | null 
     return buildTopicReply(session, 'Medical', /maternity|pregnan|baby|birth|delivery|prenatal|postnatal/i.test(lower) ? normalizedQuery : 'maternity coverage');
   }
 
-  if (activeTopic === 'HSA/FSA' && (isDirectHsaFsaFitQuestion(normalizedQuery) || hsaFitFocus)) {
+  if (activeTopic === 'HSA/FSA' && (isDirectHsaFsaFitQuestion(normalizedQuery) || isHsaFsaRuleQuestion(normalizedQuery) || hsaFitFocus)) {
     return buildTopicReply(session, 'HSA/FSA', normalizedQuery);
   }
 

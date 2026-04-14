@@ -3176,6 +3176,53 @@ describe('qa-v2 engine', () => {
     expect(result.answer).not.toContain('We can stay with HSA/FSA');
   });
 
+  it('answers HSA rollover-limit follow-ups directly instead of falling back to the generic hsa/fsa scaffold', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Madeline',
+      hasCollectedName: true,
+      userAge: 29,
+      userState: 'CO',
+      dataConfirmed: true,
+      currentTopic: 'HSA/FSA',
+      lastBotMessage: 'If the goal is long-term rollover savings, HSA is usually the cleaner fit.',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'is there a limit to how much unused funds can roll forward?',
+      session,
+    });
+
+    expect(result.answer).toContain('unused HSA money generally **rolls forward year to year**');
+    expect(result.answer).toContain('IRS annual contribution limit');
+    expect(result.answer).toContain('$4,300');
+    expect(result.answer).not.toContain('We can stay with HSA/FSA');
+  });
+
+  it('answers tax-and-rollover tradeoff follow-ups directly inside hsa/fsa context', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Madeline',
+      hasCollectedName: true,
+      userAge: 29,
+      userState: 'CO',
+      dataConfirmed: true,
+      currentTopic: 'HSA/FSA',
+      selectedPlan: 'Standard HSA',
+      lastBotMessage: 'HSA/FSA overview:\n\n- HSA stands for Health Savings Account\n- FSA stands for Flexible Spending Account',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'can you tell me what the tax and rollover tradeoff means in practice?',
+      session,
+    });
+
+    expect(result.answer).toContain('tax and rollover tradeoff');
+    expect(result.answer).toContain('Unused **HSA** money stays with you');
+    expect(result.answer).toContain('stricter carryover or use-it-or-lose-it rules');
+    expect(result.answer).not.toContain('We can stay with HSA/FSA');
+  });
+
   it('answers deductible-and-out-of-pocket comparison questions directly', async () => {
     const session = makeSession({
       step: 'active_chat',

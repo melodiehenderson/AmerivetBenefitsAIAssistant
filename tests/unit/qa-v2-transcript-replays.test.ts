@@ -2040,6 +2040,33 @@ describe('qa-v2 transcript replays', () => {
     );
   });
 
+  it('replays hsa/fsa rollover-rule follow-ups as direct account guidance instead of the generic topic scaffold', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'is there a limit to how much unused funds can roll forward?',
+          mustContain: ['unused HSA money generally **rolls forward year to year**', 'IRS annual contribution limit', '$4,300'],
+          mustNotContain: ['We can stay with HSA/FSA'],
+        },
+        {
+          user: 'can you tell me what the tax and rollover tradeoff means in practice?',
+          mustContain: ['tax and rollover tradeoff', 'Unused **HSA** money stays with you', 'stricter carryover or use-it-or-lose-it rules'],
+          mustNotContain: ['We can stay with HSA/FSA'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'HSA/FSA',
+        selectedPlan: 'Standard HSA',
+        lastBotMessage: 'HSA/FSA overview:\n\n- HSA stands for Health Savings Account\n- FSA stands for Flexible Spending Account',
+      }),
+    );
+  });
+
   it('replays selected-plan reconsideration as a fresh medical recommendation instead of anchoring to the stale plan lean', async () => {
     await replayTranscript(
       [
