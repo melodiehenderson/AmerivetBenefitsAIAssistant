@@ -6,14 +6,85 @@ const KAISER_STATES = new Set<string>(KAISER_AVAILABLE_STATE_CODES);
 
 type KaiserUnavailableVariant = 'compare' | 'pricing' | 'redirect';
 
+const CHILD_NUMBER_WORDS: Record<string, number> = {
+  one: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+};
+
+function mentionsSpouseLike(query: string): boolean {
+  return /\b(spouse|wife|husband|partner|married|get(?:ting)? married|marriage|fianc(?:e|ee))\b/i.test(query);
+}
+
+function mentionsChildLike(query: string): boolean {
+  return /\b(kids?|children|sons?|daughters?|child(?:ren)?|dependent\s*child|me\s*\+\s*\d+\s*kids?)\b/i.test(query)
+    || /\b(single\s+(?:mom|dad))\b/i.test(query);
+}
+
+function extractChildCountFromQuery(query: string): number | null {
+  const numericMatches = Array.from(query.matchAll(/\b(\d+)\s+(kids?|children|sons?|daughters?)\b/gi))
+    .map((match) => Number(match[1]));
+  const wordMatches = Array.from(query.matchAll(/\b(one|two|three|four|five|six)\s+(kids?|children|sons?|daughters?)\b/gi))
+    .map((match) => CHILD_NUMBER_WORDS[match[1].toLowerCase()] || 0);
+  const counts = [...numericMatches, ...wordMatches].filter((count) => Number.isFinite(count) && count > 0);
+
+  if (counts.length > 0) {
+    return Math.max(...counts);
+  }
+
+  if (/\b(single\s+(?:mom|dad)|my\s+kids|our\s+kids|for\s+my\s+kids|for\s+our\s+kids|employee\s*\+\s*children?)\b/i.test(query)) {
+    return 1;
+  }
+
+  return null;
+}
+
+function inferCoverageTierFromSession(session: Session): string | null {
+  const hasSpouse = Boolean(session.familyDetails?.hasSpouse)
+    || (session.lifeEvents || []).includes('marriage');
+  const numChildren = session.familyDetails?.numChildren || 0;
+
+  if (hasSpouse && numChildren > 0) return 'Employee + Family';
+  if (hasSpouse) return 'Employee + Spouse';
+  if (numChildren > 0) return 'Employee + Child(ren)';
+  return null;
+}
+
 function inferCoverageTierFromQuery(query: string, session: Session): string {
   const low = query.toLowerCase();
-  if (/\bfamily\s*4\+|\bfamily4\+|\bspouse\b.*\b(child|children|kid|kids)\b|\b(child|children|kid|kids)\b.*\bspouse\b|\bmarried\b.*\b(child|children|kid|kids)\b|\b(child|children|kid|kids)\b.*\bmarried\b|\b(husband|wife|partner)\b.*\b(child|children|kid|kids)\b|\b(child|children|kid|kids)\b.*\b(husband|wife|partner)\b/i.test(low)) return 'Employee + Family';
-  if (/employee\s*\+\s*family|family\s*(of|plan|coverage)|for\s*(my|the|our)\s*family/i.test(low)) return 'Employee + Family';
-  if (/employee\s*\+\s*spouse|spouse|husband|wife|partner/i.test(low)) return 'Employee + Spouse';
-  if (/employee\s*\+\s*child|child(?:ren)?\s*coverage|for\s*(my|the)\s*(kid|child|son|daughter)|dependent\s*child/i.test(low)) return 'Employee + Child(ren)';
-  if (/employee\s*only|individual|single|just\s*me|only\s*me/i.test(low)) return 'Employee Only';
-  return session.coverageTierLock || 'Employee Only';
+  const hasSpouseMention = mentionsSpouseLike(low);
+  const explicitChildCount = extractChildCountFromQuery(low);
+  const hasChildMention = explicitChildCount !== null || mentionsChildLike(low);
+  const sessionTier = inferCoverageTierFromSession(session) || session.coverageTierLock || null;
+  const hasGenericFamilyMention = /\bfamily\s*4\+|\bfamily4\+|\b(employee\s*\+\s*family|family\s*(?:of|plan|coverage)|for\s*(?:my|the|our)\s*family)\b/i.test(low);
+
+  if (hasSpouseMention && hasChildMention) {
+    return 'Employee + Family';
+  }
+
+  if (/\b(employee\s*\+\s*spouse|spouse\s+coverage|for\s+my\s+spouse|for\s+our\s+spouse)\b/i.test(low) || hasSpouseMention) {
+    return 'Employee + Spouse';
+  }
+
+  if (/\b(employee\s*\+\s*child(?:ren)?|employee\s*\+\s*\d+\s*kids?|child(?:ren)?\s*coverage|for\s*(?:my|the|our)\s*(?:kids?|child|son|daughter)|dependent\s*child|me\s*(?:and|plus|\+)\s*(?:my\s+)?kids?)\b/i.test(low) || hasChildMention) {
+    return 'Employee + Child(ren)';
+  }
+
+  if (hasGenericFamilyMention) {
+    if (sessionTier) {
+      return sessionTier;
+    }
+    return 'Employee + Family';
+  }
+
+  if (/\b(employee\s*only|individual|just\s*me|only\s*me)\b/i.test(low)) {
+    return 'Employee Only';
+  }
+
+  return sessionTier || 'Employee Only';
 }
 
 function getUserConversationText(session: Session): string {

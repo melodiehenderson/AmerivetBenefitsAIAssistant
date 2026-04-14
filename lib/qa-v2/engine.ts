@@ -21,7 +21,7 @@ import {
   shouldUseCategoryExplorationIntercept,
   stripAffirmationLeadIn,
 } from '@/lib/qa/routing-helpers';
-import { buildLiveSupportMessage } from '@/lib/qa/policy-response-builders';
+import { buildLiveSupportMessage, buildQleFilingOrderMessage } from '@/lib/qa/policy-response-builders';
 
 const ENROLLMENT_PORTAL_URL = process.env.ENROLLMENT_PORTAL_URL || 'https://wd5.myworkday.com/amerivet/login.html';
 const HR_PHONE = process.env.HR_PHONE_NUMBER || '888-217-4728';
@@ -264,7 +264,7 @@ function isLifeFamilyCoverageQuestion(query: string): boolean {
 
 function isHsaFsaCompatibilityQuestion(query: string): boolean {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
-  return /\b(fsa)\b.*\b(kaiser|hmo)\b|\b(kaiser|hmo)\b.*\bfsa\b|\bshould\s+i\s+use\s+an?\s+fsa\b|\bshould\s+i\s+use\s+fsa\b|\buse\s+an?\s+fsa\b|\buse\s+fsa\b|\b(hsa|fsa)\b.*\b(pair\s+best\s+with|go\s+best\s+with|fit\s+best\s+with)\b|\b(pair\s+best\s+with|go\s+best\s+with|fit\s+best\s+with)\b.*\b(hsa|fsa)\b/i.test(lower);
+  return /\b(fsa|hsa)\b.*\b(kaiser|hmo)\b|\b(kaiser|hmo)\b.*\b(fsa|hsa)\b|\bshould\s+i\s+use\s+an?\s+fsa\b|\bshould\s+i\s+use\s+fsa\b|\buse\s+an?\s+fsa\b|\buse\s+fsa\b|\bcan\s+i\s+(?:still\s+)?use\s+an?\s+hsa\b|\bcan\s+i\s+(?:still\s+)?use\s+hsa\b|\bcan(?:not|'t)\s+use\s+an?\s+hsa\b|\b(hsa|fsa)\b.*\b(pair\s+best\s+with|go\s+best\s+with|fit\s+best\s+with)\b|\b(pair\s+best\s+with|go\s+best\s+with|fit\s+best\s+with)\b.*\b(hsa|fsa)\b/i.test(lower);
 }
 
 function isDirectMedicalContinuationQuestion(query: string): boolean {
@@ -392,19 +392,45 @@ function upsertLifeEvent(session: Session, event: string) {
   }
 }
 
+function extractExplicitChildCount(query: string): number | null {
+  const matches = Array.from(query.matchAll(/\b(\d+)\s+(kids?|children|sons?|daughters?)\b/gi));
+  if (matches.length === 0) return null;
+  return Math.max(...matches.map((match) => Number(match[1])));
+}
+
+function extractAdditionalChildCount(query: string): number {
+  const numericMatch = query.match(/\b(?:adopt(?:ing|ion)?|adding)\s+(\d+)\s+(?:more\s+)?(kids?|children|sons?|daughters?)\b/i);
+  if (numericMatch) return Number(numericMatch[1]);
+  if (/\b(adopt(?:ing|ion)?\s+(?:one|another)\s+(kid|child)|one\s+more\s+(kid|child)|another\s+(kid|child)|adding\s+(?:one|another)\s+(kid|child))\b/i.test(query)) {
+    return 1;
+  }
+  return 0;
+}
+
 function rememberHouseholdContext(session: Session, query: string) {
   const lower = query.toLowerCase();
   const details = session.familyDetails || {};
 
-  if (/\b(spouse|wife|husband|partner|married)\b/i.test(lower)) {
+  if (/\b(spouse|wife|husband|partner|married|get(?:ting)? married|marriage|fianc(?:e|ée))\b/i.test(lower)) {
     details.hasSpouse = true;
+    if (/\b(married|get(?:ting)? married|marriage)\b/i.test(lower)) {
+      upsertLifeEvent(session, 'marriage');
+    }
   }
 
-  const childCountMatch = lower.match(/\b(\d+)\s+(kids?|children)\b/i);
-  if (childCountMatch) {
-    details.numChildren = Number(childCountMatch[1]);
-  } else if (/\b(kids?|children|son|daughter)\b/i.test(lower)) {
+  const explicitChildCount = extractExplicitChildCount(lower);
+  const additionalChildCount = extractAdditionalChildCount(lower);
+
+  if (explicitChildCount !== null) {
+    details.numChildren = explicitChildCount + additionalChildCount;
+  } else if (additionalChildCount > 0) {
+    details.numChildren = Math.max(details.numChildren || 0, 0) + additionalChildCount;
+  } else if (/\b(kids?|children|son|daughter|single\s+(?:mom|dad))\b/i.test(lower)) {
     details.numChildren = Math.max(details.numChildren || 0, 1);
+  }
+
+  if (/\b(adopt|adoption|adopting)\b/i.test(lower)) {
+    upsertLifeEvent(session, 'adoption');
   }
 
   if (Object.keys(details).length > 0) {
@@ -436,8 +462,390 @@ function refreshSessionSignals(session: Session, query: string) {
   rememberMedicalDirection(session, query);
 }
 
+function getFilteredMedicalPricingRowsForTier(session: Session, coverageTier: string) {
+  const rows = pricingUtils.buildPerPaycheckBreakdown(coverageTier, session.payPeriods || 26)
+    .filter((row) => !/dental|vision/i.test(row.plan) && row.provider !== 'VSP');
+
+  return session.userState && !isKaiserEligibleState(session.userState)
+    ? rows.filter((row) => !/kaiser/i.test(row.plan))
+    : rows;
+}
+
+function isPackageRecommendationQuestion(query: string): boolean {
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  return /\b(which\s+benefits?\s+should\s+i\s+(?:get|take)|which\s+benefits?\s+do\s+you\s+recommend|which\s+ones?\s+would\s+you\s+recommend\s+i\s+get|what\s+benefits?\s+should\s+i\s+(?:get|take)|what\s+other\s+benefits?\s+should\s+i\s+get|should\s+i\s+get\s+any\s+of\s+the\s+other\s+benefits|knowing\s+what\s+you\s+know\s+about\s+me|based\s+on\s+what\s+you\s+know\s+about\s+me)\b/i.test(lower);
+}
+
+function buildPackageRecommendationReply(session: Session, query: string): string {
+  const householdText = `${(session.messages || [])
+    .filter((message) => message.role === 'user')
+    .map((message) => message.content)
+    .join('\n')}\n${query}`.toLowerCase();
+  const hasSpouse = Boolean(session.familyDetails?.hasSpouse)
+    || /\b(spouse|wife|husband|partner|married|get(?:ting)? married)\b/i.test(householdText);
+  const numChildren = session.familyDetails?.numChildren || 0;
+  const pregnancy = hasPregnancyContext(session, query);
+  const soleBreadwinner = /\b(sole\s+bread\s*winner|breadwinner|only\s+income|sole\s+provider|only\s+provider|family\s+relies\s+on\s+my\s+income|rely\s+on\s+my\s+income|single\s+(?:mom|dad))\b/i.test(householdText);
+
+  const likelyTier = hasSpouse && numChildren > 0
+    ? 'Employee + Family'
+    : hasSpouse
+      ? 'Employee + Spouse'
+      : numChildren > 0
+        ? 'Employee + Child(ren)'
+        : 'Employee Only';
+
+  const lines = [
+    `Based on what you have told me, I would usually prioritize your benefits in this order:`,
+    ``,
+    pregnancy
+      ? `- **Medical first**: because pregnancy or a baby-related life event makes the core medical decision and coverage tier the biggest immediate choice`
+      : `- **Medical first**: because that is still the biggest cost and coverage decision in the package`,
+  ];
+
+  if (likelyTier !== 'Employee Only') {
+    lines.push(`- **Use ${likelyTier} medical pricing as your working tier** once the household changes are active`);
+  }
+
+  if (soleBreadwinner || hasSpouse || numChildren > 0) {
+    lines.push(`- **Disability next**, because protecting the paycheck usually matters before smaller supplemental add-ons when other people depend on your income`);
+    lines.push(`- **Life insurance after that**, especially if you want more protection than AmeriVet's employer-paid basic life benefit`);
+  } else {
+    lines.push(`- **Dental or vision next only if you already expect to use them**, because they are routine-care add-ons rather than the main financial-risk decision`);
+  }
+
+  if (numChildren > 0) {
+    lines.push(`- **Dental and vision become more worth looking at after medical** if the kids will actually use cleanings, orthodontia, eye exams, glasses, or contacts`);
+  } else {
+    lines.push(`- **Dental and vision stay secondary** unless you already know you will use routine care enough to justify the added payroll deduction`);
+  }
+
+  lines.push(`- **Accident and critical illness last**, because they are usually optional extra cash-protection layers after medical and income protection are settled`);
+  lines.push(``);
+  lines.push(
+    soleBreadwinner || hasSpouse || numChildren > 0
+      ? `So if you want the shortest version: I would usually settle **medical first**, then look at **disability/life**, then decide whether **dental/vision** are worth adding, and only then worry about **critical illness or accident**.`
+      : `So if you want the shortest version: I would usually settle **medical first**, then decide whether **dental/vision** are worth adding, then look at **life/disability**, and only after that consider **critical illness or accident**.`,
+  );
+
+  return lines.join('\n');
+}
+
+function isQleTimingQuestion(query: string): boolean {
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  return /\b(how\s+long\s+do\s+we\s+have|how\s+many\s+days\s+do\s+we\s+have|how\s+long\s+do\s+i\s+have|how\s+many\s+days\s+do\s+i\s+have|deadline|window|qualifying\s+life\s+event|qle|when\s+do\s+we\s+have\s+to|when\s+do\s+i\s+have\s+to)\b/i.test(lower)
+    && /\b(married|marriage|get(?:ting)? married|spouse|wife|husband|partner|baby|birth|born|delivery|pregnan|adopt|adoption|child)\b/i.test(lower);
+}
+
+function buildQleTimingReply(session: Session, query: string): string {
+  const lower = query.toLowerCase();
+  const marriageEvent = /\b(married|marriage|get(?:ting)? married|spouse|wife|husband|partner)\b/i.test(lower);
+  const birthOrAdoptionEvent = /\b(baby|birth|born|delivery|pregnan|adopt|adoption|child)\b/i.test(lower);
+
+  if (marriageEvent && birthOrAdoptionEvent) {
+    return [
+      `Marriage and birth/adoption are both qualifying life events, so I would treat this as a timing question rather than a medical-plan question.`,
+      ``,
+      buildQleFilingOrderMessage(session),
+      ``,
+      `The safest practical answer is: handle each event in Workday as soon as it happens, and do not wait for open enrollment if you need to change coverage.`,
+    ].join('\n');
+  }
+
+  if (birthOrAdoptionEvent) {
+    return [
+      `Birth or adoption is a qualifying life event, so you should handle that change in Workday as soon as the event happens rather than waiting for open enrollment.`,
+      ``,
+      `The safest practical answer is:`,
+      `- add the baby or adopted child through the QLE workflow after the event date`,
+      `- assume the filing window is limited and commonly around 30 days unless Workday or the SPD shows a different deadline`,
+      `- use that event to update the child and, if needed, change your coverage tier or plan`,
+      ``,
+      `I would confirm the exact deadline in Workday right away or call HR at ${HR_PHONE} if you want the official cutoff before the event happens.`,
+    ].join('\n');
+  }
+
+  return [
+    `Marriage is a qualifying life event, so you should not wait for open enrollment if you need to change coverage after getting married.`,
+    ``,
+    `The safest practical answer is:`,
+    `- file the marriage event in Workday promptly after the marriage date`,
+    `- assume the filing window is limited and commonly around 30 days unless Workday or the SPD shows a different deadline`,
+    `- use that event to add your spouse and update the medical coverage tier if needed`,
+    ``,
+    `If you want the exact deadline AmeriVet is showing for your event, I would check Workday immediately or call HR at ${HR_PHONE}.`,
+  ].join('\n');
+}
+
+function isMedicalPremiumReplayQuestion(query: string): boolean {
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  return /\b(show\s+me\s+the\s+numbers(?:\s+again)?|show\s+me\s+the\s+monthly\s+numbers|show\s+me\s+how\s+much\s+i\s+have\s+to\s+pay\s+each\s+month|monthly\s+premiums?|per\s+month\s+on\s+each\s+plan|how\s+much\s+will\s+my\s+premium\s+be|what\s+are\s+the\s+premiums?|what\s+would\s+the\s+premium\s+be)\b/i.test(lower);
+}
+
+function buildMedicalPremiumReplayReply(session: Session, query: string): string {
+  const coverageTier = getCoverageTierForQuery(query, session);
+  const rows = getFilteredMedicalPricingRowsForTier(session, coverageTier);
+  const locationLabel = session.userState ? ` in ${session.userState}` : '';
+
+  const lines = [`Here are the monthly medical premiums for ${coverageTier} coverage${locationLabel}:`, ``];
+  for (const row of rows) {
+    lines.push(`- **${row.plan}**: $${pricingUtils.formatMoney(row.perMonth)}/month ($${pricingUtils.formatMoney(row.perPaycheck)} per paycheck)`);
+  }
+  lines.push(``);
+  lines.push(`If you want, I can also compare the deductible and out-of-pocket tradeoff right next to those premiums.`);
+  return lines.join('\n');
+}
+
+function countSupplementalTopicsMentioned(query: string): number {
+  const lower = query.toLowerCase();
+  let count = 0;
+  if (/\b(life(?:\s+insurance)?|term life|whole life|basic life)\b/i.test(lower)) count += 1;
+  if (/\b(disability|std|ltd|short[- ]?term|long[- ]?term)\b/i.test(lower)) count += 1;
+  if (/\bcritical(?:\s+illness)?\b/i.test(lower)) count += 1;
+  if (/\b(accident|ad&d|ad\/d)\b/i.test(lower)) count += 1;
+  return count;
+}
+
+function isSupplementalNarrowingQuestion(query: string): boolean {
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  return countSupplementalTopicsMentioned(lower) >= 2
+    || /\b(narrow\s+down|most\s+relevant\s+next|which\s+is\s+most\s+relevant|which\s+one\s+matters\s+more|more\s+useful|what\s+should\s+i\s+add\s+next|if\s+i\s+add\s+one\s+thing)\b/i.test(lower)
+      && /\b(life|disability|critical|accident|supplemental)\b/i.test(lower);
+}
+
+function buildSupplementalNarrowingReply(session: Session, query: string): string {
+  const lower = query.toLowerCase();
+  const householdText = `${(session.messages || [])
+    .filter((message) => message.role === 'user')
+    .map((message) => message.content)
+    .join('\n')}\n${query}`.toLowerCase();
+  const soleBreadwinner = /\b(sole\s+bread\s*winner|breadwinner|only\s+income|sole\s+provider|only\s+provider|family\s+relies\s+on\s+my\s+income|rely\s+on\s+my\s+income|single\s+(?:mom|dad))\b/i.test(householdText);
+  const householdDependsOnIncome = soleBreadwinner || /\b(spouse|wife|husband|partner|kids?|children|family|household)\b/i.test(householdText);
+  const mentionsLife = /\b(life(?:\s+insurance)?|term life|whole life|basic life|25k)\b/i.test(lower);
+  const mentionsDisability = /\b(disability|std|ltd|short[- ]?term|long[- ]?term)\b/i.test(lower);
+  const mentionsCritical = /\bcritical(?:\s+illness)?\b/i.test(lower);
+  const mentionsAccident = /\b(accident|ad&d|ad\/d)\b/i.test(lower);
+
+  if (mentionsLife && mentionsDisability) {
+    return [
+      householdDependsOnIncome
+        ? `If you are choosing between more life insurance and disability, I would usually tighten up **disability first** when the household depends on your paycheck.`
+        : `If you are choosing between more life insurance and disability, the practical split is paycheck protection versus long-term survivor protection.`,
+      ``,
+      `Why:`,
+      `- **Disability** protects part of your income if you are alive but unable to work`,
+      `- **Life insurance** protects the household if you die`,
+      `- AmeriVet already gives you a basic employer-paid life benefit, so the extra gap is often disability first when missing income would hurt immediately`,
+      ``,
+      householdDependsOnIncome
+        ? `So if you are asking me to lead the decision, I would usually do **disability first**, then add more **life insurance** if the household still needs more survivor protection than the employer-paid basic benefit.`
+        : `So if you are asking me to lead the decision, I would usually choose the one that covers the bigger real-world gap first: paycheck interruption or survivor protection.`,
+    ].join('\n');
+  }
+
+  if (mentionsDisability && (mentionsCritical || mentionsAccident)) {
+    return [
+      `If you want me to narrow down disability versus the smaller supplemental cash benefits, I would usually put **disability first** when income protection matters for the household.`,
+      ``,
+      `After that:`,
+      `- choose **Critical Illness** if the bigger fear is the financial shock of a serious diagnosis`,
+      `- choose **Accident/AD&D** if the bigger fear is injury risk`,
+      ``,
+      `So my practical order is usually: **medical first**, then **disability/life** if income protection matters, then **critical illness or accident** if you still want an extra cash-support layer.`,
+    ].join('\n');
+  }
+
+  if (mentionsCritical && mentionsAccident) {
+    return buildAccidentVsCriticalComparison();
+  }
+
+  return [
+    `If you want me to narrow down the supplemental side, I would usually decide it in this order:`,
+    ``,
+    `- **Disability or life** first if the household depends on your income`,
+    `- **Critical Illness** next if diagnosis-triggered cash support feels more relevant`,
+    `- **Accident/AD&D** next if injury risk feels more relevant`,
+    ``,
+    `So if you want, tell me whether your bigger concern is paycheck interruption, survivor protection, diagnosis risk, or injury risk and I’ll narrow it to the most relevant next step.`,
+  ].join('\n');
+}
+
+function isExplicitTopicDirectQuestion(topic: string, query: string): boolean {
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+
+  if (topic === 'Medical') {
+    return isTopicOverviewQuestion(query)
+      || isShortTopicPivot(query, 'Medical')
+      || isDirectMedicalContinuationQuestion(query)
+      || isMedicalCoverageTierQuestion(query)
+      || isMedicalPremiumReplayQuestion(query)
+      || isMedicalPregnancySignal(query);
+  }
+
+  if (topic === 'HSA/FSA') {
+    return isTopicOverviewQuestion(query)
+      || isShortTopicPivot(query, 'HSA/FSA')
+      || isDirectHsaFsaFitQuestion(query)
+      || isHsaFsaCompatibilityQuestion(query)
+      || /\bwhat\s+does\s+(hsa|fsa)\s+mean\b|\bwhat\s+is\s+an?\s+(hsa|fsa)\b|\bhelp\s+me\s+with\s+hsa\/fsa\b|\bhsa\/fsa\s+stuff\b|\btell\s+me\s+about\s+hsa\/fsa\b/i.test(lower);
+  }
+
+  if (topic === 'Dental' || topic === 'Vision') {
+    return isTopicOverviewQuestion(query)
+      || isShortTopicPivot(query, topic)
+      || isRoutineBenefitDetailQuestion(query)
+      || isWorthAddingFollowup(query);
+  }
+
+  return isTopicOverviewQuestion(query)
+    || isShortTopicPivot(query, topic)
+    || isNonMedicalDetailQuestion(topic, query)
+    || isSupplementalRecommendationQuestion(query)
+    || isWorthAddingFollowup(query);
+}
+
+function buildHighPriorityIntentReply(session: Session, query: string): EngineResult | null {
+  const normalizedQuery = normalizeContinuationQuery(query);
+  const lower = normalizedQuery.toLowerCase();
+  const activeTopic = session.currentTopic || inferTopicFromLastBotMessage(session.lastBotMessage);
+  const explicitTopic = benefitTopicFromQuery(normalizedQuery);
+  const medicalContext = activeTopic === 'Medical'
+    || explicitTopic === 'Medical'
+    || /\b(plan|plans|medical|kaiser|hsa|hmo|ppo|coverage|premium|premiums|employee\s*\+|spouse|family|kids?|children|household)\b/i.test(lower);
+  const wantsMedicalPremiumReplay = isMedicalPremiumReplayQuestion(normalizedQuery);
+  const wantsMedicalCostEstimate = isCostModelRequest(normalizedQuery)
+    || /\b(what\s+are\s+the\s+costs?|what\s+would\s+the\s+costs?\s+be|estimate\s+the\s+likely\s+costs?|estimate\s+likely\s+costs?|projected\s+costs?|show\s+me\s+the\s+costs?|what\s+would\s+i\s+pay)\b/i.test(lower);
+
+  // Desired precedence contract:
+  // 1. Direct policy/support and fresh package-level recommendation questions.
+  // 2. Fresh explicit topic pivots and direct practical questions inside a new topic.
+  // 3. Direct practical follow-ups that need concrete data (QLE timing, tiers, premiums, HSA/FSA implications,
+  //    supplemental narrowing), even if an old topic is still active.
+  // 4. Only then let stale-topic continuation and pending-guidance scaffolding try to carry the conversation.
+
+  if (isQleTimingQuestion(normalizedQuery)) {
+    clearPendingGuidance(session);
+    return { answer: buildQleTimingReply(session, normalizedQuery), metadata: { intercept: 'qle-timing-v2' } };
+  }
+
+  if (isPackageRecommendationQuestion(normalizedQuery)) {
+    clearPendingGuidance(session);
+    return { answer: buildPackageRecommendationReply(session, normalizedQuery), metadata: { intercept: 'package-recommendation-v2' } };
+  }
+
+  if (
+    isReturnToMedicalIntent(normalizedQuery)
+    && (
+      activeTopic === 'HSA/FSA'
+      || activeTopic === 'Medical'
+      || /hsa\/fsa overview|health savings account|flexible spending account|medical plan options|standard hsa|enhanced hsa|kaiser standard hmo/i.test(session.lastBotMessage || '')
+    )
+  ) {
+    setTopic(session, 'Medical');
+    return {
+      answer: buildTopicReply(session, 'Medical', canonicalTopicQuery('Medical', normalizedQuery)),
+      metadata: { intercept: 'return-to-medical-priority-v2', topic: 'Medical' },
+    };
+  }
+
+  if (explicitTopic && explicitTopic !== 'Benefits Overview') {
+    const normalizedExplicitTopic = normalizeBenefitCategory(explicitTopic);
+    if (isExplicitTopicDirectQuestion(normalizedExplicitTopic, normalizedQuery)) {
+      const topicQuery =
+        isTopicOverviewQuestion(normalizedQuery) || isShortTopicPivot(normalizedQuery, normalizedExplicitTopic)
+          ? canonicalTopicQuery(normalizedExplicitTopic, normalizedQuery)
+          : normalizedQuery;
+      setTopic(session, normalizedExplicitTopic);
+      return {
+        answer: buildTopicReply(session, normalizedExplicitTopic, topicQuery),
+        metadata: { intercept: 'fresh-topic-direct-v2', topic: normalizedExplicitTopic },
+      };
+    }
+  }
+
+  if (
+    (activeTopic === 'Medical' || explicitTopic === 'Medical')
+    && (isDirectMedicalContinuationQuestion(normalizedQuery)
+      || isMedicalPregnancySignal(normalizedQuery)
+      || isMedicalAccumulatorComparisonQuestion(normalizedQuery))
+  ) {
+    setTopic(session, 'Medical');
+    return {
+      answer: buildTopicReply(session, 'Medical', normalizedQuery),
+      metadata: { intercept: 'direct-medical-priority-v2', topic: 'Medical' },
+    };
+  }
+
+  if (isMedicalCoverageTierQuestion(normalizedQuery)) {
+    setTopic(session, 'Medical');
+    return {
+      answer: buildMedicalCoverageTierDecisionReply(session, normalizedQuery),
+      metadata: { intercept: 'medical-coverage-tier-priority-v2', topic: 'Medical' },
+    };
+  }
+
+  if (medicalContext && wantsMedicalPremiumReplay) {
+    setTopic(session, 'Medical');
+    return {
+      answer: buildMedicalPremiumReplayReply(session, normalizedQuery),
+      metadata: { intercept: 'medical-premium-replay-v2', topic: 'Medical' },
+    };
+  }
+
+  if (medicalContext && wantsMedicalCostEstimate) {
+    setTopic(session, 'Medical');
+    return {
+      answer: buildTopicReply(session, 'Medical', normalizedQuery),
+      metadata: { intercept: 'medical-cost-priority-v2', topic: 'Medical' },
+    };
+  }
+
+  if (
+    (explicitTopic === 'HSA/FSA' || activeTopic === 'HSA/FSA')
+    && (isDirectHsaFsaFitQuestion(normalizedQuery) || isHsaFsaCompatibilityQuestion(normalizedQuery))
+  ) {
+    setTopic(session, 'HSA/FSA');
+    return {
+      answer: buildTopicReply(session, 'HSA/FSA', normalizedQuery),
+      metadata: { intercept: 'direct-hsa-fsa-priority-v2', topic: 'HSA/FSA' },
+    };
+  }
+
+  if (isSupplementalNarrowingQuestion(normalizedQuery)) {
+    clearPendingGuidance(session);
+    return { answer: buildSupplementalNarrowingReply(session, normalizedQuery), metadata: { intercept: 'supplemental-narrowing-v2' } };
+  }
+
+  return null;
+}
+
 function buildHsaFsaCompatibilityReply(query: string): string {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  if (/\b(if\s+i\s+really\s+want\s+to\s+use\s+an?\s+hsa|want\s+to\s+keep\s+hsa\s+eligibility|does\s+that\s+mean\s+i\s+can'?t\s+use\s+an?\s+hsa|can(?:not|'t)\s+use\s+an?\s+hsa|use\s+an?\s+hsa\s+with\s+kaiser)\b/i.test(lower)) {
+    return [
+      `If using an **HSA** is important to you, I would usually **not** go with **Kaiser Standard HMO**.`,
+      ``,
+      `Why:`,
+      `- AmeriVet's HSA-qualified medical plans are **Standard HSA** and **Enhanced HSA**`,
+      `- **Kaiser Standard HMO** is the non-HSA-qualified path in AmeriVet's package`,
+      `- So if Kaiser is your medical plan, FSA is usually the cleaner pre-tax account and HSA is not the main fit there`,
+      ``,
+      `So yes: if HSA eligibility is the priority, I would usually stay with **Standard HSA** or **Enhanced HSA** instead of Kaiser.`,
+    ].join('\n');
+  }
+
+  if (/\bcan\s+i\s+use\s+an?\s+fsa\b.*\b(kaiser|hmo)\b|\b(kaiser|hmo)\b.*\bcan\s+i\s+use\s+an?\s+fsa\b/i.test(lower)) {
+    return [
+      `Yes. If you enroll in **Kaiser Standard HMO**, **FSA** is usually the more natural pre-tax account.`,
+      ``,
+      `Why:`,
+      `- Kaiser Standard HMO is AmeriVet's non-HSA-qualified medical option`,
+      `- FSA is the cleaner fit when you want pre-tax help for near-term eligible expenses and you are not trying to preserve HSA eligibility`,
+      ``,
+      `So the short version is: **Kaiser pairs more naturally with FSA than HSA.**`,
+    ].join('\n');
+  }
+
   if (/\bshould\s+i\s+use\s+an?\s+fsa\b|\buse\s+an?\s+fsa\b/i.test(lower)) {
     return [
       `I would usually use an FSA only if you expect to spend the money within the current plan year and you are not trying to keep HSA eligibility as the main priority.`,
@@ -482,6 +890,17 @@ function buildHsaFsaPracticalFitReply(session: Session, query: string): string |
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
   const currentPlan = session.selectedPlan || '';
 
+  if (/\b(if\s+i\s+really\s+want\s+to\s+use\s+an?\s+hsa|want\s+to\s+keep\s+hsa\s+eligibility)\b/i.test(lower)) {
+    return [
+      `If keeping **HSA eligibility** is the priority, I would usually stay with **Standard HSA** or **Enhanced HSA** rather than **Kaiser Standard HMO**.`,
+      ``,
+      `Why:`,
+      `- Standard HSA and Enhanced HSA are AmeriVet's HSA-qualified medical paths`,
+      `- Kaiser Standard HMO is the non-HSA-qualified path`,
+      `- So the cleaner match for "I really want an HSA" is one of the two HSA medical plans`,
+    ].join('\n');
+  }
+
   if (/\b(this\s+year|current\s+plan\s+year|spend\s+it\s+soon|use\s+it\s+soon|near[- ]term|right\s+away)\b/i.test(lower)) {
     return [
       `If the goal is to spend the money in the current plan year, **FSA is usually the cleaner fit.**`,
@@ -506,7 +925,7 @@ function buildHsaFsaPracticalFitReply(session: Session, query: string): string |
 
   if (/\bkaiser|hmo\b/i.test(lower) || /Kaiser Standard HMO/i.test(currentPlan)) {
     return [
-      `If you are leaning toward **Kaiser Standard HMO**, **FSA** is usually the cleaner fit.`,
+      `If you are leaning toward **Kaiser Standard HMO**, FSA is usually the more natural pre-tax account and the cleaner fit.`,
       ``,
       `Why:`,
       `- The practical dividing line is whether your medical plan is HSA-qualified`,
@@ -1324,7 +1743,8 @@ function normalizeNetworkPreference(query: string): string | undefined {
 }
 
 function isCostModelRequest(query: string): boolean {
-  return /\b(calculate|estimate|project(?:ed)?|model)\b.*\b(cost|costs|expense|expenses)\b|\bhealthcare\s+costs?\b|\busage\s+level\s+is\b|\b(low|moderate|high)\s+usage\b/i.test(query.toLowerCase());
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  return /\b(calculate|estimate|estimated|project(?:ed)?|model)\b[^.?!]{0,50}\b(cost|costs|expense|expenses)\b|\bhealthcare\s+costs?\b|\bestimate\s+likely\s+costs?\b|\bwhat\s+(?:are|would\s+be)\s+the\s+costs?\b[^.?!]{0,60}\b(plan|plans|medical|kaiser|hsa|hmo|ppo|employee\s*\+|spouse|family|kids?|children|household)\b|\bwhat\s+would\s+i\s+pay\b[^.?!]{0,60}\b(plan|plans|medical|kaiser|hsa|hmo|ppo)\b|\busage\s+level\s+is\b|\b(low|moderate|high)\s+usage\b/i.test(lower);
 }
 
 function isMedicalPregnancySignal(query: string): boolean {
@@ -1390,14 +1810,15 @@ function isContextualBenefitsOverviewQuestion(query: string): boolean {
 
 function isMedicalCoverageTierQuestion(query: string): boolean {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
-  return /\b(coverage\s+tier|which\s+tier|employee\s*\+\s*spouse|employee\s*\+\s*family|family\s+plan|spouse\s+plan|family\s+one|spouse\s+one|when\s+i\s+select\s+my\s+plan)\b/i.test(lower)
-    && /\b(spouse|wife|husband|partner|baby|pregnan|expecting|child|children|kid|kids|family|now|next\s+year|when\s+i\s+select)\b/i.test(lower);
+  return /\b(coverage\s+tier|coverage\s+tiers|what'?s\s+a\s+coverage\s+tier|what\s+are\s+the\s+tiers?|which\s+tier|compare\s+tiers?|employee\s*\+\s*spouse|employee\s*\+\s*family|employee\s*\+\s*child(?:ren)?|family\s+plan|spouse\s+plan|child(?:ren)?\s+plan|family\s+one|spouse\s+one|when\s+i\s+select\s+my\s+plan)\b/i.test(lower);
 }
 
 function buildMedicalCoverageTierDecisionReply(session: Session, query: string): string {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
   const mentionsFutureBaby = /\b(baby|pregnan|expecting|due|birth|next\s+year|next\s+feb)\b/i.test(lower);
   const hasSpouse = /\b(spouse|wife|husband|partner)\b/i.test(lower) || !!session.familyDetails?.hasSpouse;
+  const asksCompare = /\b(compare\s+tiers?|what\s+are\s+the\s+tiers?)\b/i.test(lower);
+  const likelyTier = getCoverageTierForQuery(query, session);
 
   if (hasSpouse && mentionsFutureBaby) {
     return [
@@ -1411,7 +1832,7 @@ function buildMedicalCoverageTierDecisionReply(session: Session, query: string):
     ].join('\n');
   }
 
-  return [
+  const lines = [
     `A coverage tier is the level of people you are enrolling, which changes both who is covered and what you pay.`,
     ``,
     `AmeriVet's medical tiers are:`,
@@ -1419,9 +1840,20 @@ function buildMedicalCoverageTierDecisionReply(session: Session, query: string):
     `- Employee + Spouse`,
     `- Employee + Child(ren)`,
     `- Employee + Family`,
+  ];
+
+  if (likelyTier !== 'Employee Only') {
+    lines.push(``, `Based on what you have shared so far, the most likely tier is **${likelyTier}**.`);
+  }
+
+  lines.push(
     ``,
-    `If you tell me who you need covered right now, I can point you to the most likely tier and then compare the medical plans inside that tier.`,
-  ].join('\n');
+    asksCompare
+      ? `The practical difference is that premiums rise as you move from Employee Only to the broader household tiers. If you want, I can show the actual medical premiums across those tiers next.`
+      : `If you tell me who you need covered right now, I can point you to the most likely tier and then compare the medical plans inside that tier.`,
+  );
+
+  return lines.join('\n');
 }
 
 function buildTopicReply(session: Session, topic: string, query: string): string {
@@ -1461,12 +1893,12 @@ function buildTopicReply(session: Session, topic: string, query: string): string
 
   if (topic === 'HSA/FSA') {
     const lower = query.toLowerCase();
-    if (isHsaFsaCompatibilityQuestion(query)) {
-      return buildHsaFsaCompatibilityReply(query);
-    }
     const practicalFitReply = buildHsaFsaPracticalFitReply(session, query);
     if (practicalFitReply) {
       return practicalFitReply;
+    }
+    if (isHsaFsaCompatibilityQuestion(query)) {
+      return buildHsaFsaCompatibilityReply(query);
     }
     if (/\bwhat\s+does\s+hsa\s+mean\b|\bwhat\s+is\s+an?\s+hsa\b/.test(lower)) {
       return `HSA stands for **Health Savings Account**.\n\nIt is a tax-advantaged account you can use for eligible healthcare expenses when you are enrolled in an HSA-qualified medical plan like AmeriVet's **Standard HSA** or **Enhanced HSA**.\n\nThe short version is:\n- You contribute pre-tax money\n- The money can be used for eligible medical expenses\n- Unused funds roll over year to year\n- The account stays with you`;
@@ -1805,11 +2237,6 @@ function buildContinuationReply(session: Session, query: string): string | null 
     return buildTopicReply(session, topicOverride, canonicalTopicQuery(topicOverride, normalizedQuery));
   }
 
-  if (isHsaFsaCompatibilityQuestion(normalizedQuery)) {
-    setTopic(session, 'HSA/FSA');
-    return buildTopicReply(session, 'HSA/FSA', normalizedQuery);
-  }
-
   if (
     isReturnToMedicalIntent(normalizedQuery)
     && (
@@ -1820,6 +2247,11 @@ function buildContinuationReply(session: Session, query: string): string | null 
   ) {
     setTopic(session, 'Medical');
     return buildTopicReply(session, 'Medical', canonicalTopicQuery('Medical', normalizedQuery));
+  }
+
+  if (isHsaFsaCompatibilityQuestion(normalizedQuery)) {
+    setTopic(session, 'HSA/FSA');
+    return buildTopicReply(session, 'HSA/FSA', normalizedQuery);
   }
 
   if (explicitTopic && explicitTopic !== 'Benefits Overview') {
@@ -2466,6 +2898,18 @@ export async function runQaV2Engine(params: {
     session.lastBotMessage = directSupportReply;
     session.messages.push({ role: 'assistant', content: directSupportReply });
     return { answer: directSupportReply, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'direct-support-v2', topic: session.currentTopic || null } };
+  }
+
+  const highPriorityReply = buildHighPriorityIntentReply(session, query);
+  if (highPriorityReply) {
+    session.lastBotMessage = highPriorityReply.answer;
+    session.messages.push({ role: 'assistant', content: highPriorityReply.answer });
+    return {
+      answer: highPriorityReply.answer,
+      tier: 'L1',
+      sessionContext: buildSessionContext(session),
+      metadata: highPriorityReply.metadata,
+    };
   }
 
   const standaloneFocus = detectBenefitPriorityFocus(query);

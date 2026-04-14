@@ -1708,4 +1708,67 @@ describe('qa-v2 transcript replays', () => {
       }),
     );
   });
+
+  it('replays package recommendation, QLE timing, and premium replay questions as fresh high-priority answers', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'knowing what you know about me, which benefits would you recommend i get?',
+          mustContain: ['Based on what you have told me, I would usually prioritize your benefits in this order', 'Medical first'],
+          mustNotContain: ['We can stay with medical'],
+        },
+        {
+          user: 'after we have our baby, how long do we have to add her to our insurance?',
+          mustContain: ['qualifying life event', 'Workday'],
+          mustNotContain: ['maternity coverage comparison'],
+        },
+        {
+          user: 'show me how much i have to pay each month on each plan',
+          mustContain: ['Here are the monthly medical premiums for Employee + Family coverage in WA', 'Kaiser Standard HMO'],
+          mustNotContain: ['We can stay with medical'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'Medical',
+        coverageTierLock: 'Employee + Child(ren)',
+        familyDetails: { hasSpouse: true, numChildren: 2 },
+        lifeEvents: ['pregnancy'],
+      }),
+    );
+  });
+
+  it('replays life-versus-disability and multi-supplement narrowing as comparison guidance instead of stale topic cards', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'life insurance info',
+          mustContain: ['Life insurance options:'],
+        },
+        {
+          user: 'so, if amerivet gives me $25 life insurance, if i spend on something additional, should it be more life insurance, or disability?',
+          mustContain: ['choosing between more life insurance and disability', 'disability first'],
+          mustNotContain: ['Life insurance options:'],
+        },
+        {
+          user: "you're supposed to help me narrow down whether accident, critical illness, or disability is the most relevant next step for my situation.",
+          mustContain: ['narrow down disability versus the smaller supplemental cash benefits', 'disability first'],
+          mustNotContain: ['Critical illness coverage is a supplemental benefit'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'Life Insurance',
+        familyDetails: { numChildren: 2 },
+      }),
+    );
+  });
 });

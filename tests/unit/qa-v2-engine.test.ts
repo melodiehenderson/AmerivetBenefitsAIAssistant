@@ -3026,4 +3026,193 @@ describe('qa-v2 engine', () => {
     expect(result.answer).toContain('Life insurance options:');
     expect(result.answer).not.toContain('Please ask that one a little more specifically');
   });
+
+  it('answers package-level recommendation questions directly even when medical is the stale active topic', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee + Child(ren)',
+      familyDetails: { numChildren: 2 },
+      lastBotMessage: 'Recommendation for Employee + Child(ren) coverage:\n\nMy recommendation: Kaiser Standard HMO.',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'knowing what you know about me, which benefits would you recommend i get?',
+      session,
+    });
+
+    expect(result.answer).toContain('Based on what you have told me, I would usually prioritize your benefits in this order');
+    expect(result.answer).toContain('Medical first');
+    expect(result.answer).not.toContain('We can stay with medical');
+  });
+
+  it('answers baby-related QLE timing directly instead of replaying maternity plan detail', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      lifeEvents: ['pregnancy'],
+      lastBotMessage: 'Here is the maternity coverage comparison across the available medical plans:',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'after we have our baby, how long do we have to add her to our insurance?',
+      session,
+    });
+
+    expect(result.answer).toContain('qualifying life event');
+    expect(result.answer).toContain('Workday');
+    expect(result.answer).not.toContain('Here is the maternity coverage comparison');
+  });
+
+  it('answers marriage-related QLE timing directly instead of falling back to medical scaffolding', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee + Child(ren)',
+      familyDetails: { numChildren: 2 },
+      lastBotMessage: 'Projected Healthcare Costs for Employee + Child(ren) coverage in Washington (moderate usage):',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'how long do we have to change plans after getting married?',
+      session,
+    });
+
+    expect(result.answer).toContain('Marriage is a qualifying life event');
+    expect(result.answer).toContain('Workday');
+    expect(result.answer).not.toContain('We can stay with medical');
+  });
+
+  it('replays monthly premium numbers directly when the user asks to see the numbers again', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee + Child(ren)',
+      familyDetails: { numChildren: 2 },
+      lastBotMessage: 'Across all of the medical plans available in WA, Kaiser Standard HMO has the lowest deductible and the lowest out-of-pocket max overall.',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'show me how much i have to pay each month on each plan',
+      session,
+    });
+
+    expect(result.answer).toContain('Here are the monthly medical premiums for Employee + Child(ren) coverage in WA');
+    expect(result.answer).toContain('Standard HSA');
+    expect(result.answer).toContain('Kaiser Standard HMO');
+    expect(result.answer).not.toContain('We can stay with medical');
+  });
+
+  it('answers direct coverage-tier questions instead of replaying generic medical scaffolding', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      familyDetails: { numChildren: 2 },
+      lastBotMessage: 'Here is the practical tradeoff across AmeriVet\'s medical options:',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'what are the tiers?',
+      session,
+    });
+
+    expect(result.answer).toContain('A coverage tier is the level of people you are enrolling');
+    expect(result.answer).toContain('Employee + Child(ren)');
+    expect(result.answer).not.toContain('We can stay with medical');
+  });
+
+  it('keeps employee-plus-children pricing separate from employee-plus-family pricing', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      familyDetails: { numChildren: 2 },
+      coverageTierLock: 'Employee + Child(ren)',
+      lastBotMessage: 'Projected Healthcare Costs for Employee + Family coverage in Washington (moderate usage):',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'estimate the costs for employee + 2 kids',
+      session,
+    });
+
+    expect(result.answer).toContain('Projected Healthcare Costs for Employee + Child(ren) coverage');
+    expect(result.answer).not.toContain('Projected Healthcare Costs for Employee + Family coverage');
+  });
+
+  it('narrows life-versus-disability directly when the user asks which extra protection matters more', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Disability',
+      familyDetails: { numChildren: 2 },
+      lastBotMessage: 'Disability coverage is meant to protect part of your income if you cannot work because of illness or injury.',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'so, if amerivet gives me $25 life insurance, if i spend on something additional, should it be more life insurance, or disability?',
+      session,
+    });
+
+    expect(result.answer).toContain('choosing between more life insurance and disability');
+    expect(result.answer).toContain('disability first');
+    expect(result.answer).not.toContain('Life insurance options:');
+  });
+
+  it('narrows across accident, critical illness, and disability instead of defaulting to one stale supplemental topic', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      familyDetails: { numChildren: 2 },
+      lastBotMessage: 'Life insurance options:\n\n- **Unum Basic Life & AD&D**',
+    });
+
+    const result = await runQaV2Engine({
+      query: "you're supposed to help me narrow down whether accident, critical illness, or disability is the most relevant next step for my situation.",
+      session,
+    });
+
+    expect(result.answer).toContain('narrow down disability versus the smaller supplemental cash benefits');
+    expect(result.answer).toContain('disability first');
+    expect(result.answer).not.toContain('Critical illness coverage is a supplemental benefit');
+  });
 });
