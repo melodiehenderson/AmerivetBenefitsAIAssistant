@@ -352,6 +352,34 @@ describe('qa-v2 transcript replays', () => {
     );
   });
 
+  it('replays a bare "yes, do that" after family medical guidance into dental details', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'what else should i consider?',
+          mustContain: ['split the next step after medical into two lanes', '**dental**', '**life insurance**', 'default nudge here is usually **dental first**'],
+        },
+        {
+          user: 'yes, do that',
+          mustContain: ['Dental coverage: **BCBSTX Dental PPO**'],
+          mustNotContain: ['Life insurance options:'],
+        },
+      ],
+      makeSession({
+        userName: 'Sarah',
+        hasCollectedName: true,
+        userAge: 33,
+        userState: 'GA',
+        dataConfirmed: true,
+        currentTopic: 'Medical',
+        completedTopics: ['Medical'],
+        coverageTierLock: 'Employee + Child(ren)',
+        familyDetails: { numChildren: 2 },
+        lastBotMessage: 'Medical plan options (Employee + Child(ren)):',
+      }),
+    );
+  });
+
   it('replays package guidance from settled routine care into household-protection next steps', async () => {
     await replayTranscript(
       [

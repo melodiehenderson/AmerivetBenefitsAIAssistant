@@ -1405,6 +1405,8 @@ function buildHsaFsaRuleReply(query: string): string | null {
       `- Unused **HSA** money stays with you and can **roll forward year to year**`,
       `- **FSA** still uses pre-tax dollars for eligible expenses, but it is more of a plan-year spending account with much stricter carryover or use-it-or-lose-it rules`,
       `- So if your goal is long-term savings, HSA is usually the cleaner fit; if your goal is near-term spending, FSA is usually the cleaner fit`,
+      ``,
+      `If you want, tell me whether you care more about **long-term savings** or **using the money this year**, and I will tell you which one is the cleaner fit.`,
     ].join('\n');
   }
 
@@ -1418,6 +1420,8 @@ function buildHsaFsaRuleReply(query: string): string | null {
       `- The limit that usually matters is the **IRS annual contribution limit** for new money going in`,
       `- For **2025**, those HSA contribution limits are **$4,300** for self-only coverage and **$8,550** for family coverage, plus **$1,000** catch-up at age 55+`,
       `- **FSA** is the account with the stricter carryover or use-it-or-lose-it rules`,
+      ``,
+      `If you want, I can turn that into the practical **HSA-versus-FSA** recommendation next.`,
     ].join('\n');
   }
 
@@ -1428,6 +1432,8 @@ function buildHsaFsaRuleReply(query: string): string | null {
       `- **HSA** funds roll forward year to year and stay with you`,
       `- **FSA** follows much stricter plan-year carryover rules, which is why people describe it as a use-it-or-lose-it account`,
       `- If you need the exact AmeriVet FSA carryover handling for the current plan year, I would confirm that specific rule in Workday`,
+      ``,
+      `If you want, I can also help you decide whether **HSA** or **FSA** is the better fit for how you actually expect to use the money.`,
     ].join('\n');
   }
 

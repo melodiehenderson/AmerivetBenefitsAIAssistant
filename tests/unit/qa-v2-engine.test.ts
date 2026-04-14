@@ -2523,6 +2523,35 @@ describe('qa-v2 engine', () => {
     expect(result.answer).toContain('tax account aligned');
   });
 
+  it('supports a bare "yes, do that" after family medical guidance nudges routine care first', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Sarah',
+      hasCollectedName: true,
+      userAge: 42,
+      userState: 'FL',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      completedTopics: ['Medical'],
+      coverageTierLock: 'Employee + Child(ren)',
+      familyDetails: { numChildren: 2 },
+      lastBotMessage: 'Medical plan options (Employee + Child(ren)):',
+    });
+
+    await runQaV2Engine({
+      query: 'what else should i consider?',
+      session,
+    });
+
+    const result = await runQaV2Engine({
+      query: 'yes, do that',
+      session,
+    });
+
+    expect(result.answer).toContain('Dental coverage: **BCBSTX Dental PPO**');
+    expect(result.answer).not.toContain('Life insurance options:');
+  });
+
   it('supports a bare "yes, do that" after package guidance points settled routine care toward life insurance', async () => {
     const session = makeSession({
       step: 'active_chat',
@@ -3196,6 +3225,7 @@ describe('qa-v2 engine', () => {
     expect(result.answer).toContain('unused HSA money generally **rolls forward year to year**');
     expect(result.answer).toContain('IRS annual contribution limit');
     expect(result.answer).toContain('$4,300');
+    expect(result.answer).toContain('HSA-versus-FSA');
     expect(result.answer).not.toContain('We can stay with HSA/FSA');
   });
 
@@ -3220,6 +3250,7 @@ describe('qa-v2 engine', () => {
     expect(result.answer).toContain('tax and rollover tradeoff');
     expect(result.answer).toContain('Unused **HSA** money stays with you');
     expect(result.answer).toContain('stricter carryover or use-it-or-lose-it rules');
+    expect(result.answer).toContain('long-term savings');
     expect(result.answer).not.toContain('We can stay with HSA/FSA');
   });
 

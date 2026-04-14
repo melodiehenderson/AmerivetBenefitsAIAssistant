@@ -2488,6 +2488,34 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
     ],
   },
   {
+    id: 'V2-TX-078B3',
+    category: 'package_guidance_after_family_medical_followthrough',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'TX',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      completedTopics: ['Medical'],
+      coverageTierLock: 'Employee + Child(ren)',
+      familyDetails: { numChildren: 2 },
+      lastBotMessage: 'Medical plan options (Employee + Child(ren)):',
+    },
+    turns: [
+      {
+        user: 'what else should i consider?',
+        mustContain: ['split the next step after medical into two lanes', '**dental**', '**life insurance**', 'default nudge here is usually **dental first**'],
+      },
+      {
+        user: 'yes, do that',
+        mustContain: ['Dental coverage: **BCBSTX Dental PPO**'],
+        mustNotContain: ['Life insurance options:'],
+      },
+    ],
+  },
+  {
     id: 'V2-TX-078C',
     category: 'package_guidance_after_routine_care_settled',
     initialSession: {
