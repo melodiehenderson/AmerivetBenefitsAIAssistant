@@ -1,4 +1,4 @@
-import { STATE_ABBREV_TO_NAME } from '@/lib/data/amerivet';
+import { getAmerivetBenefitsPackage } from '@/lib/data/amerivet-package';
 import type { Session } from '@/lib/rag/session-store';
 import { extractName } from '@/lib/session-logic';
 import pricingUtils from '@/lib/rag/pricing-utils';
@@ -26,11 +26,12 @@ import { buildLiveSupportMessage, buildQleFilingOrderMessage } from '@/lib/qa/po
 
 const ENROLLMENT_PORTAL_URL = process.env.ENROLLMENT_PORTAL_URL || 'https://wd5.myworkday.com/amerivet/login.html';
 const HR_PHONE = process.env.HR_PHONE_NUMBER || '888-217-4728';
+const ACTIVE_AMERIVET_PACKAGE = getAmerivetBenefitsPackage();
 
 const TOPIC_ORDER = ['Medical', 'Dental', 'Vision', 'Life Insurance', 'Disability', 'Critical Illness', 'Accident/AD&D', 'HSA/FSA'] as const;
 
 const STATE_NAME_TO_CODE: Record<string, string> = Object.fromEntries(
-  Object.entries(STATE_ABBREV_TO_NAME).map(([code, name]) => [name.toLowerCase(), code]),
+  Object.entries(ACTIVE_AMERIVET_PACKAGE.stateAbbrevToName).map(([code, name]) => [name.toLowerCase(), code]),
 );
 
 type EngineResult = {
