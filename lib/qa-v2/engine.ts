@@ -1993,13 +1993,14 @@ function buildTopicReply(session: Session, topic: string, query: string): string
   if (topic === 'Medical') {
     refreshCoverageTierLock(session, query);
     if (isCostModelRequest(query)) {
-      return pricingUtils.estimateCostProjection({
-        coverageTier: session.coverageTierLock,
+      const projectionParams: Parameters<typeof pricingUtils.estimateCostProjection>[0] = {
+        coverageTier: session.coverageTierLock || coverageTierFromConversation(session) || 'Employee Only',
         usage: usageLevelFromQuery(query),
         network: normalizeNetworkPreference(query),
-        state: session.userState || undefined,
-        age: session.userAge || undefined,
-      });
+      };
+      if (session.userState) projectionParams.state = session.userState;
+      if (typeof session.userAge === 'number') projectionParams.age = session.userAge;
+      return pricingUtils.estimateCostProjection(projectionParams);
     }
     if (isMedicalAccumulatorComparisonQuestion(query)) {
       const detailedAnswer = buildMedicalPlanDetailAnswer(query, session);
@@ -2589,12 +2590,13 @@ function buildContinuationReply(session: Session, query: string): string | null 
   if (session.pendingGuidancePrompt === 'medical_tradeoff_compare' && isAffirmativeCompareFollowup(normalizedQuery)) {
     clearPendingGuidance(session);
     setTopic(session, 'Medical');
-    return pricingUtils.estimateCostProjection({
+    const projectionParams: Parameters<typeof pricingUtils.estimateCostProjection>[0] = {
       coverageTier: coverageTierFromConversation(session) || session.coverageTierLock || 'Employee Only',
       usage: usageLevelFromSession(session),
-      state: session.userState || undefined,
-      age: session.userAge || undefined,
-    });
+    };
+    if (session.userState) projectionParams.state = session.userState;
+    if (typeof session.userAge === 'number') projectionParams.age = session.userAge;
+    return pricingUtils.estimateCostProjection(projectionParams);
   }
 
   if (contextualComparisonKind) {
@@ -2896,12 +2898,13 @@ function buildContinuationReply(session: Session, query: string): string | null 
       (isSimpleAffirmation(normalizedQuery) || /\b(compare|yes)\b/i.test(lower)) &&
       /\blikely\s+total\s+annual\s+cost\b|\bcompare\b.*\bstandard\s+hsa\b.*\benhanced\s+hsa\b/i.test(session.lastBotMessage || '')
     ) {
-      return pricingUtils.estimateCostProjection({
+      const projectionParams: Parameters<typeof pricingUtils.estimateCostProjection>[0] = {
         coverageTier: coverageTierFromConversation(session) || 'Employee Only',
         usage: usageLevelFromSession(session),
-        state: session.userState || undefined,
-        age: session.userAge || undefined,
-      });
+      };
+      if (session.userState) projectionParams.state = session.userState;
+      if (typeof session.userAge === 'number') projectionParams.age = session.userAge;
+      return pricingUtils.estimateCostProjection(projectionParams);
     }
     if (/\b(low|moderate|high)\s+usage\b|\bgenerally\s+healthy\b|\blow\s+bills\b/i.test(lower)) {
       const recommendation = buildRecommendationOverview(normalizedQuery, session);
