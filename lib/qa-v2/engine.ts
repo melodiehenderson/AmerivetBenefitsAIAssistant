@@ -63,6 +63,11 @@ function isAffirmativeCompareFollowup(query: string): boolean {
     || /\b(compare|comparison|vs\.?|versus|which one|which matters more|do that|do this|do it|let'?s do that|let'?s do this|let'?s do it|i'?d like that|yes please|tell me more)\b/i.test(lower);
 }
 
+function isGuidanceAdvanceAffirmation(query: string): boolean {
+  const normalized = query.trim().replace(/[.!?]+$/g, '');
+  return /^(yes|yes please|yeah|yep|sure|do that|do this|do it|go ahead|let'?s do that|let'?s do this|let'?s do it|show me that one|next one)$/i.test(normalized);
+}
+
 function buildSessionContext(session: Session) {
   return {
     userName: session.userName || null,
@@ -635,8 +640,22 @@ function isLifeFamilyCoverageQuestion(query: string): boolean {
   return /\b(life(?:\s+insurance)?|term life|whole life|basic life).*\b(wife|husband|spouse|partner|kids|children|family|dependents?|cover|coverage|benefits?|qualify|portable|guaranteed issue|cash value|how much)\b|\b(wife|husband|spouse|partner|kids|children|family|dependents?|cover|coverage|benefits?|qualify|portable|guaranteed issue|cash value|how much)\b.*\b(life(?:\s+insurance)?|term life|whole life|basic life)\b/i.test(lower);
 }
 
+function isMedicalPlanComparisonOrPricingQuestion(query: string): boolean {
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  return (
+    /\b(compare|comparison|versus|vs\.?|side\s+by\s+side|breakdown|pricing|plan pricing|premium|premiums|per month|monthly|show me the plans|show me the breakdown|show me the prices|show me the premiums|show me the numbers|numbers again|just want to see the plans|just plan pricing|what about just plan pricing)\b/i.test(lower)
+      && /\b(medical|plan|plans|standard hsa|enhanced hsa|kaiser|hmo|coverage tier|coverage tiers|employee\s*\+|spouse|family|whole family|wife|husband|partner|kids?|children)\b/i.test(lower)
+  ) || (
+    /\b(whole family|my family|wife|husband|spouse|partner|kids?|children|household|employee\s*\+\s*(?:family|spouse|child(?:ren)?)|cover myself)\b/i.test(lower)
+      && /\b(price|prices|pricing|premium|premiums|per month|monthly|show me|breakdown)\b/i.test(lower)
+  );
+}
+
 function isHsaFsaCompatibilityQuestion(query: string): boolean {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  if (isMedicalPlanComparisonOrPricingQuestion(query) || isCostModelRequest(query) || isMedicalDetailQuestion(query)) {
+    return false;
+  }
   return /\b(fsa|hsa)\b.*\b(kaiser|hmo)\b|\b(kaiser|hmo)\b.*\b(fsa|hsa)\b|\bshould\s+i\s+use\s+an?\s+fsa\b|\bshould\s+i\s+use\s+fsa\b|\buse\s+an?\s+fsa\b|\buse\s+fsa\b|\bcan\s+i\s+(?:still\s+)?use\s+an?\s+hsa\b|\bcan\s+i\s+(?:still\s+)?use\s+hsa\b|\bcan(?:not|'t)\s+use\s+an?\s+hsa\b|\b(hsa|fsa)\b.*\b(pair\s+best\s+with|go\s+best\s+with|fit\s+best\s+with)\b|\b(pair\s+best\s+with|go\s+best\s+with|fit\s+best\s+with)\b.*\b(hsa|fsa)\b/i.test(lower);
 }
 
@@ -645,6 +664,7 @@ function isDirectMedicalContinuationQuestion(query: string): boolean {
   return isDirectMedicalRecommendationQuestion(query)
     || isMedicalRecommendationPreferenceFollowup(query)
     || isMedicalDetailQuestion(query)
+    || isMedicalPlanComparisonOrPricingQuestion(query)
     || /\b(which\s+plan\s+is\s+best\s+for\s+my\s+family|which\s+plan\s+is\s+best|which\s+plan\s+is\s+better|which\s+one\s+do\s+you\s+recommend|best\s+choice\s+for\s+my\s+family|what\s+plan\s+will\s+give\s+us\s+the\s+lowest|other\s+standard\s+plan|other\s+plan|plan\s+tradeoffs?|medical\s+options|medical\s+plan\s+options|show\s+me\s+(?:my\s+)?(?:medical\s+)?options|show\s+me\s+the\s+plans|plans\s+side\s+by\s+side|side\s+by\s+side|let'?s\s+talk\s+(?:thru|through)\s+which\s+plan|talk\s+(?:thru|through)\s+which\s+plan|talk\s+me\s+through\s+which\s+plan|talk\s+through\s+which\s+option\s+fits\s+better|which\s+option\s+fits\s+better|best\s+choice\s+for\s+my\s+family|best\s+for\s+my\s+family|better\s+for\s+me|better\s+for\s+us)\b/i.test(lower);
 }
 
@@ -671,6 +691,13 @@ function isDeclinedRoutineTopic(queryLower: string, topic: 'dental' | 'vision'):
 
   return new RegExp(
     `\\b(?:skip(?:ping)?|done\\s+with|not\\s+interested\\s+in|do\\s+not\\s+want|don'?t\\s+want|dont\\s+want|not\\s+getting|without|other\\s+than)\\b[^.?!]{0,40}\\b${topicPattern}\\b|\\b${topicPattern}\\b[^.?!]{0,40}\\b(?:skip(?:ping)?|done\\s+with|not\\s+interested|do\\s+not\\s+want|don'?t\\s+want|dont\\s+want|not\\s+getting)\\b`,
+    'i',
+  ).test(queryLower);
+}
+
+function isExcludedTopicMention(queryLower: string, topicPattern: string): boolean {
+  return new RegExp(
+    `\\b(?:other\\s+than|except(?:\\s+for)?|besides|anything\\s+but|not\\s+including)\\b[^.?!]{0,40}\\b${topicPattern}\\b|\\b${topicPattern}\\b[^.?!]{0,20}\\b(?:other\\s+than|except(?:\\s+for)?|besides|anything\\s+but|not\\s+including)\\b`,
     'i',
   ).test(queryLower);
 }
@@ -745,7 +772,7 @@ function preferredTopicOverride(query: string): string | null {
 
 function isReturnToMedicalIntent(query: string): boolean {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
-  return /\b(go\s+back\s+to\s+(?:my\s+)?medical|back\s+to\s+(?:my\s+)?medical|back\s+to\s+(?:my\s+)?medical\s+plan\s+options|done\s+with\s+hsa\/fsa|done\s+with\s+hsa|done\s+with\s+fsa|medical\s+plan\s+options|show\s+me\s+(?:my\s+)?medical\s+plan\s+options|show\s+me\s+(?:my\s+)?medical\s+options|show\s+me\s+my\s+options|show\s+me\s+the\s+plans|plans\s+side\s+by\s+side|side\s+by\s+side|compare\s+the\s+plans)\b/i.test(lower);
+  return /\b(go\s+back\s+to\s+(?:my\s+)?medical|back\s+to\s+(?:my\s+)?medical|back\s+to\s+(?:my\s+)?medical\s+plan\s+options|done\s+with\s+hsa\/fsa|done\s+with\s+hsa|done\s+with\s+fsa|medical\s+plan\s+options|show\s+me\s+(?:my\s+)?medical\s+plan\s+options|show\s+me\s+(?:my\s+)?medical\s+options|show\s+me\s+my\s+options|show\s+me\s+the\s+plans|plans\s+side\s+by\s+side|side\s+by\s+side|compare\s+the\s+plans|just\s+want\s+to\s+see\s+(?:the\s+)?plans?|breakdown\s+of\s+(?:(?:each\s+of\s+)?(?:those|these)\s+plans?|each\s+plan)|just\s+plan\s+pricing)\b/i.test(lower);
 }
 
 function isMedicalRecommendationClarificationQuestion(query: string): boolean {
@@ -1065,7 +1092,7 @@ function buildQleTimingReply(session: Session, query: string): string {
 
 function isMedicalPremiumReplayQuestion(query: string): boolean {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
-  return /\b(show\s+me\s+the\s+numbers(?:\s+again)?|show\s+me\s+the\s+monthly\s+numbers|show\s+me\s+how\s+much\s+i\s+have\s+to\s+pay\s+each\s+month|monthly\s+premiums?|per\s+month\s+on\s+each\s+plan|how\s+much\s+will\s+my\s+premium\s+be|what\s+are\s+the\s+premiums?|what\s+would\s+the\s+premium\s+be|show\s+me\s+.*pricing|pricing\s+for\s+employee|show\s+me\s+the\s+employee\s*\+|employee\s*\+\s*(?:family|spouse|child(?:ren)?)\s+pricing)\b/i.test(lower);
+  return /\b(show\s+me\s+the\s+numbers(?:\s+again)?|show\s+me\s+the\s+monthly\s+numbers|show\s+me\s+how\s+much\s+i\s+have\s+to\s+pay\s+each\s+month|monthly\s+premiums?|per\s+month\s+on\s+each\s+plan|how\s+much\s+will\s+my\s+premium\s+be|how\s+much\s+(?:the\s+)?premiums?\s+are|what\s+are\s+the\s+premiums?|what\s+would\s+the\s+premium\s+be|show\s+me\s+.*pricing|pricing\s+for\s+employee|show\s+me\s+the\s+employee\s*\+|employee\s*\+\s*(?:family|spouse|child(?:ren)?)\s+pricing|just\s+plan\s+pricing|what\s+about\s+just\s+plan\s+pricing|whole\s+family\s+pricing|prices?\s+for\s+premiums?|show\s+me\s+the\s+prices|show\s+me\s+the\s+premiums|show\s+me\s+the\s+breakdown\s+of\s+(?:(?:each\s+of\s+)?(?:those|these)\s+plans?|each\s+plan)|breakdown\s+of\s+(?:(?:each\s+of\s+)?(?:those|these)\s+plans?|each\s+plan))\b/i.test(lower);
 }
 
 function buildMedicalPremiumReplayReply(session: Session, query: string): string {
@@ -1285,6 +1312,15 @@ function buildHighPriorityIntentReply(session: Session, query: string): EngineRe
     };
   }
 
+  if (medicalContext && wantsMedicalPremiumReplay) {
+    clearPendingGuidance(session);
+    setTopic(session, 'Medical');
+    return {
+      answer: buildMedicalPremiumReplayReply(session, normalizedQuery),
+      metadata: { intercept: 'medical-premium-replay-v2', topic: 'Medical' },
+    };
+  }
+
   if (explicitTopic && explicitTopic !== 'Benefits Overview') {
     const normalizedExplicitTopic = normalizeBenefitCategory(explicitTopic);
     if (isExplicitTopicDirectQuestion(normalizedExplicitTopic, normalizedQuery)) {
@@ -1311,15 +1347,6 @@ function buildHighPriorityIntentReply(session: Session, query: string): EngineRe
     return {
       answer: buildTopicReply(session, 'Medical', normalizedQuery),
       metadata: { intercept: 'direct-medical-priority-v2', topic: 'Medical' },
-    };
-  }
-
-  if (medicalContext && wantsMedicalPremiumReplay) {
-    clearPendingGuidance(session);
-    setTopic(session, 'Medical');
-    return {
-      answer: buildMedicalPremiumReplayReply(session, normalizedQuery),
-      metadata: { intercept: 'medical-premium-replay-v2', topic: 'Medical' },
     };
   }
 
@@ -2214,7 +2241,7 @@ function isOnlyOptionQuestion(query: string): boolean {
 
 function shouldHandleSupplementalFitFollowup(query: string): boolean {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
-  return isSimpleAffirmation(query)
+  return isGuidanceAdvanceAffirmation(query)
     || /\b(do that|do this|do it|let'?s do that|let'?s do this|let'?s do it)\b/i.test(lower)
     || /\b(worth\s+considering|is\s+it\s+worth|worth\s+adding|should\s+i\s+get|should\s+i\s+add|do\s+i\s+need\s+it|when\s+would\s+i\s+want|tell\s+me\s+more|help\s+me\s+think\s+through|how\s+do\s+i\s+know|how\s+can\s+i\s+tell)\b/i.test(lower);
 }
@@ -2233,8 +2260,10 @@ function benefitTopicFromQuery(query: string): string | null {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
   const declinedDental = isDeclinedRoutineTopic(lower, 'dental');
   const declinedVision = isDeclinedRoutineTopic(lower, 'vision');
+  const declinedLife = isExcludedTopicMention(lower, '(?:life(?:\\s+insurance)?|term\\s+life|whole\\s+life|basic\\s+life)');
+  if (isMedicalPlanComparisonOrPricingQuestion(query)) return 'Medical';
   if (/\b(all\s+benefits|benefits\s+overview|what\s+are\s+all\s+the\s+benefits|what\s+benefits\s+do\s+i\s+have|other\s+types?\s+of\s+coverage|what\s+other\s+coverage|other\s+coverage\s+available|what\s+else\s+is\s+available)\b/i.test(lower)) return 'Benefits Overview';
-  if (/\b(life(?:\s+insurance)?|term\s+life|whole\s+life|basic\s+life)\b/i.test(lower)) return 'Life Insurance';
+  if (!declinedLife && /\b(life(?:\s+insurance)?|term\s+life|whole\s+life|basic\s+life)\b/i.test(lower)) return 'Life Insurance';
   if (/\b(disability|std|ltd|short[- ]?term|long[- ]?term)\b/i.test(lower)) return 'Disability';
   if (/\b(?:critical(?:\s+illness)?|ci(?:\s+insurance)?)\b/i.test(lower)) return 'Critical Illness';
   if (/\b(accident|ad&d|ad\/d)\b/i.test(lower)) return 'Accident/AD&D';
@@ -3219,7 +3248,7 @@ function buildContinuationReply(session: Session, query: string): string | null 
       clearPendingGuidance(session);
       return buildHsaFitSpecificReply(hsaFitFocus);
     }
-    if (isSimpleAffirmation(normalizedQuery) || /\b(hsa|fsa|better fit|which one|long[- ]term savings|near[- ]term medical expenses)\b/i.test(lower)) {
+    if (isGuidanceAdvanceAffirmation(normalizedQuery) || /\b(hsa|fsa|better fit|which one|long[- ]term savings|near[- ]term medical expenses)\b/i.test(lower)) {
       clearPendingGuidance(session);
       return buildHsaFitGuidance();
     }
@@ -3588,6 +3617,11 @@ function buildContinuationReply(session: Session, query: string): string | null 
     return buildPackageGuidance(session, session.currentTopic);
   }
 
+  if (activeTopic === 'Life Insurance' && isExcludedTopicMention(lower, '(?:life(?:\\s+insurance)?|term\\s+life|whole\\s+life|basic\\s+life)')) {
+    clearPendingGuidance(session);
+    return buildPackageGuidance(session, 'Life Insurance');
+  }
+
   const pivotTopic = benefitTopicFromQuery(normalizedQuery);
   if (pivotTopic && pivotTopic !== 'Benefits Overview' && pivotTopic !== session.currentTopic) {
     setTopic(session, pivotTopic);
@@ -3651,7 +3685,7 @@ function buildContinuationReply(session: Session, query: string): string | null 
     }
   }
 
-  if (isSimpleAffirmation(normalizedQuery)) {
+  if (isGuidanceAdvanceAffirmation(normalizedQuery)) {
     return buildPackageGuidance(session, session.currentTopic);
   }
 

@@ -120,7 +120,7 @@ export function buildCategoryExplorationResponse({
   const catalog = benefitsPackage.catalog;
   const kaiserCopy = getKaiserAvailabilityCopy(benefitsPackage);
 
-  if (/per[\s-]*pay(?:check|period)?|deduct(?:ion|ed)|enroll\s+in\s+all|total\s+cost|how\s+much\s+would|maternity|pregnan|orthodont|braces|qle|qualifying\s+life\s+event|how\s+many\s+days|deadline|window|fmla|short\s*[- ]?term\s+disability|pre-?existing|clause|dhmo/i.test(queryLower)) {
+  if (/per[\s-]*pay(?:check|period)?|deduct(?:ion|ed)|enroll\s+in\s+all|total\s+cost|how\s+much\s+would|how\s+much\s+(?:the\s+)?premiums?\s+are|monthly\s+premiums?|premium|premiums|pricing|price|prices|maternity|pregnan|orthodont|braces|qle|qualifying\s+life\s+event|how\s+many\s+days|deadline|window|fmla|short\s*[- ]?term\s+disability|pre-?existing|clause|dhmo/i.test(queryLower)) {
     return null;
   }
 

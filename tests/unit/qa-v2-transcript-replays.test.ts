@@ -2466,4 +2466,74 @@ describe('qa-v2 transcript replays', () => {
       }),
     );
   });
+
+  it('replays plan-comparison requests out of hsa/fsa context back into medical instead of tax-account compatibility', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'yeah - compare the Standard HSA with the Kaiser plan',
+          mustContain: ['Standard HSA', 'Kaiser Standard HMO'],
+          mustNotContain: ['FSA is usually the more natural pre-tax account', 'HSA/FSA overview'],
+        },
+        {
+          user: 'can you just show me the breakdown of each of those plans though?',
+          mustContain: ['Standard HSA', 'Kaiser Standard HMO'],
+          mustNotContain: ['A useful next HSA/FSA question is usually one of these'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'HSA/FSA',
+      }),
+    );
+  });
+
+  it('replays whole-family pricing asks into medical premium rows instead of generic scaffolding', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'actually i just want to see how much the premiums are for my whole family',
+          mustContain: ['Here are the monthly medical premiums for Employee + Family coverage', 'Standard HSA'],
+          mustNotContain: ['A useful next medical step is usually one of these'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'Medical',
+        coverageTierLock: 'Employee + Family',
+        familyDetails: { hasSpouse: true, numChildren: 2 },
+        lastBotMessage: 'Here is the practical tradeoff across AmeriVet\'s medical options.',
+      }),
+    );
+  });
+
+  it('replays negative life pivots into the next non-life guidance instead of life again', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'other than life insurance, what else should i consider next?',
+          mustContain: ['disability'],
+          mustNotContain: ['Life insurance options:'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'Life Insurance',
+        completedTopics: ['Medical', 'Life Insurance'],
+        familyDetails: { hasSpouse: true, numChildren: 2 },
+      }),
+    );
+  });
 });

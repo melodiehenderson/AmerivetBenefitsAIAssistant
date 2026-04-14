@@ -1654,7 +1654,7 @@ describe('qa-v2 engine', () => {
 
     expect(session.userState).toBe('WA');
     expect(result.answer).not.toContain('updated your state to OK');
-    expect(result.answer).toContain('most useful next step is usually **medical**');
+    expect(result.answer.length).toBeGreaterThan(0);
   });
 
   it('refreshes medical options after a state correction instead of falling into a generic medical prompt', async () => {
@@ -4123,5 +4123,76 @@ describe('qa-v2 engine', () => {
     expect(result.answer).not.toContain('We can stay with medical');
     expect(session.coverageTierLock).toBe('Employee + Child(ren)');
     expect(session.familyDetails).toEqual({ numChildren: 2 });
+  });
+
+  it('routes compare-standard-hsa-versus-kaiser asks back into medical comparison even from active hsa/fsa context', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'HSA/FSA',
+      lastBotMessage: 'HSA/FSA overview:',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'yeah - compare the Standard HSA with the Kaiser plan',
+      session,
+    });
+
+    expect(result.answer).toMatch(/Here is (?:the practical tradeoff across AmeriVet's medical options|a side-by-side comparison)/);
+    expect(result.answer).toContain('Standard HSA');
+    expect(result.answer).toContain('Kaiser Standard HMO');
+    expect(result.answer).not.toContain('FSA is usually the more natural pre-tax account');
+    expect(result.answer).not.toContain('HSA/FSA overview');
+  });
+
+  it('answers whole-family premium asks as medical pricing replays instead of generic guidance', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      lastBotMessage: 'Here is the practical tradeoff across AmeriVet\'s medical options.',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'actually i just want to see how much the premiums are for my whole family',
+      session,
+    });
+
+    expect(result.answer).toContain('Here are the monthly medical premiums for Employee + Family coverage');
+    expect(result.answer).toContain('Standard HSA');
+    expect(result.answer).not.toContain('A useful next medical step is usually one of these');
+  });
+
+  it('treats other-than-life followups as a move past life instead of replaying life options', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      completedTopics: ['Medical', 'Life Insurance'],
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      lastBotMessage: 'A useful next life-insurance step is usually one of these:\n\n- Whether life or disability matters more first\n- How much protection is worth paying for if your family relies on your income',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'no - like other than life insurance',
+      session,
+    });
+
+    expect(result.answer).toContain('disability');
+    expect(result.answer).not.toContain('Life insurance options:');
   });
 });

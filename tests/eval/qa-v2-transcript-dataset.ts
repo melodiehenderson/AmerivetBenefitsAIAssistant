@@ -3019,4 +3019,74 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
       },
     ],
   },
+  {
+    id: 'V2-TX-089',
+    category: 'hsa_context_returns_to_medical_compare',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'HSA/FSA',
+    },
+    turns: [
+      {
+        user: 'yeah - compare the Standard HSA with the Kaiser plan',
+        mustContain: ['Standard HSA', 'Kaiser Standard HMO'],
+        mustNotContain: ['FSA is usually the more natural pre-tax account', 'HSA/FSA overview'],
+      },
+      {
+        user: 'can you just show me the breakdown of each of those plans though?',
+        mustContain: ['Standard HSA', 'Kaiser Standard HMO'],
+        mustNotContain: ['A useful next HSA/FSA question is usually one of these'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-090',
+    category: 'whole_family_premium_replay',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      lastBotMessage: 'Here is the practical tradeoff across AmeriVet\'s medical options.',
+    },
+    turns: [
+      {
+        user: 'actually i just want to see how much the premiums are for my whole family',
+        mustContain: ['Here are the monthly medical premiums for Employee + Family coverage', 'Standard HSA'],
+        mustNotContain: ['A useful next medical step is usually one of these'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-091',
+    category: 'life_negative_pivot',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      completedTopics: ['Medical', 'Life Insurance'],
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+    },
+    turns: [
+      {
+        user: 'other than life insurance, what else should i consider next?',
+        mustContain: ['disability'],
+        mustNotContain: ['Life insurance options:'],
+      },
+    ],
+  },
 ];
