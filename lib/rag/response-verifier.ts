@@ -18,7 +18,11 @@
  *   'refuse' → show portal fallback button; do not send LLM content
  */
 
-import { amerivetBenefits2024_2025, getAllPlans } from '@/lib/data/amerivet';
+import {
+  getAllAmerivetBenefitPlans,
+  getAmerivetBenefitsPackage,
+  type AmerivetBenefitsPackage,
+} from '@/lib/data/amerivet-package';
 import type { IntentType } from '@/lib/rag/query-understanding';
 import { logger } from '@/lib/logger';
 
@@ -72,9 +76,13 @@ const PROHIBITED_PHRASES: RegExp[] = [
  * Plans whose names appear in the catalog — used for category bleed detection.
  * Built once at module load from the immutable catalog.
  */
-const PLAN_NAME_TO_TYPE: Map<string, string> = new Map(
-  getAllPlans().map(p => [p.name.toLowerCase(), p.type])
-);
+function getPlanNameToTypeMap(
+  benefitsPackage: AmerivetBenefitsPackage = getAmerivetBenefitsPackage(),
+): Map<string, string> {
+  return new Map(
+    getAllAmerivetBenefitPlans(benefitsPackage).map((plan) => [plan.name.toLowerCase(), plan.type]),
+  );
+}
 
 // ============================================================================
 // Check helpers
@@ -137,9 +145,12 @@ function checkRateLabels(response: string): string | null {
  *
  * This makes hallucinating "$57/month" impossible when the catalog says "$86.84/month".
  */
-function checkRateAccuracy(response: string): string | null {
+function checkRateAccuracy(
+  response: string,
+  benefitsPackage: AmerivetBenefitsPackage = getAmerivetBenefitsPackage(),
+): string | null {
   // Build flat list of all known rates from the catalog
-  const allPlans = getAllPlans();
+  const allPlans = getAllAmerivetBenefitPlans(benefitsPackage);
   const knownRates: number[] = [];
   for (const plan of allPlans) {
     knownRates.push(...Object.values(plan.tiers));
@@ -149,7 +160,7 @@ function checkRateAccuracy(response: string): string | null {
     if (plan.benefits?.outOfPocketMax) knownRates.push(plan.benefits.outOfPocketMax);
   }
   // Add special account rates
-  const { hsa, commuter } = amerivetBenefits2024_2025.specialCoverage;
+  const { hsa, commuter } = benefitsPackage.catalog.specialCoverage;
   if (typeof hsa.employerContribution === 'number') {
     knownRates.push(hsa.employerContribution);
   } else {
@@ -208,7 +219,11 @@ function checkComparisonCompleteness(response: string, intent?: IntentType): str
  * If the user asked about Medical, the response must not cite Voluntary plan names
  * as if they were Medical options.
  */
-function checkCategoryBleed(response: string, category?: string): string | null {
+function checkCategoryBleed(
+  response: string,
+  category?: string,
+  benefitsPackage: AmerivetBenefitsPackage = getAmerivetBenefitsPackage(),
+): string | null {
   if (!category) return null;
   const requestedType = category.toLowerCase();
   if (!['medical', 'dental', 'vision'].includes(requestedType)) return null;
@@ -216,7 +231,7 @@ function checkCategoryBleed(response: string, category?: string): string | null 
   const lower = response.toLowerCase();
   const bleeds: string[] = [];
 
-  for (const [planName, planType] of PLAN_NAME_TO_TYPE.entries()) {
+  for (const [planName, planType] of getPlanNameToTypeMap(benefitsPackage).entries()) {
     if (planType !== requestedType && lower.includes(planName)) {
       bleeds.push(planName);
     }
@@ -243,6 +258,7 @@ export function verifyResponse(
   response: string,
   context: VerifierContext = {}
 ): VerificationResult {
+  const benefitsPackage = getAmerivetBenefitsPackage();
   const reasons: string[] = [];
   let mustRefuse = false;
   const correctiveParts: string[] = [];
@@ -275,7 +291,7 @@ export function verifyResponse(
   }
 
   // --- Gate 3: Rate accuracy (retry) ---
-  const accuracyIssue = checkRateAccuracy(response);
+  const accuracyIssue = checkRateAccuracy(response, benefitsPackage);
   if (accuracyIssue) {
     reasons.push(accuracyIssue);
     correctiveParts.push(
@@ -297,7 +313,7 @@ export function verifyResponse(
   }
 
   // --- Gate 5: Category bleed (retry) ---
-  const bleedIssue = checkCategoryBleed(response, context.category);
+  const bleedIssue = checkCategoryBleed(response, context.category, benefitsPackage);
   if (bleedIssue) {
     reasons.push(bleedIssue);
     correctiveParts.push(
