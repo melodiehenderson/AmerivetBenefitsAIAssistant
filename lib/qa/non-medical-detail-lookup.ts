@@ -18,7 +18,7 @@ export function isNonMedicalDetailQuestion(topic: string, query: string): boolea
   const costQuestion = /\b(how\s+much|cost|costs|price|prices|rate|rates|premium|premiums)\b/i.test(lower);
 
   if (topic === 'Life Insurance') {
-    return /\b(portable|guaranteed issue|cash value|whole life|term life|voluntary term(?:\s+life)?|basic life|voluntary life|age[- ]banded|rates? locked|coverage amount|how much life insurance|how much can i get|how much should i get|how much coverage should i get|help me decide how much|if i do nothing|what life insurance do i get|included life|included coverage|default life|automatic coverage|automatically enrolled|1x|5x salary|spouse coverage|partner coverage|dependent child coverage|family coverage|cover my spouse|cover my partner|cover my wife|cover my husband|cover my family|cover my kids|cover my children|cover my dependents)\b/i.test(lower)
+    return /\b(portable|guaranteed issue|cash value|whole life|term life|voluntary term(?:\s+life)?|basic life|voluntary life|age[- ]banded|rates? locked|coverage amount|how much life insurance|how much can i get|how much should i get|how much coverage should i get|help me decide how much|help me determine how much|help me figure out how much|decide how much|determine how much|figure out how much|if i do nothing|what life insurance do i get|included life|included coverage|default life|automatic coverage|automatically enrolled|already included|included by default|get automatically|without having to pay more|without paying more|without extra cost|1x|5x salary|spouse coverage|partner coverage|dependent child coverage|family coverage|cover my spouse|cover my partner|cover my wife|cover my husband|cover my family|cover my kids|cover my children|cover my dependents)\b/i.test(lower)
       || costQuestion;
   }
 
@@ -60,7 +60,7 @@ export function buildNonMedicalDetailAnswer(topic: string, query: string, _sessi
   }
 
   if (topic === 'Life Insurance') {
-    if ((/\b(if i do nothing|what life insurance do i get|included life|included coverage|default life|automatic coverage|automatically enrolled)\b/i.test(lower) && /\b(life|coverage)\b/i.test(lower)) || /\bemployer-paid basic life\b/i.test(lower)) {
+    if ((/\b(if i do nothing|what life insurance do i get|included life|included coverage|default life|automatic coverage|automatically enrolled|already included|included by default|get automatically|without having to pay more|without paying more|without extra cost)\b/i.test(lower) && /\b(life|coverage|insurance|plans?)\b/i.test(lower)) || /\bemployer-paid basic life\b/i.test(lower)) {
       return [
         `If you do nothing, AmeriVet still gives you **${basic?.name || 'Basic Life & AD&D'}** as the included base layer.`,
         ``,
@@ -137,7 +137,7 @@ export function buildNonMedicalDetailAnswer(topic: string, query: string, _sessi
       ].join('\n');
     }
 
-    if (/\b(how much should i get|how much coverage should i get|help me decide how much|decide how much)\b/i.test(lower)) {
+    if (/\b(how much should i get|how much coverage should i get|help me decide how much|help me determine how much|help me figure out how much|decide how much|determine how much|figure out how much)\b/i.test(lower) || /\bhow\s+much\b[\w\s]{0,80}\bshould\s+i\s+get\b/i.test(lower)) {
       return [
         `The practical way I would decide how much life insurance to add is this:`,
         ``,

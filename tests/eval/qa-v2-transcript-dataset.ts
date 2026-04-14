@@ -2962,4 +2962,61 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
       },
     ],
   },
+  {
+    id: 'V2-TX-087',
+    category: 'hsa_recommendation_followthrough',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Thomas',
+      hasCollectedName: true,
+      userAge: 56,
+      userState: 'CO',
+      dataConfirmed: true,
+    },
+    turns: [
+      {
+        user: 'tell me about hsa/fsa',
+        mustContain: ['HSA/FSA overview:'],
+      },
+      {
+        user: 'can i use fsa with a hsa plan though?',
+        mustContain: ['current plan year', 'HSA-qualified medical plan'],
+        mustNotContain: ['A useful next HSA/FSA question is usually one of these'],
+      },
+      {
+        user: 'so what do you recommend to me?',
+        mustContain: ['My practical take', 'HSA'],
+        mustNotContain: ['A useful next HSA/FSA question is usually one of these'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-088',
+    category: 'life_included_and_determine_amount_variants',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Thomas',
+      hasCollectedName: true,
+      userAge: 56,
+      userState: 'CO',
+      dataConfirmed: true,
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+    },
+    turns: [
+      {
+        user: 'life insurance info',
+        mustContain: ['Life insurance options:'],
+      },
+      {
+        user: 'are any of those life insurance plans something i just get without having to pay more?',
+        mustContain: ['Basic Life & AD&D', '$25,000', 'employer-paid'],
+        mustNotContain: ['Life insurance options:'],
+      },
+      {
+        user: 'can you help me determine how much voluntary term life insurance i should get?',
+        mustContain: ['practical way I would decide how much life insurance to add', 'Voluntary Term Life', '$25,000'],
+        mustNotContain: ['Here is the practical takeaway on **Voluntary Term Life**', 'Life insurance options:'],
+      },
+    ],
+  },
 ];

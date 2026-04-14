@@ -1481,7 +1481,53 @@ function buildHsaFsaRuleReply(query: string): string | null {
 
 function isDirectHsaFsaFitQuestion(query: string): boolean {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
-  return /\b(which\s+one\s+is\s+better|which\s+one\s+is\s+best|better\s+fit|best\s+fit|which\s+one\s+fits|which\s+would\s+you\s+recommend|what\s+would\s+you\s+recommend|which\s+do\s+you\s+recommend|recommend\s+(?:for|to)\s+me|when\s+does\s+hsa\s+fit\s+better|when\s+does\s+fsa\s+fit\s+better|when\s+is\s+hsa\s+better|when\s+is\s+fsa\s+better|how\s+do\s+i\s+know\s+when\s+(?:an?\s+)?hsa\s+(?:fits|is)\s+better|how\s+do\s+i\s+know\s+when\s+(?:an?\s+)?fsa\s+(?:fits|is)\s+better|how\s+can\s+i\s+tell\s+when\s+(?:an?\s+)?hsa\s+(?:fits|is)\s+better|how\s+can\s+i\s+tell\s+when\s+(?:an?\s+)?fsa\s+(?:fits|is)\s+better|should\s+i\s+get|should\s+i\s+use|is\s+it\s+worth\s+it|worth\s+it|worth\s+using)\b/i.test(lower);
+  return /\b(which\s+one\s+is\s+better|which\s+one\s+is\s+best|better\s+fit|best\s+fit|which\s+one\s+fits|when\s+does\s+hsa\s+fit\s+better|when\s+does\s+fsa\s+fit\s+better|when\s+is\s+hsa\s+better|when\s+is\s+fsa\s+better|how\s+do\s+i\s+know\s+when\s+(?:an?\s+)?hsa\s+(?:fits|is)\s+better|how\s+do\s+i\s+know\s+when\s+(?:an?\s+)?fsa\s+(?:fits|is)\s+better|how\s+can\s+i\s+tell\s+when\s+(?:an?\s+)?hsa\s+(?:fits|is)\s+better|how\s+can\s+i\s+tell\s+when\s+(?:an?\s+)?fsa\s+(?:fits|is)\s+better|should\s+i\s+get|should\s+i\s+use|is\s+it\s+worth\s+it|worth\s+it|worth\s+using)\b/i.test(lower);
+}
+
+function isDirectHsaFsaRecommendationAsk(query: string): boolean {
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  return /\b(which\s+would\s+you\s+recommend|what\s+would\s+you\s+recommend|what\s+do\s+you\s+recommend(?:\s+(?:for|to)\s+me)?|which\s+do\s+you\s+recommend|recommend\s+(?:for|to)\s+me)\b/i.test(lower);
+}
+
+function buildHsaFsaRecommendationReply(session: Session): string {
+  const currentPlan = session.selectedPlan || '';
+
+  if (/Kaiser Standard HMO/i.test(currentPlan)) {
+    return [
+      `My practical take is: if you stay with **Kaiser Standard HMO**, **FSA is usually the cleaner fit.**`,
+      ``,
+      `Why:`,
+      `- Kaiser is AmeriVet's non-HSA-qualified medical path`,
+      `- FSA is the more natural pre-tax account when HSA eligibility is not the goal`,
+      `- HSA only really makes sense when you are on an HSA-qualified medical plan`,
+      ``,
+      `If you want, I can also help you decide whether Kaiser itself is still the right medical path.`,
+    ].join('\n');
+  }
+
+  if (/Standard HSA|Enhanced HSA/i.test(currentPlan)) {
+    return [
+      `My practical take is: with **${currentPlan}**, **HSA is usually the cleaner fit.**`,
+      ``,
+      `Why:`,
+      `- It keeps the tax account aligned with the HSA-qualified medical plan`,
+      `- It preserves rollover and longer-term savings advantages`,
+      `- FSA becomes the cleaner answer only when you care more about near-term spending than HSA eligibility`,
+      ``,
+      `If you want, I can also make that practical by walking through when FSA would still beat HSA for this situation.`,
+    ].join('\n');
+  }
+
+  return [
+    `My practical take is: **HSA is usually the better default recommendation** if you are on an HSA-qualified medical plan and want rollover plus longer-term savings.`,
+    ``,
+    `I would usually lean **FSA** instead only when one of these is true:`,
+    `- you expect to spend the money in the current plan year`,
+    `- you are not trying to preserve HSA eligibility`,
+    `- you are on a non-HSA-qualified path like **Kaiser Standard HMO**`,
+    ``,
+    `So unless your main goal is near-term spending, I would usually start from **HSA** rather than **FSA**.`,
+  ].join('\n');
 }
 
 function buildHsaFsaPracticalFitReply(session: Session, query: string): string | null {
@@ -1541,6 +1587,10 @@ function buildHsaFsaPracticalFitReply(session: Session, query: string): string |
       `- It keeps the tax account aligned with the HSA-qualified medical plan`,
       `- It gives you the rollover advantage if you do not need to spend every dollar in the current plan year`,
     ].join('\n');
+  }
+
+  if (isDirectHsaFsaRecommendationAsk(query)) {
+    return buildHsaFsaRecommendationReply(session);
   }
 
   if (isDirectHsaFsaFitQuestion(query)) {
@@ -3023,7 +3073,7 @@ function buildContinuationReply(session: Session, query: string): string | null 
     return buildTopicReply(session, 'HSA/FSA', normalizedQuery);
   }
 
-  if (activeTopic === 'HSA/FSA' && (isHsaFsaRuleQuestion(normalizedQuery) || isDirectHsaFsaFitQuestion(normalizedQuery) || hsaFitFocus)) {
+  if (activeTopic === 'HSA/FSA' && (isHsaFsaRuleQuestion(normalizedQuery) || isDirectHsaFsaRecommendationAsk(normalizedQuery) || isDirectHsaFsaFitQuestion(normalizedQuery) || hsaFitFocus)) {
     setTopic(session, 'HSA/FSA');
     return buildTopicReply(session, 'HSA/FSA', normalizedQuery);
   }
@@ -3061,7 +3111,7 @@ function buildContinuationReply(session: Session, query: string): string | null 
         : normalizedExplicitTopic === 'Dental' || normalizedExplicitTopic === 'Vision'
           ? (isRoutineBenefitDetailQuestion(normalizedQuery) || isWorthAddingFollowup(normalizedQuery))
           : normalizedExplicitTopic === 'HSA/FSA'
-            ? (isHsaFsaCompatibilityQuestion(normalizedQuery) || isDirectHsaFsaFitQuestion(normalizedQuery) || isHsaFsaRuleQuestion(normalizedQuery) || /\bwhat\s+does\s+(hsa|fsa)\s+mean\b|\bwhat\s+is\s+an?\s+(hsa|fsa)\b/i.test(lower))
+            ? (isHsaFsaCompatibilityQuestion(normalizedQuery) || isDirectHsaFsaRecommendationAsk(normalizedQuery) || isDirectHsaFsaFitQuestion(normalizedQuery) || isHsaFsaRuleQuestion(normalizedQuery) || /\bwhat\s+does\s+(hsa|fsa)\s+mean\b|\bwhat\s+is\s+an?\s+(hsa|fsa)\b/i.test(lower))
             : (
               isNonMedicalDetailQuestion(normalizedExplicitTopic, normalizedQuery)
               || isSupplementalRecommendationQuestion(normalizedQuery)
@@ -3350,7 +3400,7 @@ function buildContinuationReply(session: Session, query: string): string | null 
     ].join('\n');
   }
 
-  if (activeTopic === 'HSA/FSA' && (isDirectHsaFsaFitQuestion(normalizedQuery) || isHsaFsaRuleQuestion(normalizedQuery) || hsaFitFocus)) {
+  if (activeTopic === 'HSA/FSA' && (isDirectHsaFsaRecommendationAsk(normalizedQuery) || isDirectHsaFsaFitQuestion(normalizedQuery) || isHsaFsaRuleQuestion(normalizedQuery) || hsaFitFocus)) {
     return buildTopicReply(session, 'HSA/FSA', normalizedQuery);
   }
 

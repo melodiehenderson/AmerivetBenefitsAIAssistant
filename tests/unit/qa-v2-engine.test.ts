@@ -1310,6 +1310,51 @@ describe('qa-v2 engine', () => {
     expect(result.answer).not.toContain('Life insurance options:');
   });
 
+  it('answers included-life questions phrased as "without paying more" directly instead of replaying the broad life card', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Thomas',
+      hasCollectedName: true,
+      userAge: 56,
+      userState: 'CO',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'are any of those life insurance plans something i just get without having to pay more?',
+      session,
+    });
+
+    expect(result.answer).toContain('Basic Life & AD&D');
+    expect(result.answer).toContain('employer-paid');
+    expect(result.answer).toContain('$25,000');
+    expect(result.answer).not.toContain('Life insurance options:');
+  });
+
+  it('answers determine-how-much voluntary-term questions with the life-amount framework instead of replaying the term explainer', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Thomas',
+      hasCollectedName: true,
+      userAge: 56,
+      userState: 'CO',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+    });
+
+    const result = await runQaV2Engine({
+      query: 'can you help me determine how much voluntary term life insurance i should get?',
+      session,
+    });
+
+    expect(result.answer).toContain('practical way I would decide how much life insurance to add');
+    expect(result.answer).toContain('Voluntary Term Life');
+    expect(result.answer).toContain('$25,000');
+    expect(result.answer).not.toContain('Here is the practical takeaway on **Voluntary Term Life**');
+  });
+
   it('answers HSA/FSA compatibility questions directly for Kaiser instead of repeating the generic overview', async () => {
     const session = makeSession({
       step: 'active_chat',
@@ -1329,6 +1374,28 @@ describe('qa-v2 engine', () => {
     expect(result.answer).toContain('Kaiser Standard HMO');
     expect(result.answer).toContain('FSA is usually the more natural pre-tax account');
     expect(result.answer).not.toContain('HSA/FSA overview:');
+  });
+
+  it('answers "what do you recommend to me" in active hsa/fsa chat with a direct recommendation instead of the generic next-question menu', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Thomas',
+      hasCollectedName: true,
+      userAge: 56,
+      userState: 'CO',
+      dataConfirmed: true,
+      currentTopic: 'HSA/FSA',
+      lastBotMessage: 'The practical answer is that FSA makes more sense when you want pre-tax help for expenses within the current plan year and you are not relying on HSA-qualified medical plan.',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'so what do you recommend to me?',
+      session,
+    });
+
+    expect(result.answer).toContain('My practical take');
+    expect(result.answer).toMatch(/HSA|FSA/);
+    expect(result.answer).not.toContain('A useful next HSA/FSA question is usually one of these');
   });
 
   it('answers direct life-benefit inventory questions instead of stalling in stale topic scaffolding', async () => {
@@ -3305,7 +3372,8 @@ describe('qa-v2 engine', () => {
       session,
     });
 
-    expect(result.answer).toContain('simplest way to think about HSA versus FSA fit');
+    expect(result.answer).toContain('My practical take');
+    expect(result.answer).toMatch(/HSA|FSA/);
     expect(result.answer).not.toContain('We can stay with HSA/FSA');
   });
 
