@@ -177,7 +177,7 @@ export default function CalculatorPage() {
               {/* Coverage Level selector - now with 4 tiers */}
               <div className="space-y-2">
                 <Label htmlFor="coverage">Coverage Level</Label>
-                <Select value={coverage} onValueChange={setCoverage}>
+                <Select value={coverage} onValueChange={(value) => setCoverage(value as CalculatorCoverageSelection)}>
                   <SelectTrigger id="coverage">
                     <SelectValue />
                   </SelectTrigger>
