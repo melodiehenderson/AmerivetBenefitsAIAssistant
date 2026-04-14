@@ -18,7 +18,7 @@ export function isNonMedicalDetailQuestion(topic: string, query: string): boolea
   const costQuestion = /\b(how\s+much|cost|costs|price|prices|rate|rates|premium|premiums)\b/i.test(lower);
 
   if (topic === 'Life Insurance') {
-    return /\b(portable|guaranteed issue|cash value|whole life|term life|voluntary term(?:\s+life)?|basic life|voluntary life|age[- ]banded|rates? locked|coverage amount|how much life insurance|how much can i get|1x|5x salary|spouse coverage|partner coverage|dependent child coverage|family coverage|cover my spouse|cover my partner|cover my wife|cover my husband|cover my family|cover my kids|cover my children|cover my dependents)\b/i.test(lower)
+    return /\b(portable|guaranteed issue|cash value|whole life|term life|voluntary term(?:\s+life)?|basic life|voluntary life|age[- ]banded|rates? locked|coverage amount|how much life insurance|how much can i get|how much should i get|how much coverage should i get|help me decide how much|if i do nothing|what life insurance do i get|included life|included coverage|default life|automatic coverage|automatically enrolled|1x|5x salary|spouse coverage|partner coverage|dependent child coverage|family coverage|cover my spouse|cover my partner|cover my wife|cover my husband|cover my family|cover my kids|cover my children|cover my dependents)\b/i.test(lower)
       || costQuestion;
   }
 
@@ -60,6 +60,19 @@ export function buildNonMedicalDetailAnswer(topic: string, query: string, _sessi
   }
 
   if (topic === 'Life Insurance') {
+    if ((/\b(if i do nothing|what life insurance do i get|included life|included coverage|default life|automatic coverage|automatically enrolled)\b/i.test(lower) && /\b(life|coverage)\b/i.test(lower)) || /\bemployer-paid basic life\b/i.test(lower)) {
+      return [
+        `If you do nothing, AmeriVet still gives you **${basic?.name || 'Basic Life & AD&D'}** as the included base layer.`,
+        ``,
+        `What that means in practice:`,
+        `- it is **employer-paid**`,
+        `- the current summary lists it as a **$25,000** flat life benefit`,
+        `- all benefits-eligible employees are automatically enrolled in that base coverage`,
+        ``,
+        `So the real follow-up decision is whether that included amount feels sufficient, or whether you want to add **${term?.name || 'Voluntary Term Life'}** or **${whole?.name || 'Whole Life'}** on top.`,
+      ].join('\n');
+    }
+
     if (/\b(portable|portability)\b/i.test(lower)) {
       return [
         `Portable means you may be able to keep that life coverage after leaving AmeriVet instead of losing it automatically when employment ends, subject to the carrier's conversion or portability rules.`,
@@ -103,19 +116,6 @@ export function buildNonMedicalDetailAnswer(topic: string, query: string, _sessi
       ].join('\n');
     }
 
-    if (/\b(voluntary term(?:\s+life)?|term life)\b/i.test(lower)) {
-      return [
-        `Here is the practical takeaway on **${term?.name || 'Voluntary Term Life'}**:`,
-        ``,
-        `- It is the extra employee-paid term coverage on top of AmeriVet's employer-paid basic life benefit`,
-        `- The summary describes it as **age-banded**, so the exact price depends on your age bracket and election amount in Workday`,
-        `- The current summary also says spouse and dependent child coverage are available`,
-        `- It is described as portable if you leave AmeriVet`,
-        ``,
-        `So the short version is that voluntary term life is usually the cleaner extra protection option when you want more life coverage without moving into whole-life cash-value design.`,
-      ].join('\n');
-    }
-
     if (/\b(spouse coverage|partner coverage|dependent child coverage|family coverage|cover my spouse|cover my partner|cover my wife|cover my husband|cover my family|cover my kids|cover my children|cover my dependents)\b/i.test(lower)) {
       return [
         `For family members, the practical distinction is that the employer-paid basic life benefit is the employee's base coverage, while the voluntary term life option is the one whose summary explicitly says spouse and dependent child coverage are available.`,
@@ -134,6 +134,32 @@ export function buildNonMedicalDetailAnswer(topic: string, query: string, _sessi
         `- ${whole?.name || 'Whole Life'} is the permanent option with cash value, so the practical decision there is more about permanent coverage than maximizing the term amount`,
         ``,
         `So if your question is how much extra life insurance you can get through AmeriVet, the main expandable amount is the voluntary term life option rather than the employer-paid basic life benefit.`,
+      ].join('\n');
+    }
+
+    if (/\b(how much should i get|how much coverage should i get|help me decide how much|decide how much)\b/i.test(lower)) {
+      return [
+        `The practical way I would decide how much life insurance to add is this:`,
+        ``,
+        `- treat **${basic?.name || 'Basic Life'}** as the included starting point, not the finished answer if other people rely on your income`,
+        `- use **${term?.name || 'Voluntary Term Life'}** as the first extra layer when the goal is more straightforward household protection`,
+        `- use **${whole?.name || 'Whole Life'}** only if you specifically want permanent coverage plus the cash-value design, not just more income replacement`,
+        `- the more your household depends on your paycheck, debts, or childcare costs, the less likely that the included **$25,000** base benefit is enough by itself`,
+        ``,
+        `So my practical take is: if other people rely on your income, start by tightening up **voluntary term life** before worrying about whole life. I can also help you think through whether the included base benefit sounds clearly too small for your situation.`,
+      ].join('\n');
+    }
+
+    if (/\b(voluntary term(?:\s+life)?|term life)\b/i.test(lower)) {
+      return [
+        `Here is the practical takeaway on **${term?.name || 'Voluntary Term Life'}**:`,
+        ``,
+        `- It is the extra employee-paid term coverage on top of AmeriVet's employer-paid basic life benefit`,
+        `- The summary describes it as **age-banded**, so the exact price depends on your age bracket and election amount in Workday`,
+        `- The current summary also says spouse and dependent child coverage are available`,
+        `- It is described as portable if you leave AmeriVet`,
+        ``,
+        `So the short version is that voluntary term life is usually the cleaner extra protection option when you want more life coverage without moving into whole-life cash-value design.`,
       ].join('\n');
     }
 

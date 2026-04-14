@@ -1265,6 +1265,51 @@ describe('qa-v2 engine', () => {
     expect(result.answer).not.toContain('Life insurance options:');
   });
 
+  it('answers default life-coverage questions directly instead of replaying the full life card', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Thomas',
+      hasCollectedName: true,
+      userAge: 56,
+      userState: 'CO',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'if i do nothing, what life insurance do i get?',
+      session,
+    });
+
+    expect(result.answer).toContain('Basic Life & AD&D');
+    expect(result.answer).toContain('$25,000');
+    expect(result.answer).toContain('employer-paid');
+    expect(result.answer).not.toContain('Life insurance options:');
+  });
+
+  it('answers how-much-life-to-get questions with a decision framework instead of a generic options card', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Thomas',
+      hasCollectedName: true,
+      userAge: 56,
+      userState: 'CO',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+    });
+
+    const result = await runQaV2Engine({
+      query: 'can you help me decide how much voluntary term life i should get?',
+      session,
+    });
+
+    expect(result.answer).toContain('practical way I would decide how much life insurance to add');
+    expect(result.answer).toContain('Voluntary Term Life');
+    expect(result.answer).toContain('$25,000');
+    expect(result.answer).not.toContain('Life insurance options:');
+  });
+
   it('answers HSA/FSA compatibility questions directly for Kaiser instead of repeating the generic overview', async () => {
     const session = makeSession({
       step: 'active_chat',

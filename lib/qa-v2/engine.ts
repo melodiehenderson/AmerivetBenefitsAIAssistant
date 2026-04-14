@@ -2945,7 +2945,7 @@ function buildSupplementalRecommendationReply(topic: string, session: Session, q
 
 function isSupplementalRecommendationQuestion(query: string): boolean {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
-  return /\b(should\s+i\s+get|should\s+i\s+add|do\s+you\s+recommend|would\s+you\s+recommend|so\s+should\s+i\s+get\s+it|so\s+should\s+i\s+add\s+it|with\s+my\s+situation|for\s+my\s+family|for\s+our\s+family|sole\s+bread[- ]?winner|only\s+income|bread[- ]?winner|what\s+would\s+you\s+recommend|what\s+do\s+you\s+recommend)\b/i.test(lower);
+  return /\b(should\s+i\s+get|should\s+i\s+add|do\s+you\s+recommend|would\s+you\s+recommend|so\s+should\s+i\s+get\s+it|so\s+should\s+i\s+add\s+it|with\s+my\s+situation|for\s+my\s+family|for\s+our\s+family|sole\s+bread[- ]?winner|only\s+income|bread[- ]?winner|what\s+would\s+you\s+recommend|what\s+do\s+you\s+recommend|right\s+for\s+me|how\s+do\s+i\s+decide|help\s+me\s+decide)\b/i.test(lower);
 }
 
 function isFamilySpecificFollowup(query: string): boolean {

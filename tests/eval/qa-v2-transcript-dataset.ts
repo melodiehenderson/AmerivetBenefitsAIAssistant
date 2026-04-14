@@ -2933,4 +2933,33 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
       },
     ],
   },
+  {
+    id: 'V2-TX-086',
+    category: 'life_default_and_amount_followthrough',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Thomas',
+      hasCollectedName: true,
+      userAge: 56,
+      userState: 'CO',
+      dataConfirmed: true,
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+    },
+    turns: [
+      {
+        user: 'life insurance info',
+        mustContain: ['Life insurance options:'],
+      },
+      {
+        user: 'if i do nothing, what life insurance do i get?',
+        mustContain: ['Basic Life & AD&D', '$25,000', 'employer-paid'],
+        mustNotContain: ['Life insurance options:'],
+      },
+      {
+        user: 'can you help me decide how much voluntary term life i should get?',
+        mustContain: ['practical way I would decide how much life insurance to add', 'Voluntary Term Life', '$25,000'],
+        mustNotContain: ['Life insurance options:'],
+      },
+    ],
+  },
 ];

@@ -901,6 +901,35 @@ describe('qa-v2 transcript replays', () => {
     );
   });
 
+  it('replays direct life-default and life-amount questions as counselor-style answers instead of broad category cards', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'life insurance info',
+          mustContain: ['Life insurance options'],
+        },
+        {
+          user: 'if i do nothing, what life insurance do i get?',
+          mustContain: ['Basic Life & AD&D', '$25,000', 'employer-paid'],
+          mustNotContain: ['Life insurance options:'],
+        },
+        {
+          user: 'can you help me decide how much voluntary term life i should get?',
+          mustContain: ['practical way I would decide how much life insurance to add', 'Voluntary Term Life', '$25,000'],
+          mustNotContain: ['Life insurance options:'],
+        },
+      ],
+      makeSession({
+        userName: 'Thomas',
+        hasCollectedName: true,
+        userAge: 56,
+        userState: 'CO',
+        dataConfirmed: true,
+        familyDetails: { hasSpouse: true, numChildren: 2 },
+      }),
+    );
+  });
+
   it('replays hsa/fsa move-back requests into medical options instead of staying trapped in tax-account scaffolding', async () => {
     await replayTranscript(
       [
