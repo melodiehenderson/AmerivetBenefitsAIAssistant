@@ -334,7 +334,9 @@ export function buildRecommendationOverview(
   const recommendationSignal = /\b(recommendation|recommend|suggest|best\s+plan|best\s+option|which\s+plan|what\s+plan|what\s+do\s+you\s+recommend|what[’']?s\s+best\s+for\s+me|how\s+do\s+i\s+decide(?:\s+which\s+one)?|help\s+me\s+choose|which\s+one\s+is\s+best|which\s+one\s+is\s+better|make\s+the\s+case\s+for|sell\s+me\s+on|talk\s+me\s+into|should\s+(?:we|i)\s+switch|is\s+(?:enhanced|standard|kaiser)\s+worth)\b/i.test(lower);
   const healthySignal = /\b(healthy|low\s+utilization|low\s+use|low\s+usage|rarely\s+(?:go|use))\b/i.test(lower);
   const singleSignal = /\b(single|individual|just\s+me|only\s+me|no\s+dependents|no\s+kids|no\s+children)\b/i.test(lower);
-  const savingsSignal = /\b(save\s+money|low\s+cost|cheapest|lowest\s+premium|save\s+on\s+premiums|budget)\b/i.test(lower);
+  const savingsSignal = /\b(save\s+money|low\s+cost|cheapest|lowest\s+premium|save\s+on\s+premiums|budget|keep\s+premiums?\s+lower|lower\s+premiums?\s+matter\s+more|premium\s+first|budget\s+first)\b/i.test(lower);
+  const deductibleProtectionSignal = /\b(more\s+predictable\s+costs?|predictable\s+costs?|cost\s+predictability|lower\s+deductible\s+risk|less\s+deductible\s+risk|avoid\s+surprise\s+bills?|avoid\s+big\s+bills?|less\s+surprise\s+costs?|stronger\s+cost\s+protection|stronger\s+deductible\s+protection|safer\s+option)\b/i.test(lower);
+  const riskToleranceSignal = /\b(can\s+handle\s+more\s+risk|comfortable\s+with\s+more\s+risk|okay\s+with\s+more\s+risk|willing\s+to\s+take\s+more\s+risk|fine\s+with\s+more\s+risk|take\s+on\s+more\s+risk)\b/i.test(lower);
   const lowestOutOfPocketSignal = /\b(lowest|least)\s+out[- ]of[- ]pocket|\blowest\s+oop|\bminimi[sz]e\s+out[- ]of[- ]pocket\b/i.test(lower);
   const higherUsageSignal = /\b(high\s+usage|high\s+utilization|frequent\s+(?:doctor|specialist|care|visits?)|regular\s+(?:care|visits?)|ongoing\s+care|chronic|ongoing\s+prescriptions?|a\s+lot\s+of\s+care|expect(?:ing)?\s+a\s+lot\s+of\s+care|more\s+medical\s+use|heavy\s+usage|more\s+(?:doctor|specialist)\s+visits?|specialist\s+visits?|more\s+care|more\s+medical\s+care)\b/i.test(lower);
   const moderateUsageSignal = /\b(moderate\s+usage|some\s+medical\s+use|occasional\s+(?:care|visits?)|a\s+few\s+visits?)\b/i.test(lower);
@@ -351,7 +353,7 @@ export function buildRecommendationOverview(
   const ignoreSelectedPlan = shouldIgnoreSelectedPlanBias(query);
   const explicitPressureTestPlan = /\b(make\s+the\s+case\s+for|sell\s+me\s+on|talk\s+me\s+into)\s+(?:the\s+)?(standard|enhanced|kaiser)\b/i.exec(lower)?.[2] || null;
 
-  if (!(recommendationSignal || healthySignal || savingsSignal || lowestOutOfPocketSignal || higherUsageSignal || moderateUsageSignal || pregnancySignal)) return null;
+  if (!(recommendationSignal || healthySignal || savingsSignal || deductibleProtectionSignal || riskToleranceSignal || lowestOutOfPocketSignal || higherUsageSignal || moderateUsageSignal || pregnancySignal)) return null;
   if (!wantsMedicalRecommendation) return null;
 
   const benefitsPackage = options?.benefitsPackage ?? getAmerivetBenefitsPackage();
@@ -374,7 +376,7 @@ export function buildRecommendationOverview(
 
   const decidingBetweenShownPlans = /\b(which\s+one|which\s+plan|best\s+for\s+me|what[’']?s\s+best\s+for\s+me|how\s+do\s+i\s+decide|help\s+me\s+choose|what\s+do\s+you\s+recommend)\b/i.test(lower);
 
-  if (decidingBetweenShownPlans && !usageBand && !singleSignal && !mentionsIntegratedNetworkPreference && !pregnancySignal && !selectedPlan) {
+  if (decidingBetweenShownPlans && !usageBand && !singleSignal && !deductibleProtectionSignal && !riskToleranceSignal && !mentionsIntegratedNetworkPreference && !pregnancySignal && !selectedPlan) {
     let clarifier = `I can recommend one — the biggest factor is how much care you expect to use.\n\n`;
     clarifier += `If you expect low medical use, I usually lean **Standard HSA** for the lower premium. `;
     clarifier += `If you expect frequent visits, ongoing prescriptions, or want a lower deductible, I usually lean **Enhanced HSA**.`;
@@ -418,6 +420,9 @@ export function buildRecommendationOverview(
     recommendationReason = lowestOutOfPocketSignal
       ? `it is the stronger fit when you want lower maternity-related out-of-pocket exposure but Kaiser is not available`
       : `pregnancy usually makes lower deductible and out-of-pocket exposure matter more, so Enhanced HSA is usually the safer non-Kaiser option`;
+  } else if (deductibleProtectionSignal) {
+    recommendationPlan = 'Enhanced HSA';
+    recommendationReason = `you said more predictable costs and stronger deductible protection matter more than simply keeping the premium as low as possible`;
   } else if (usageBand === 'high' || usageBand === 'moderate') {
     recommendationPlan = 'Enhanced HSA';
     recommendationReason = lowestOutOfPocketSignal
@@ -426,7 +431,7 @@ export function buildRecommendationOverview(
   } else if (mentionsIntegratedNetworkPreference && kaiser && session.userState && isKaiserEligibleForState(session.userState, benefitsPackage)) {
     recommendationPlan = 'Kaiser Standard HMO';
     recommendationReason = `it gives you the integrated HMO-style experience some people prefer when they want a tighter, coordinated network`;
-  } else if (singleSignal || healthySignal || savingsSignal) {
+  } else if (riskToleranceSignal || singleSignal || healthySignal || savingsSignal) {
     recommendationPlan = 'Standard HSA';
     recommendationReason = `it is usually the better fit when you want to keep monthly premium lower and do not expect much care`;
   }
@@ -455,6 +460,12 @@ export function buildRecommendationOverview(
   }
   if (savingsSignal) {
     msg += `\nBecause you mentioned wanting to save money, **Standard HSA** is usually the cleanest place to start if you do not expect much care.`;
+  }
+  if (riskToleranceSignal) {
+    msg += `\nBecause you said you can tolerate more cost risk to keep premiums lower, **Standard HSA** is the one I would look at first.`;
+  }
+  if (deductibleProtectionSignal) {
+    msg += `\nBecause you said more predictable costs matter, **Enhanced HSA** is the one I would look at first.`;
   }
   if (usageBand === 'high' || usageBand === 'moderate') {
     msg += `\nBecause you described more than minimal usage, **Enhanced HSA** is the one I would look at first.`;

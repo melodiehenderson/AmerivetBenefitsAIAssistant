@@ -3449,6 +3449,52 @@ describe('qa-v2 engine', () => {
     expect(session.selectedPlan).toBeUndefined();
   });
 
+  it('recommends enhanced when the user asks for more predictable costs instead of falling back to a clarifier', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'TX',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee Only',
+      lastBotMessage: 'Here is the practical tradeoff across AmeriVet\'s medical options.',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'which plan do you recommend if i want more predictable costs and less deductible risk?',
+      session,
+    });
+
+    expect(result.answer).toContain('My recommendation: Enhanced HSA');
+    expect(result.answer).toContain('Because you said more predictable costs matter');
+    expect(result.answer).not.toContain('Quick clarifier');
+  });
+
+  it('recommends standard when the user says lower premiums matter more and they can tolerate more risk', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'TX',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee Only',
+      lastBotMessage: 'Here is the practical tradeoff across AmeriVet\'s medical options.',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'which plan do you recommend if i can handle more risk to keep premiums lower?',
+      session,
+    });
+
+    expect(result.answer).toContain('My recommendation: Standard HSA');
+    expect(result.answer).toContain('Because you said you can tolerate more cost risk to keep premiums lower');
+    expect(result.answer).not.toContain('Quick clarifier');
+  });
+
   it('overwrites spouse memory when the user corrects the household down to employee-plus-children pricing', async () => {
     const session = makeSession({
       step: 'active_chat',

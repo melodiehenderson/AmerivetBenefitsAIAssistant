@@ -2388,6 +2388,33 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
     ],
   },
   {
+    id: 'V2-TX-078A',
+    category: 'medical_recommendation_preference_signals',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'TX',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee Only',
+      lastBotMessage: 'Here is the practical tradeoff across AmeriVet\'s medical options.',
+    },
+    turns: [
+      {
+        user: 'which plan do you recommend if i want more predictable costs and less deductible risk?',
+        mustContain: ['My recommendation: Enhanced HSA', 'Because you said more predictable costs matter'],
+        mustNotContain: ['Quick clarifier', 'would you say your expected usage is'],
+      },
+      {
+        user: 'okay, but what if i can handle more risk to keep premiums lower?',
+        mustContain: ['My recommendation: Standard HSA', 'Because you said you can tolerate more cost risk to keep premiums lower'],
+        mustNotContain: ['Quick clarifier', 'My recommendation: Enhanced HSA'],
+      },
+    ],
+  },
+  {
     id: 'V2-TX-079',
     category: 'household_tier_correction_overwrites_stale_pricing',
     initialSession: {

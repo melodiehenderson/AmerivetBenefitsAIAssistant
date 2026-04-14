@@ -267,6 +267,11 @@ function isDirectMedicalRecommendationQuestion(query: string): boolean {
   return /\b(which\s+plan\s+is\s+best|which\s+plan\s+is\s+better|best\s+(medical\s+)?plan|which\s+medical\s+plan|which\s+one\s+do\s+you\s+recommend|what\s+do\s+you\s+recommend\s+for\s+me|which\s+one\s+do\s+i\s+pick|which\s+one\s+should\s+i\s+pick|what\s+should\s+i\s+pick|which\s+option\s+should\s+i\s+pick|which\s+one\s+would\s+you\s+pick|which\s+plan\s+is\s+right\s+for\s+me|lowest\s+out[- ]of[- ]pocket|lowest\s+oop|lowest\s+bills|best\s+choice\s+for\s+my\s+family|plan\s+is\s+best\s+for\s+my\s+family|best\s+for\s+my\s+family|better\s+for\s+me|better\s+for\s+us|which\s+plan\s+will\s+give\s+us\s+the\s+lowest|let'?s\s+talk\s+(?:thru|through)\s+which\s+plan\s+is\s+best|talk\s+me\s+through\s+which\s+plan\s+is\s+best|should\s+(?:we|i)\s+switch\b|switch\s+from\s+(?:the\s+)?(?:standard|enhanced|kaiser)|make\s+the\s+case\s+for\s+(?:the\s+)?(?:standard|enhanced|kaiser)|sell\s+me\s+on\s+(?:the\s+)?(?:standard|enhanced|kaiser)|talk\s+me\s+into\s+(?:the\s+)?(?:standard|enhanced|kaiser)|i\s+know\s+i\s+said\s+(?:standard|enhanced|kaiser)|which\s+one\s+is\s+better\b[^.?!]{0,60}\b(expect|care|specialist|prescription|usage)|is\s+(?:enhanced|standard|kaiser)\s+worth\b)\b/i.test(lower);
 }
 
+function isMedicalRecommendationPreferenceFollowup(query: string): boolean {
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  return /\b(more\s+predictable\s+costs?|predictable\s+costs?|less\s+deductible\s+risk|lower\s+deductible\s+risk|stronger\s+deductible\s+protection|stronger\s+cost\s+protection|can\s+handle\s+more\s+risk|comfortable\s+with\s+more\s+risk|okay\s+with\s+more\s+risk|willing\s+to\s+take\s+more\s+risk|keep\s+premiums?\s+lower|lower\s+premiums?\s+matter\s+more|premium\s+first|budget\s+first)\b/i.test(lower);
+}
+
 function isSelectedPlanReconsideration(query: string): boolean {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
   return /\b(should\s+(?:we|i)\s+switch|switch\s+from\s+(?:the\s+)?(?:standard|enhanced|kaiser)|make\s+the\s+case\s+for\s+(?:the\s+)?(?:standard|enhanced|kaiser)|sell\s+me\s+on\s+(?:the\s+)?(?:standard|enhanced|kaiser)|talk\s+me\s+into\s+(?:the\s+)?(?:standard|enhanced|kaiser)|i\s+know\s+i\s+said\s+(?:standard|enhanced|kaiser)|instead\s+of\s+(?:standard|enhanced|kaiser)|rather\s+than\s+(?:standard|enhanced|kaiser)|which\s+(?:one|medical\s+plan|plan)\s+is\s+better|what\s+(?:medical\s+)?plan\s+is\s+better)\b/i.test(lower);
@@ -295,6 +300,7 @@ function isHsaFsaCompatibilityQuestion(query: string): boolean {
 function isDirectMedicalContinuationQuestion(query: string): boolean {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
   return isDirectMedicalRecommendationQuestion(query)
+    || isMedicalRecommendationPreferenceFollowup(query)
     || isMedicalDetailQuestion(query)
     || /\b(which\s+plan\s+is\s+best\s+for\s+my\s+family|which\s+plan\s+is\s+best|which\s+plan\s+is\s+better|which\s+one\s+do\s+you\s+recommend|best\s+choice\s+for\s+my\s+family|what\s+plan\s+will\s+give\s+us\s+the\s+lowest|other\s+standard\s+plan|other\s+plan|plan\s+tradeoffs?|medical\s+options|medical\s+plan\s+options|show\s+me\s+(?:my\s+)?(?:medical\s+)?options|show\s+me\s+the\s+plans|plans\s+side\s+by\s+side|side\s+by\s+side|let'?s\s+talk\s+(?:thru|through)\s+which\s+plan|talk\s+(?:thru|through)\s+which\s+plan|talk\s+me\s+through\s+which\s+plan|talk\s+through\s+which\s+option\s+fits\s+better|which\s+option\s+fits\s+better|best\s+choice\s+for\s+my\s+family|best\s+for\s+my\s+family|better\s+for\s+me|better\s+for\s+us)\b/i.test(lower);
 }
@@ -2702,6 +2708,9 @@ function buildContinuationReply(session: Session, query: string): string | null 
     }
     if (wantsWorthPremium) {
       return buildMedicalWorthExtraPremiumReply(session);
+    }
+    if (isMedicalRecommendationPreferenceFollowup(normalizedQuery)) {
+      return buildTopicReply(session, 'Medical', normalizedQuery);
     }
     if (isDirectMedicalRecommendationQuestion(normalizedQuery)) {
       return buildTopicReply(session, 'Medical', normalizedQuery);
