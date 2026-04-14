@@ -1,5 +1,6 @@
 import { STATE_ABBREV_TO_NAME } from '@/lib/data/amerivet';
 import type { Session } from '@/lib/rag/session-store';
+import { extractName } from '@/lib/session-logic';
 import pricingUtils from '@/lib/rag/pricing-utils';
 import { buildCategoryExplorationResponse } from '@/lib/qa/category-response-builders';
 import {
@@ -142,6 +143,13 @@ function buildAllBenefitsMenu(): string {
     '- Accident/AD&D (Allstate)',
     '- HSA/FSA Accounts',
   ].join('\n');
+}
+
+function buildBenefitsLineupPrompt(session: Session): string {
+  const intro = hasDemographics(session)
+    ? `Here is the AmeriVet benefits lineup for ${session.userAge} in ${session.userState}:`
+    : 'Here is the AmeriVet benefits lineup:';
+  return `${intro}\n\n${buildAllBenefitsMenu()}\n\nWhat would you like to explore first?`;
 }
 
 function buildPackageGuidance(session: Session, topic?: string | null): string {
@@ -1767,6 +1775,15 @@ function extractAge(message: string): number | null {
   return match ? Number(match[1]) : null;
 }
 
+function extractCorrectionLead(message: string): string | null {
+  const trimmed = message.trim();
+  if (!trimmed) return null;
+
+  return trimmed.match(/\b(?:actually|sorry|correction)\b[\s,:-]*(.+)$/i)?.[1]
+    ?? trimmed.match(/\b(?:i\s+meant|meant)\b[\s,:-]*(.+)$/i)?.[1]
+    ?? null;
+}
+
 function extractState(message: string): string | null {
   const lower = message.toLowerCase();
   const normalized = message.trim().toLowerCase().replace(/[.!?]+$/g, '');
@@ -1793,6 +1810,32 @@ function extractState(message: string): string | null {
   if (exactStateOnly) return exactStateOnly[1].toUpperCase();
 
   return null;
+}
+
+function detectExplicitNameCorrection(query: string, currentName?: string | null): string | null {
+  if (!currentName) return null;
+  if (extractAge(query) || extractState(query) || benefitTopicFromQuery(query)) return null;
+  if (!/^(?:actually[, ]+)?(?:my name is|i'?m called|i am called|i'?m|i am|call me)\s+/i.test(query.trim())) return null;
+
+  const detectedName = extractName(query);
+  if (!detectedName) return null;
+  if (detectedName.toLowerCase() === currentName.trim().toLowerCase()) return null;
+  return detectedName;
+}
+
+function detectExplicitAgeCorrection(query: string, currentAge?: number | null): number | null {
+  if (typeof currentAge !== 'number') return null;
+
+  const age = extractAge(query);
+  if (!age || age === currentAge) return null;
+
+  const correctionLead = extractCorrectionLead(query);
+  const normalized = stripAffirmationLeadIn(query.trim());
+  const ageOnly = /^(?:i'?m|i am)?\s*(1[8-9]|[2-9][0-9])$/i.test(normalized);
+
+  if (!correctionLead && !ageOnly) return null;
+
+  return age;
 }
 
 function applyDemographics(session: Session, query: string) {
@@ -1836,7 +1879,7 @@ function buildStateOnlyReply(session: Session, priorState: string | null | undef
     return `Thanks — I’ve updated your state to ${extractedState}. That doesn’t materially change the ${session.currentTopic.toLowerCase()} options I just showed, but I’ll use ${extractedState} for any state-specific guidance going forward.`;
   }
 
-  return `Thanks — I’ve updated your state to ${extractedState}, and I’ll use that going forward.`;
+  return `Thanks — I’ve updated your state to ${extractedState}.\n\n${buildBenefitsLineupPrompt(session)}`;
 }
 
 function hasDemographics(session: Session) {
@@ -2925,35 +2968,64 @@ function buildContinuationReply(session: Session, query: string): string | null 
   return null;
 }
 
-function buildStateCorrectionReply(session: Session, query: string): string | null {
-  const correction = detectExplicitStateCorrection(query, session.userState);
-  if (!correction) return null;
+function joinHumanList(items: string[]): string {
+  if (items.length === 0) return '';
+  if (items.length === 1) return items[0];
+  if (items.length === 2) return `${items[0]} and ${items[1]}`;
+  return `${items.slice(0, -1).join(', ')}, and ${items[items.length - 1]}`;
+}
 
-  session.userState = correction.state;
+function buildProfileCorrectionReply(session: Session, query: string): string | null {
+  const nameCorrection = detectExplicitNameCorrection(query, session.userName);
+  const ageCorrection = detectExplicitAgeCorrection(query, session.userAge);
+  const stateCorrection = detectExplicitStateCorrection(query, session.userState);
+  if (!nameCorrection && !ageCorrection && !stateCorrection) return null;
+
+  if (nameCorrection) {
+    session.userName = nameCorrection;
+    session.hasCollectedName = true;
+  }
+  if (typeof ageCorrection === 'number') session.userAge = ageCorrection;
+  if (stateCorrection) session.userState = stateCorrection.state;
+
+  const updatedFields: string[] = [];
+  if (nameCorrection) updatedFields.push(`your name to ${nameCorrection}`);
+  if (typeof ageCorrection === 'number') updatedFields.push(`your age to ${ageCorrection}`);
+  if (stateCorrection) updatedFields.push(`your state to ${stateCorrection.state}`);
+  const correctionPrefix = `Thanks for the correction — I’ve updated ${joinHumanList(updatedFields)}.`;
+
   const detectedTopic = benefitTopicFromQuery(query);
   const normalizedTopic = detectedTopic && detectedTopic !== 'Benefits Overview'
     ? normalizeBenefitCategory(detectedTopic)
     : detectedTopic;
 
-  if (!session.currentTopic) {
-    return `Thanks for the correction — I’ve updated your state to ${correction.state}.`;
+  if (!hasDemographics(session)) {
+    return `${correctionPrefix}\n\n${missingDemographicsMessage(session, normalizedTopic)}`;
   }
 
   if (isCostModelRequest(query)) {
-    session.currentTopic = 'Medical';
-    return `Thanks for the correction — in ${correction.state}, here’s the updated cost view:\n\n${buildTopicReply(session, 'Medical', query)}`;
+    setTopic(session, 'Medical');
+    return `${correctionPrefix}\n\nHere’s the updated cost view:\n\n${buildTopicReply(session, 'Medical', query)}`;
   }
 
-  if (normalizedTopic && normalizedTopic !== 'Benefits Overview' && normalizedTopic !== session.currentTopic) {
+  if (normalizedTopic && normalizedTopic !== 'Benefits Overview') {
     setTopic(session, normalizedTopic);
-    return `Thanks for the correction — I’ve updated your state to ${correction.state}. Here’s the updated ${normalizedTopic.toLowerCase()} view:\n\n${buildTopicReply(session, normalizedTopic, canonicalTopicQuery(normalizedTopic, query))}`;
+    return `${correctionPrefix}\n\nHere’s the updated ${normalizedTopic.toLowerCase()} view:\n\n${buildTopicReply(session, normalizedTopic, canonicalTopicQuery(normalizedTopic, query))}`;
   }
 
-  if (session.currentTopic === 'Medical') {
-    return `Thanks for the correction — in ${correction.state}, here’s the updated medical view:\n\n${buildTopicReply(session, 'Medical', canonicalTopicQuery('Medical', query))}`;
+  if (!session.currentTopic) {
+    return `${correctionPrefix}\n\n${buildBenefitsLineupPrompt(session)}`;
   }
 
-  return `Thanks for the correction — I’ve updated your state to ${correction.state}. That does not materially change the ${session.currentTopic.toLowerCase()} options I just showed, but I’ll use ${correction.state} for any state-specific guidance going forward.`;
+  if (session.currentTopic === 'Medical' && (stateCorrection || typeof ageCorrection === 'number')) {
+    return `${correctionPrefix}\n\nHere’s the updated medical view:\n\n${buildTopicReply(session, 'Medical', canonicalTopicQuery('Medical', query))}`;
+  }
+
+  if (stateCorrection) {
+    return `${correctionPrefix} That does not materially change the ${session.currentTopic.toLowerCase()} options I just showed, but I’ll use ${stateCorrection.state} for any state-specific guidance going forward.`;
+  }
+
+  return `${correctionPrefix} I’ll use that going forward as we keep looking at ${session.currentTopic.toLowerCase()}.`;
 }
 
 export async function runQaV2Engine(params: {
@@ -2975,11 +3047,11 @@ export async function runQaV2Engine(params: {
   session.messages.push({ role: 'user', content: query });
   refreshSessionSignals(session, query);
 
-  const stateCorrectionReply = buildStateCorrectionReply(session, query);
-  if (stateCorrectionReply) {
-    session.lastBotMessage = stateCorrectionReply;
-    session.messages.push({ role: 'assistant', content: stateCorrectionReply });
-    return { answer: stateCorrectionReply, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'state-correction-v2' } };
+  const profileCorrectionReply = buildProfileCorrectionReply(session, query);
+  if (profileCorrectionReply) {
+    session.lastBotMessage = profileCorrectionReply;
+    session.messages.push({ role: 'assistant', content: profileCorrectionReply });
+    return { answer: profileCorrectionReply, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'profile-correction-v2' } };
   }
 
   const priorState = session.userState || null;

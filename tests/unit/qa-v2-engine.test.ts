@@ -1361,6 +1361,44 @@ describe('qa-v2 engine', () => {
     expect(correction.answer).toContain('life insurance');
   });
 
+  it('updates an explicit name correction during onboarding without dropping the demographics prompt', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Sarah',
+      hasCollectedName: true,
+    });
+
+    const result = await runQaV2Engine({
+      query: "actually, i'm Melodie",
+      session,
+    });
+
+    expect(session.userName).toBe('Melodie');
+    expect(result.answer).toContain('updated your name to Melodie');
+    expect(result.answer).toContain('age and state');
+  });
+
+  it('updates an explicit age correction without dropping the active topic', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Melodie',
+      hasCollectedName: true,
+      userAge: 41,
+      userState: 'FL',
+      dataConfirmed: true,
+      currentTopic: 'Dental',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'actually, i am 42',
+      session,
+    });
+
+    expect(session.userAge).toBe(42);
+    expect(result.answer).toContain('updated your age to 42');
+    expect(result.answer).toContain('keep looking at dental');
+  });
+
   it('does not treat bare ok as Oklahoma during active hsa/fsa chat', async () => {
     const session = makeSession({
       step: 'active_chat',
@@ -1403,6 +1441,49 @@ describe('qa-v2 engine', () => {
     expect(result.answer).toContain('updated medical view');
     expect(result.answer).toContain('Medical plan options');
     expect(result.answer).not.toContain('Please ask that one a little more specifically');
+  });
+
+  it('keeps going with a requested topic when a state correction arrives before any active topic is set', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Guy',
+      hasCollectedName: true,
+      userAge: 43,
+      userState: 'TX',
+      dataConfirmed: true,
+    });
+
+    const result = await runQaV2Engine({
+      query: "actually, i'm in WA. medical please",
+      session,
+    });
+
+    expect(session.userState).toBe('WA');
+    expect(session.currentTopic).toBe('Medical');
+    expect(result.answer).toContain('updated your state to WA');
+    expect(result.answer).toContain('updated medical view');
+    expect(result.answer).toContain('Medical plan options');
+  });
+
+  it('shows the benefits lineup after a plain state change when no active topic is set', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Guy',
+      hasCollectedName: true,
+      userAge: 43,
+      userState: 'TX',
+      dataConfirmed: true,
+    });
+
+    const result = await runQaV2Engine({
+      query: "i'm in WA",
+      session,
+    });
+
+    expect(session.userState).toBe('WA');
+    expect(result.answer).toContain('updated your state to WA');
+    expect(result.answer).toContain('Here is the AmeriVet benefits lineup for 43 in WA');
+    expect(result.answer).toContain('What would you like to explore first?');
   });
 
   it('does not treat ordinary words like "in" or "me" as state codes in later turns', async () => {

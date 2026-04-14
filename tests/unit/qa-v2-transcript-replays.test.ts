@@ -383,6 +383,58 @@ describe('qa-v2 transcript replays', () => {
     );
   });
 
+  it('replays an explicit name correction during onboarding and then continues into medical cleanly', async () => {
+    const session = makeSession({ step: 'start' });
+
+    await replayTranscript(
+      [
+        {
+          user: 'Sarah',
+          mustContain: ['share your age and state next'],
+        },
+        {
+          user: "actually, i'm Melodie",
+          mustContain: ['updated your name to Melodie', 'age and state'],
+        },
+        {
+          user: '35, FL',
+          mustContain: ['Perfect! 35 in FL.'],
+        },
+        {
+          user: 'medical please',
+          mustContain: ['Medical plan options'],
+        },
+      ],
+      session,
+    );
+
+    expect(session.userName).toBe('Melodie');
+    expect(session.currentTopic).toBe('Medical');
+  });
+
+  it('replays a no-topic state correction straight into the requested topic instead of stopping at the correction', async () => {
+    const session = makeSession({
+      userName: 'Guy',
+      hasCollectedName: true,
+      userAge: 43,
+      userState: 'TX',
+      dataConfirmed: true,
+    });
+
+    await replayTranscript(
+      [
+        {
+          user: "actually, i'm in WA. medical please",
+          mustContain: ['updated your state to WA', 'updated medical view', 'Medical plan options'],
+        },
+      ],
+      session,
+    );
+
+    expect(session.userState).toBe('WA');
+    expect(session.currentTopic).toBe('Medical');
+  });
+
   it('replays decision guidance into focused follow-ups instead of generic fallback', async () => {
     await replayTranscript(
       [

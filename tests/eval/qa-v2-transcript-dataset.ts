@@ -2415,4 +2415,50 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
       },
     ],
   },
+  {
+    id: 'V2-TX-080',
+    category: 'name_correction_onboarding_continuity',
+    initialSession: {
+      step: 'start',
+      context: {},
+    },
+    turns: [
+      {
+        user: 'Sarah',
+        mustContain: ['share your age and state next'],
+      },
+      {
+        user: "actually, i'm Melodie",
+        mustContain: ['updated your name to Melodie', 'age and state'],
+        mustNotContain: ['updated your state to', 'Perfect!'],
+      },
+      {
+        user: '35, FL',
+        mustContain: ['Perfect! 35 in FL.'],
+      },
+      {
+        user: 'medical please',
+        mustContain: ['Medical plan options'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-081',
+    category: 'state_correction_no_topic_continues_into_requested_topic',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Guy',
+      hasCollectedName: true,
+      userAge: 43,
+      userState: 'TX',
+      dataConfirmed: true,
+    },
+    turns: [
+      {
+        user: "actually, i'm in WA. medical please",
+        mustContain: ['updated your state to WA', 'updated medical view', 'Medical plan options'],
+        mustNotContain: ['What would you like to explore first?', 'Please ask that one a little more specifically'],
+      },
+    ],
+  },
 ];
