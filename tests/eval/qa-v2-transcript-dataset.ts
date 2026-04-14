@@ -2869,4 +2869,68 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
       },
     ],
   },
+  {
+    id: 'V2-TX-083',
+    category: 'life_next_please_pivot_continuity',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Madeline',
+      hasCollectedName: true,
+      userAge: 29,
+      userState: 'CO',
+      dataConfirmed: true,
+      currentTopic: 'Vision',
+      completedTopics: ['Dental', 'Vision'],
+      lastBotMessage: 'If routine care questions are settled, the next most useful area is usually life, disability, or supplemental benefits.',
+    },
+    turns: [
+      {
+        user: 'life next please',
+        mustContain: ['Life insurance options:'],
+        mustNotContain: ['We can stay with vision', 'Please ask that one a little more specifically'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-084',
+    category: 'hsa_fit_followup_variant',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'HSA/FSA',
+      lastBotMessage: 'HSA/FSA overview:\n\n- HSA stands for Health Savings Account\n- FSA stands for Flexible Spending Account',
+    },
+    turns: [
+      {
+        user: 'how do i know when hsa fits better?',
+        mustContain: ['simplest way to think about HSA versus FSA fit'],
+        mustNotContain: ['We can stay with HSA/FSA'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-085',
+    category: 'life_followup_no_name_drift',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Leo',
+      hasCollectedName: true,
+      userAge: 72,
+      userState: 'MN',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      lastBotMessage: 'Life insurance options:\n\n- Unum Basic Life & AD&D\n- Unum Voluntary Term Life\n- Allstate Whole Life',
+    },
+    turns: [
+      {
+        user: "i'm thinking about that voluntary term one. what else should i know?",
+        mustContain: ['Voluntary Term Life'],
+        mustNotContain: ['updated your name'],
+      },
+    ],
+  },
 ];

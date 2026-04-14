@@ -1480,6 +1480,28 @@ describe('qa-v2 engine', () => {
     expect(result.answer).toContain('age and state');
   });
 
+  it('does not treat life-insurance follow-up phrasing as a fake name correction', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Leo',
+      hasCollectedName: true,
+      userAge: 72,
+      userState: 'MN',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      lastBotMessage: 'Life insurance options:\n\n- Unum Basic Life & AD&D\n- Unum Voluntary Term Life\n- Allstate Whole Life',
+    });
+
+    const result = await runQaV2Engine({
+      query: "i'm thinking about that voluntary term one. what else should i know?",
+      session,
+    });
+
+    expect(session.userName).toBe('Leo');
+    expect(result.answer).toContain('Voluntary Term Life');
+    expect(result.answer).not.toContain('updated your name');
+  });
+
   it('updates an explicit age correction without dropping the active topic', async () => {
     const session = makeSession({
       step: 'active_chat',
@@ -3101,7 +3123,7 @@ describe('qa-v2 engine', () => {
       session,
     });
 
-    expect(result.answer).toContain('We can stay with dental');
+    expect(result.answer).toContain('A useful next dental step is usually one of these');
     expect(result.answer).not.toContain('medical, dental, vision, life, disability');
   });
 
@@ -3256,6 +3278,27 @@ describe('qa-v2 engine', () => {
 
     const result = await runQaV2Engine({
       query: 'so when does hsa fit better?',
+      session,
+    });
+
+    expect(result.answer).toContain('simplest way to think about HSA versus FSA fit');
+    expect(result.answer).not.toContain('We can stay with HSA/FSA');
+  });
+
+  it('answers how-do-i-know-when-hsa-fits-better questions directly', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Madeline',
+      hasCollectedName: true,
+      userAge: 29,
+      userState: 'CO',
+      dataConfirmed: true,
+      currentTopic: 'HSA/FSA',
+      lastBotMessage: 'HSA/FSA overview:\n\n- HSA stands for Health Savings Account\n- FSA stands for Flexible Spending Account',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'how do i know when hsa fits better?',
       session,
     });
 

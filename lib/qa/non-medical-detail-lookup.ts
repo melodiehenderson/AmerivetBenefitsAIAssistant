@@ -18,7 +18,7 @@ export function isNonMedicalDetailQuestion(topic: string, query: string): boolea
   const costQuestion = /\b(how\s+much|cost|costs|price|prices|rate|rates|premium|premiums)\b/i.test(lower);
 
   if (topic === 'Life Insurance') {
-    return /\b(portable|guaranteed issue|cash value|whole life|term life|basic life|voluntary life|age[- ]banded|rates? locked|coverage amount|how much life insurance|how much can i get|1x|5x salary|spouse coverage|partner coverage|dependent child coverage|family coverage|cover my spouse|cover my partner|cover my wife|cover my husband|cover my family|cover my kids|cover my children|cover my dependents)\b/i.test(lower)
+    return /\b(portable|guaranteed issue|cash value|whole life|term life|voluntary term(?:\s+life)?|basic life|voluntary life|age[- ]banded|rates? locked|coverage amount|how much life insurance|how much can i get|1x|5x salary|spouse coverage|partner coverage|dependent child coverage|family coverage|cover my spouse|cover my partner|cover my wife|cover my husband|cover my family|cover my kids|cover my children|cover my dependents)\b/i.test(lower)
       || costQuestion;
   }
 
@@ -44,7 +44,7 @@ export function buildNonMedicalDetailAnswer(topic: string, query: string, _sessi
   const lower = query.toLowerCase();
   const { basic, term, whole } = getLifePlans();
   const costQuestion = /\b(how\s+much|cost|costs|price|prices|rate|rates|premium|premiums)\b/i.test(lower);
-  const asksAboutLife = /\b(life(?:\s+insurance)?|term life|whole life|basic life|voluntary life)\b/i.test(lower);
+  const asksAboutLife = /\b(life(?:\s+insurance)?|term life|voluntary term(?:\s+life)?|whole life|basic life|voluntary life)\b/i.test(lower);
   const asksAboutDisability = /\b(disability|short[- ]term|long[- ]term|std|ltd)\b/i.test(lower);
 
   if (costQuestion && asksAboutLife && asksAboutDisability) {
@@ -103,6 +103,19 @@ export function buildNonMedicalDetailAnswer(topic: string, query: string, _sessi
       ].join('\n');
     }
 
+    if (/\b(voluntary term(?:\s+life)?|term life)\b/i.test(lower)) {
+      return [
+        `Here is the practical takeaway on **${term?.name || 'Voluntary Term Life'}**:`,
+        ``,
+        `- It is the extra employee-paid term coverage on top of AmeriVet's employer-paid basic life benefit`,
+        `- The summary describes it as **age-banded**, so the exact price depends on your age bracket and election amount in Workday`,
+        `- The current summary also says spouse and dependent child coverage are available`,
+        `- It is described as portable if you leave AmeriVet`,
+        ``,
+        `So the short version is that voluntary term life is usually the cleaner extra protection option when you want more life coverage without moving into whole-life cash-value design.`,
+      ].join('\n');
+    }
+
     if (/\b(spouse coverage|partner coverage|dependent child coverage|family coverage|cover my spouse|cover my partner|cover my wife|cover my husband|cover my family|cover my kids|cover my children|cover my dependents)\b/i.test(lower)) {
       return [
         `For family members, the practical distinction is that the employer-paid basic life benefit is the employee's base coverage, while the voluntary term life option is the one whose summary explicitly says spouse and dependent child coverage are available.`,
@@ -136,7 +149,7 @@ export function buildNonMedicalDetailAnswer(topic: string, query: string, _sessi
       ].join('\n');
     }
 
-    if (/\b(whole life|term life|basic life|voluntary life|difference|versus|vs\.?)\b/i.test(lower)) {
+    if (/\b(whole life|term life|voluntary term(?:\s+life)?|basic life|voluntary life|difference|versus|vs\.?)\b/i.test(lower)) {
       return [
         `Here is the practical difference across AmeriVet's life insurance options:`,
         ``,

@@ -684,27 +684,27 @@ function isShortTopicPivot(query: string, topic: string): boolean {
   if (!normalized) return false;
 
   const topicPatterns: Record<string, RegExp> = {
-    Medical: /^(medical|health|medical plans?|medical options?|kaiser|hsa plans?)$/,
-    Dental: /^dental$/,
-    Vision: /^(vision|eye|glasses|contacts)$/,
-    'Life Insurance': /^(life|life insurance|life ins|term life|whole life|basic life)$/,
-    Disability: /^(disability|std|ltd)$/,
-    'Critical Illness': /^(critical illness|illness|ci|ci insurance)$/,
-    'Accident/AD&D': /^(accident|ad&d|ad d|ad\/d)$/,
-    'HSA/FSA': /^(hsa|fsa|hsa fsa|hsa\/fsa)$/,
+    Medical: /^(medical|health|medical plans?|medical options?|kaiser|hsa plans?)(?:\s+next)?(?:\s+please)?$/,
+    Dental: /^dental(?:\s+next)?(?:\s+please)?$/,
+    Vision: /^(vision|eye|glasses|contacts)(?:\s+next)?(?:\s+please)?$/,
+    'Life Insurance': /^(life|life insurance|life ins|term life|voluntary term|whole life|basic life)(?:\s+next)?(?:\s+please)?$/,
+    Disability: /^(disability|std|ltd)(?:\s+next)?(?:\s+please)?$/,
+    'Critical Illness': /^(critical illness|illness|ci|ci insurance)(?:\s+next)?(?:\s+please)?$/,
+    'Accident/AD&D': /^(accident|ad&d|ad d|ad\/d)(?:\s+next)?(?:\s+please)?$/,
+    'HSA/FSA': /^(hsa|fsa|hsa fsa|hsa\/fsa)(?:\s+next)?(?:\s+please)?$/,
   };
 
   if (topicPatterns[topic]?.test(normalized)) return true;
 
   const guidedPivotPatterns: Record<string, RegExp> = {
-    Medical: /^(?:show me|tell me about|let s do|lets do|do|look at|move to|move on to)\s+(?:my\s+)?(?:medical|health|medical plans?|medical options?|kaiser|hsa plans?)(?:\s+next)?$/,
-    Dental: /^(?:show me|tell me about|let s do|lets do|do|look at|move to|move on to)\s+(?:my\s+)?dental(?:\s+next)?$/,
-    Vision: /^(?:show me|tell me about|let s do|lets do|do|look at|move to|move on to)\s+(?:my\s+)?(?:vision|eye|glasses|contacts)(?:\s+next)?$/,
-    'Life Insurance': /^(?:show me|tell me about|let s do|lets do|do|look at|move to|move on to)\s+(?:my\s+)?(?:life|life insurance|life ins|term life|whole life|basic life)(?:\s+next)?$/,
-    Disability: /^(?:show me|tell me about|let s do|lets do|do|look at|move to|move on to)\s+(?:my\s+)?(?:disability|std|ltd)(?:\s+next)?$/,
-    'Critical Illness': /^(?:show me|tell me about|let s do|lets do|do|look at|move to|move on to)\s+(?:my\s+)?(?:critical illness|illness|ci|ci insurance)(?:\s+next)?$/,
-    'Accident/AD&D': /^(?:show me|tell me about|let s do|lets do|do|look at|move to|move on to)\s+(?:my\s+)?(?:accident|ad&d|ad d|ad\/d)(?:\s+next)?$/,
-    'HSA/FSA': /^(?:show me|tell me about|let s do|lets do|do|look at|move to|move on to)\s+(?:my\s+)?(?:hsa|fsa|hsa fsa|hsa\/fsa)(?:\s+next)?$/,
+    Medical: /^(?:show me|tell me about|let s do|lets do|do|look at|move to|move on to)\s+(?:my\s+)?(?:medical|health|medical plans?|medical options?|kaiser|hsa plans?)(?:\s+next)?(?:\s+please)?$/,
+    Dental: /^(?:show me|tell me about|let s do|lets do|do|look at|move to|move on to)\s+(?:my\s+)?dental(?:\s+next)?(?:\s+please)?$/,
+    Vision: /^(?:show me|tell me about|let s do|lets do|do|look at|move to|move on to)\s+(?:my\s+)?(?:vision|eye|glasses|contacts)(?:\s+next)?(?:\s+please)?$/,
+    'Life Insurance': /^(?:show me|tell me about|let s do|lets do|do|look at|move to|move on to)\s+(?:my\s+)?(?:life|life insurance|life ins|term life|whole life|basic life)(?:\s+next)?(?:\s+please)?$/,
+    Disability: /^(?:show me|tell me about|let s do|lets do|do|look at|move to|move on to)\s+(?:my\s+)?(?:disability|std|ltd)(?:\s+next)?(?:\s+please)?$/,
+    'Critical Illness': /^(?:show me|tell me about|let s do|lets do|do|look at|move to|move on to)\s+(?:my\s+)?(?:critical illness|illness|ci|ci insurance)(?:\s+next)?(?:\s+please)?$/,
+    'Accident/AD&D': /^(?:show me|tell me about|let s do|lets do|do|look at|move to|move on to)\s+(?:my\s+)?(?:accident|ad&d|ad d|ad\/d)(?:\s+next)?(?:\s+please)?$/,
+    'HSA/FSA': /^(?:show me|tell me about|let s do|lets do|do|look at|move to|move on to)\s+(?:my\s+)?(?:hsa|fsa|hsa fsa|hsa\/fsa)(?:\s+next)?(?:\s+please)?$/,
   };
 
   return guidedPivotPatterns[topic]?.test(normalized) || false;
@@ -1124,7 +1124,7 @@ function medicalInviteFollowupQuery(lastBotMessage: string): string | null {
 function countSupplementalTopicsMentioned(query: string): number {
   const lower = query.toLowerCase();
   let count = 0;
-  if (/\b(life(?:\s+insurance)?|term life|whole life|basic life)\b/i.test(lower)) count += 1;
+  if (/\b(life(?:\s+insurance)?|term life|voluntary term(?:\s+life)?|whole life|basic life)\b/i.test(lower)) count += 1;
   if (/\b(disability|std|ltd|short[- ]?term|long[- ]?term)\b/i.test(lower)) count += 1;
   if (/\bcritical(?:\s+illness)?\b/i.test(lower)) count += 1;
   if (/\b(accident|ad&d|ad\/d)\b/i.test(lower)) count += 1;
@@ -1146,7 +1146,7 @@ function buildSupplementalNarrowingReply(session: Session, query: string): strin
     .join('\n')}\n${query}`.toLowerCase();
   const soleBreadwinner = /\b(sole\s+bread\s*winner|breadwinner|only\s+income|sole\s+provider|only\s+provider|family\s+relies\s+on\s+my\s+income|rely\s+on\s+my\s+income|single\s+(?:mom|dad))\b/i.test(householdText);
   const householdDependsOnIncome = soleBreadwinner || /\b(spouse|wife|husband|partner|kids?|children|family|household)\b/i.test(householdText);
-  const mentionsLife = /\b(life(?:\s+insurance)?|term life|whole life|basic life|25k)\b/i.test(lower);
+  const mentionsLife = /\b(life(?:\s+insurance)?|term life|voluntary term(?:\s+life)?|whole life|basic life|25k)\b/i.test(lower);
   const mentionsDisability = /\b(disability|std|ltd|short[- ]?term|long[- ]?term)\b/i.test(lower);
   const mentionsCritical = /\bcritical(?:\s+illness)?\b/i.test(lower);
   const mentionsAccident = /\b(accident|ad&d|ad\/d)\b/i.test(lower);
@@ -1481,7 +1481,7 @@ function buildHsaFsaRuleReply(query: string): string | null {
 
 function isDirectHsaFsaFitQuestion(query: string): boolean {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
-  return /\b(which\s+one\s+is\s+better|which\s+one\s+is\s+best|better\s+fit|best\s+fit|which\s+one\s+fits|which\s+would\s+you\s+recommend|what\s+would\s+you\s+recommend|which\s+do\s+you\s+recommend|recommend\s+(?:for|to)\s+me|when\s+does\s+hsa\s+fit\s+better|when\s+does\s+fsa\s+fit\s+better|when\s+is\s+hsa\s+better|when\s+is\s+fsa\s+better|should\s+i\s+get|should\s+i\s+use|is\s+it\s+worth\s+it|worth\s+it|worth\s+using)\b/i.test(lower);
+  return /\b(which\s+one\s+is\s+better|which\s+one\s+is\s+best|better\s+fit|best\s+fit|which\s+one\s+fits|which\s+would\s+you\s+recommend|what\s+would\s+you\s+recommend|which\s+do\s+you\s+recommend|recommend\s+(?:for|to)\s+me|when\s+does\s+hsa\s+fit\s+better|when\s+does\s+fsa\s+fit\s+better|when\s+is\s+hsa\s+better|when\s+is\s+fsa\s+better|how\s+do\s+i\s+know\s+when\s+(?:an?\s+)?hsa\s+(?:fits|is)\s+better|how\s+do\s+i\s+know\s+when\s+(?:an?\s+)?fsa\s+(?:fits|is)\s+better|how\s+can\s+i\s+tell\s+when\s+(?:an?\s+)?hsa\s+(?:fits|is)\s+better|how\s+can\s+i\s+tell\s+when\s+(?:an?\s+)?fsa\s+(?:fits|is)\s+better|should\s+i\s+get|should\s+i\s+use|is\s+it\s+worth\s+it|worth\s+it|worth\s+using)\b/i.test(lower);
 }
 
 function buildHsaFsaPracticalFitReply(session: Session, query: string): string | null {
@@ -2252,7 +2252,7 @@ function inferTopicFromLastBotMessage(lastBotMessage?: string | null): string | 
   if (/medical plan options|recommendation for .* coverage|projected healthcare costs|standard hsa|enhanced hsa|kaiser standard hmo/.test(lower)) return 'Medical';
   if (/dental coverage:\s*\*\*bcbstx dental ppo\*\*|orthodontia rider/.test(lower)) return 'Dental';
   if (/vision coverage:\s*\*\*vsp vision plus\*\*|glasses|contacts|eye exams?/.test(lower)) return 'Vision';
-  if (/life insurance options|unum basic life|whole life|voluntary term life/.test(lower)) return 'Life Insurance';
+  if (/life insurance options|unum basic life|whole life|voluntary term(?: life)?/.test(lower)) return 'Life Insurance';
   if (/disability coverage|short-term disability|long-term disability/.test(lower)) return 'Disability';
   if (/accident\/ad&d coverage|accident\/ad&d is usually worth considering|accident\/ad&d versus critical illness/.test(lower)) return 'Accident/AD&D';
   if (/critical illness coverage|what critical illness is not|critical illness is usually worth considering|plain-language difference between accident\/ad&d and critical illness/.test(lower)) return 'Critical Illness';
@@ -2727,67 +2727,81 @@ function buildTopicReply(session: Session, topic: string, query: string): string
 function buildContextualFallback(session: Session): string {
   if (session.currentTopic === 'Medical') {
     return [
-      `We can stay with medical. The most useful next step is usually one of these:`,
+      `A useful next medical step is usually one of these:`,
       ``,
       `- Compare the plan tradeoff`,
       `- Estimate likely costs`,
       `- Talk through why one option fits better for your situation`,
+      ``,
+      `Pick one and I’ll take you straight into it.`,
     ].join('\n');
   }
 
   if (session.currentTopic === 'Dental') {
     return [
-      `We can stay with dental. The most useful next step is usually one of these:`,
+      `A useful next dental step is usually one of these:`,
       ``,
       `- Whether the plan is worth adding`,
       `- What orthodontia means in practice`,
       `- Whether dental matters more than vision for your household`,
+      ``,
+      `Pick one and I’ll walk through it with you.`,
     ].join('\n');
   }
 
   if (session.currentTopic === 'Vision') {
     return [
-      `We can stay with vision. The most useful next step is usually one of these:`,
+      `A useful next vision step is usually one of these:`,
       ``,
       `- Whether it is worth adding for your household`,
       `- Whether vision matters more than dental based on expected use`,
+      ``,
+      `Pick one and I’ll walk through it with you.`,
     ].join('\n');
   }
 
   if (session.currentTopic === 'Life Insurance') {
     return [
-      `We can stay with life insurance. The most useful next step is usually one of these:`,
+      `A useful next life-insurance step is usually one of these:`,
       ``,
       `- Whether life or disability matters more first`,
       `- How much protection is worth paying for if your family relies on your income`,
+      ``,
+      `Pick one and I’ll take you into that decision.`,
     ].join('\n');
   }
 
   if (session.currentTopic === 'Disability') {
     return [
-      `We can stay with disability. The most useful next step is usually one of these:`,
+      `A useful next disability step is usually one of these:`,
       ``,
       `- Whether disability or life insurance deserves priority`,
       `- Whether paycheck protection is worth adding for your household`,
+      ``,
+      `Pick one and I’ll take you into that decision.`,
     ].join('\n');
   }
 
   if (session.currentTopic === 'Accident/AD&D' || session.currentTopic === 'Critical Illness') {
     return [
-      `We can stay with supplemental protection. The most useful next step is usually one of these:`,
+      `A useful next supplemental step is usually one of these:`,
       ``,
       `- Whether this is worth adding at all`,
       `- How it compares with the other supplemental options`,
+      ``,
+      `Pick one and I’ll narrow it down.`,
     ].join('\n');
   }
 
   if (session.currentTopic === 'HSA/FSA') {
     return [
-      `We can stay with HSA/FSA. The most useful next step is usually one of these:`,
+      `A useful next HSA/FSA question is usually one of these:`,
       ``,
       `- When HSA fits better`,
       `- When FSA fits better`,
       `- What the tax and rollover tradeoff means in practice`,
+      ``,
+      `Pick one and I’ll make it practical.`,
     ].join('\n');
   }
 
@@ -3689,8 +3703,11 @@ export async function runQaV2Engine(params: {
     return { answer: profileCorrectionReply, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'profile-correction-v2' } };
   }
 
-  if (!session.userName && query.trim() && !extractAge(query) && !extractState(query) && !benefitTopicFromQuery(query)) {
-    session.userName = query.trim().split(/\s+/)[0].replace(/[^A-Za-z'-]/g, '') || 'there';
+  const detectedName = !session.userName && query.trim() && !extractAge(query) && !extractState(query) && !benefitTopicFromQuery(query)
+    ? extractName(query)
+    : null;
+  if (detectedName) {
+    session.userName = detectedName;
     session.hasCollectedName = true;
     const answer = `Thanks, ${session.userName}! To keep the guidance accurate, please share your age and state next. For example: "35, FL".`;
     session.lastBotMessage = answer;

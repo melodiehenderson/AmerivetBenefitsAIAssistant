@@ -33,10 +33,10 @@ export function extractName(query: string): string | null {
   }
 
   const explicitMatch = query.match(
-    /(?:actually[, ]+)?(?:my name is|i'm called|i am called|i'm|i am|call me)\s+([a-zA-Z][a-zA-Z' -]{0,30})/i,
+    /(?:actually[, ]+)?(?:my name is|i'm called|i am called|call me)\s+([a-zA-Z][a-zA-Z' -]{0,30})|(?:actually[, ]+)?(?:i'm|i am)\s+(?!thinking\b|wondering\b|considering\b|looking\b|trying\b|asking\b|interested\b|focused\b|worried\b|done\b|in\b|from\b)([a-zA-Z][a-zA-Z' -]{0,30})/i,
   );
   if (explicitMatch) {
-    const candidate = explicitMatch[1].trim();
+    const candidate = (explicitMatch[1] || explicitMatch[2] || '').trim();
     const parts = candidate.split(/\s+/);
     if (parts.every((part) => /^[a-zA-Z][a-zA-Z'-]*$/.test(part) && !isReservedNameToken(part))) {
       return normalizeNamePhrase(candidate);

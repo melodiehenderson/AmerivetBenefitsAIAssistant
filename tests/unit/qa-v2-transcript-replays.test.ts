@@ -1006,6 +1006,28 @@ describe('qa-v2 transcript replays', () => {
     );
   });
 
+  it('replays "life next please" as a direct supplemental pivot instead of asking for a more specific life question', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'life next please',
+          mustContain: ['Life insurance options:'],
+          mustNotContain: ['We can stay with vision', 'Please ask that one a little more specifically'],
+        },
+      ],
+      makeSession({
+        userName: 'Madeline',
+        hasCollectedName: true,
+        userAge: 29,
+        userState: 'CO',
+        dataConfirmed: true,
+        currentTopic: 'Vision',
+        completedTopics: ['Dental', 'Vision'],
+        lastBotMessage: 'If routine care questions are settled, the next most useful area is usually life, disability, or supplemental benefits.',
+      }),
+    );
+  });
+
   it('replays repeated supplemental worth-adding questions as practical guidance instead of looping', async () => {
     await replayTranscript(
       [
@@ -2161,6 +2183,48 @@ describe('qa-v2 transcript replays', () => {
         currentTopic: 'HSA/FSA',
         selectedPlan: 'Standard HSA',
         lastBotMessage: 'HSA/FSA overview:\n\n- HSA stands for Health Savings Account\n- FSA stands for Flexible Spending Account',
+      }),
+    );
+  });
+
+  it('replays "how do i know when hsa fits better" as direct fit guidance instead of the generic topic scaffold', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'how do i know when hsa fits better?',
+          mustContain: ['simplest way to think about HSA versus FSA fit'],
+          mustNotContain: ['We can stay with HSA/FSA'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'HSA/FSA',
+        lastBotMessage: 'HSA/FSA overview:\n\n- HSA stands for Health Savings Account\n- FSA stands for Flexible Spending Account',
+      }),
+    );
+  });
+
+  it('replays voluntary-term follow-ups without corrupting the user name', async () => {
+    await replayTranscript(
+      [
+        {
+          user: "i'm thinking about that voluntary term one. what else should i know?",
+          mustContain: ['Voluntary Term Life'],
+          mustNotContain: ['updated your name'],
+        },
+      ],
+      makeSession({
+        userName: 'Leo',
+        hasCollectedName: true,
+        userAge: 72,
+        userState: 'MN',
+        dataConfirmed: true,
+        currentTopic: 'Life Insurance',
+        lastBotMessage: 'Life insurance options:\n\n- Unum Basic Life & AD&D\n- Unum Voluntary Term Life\n- Allstate Whole Life',
       }),
     );
   });
