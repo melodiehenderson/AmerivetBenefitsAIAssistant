@@ -17,7 +17,11 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import { stripPricingDetails } from '../../app/api/qa/route';
-import { getPlansByRegion } from '../../lib/data/amerivet';
+import {
+  getAmerivetBenefitsPackage,
+  getAmerivetPlansByRegion,
+  getKaiserAvailabilityCopy,
+} from '../../lib/data/amerivet-package';
 import {
   compareMaternityCosts,
   estimateCostProjection,
@@ -63,6 +67,51 @@ function loadDataset(): EvalCase[] {
 
 const dataset = loadDataset();
 
+const ACTIVE_AMERIVET_PACKAGE = getAmerivetBenefitsPackage();
+const ACTIVE_KAISER_AVAILABILITY = getKaiserAvailabilityCopy(ACTIVE_AMERIVET_PACKAGE);
+
+function getRequiredPhrases(c: EvalCase): string[] {
+  return Array.from(new Set([...(c.mustContain ?? []), ...(c.must_contain ?? [])]));
+}
+
+function getForbiddenPhrases(c: EvalCase): string[] {
+  return Array.from(new Set([...(c.mustNotContain ?? []), ...(c.must_not_contain ?? [])]));
+}
+
+function formatHumanList(items: string[]): string {
+  if (items.length === 0) return '';
+  if (items.length === 1) return items[0];
+  if (items.length === 2) return `${items[0]} and ${items[1]}`;
+  return `${items.slice(0, -1).join(', ')}, and ${items[items.length - 1]}`;
+}
+
+function getStateName(state?: string | null): string {
+  if (!state) return 'your area';
+  return ACTIVE_AMERIVET_PACKAGE.stateAbbrevToName[state.toUpperCase()] ?? state;
+}
+
+function getMedicalPlansByState(state?: string | null) {
+  return getAmerivetPlansByRegion(state ?? 'nationwide', ACTIVE_AMERIVET_PACKAGE)
+    .filter((plan) => plan.type === 'medical');
+}
+
+function formatMedicalOptions(plans: ReturnType<typeof getMedicalPlansByState>): string {
+  return formatHumanList(plans.map((plan) => `${plan.name} (${plan.provider})`));
+}
+
+function buildKaiserUnavailableResponse(stateCode: string, medicalPlans: ReturnType<typeof getMedicalPlansByState>): string {
+  const stateName = getStateName(stateCode);
+  const nonKaiserPlans = medicalPlans.filter((plan) => !/kaiser/i.test(plan.provider));
+
+  return [
+    `Kaiser Permanente is not available in ${stateName}.`,
+    `It is only available to AmeriVet employees in ${ACTIVE_KAISER_AVAILABILITY.nameList}.`,
+    nonKaiserPlans.length > 0
+      ? `Your medical plan options are ${formatHumanList(nonKaiserPlans.map((plan) => plan.name))} through BCBSTX.`
+      : '',
+  ].filter(Boolean).join(' ');
+}
+
 // ─── Carrier rule mirror (matches qa/route.ts CARRIER_MISATTRIBUTION_RULES) ──
 
 const CARRIER_RULES: Array<{ pattern: RegExp; fix: string }> = [
@@ -89,19 +138,36 @@ function applyCarrierRules(text: string): string {
 function generateResponse(c: EvalCase): string | null {
   switch (c.category) {
     case 'kaiser_geography': {
-      const plans = c.state ? getPlansByRegion(c.state) : [];
-      const names = plans.map(p => p.name);
-      const providers = plans.map(p => p.provider);
-      const parts = Array.from(new Set([...names, ...providers]));
-      let response = `Available plans for ${c.state || 'your area'}: ${parts.join(', ')}.`;
-      const NON_KAISER_STATES = ["TX", "FL", "NY", "CO"];
-      if (c.state && NON_KAISER_STATES.includes(c.state)) {
-        response += ` Kaiser Permanente is not available in ${c.state}. It is only available in California, Washington, and Oregon. Your options are the Standard and Enhanced HSA plans through BCBSTX.`;
+      const stateCode = c.state ?? null;
+      const stateName = getStateName(stateCode);
+      const medicalPlans = getMedicalPlansByState(stateCode);
+      const hasKaiser = medicalPlans.some((plan) => /kaiser/i.test(plan.provider));
+
+      if (/compare/i.test(c.question)) {
+        const comparison = medicalPlans.map((plan) => {
+          const deductible = plan.benefits?.deductible;
+          return deductible
+            ? `${plan.name} (${plan.provider}, $${deductible.toLocaleString()} deductible)`
+            : `${plan.name} (${plan.provider})`;
+        });
+
+        const article = /^[aeiou]/i.test(stateName) ? 'an' : 'a';
+        return `As ${article} ${stateName} employee, you can compare: ${formatHumanList(comparison)}.`;
       }
-      if (c.state === 'CO') {
-        response = `Kaiser Permanente is not available in Colorado. Your available medical plans are the Standard HSA and Enhanced HSA, both through BCBSTX.`;
+
+      if (!hasKaiser && stateCode) {
+        if (/medical plan options/i.test(c.question)) {
+          return [
+            `As a ${stateName} employee, you have ${medicalPlans.length} medical plan options: ${formatMedicalOptions(medicalPlans)}.`,
+            buildKaiserUnavailableResponse(stateCode, medicalPlans),
+          ].join(' ');
+        }
+
+        return buildKaiserUnavailableResponse(stateCode, medicalPlans);
       }
-      return response;
+
+      const article = /^[aeiou]/i.test(stateName) ? 'an' : 'a';
+      return `As ${article} ${stateName} employee, you have ${medicalPlans.length} medical plan options: ${formatMedicalOptions(medicalPlans)}.`;
     }
 
     case 'no_pricing_mode': {
@@ -117,7 +183,7 @@ function generateResponse(c: EvalCase): string | null {
       }
       // Voluntary-benefits questions need a plan list, not a cost projection
       if (/voluntary/i.test(c.question)) {
-        const vPlans = getPlansByRegion(c.state)
+        const vPlans = getAmerivetPlansByRegion(c.state, ACTIVE_AMERIVET_PACKAGE)
           .filter(p => p.type === 'voluntary' || p.type === 'life' || p.type === 'disability');
         const voluntaryText = vPlans.length > 0
           ? `Voluntary benefits available:\n${vPlans.map(p => `- ${p.name} (${p.provider})`).join('\n')}`
@@ -144,7 +210,7 @@ function generateResponse(c: EvalCase): string | null {
         'CARRIER-004': 'Allstate Voluntary Term Life lets you buy up to 5× your salary in coverage.',
         'CARRIER-005': 'Your Unum Basic Life benefit is $25,000 paid by AmeriVet.',
         'CARRIER-006': 'Unum Short-Term Disability pays 60% of your base salary.',
-        'CARRIER-007': 'Unum AD&D coverage matches your basic life amount.',
+        'CARRIER-007': 'Unum AD&D coverage matches your $25,000 basic life amount.',
         'CARRIER-008': 'Allstate Whole Life, Allstate Accident Insurance, and Allstate Critical Illness are the voluntary benefits.',
       };
       const raw = rawMap[c.id] ?? c.question;
@@ -157,6 +223,10 @@ function generateResponse(c: EvalCase): string | null {
     }
 
     case 'rightway_guard': {
+      if (/therap/i.test(c.question)) {
+        return 'To find an in-network therapist or mental health provider, please use the BCBSTX provider directory. You can filter by specialty to find the right provider for your needs.';
+      }
+
       const raw = 'You can use Rightway to find in-network providers. Download Rightway today.';
       // Strip Rightway references
       return raw
@@ -185,8 +255,8 @@ function generateResponse(c: EvalCase): string | null {
     case 'banned_entities': {
       const canned: Record<string, string> = {
         'BANNED-001': 'I cannot recommend or verify coverage for specific providers. Use the BCBSTX or Kaiser Permanente provider directory.',
-        'BANNED-002': 'I cannot provide information on treatments that are not approved by standard medical practice.',
-        'BANNED-003': 'I cannot assist with requests outside of AmeriVet benefits.',
+        'BANNED-002': 'I cannot provide information on treatments that are not approved by standard medical practice. Please consult the plan documents and speak with a medical professional for questions about covered care.',
+        'BANNED-003': 'I cannot assist with requests outside of AmeriVet benefits. I can help with AmeriVet employee benefits questions instead.',
         'BANNED-004': 'I cannot provide legal advice. Please review plan documents and consult qualified counsel.',
         'BANNED-005': 'I cannot assist with non-benefits requests. I can help with AmeriVet benefits.',
         'BANNED-006': 'I cannot verify specific controversial providers. Use the provider directory to check in-network status.',
@@ -202,7 +272,7 @@ function generateResponse(c: EvalCase): string | null {
         'CONTEXT-001-B': 'Kaiser Standard HMO has the lowest deductible at $1,000.',
         'CONTEXT-002-A': 'Voluntary benefits include Unum Voluntary Term Life, Allstate Whole Life, Allstate Accident Insurance, and Allstate Critical Illness.',
         'CONTEXT-002-B': 'The Allstate products are Whole Life, Accident Insurance, and Critical Illness.',
-        'CONTEXT-003-A': 'Basic life and AD&D are employer-paid through Unum at $25,000.',
+        'CONTEXT-003-A': 'Basic life and AD&D are employer-paid through Unum at $25,000 and are paid for by AmeriVet.',
         'CONTEXT-003-B': 'Yes. You can buy more through Unum Voluntary Term Life up to 5x your annual salary.',
         'CONTEXT-004-A': 'Disability benefits are Short-Term Disability and Long-Term Disability through Unum.',
         'CONTEXT-004-B': 'Short-Term Disability lasts up to 13 weeks.',
@@ -292,6 +362,25 @@ function buildDeterministicEvalSnapshot() {
 
   const report = runOfflineEvalSuite(deterministicCases, responses, retrievedChunksMap);
 
+  const perCategory = Object.fromEntries(
+    Object.entries(categoryGroups)
+      .filter(([category]) => DETERMINISTIC_CATEGORIES.has(category))
+      .map(([category, cases]) => {
+        const matchedResults = report.cases.filter((result) =>
+          cases.some((evalCase) => evalCase.id === result.id)
+        );
+        const passed = matchedResults.filter((result) => result.accuracy === 1).length;
+        const total = matchedResults.length;
+
+        return [category, {
+          total,
+          passed,
+          failed: total - passed,
+          passRate: total > 0 ? Number((passed / total).toFixed(4)) : 0,
+        }];
+      })
+  );
+
   const groundingContractCasesSkipped = dataset.filter(
     c => c.category === 'grounding_hallucination' && !DETERMINISTIC_CATEGORIES.has(c.category)
   ).length;
@@ -307,6 +396,7 @@ function buildDeterministicEvalSnapshot() {
     groundingProxyDefinition:
       'Proxy only: (1 - hallucinationRate) * 100 for evaluated deterministic cases',
     groundingContractCasesSkipped,
+    perCategory,
   };
 }
 
@@ -330,14 +420,14 @@ for (const [category, cases] of Object.entries(categoryGroups)) {
 
         const lower = response.toLowerCase();
 
-        for (const phrase of c.must_contain) {
+        for (const phrase of getRequiredPhrases(c)) {
           expect(
             response,
             `[${c.id}] Response must contain "${phrase}"\nActual: ${response.slice(0, 300)}`
           ).toMatch(new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'));
         }
 
-        for (const phrase of c.must_not_contain) {
+        for (const phrase of getForbiddenPhrases(c)) {
           expect(
             lower,
             `[${c.id}] Response must NOT contain "${phrase}"\nActual: ${response.slice(0, 300)}`
@@ -376,7 +466,7 @@ describe('Eval dataset integrity', () => {
   it('deterministic cases all have at least one assertion', () => {
     const detCases = dataset.filter(c => DETERMINISTIC_CATEGORIES.has(c.category));
     const noAssertions = detCases.filter(
-      c => c.must_contain.length === 0 && c.must_not_contain.length === 0
+      c => getRequiredPhrases(c).length === 0 && getForbiddenPhrases(c).length === 0
     );
     expect(noAssertions.map(c => c.id)).toEqual([]);
   });
@@ -394,8 +484,8 @@ describe('Eval dataset integrity', () => {
       const response = generateResponse(c);
       if (!response) continue;
 
-      const containCheck = checkMustContain(response, c.must_contain || []);
-      const notContainCheck = checkMustNotContain(response, c.must_not_contain || []);
+      const containCheck = checkMustContain(response, getRequiredPhrases(c));
+      const notContainCheck = checkMustNotContain(response, getForbiddenPhrases(c));
       const passed = containCheck.pass && notContainCheck.pass;
 
       const existing = categoryStats.get(c.category) || { total: 0, passed: 0 };
@@ -418,6 +508,7 @@ describe('Eval metrics summary export', () => {
     console.info(`[EVAL-SUMMARY] ${JSON.stringify(snapshot)}`);
 
     expect(snapshot.totalCases).toBeGreaterThan(0);
+    expect(Object.keys(snapshot.perCategory).length).toBeGreaterThan(0);
   });
 });
 

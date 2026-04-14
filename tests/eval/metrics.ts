@@ -54,6 +54,10 @@ export interface EvalReport {
   cases: CaseResult[];
 }
 
+function mergeUniquePhrases(...groups: Array<string[] | undefined>): string[] {
+  return Array.from(new Set(groups.flatMap((group) => group ?? [])));
+}
+
 function normalizeTokens(text: string): string[] {
   return text
     .toLowerCase()
@@ -174,8 +178,8 @@ export function runOfflineEvalSuite(
     const retrieved = retrievedChunksMap.get(c.id) ?? [];
 
     const expectedChunkIds = c.expectedChunkIds ?? [];
-    const mustContain = c.mustContain ?? c.must_contain ?? [];
-    const mustNotContain = c.mustNotContain ?? c.must_not_contain ?? [];
+    const mustContain = mergeUniquePhrases(c.mustContain, c.must_contain);
+    const mustNotContain = mergeUniquePhrases(c.mustNotContain, c.must_not_contain);
 
     const recallAt5 = computeRecallAtK(expectedChunkIds, retrieved, 5);
     const mrr = computeMRR(expectedChunkIds, retrieved);

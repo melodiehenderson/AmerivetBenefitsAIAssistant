@@ -3,7 +3,7 @@
  *
  * Covers every critical behavioral guarantee added across rounds 1–8:
  *   - Carrier misattribution guards (Unum/Allstate)
- *   - Kaiser geography (CA/OR/WA only)
+ *   - Kaiser geography (CA/GA/OR/WA only)
  *   - noPricingMode enforcement
  *   - Rightway / DHMO / PPO hallucination guards
  *   - HSA + spouse FSA IRS compliance triggers
@@ -14,7 +14,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { stripPricingDetails } from '../../app/api/qa/route';
-import { getPlansByRegion } from '../../lib/data/amerivet';
+import { getAmerivetPlansByRegion } from '../../lib/data/amerivet-package';
 import {
   compareMaternityCosts,
   estimateCostProjection,
@@ -92,44 +92,49 @@ describe('Carrier misattribution — Fix 27/28/31', () => {
 
 describe('Kaiser geography — Fix 30 (regionalAvailability + state-code expansion)', () => {
   it('CA user gets Kaiser', () => {
-    const plans = getPlansByRegion('CA');
+    const plans = getAmerivetPlansByRegion('CA');
+    expect(plans.some(p => p.provider.toLowerCase().includes('kaiser'))).toBe(true);
+  });
+
+  it('GA user gets Kaiser', () => {
+    const plans = getAmerivetPlansByRegion('GA');
     expect(plans.some(p => p.provider.toLowerCase().includes('kaiser'))).toBe(true);
   });
 
   it('WA user gets Kaiser', () => {
-    const plans = getPlansByRegion('WA');
+    const plans = getAmerivetPlansByRegion('WA');
     expect(plans.some(p => p.provider.toLowerCase().includes('kaiser'))).toBe(true);
   });
 
   it('OR user gets Kaiser', () => {
-    const plans = getPlansByRegion('OR');
+    const plans = getAmerivetPlansByRegion('OR');
     expect(plans.some(p => p.provider.toLowerCase().includes('kaiser'))).toBe(true);
   });
 
   it('TX user does NOT get Kaiser', () => {
-    const plans = getPlansByRegion('TX');
+    const plans = getAmerivetPlansByRegion('TX');
     expect(plans.some(p => p.provider.toLowerCase().includes('kaiser'))).toBe(false);
   });
   it('FL user does NOT get Kaiser', () => {
-    const plans = getPlansByRegion('FL');
+    const plans = getAmerivetPlansByRegion('FL');
     expect(plans.some(p => p.provider.toLowerCase().includes('kaiser'))).toBe(false);
   });
   it('OH user does NOT get Kaiser', () => {
-    const plans = getPlansByRegion('OH');
+    const plans = getAmerivetPlansByRegion('OH');
     expect(plans.some(p => p.provider.toLowerCase().includes('kaiser'))).toBe(false);
   });
   it('all states get BCBSTX medical plans (nationwide)', () => {
     for (const state of ['TX', 'FL', 'NY', 'CA', 'WA', 'OR', 'GA', 'IL']) {
-      const plans = getPlansByRegion(state);
+      const plans = getAmerivetPlansByRegion(state);
       expect(plans.some(p => p.provider.toLowerCase().includes('bcbstx') && p.type === 'medical')).toBe(true);
     }
   });
   it('full state name "Washington" also returns Kaiser', () => {
-    const plans = getPlansByRegion('Washington');
+    const plans = getAmerivetPlansByRegion('Washington');
     expect(plans.some(p => p.provider.toLowerCase().includes('kaiser'))).toBe(true);
   });
   it('full state name "Oregon" also returns Kaiser', () => {
-    const plans = getPlansByRegion('Oregon');
+    const plans = getAmerivetPlansByRegion('Oregon');
     expect(plans.some(p => p.provider.toLowerCase().includes('kaiser'))).toBe(true);
   });
 });
