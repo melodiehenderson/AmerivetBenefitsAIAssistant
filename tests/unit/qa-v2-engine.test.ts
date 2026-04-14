@@ -3661,6 +3661,36 @@ describe('qa-v2 engine', () => {
     expect(result.answer).not.toContain('We can stay with medical');
   });
 
+  it('supports a bare "yes, do that" after monthly premium replay offers the deductible tradeoff next', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee + Child(ren)',
+      familyDetails: { numChildren: 2 },
+      lastBotMessage: 'Across all of the medical plans available in WA, Kaiser Standard HMO has the lowest deductible and the lowest out-of-pocket max overall.',
+    });
+
+    await runQaV2Engine({
+      query: 'show me how much i have to pay each month on each plan',
+      session,
+    });
+
+    const result = await runQaV2Engine({
+      query: 'yes, do that',
+      session,
+    });
+
+    expect(result.answer).toContain('Deductible');
+    expect(result.answer).toContain('Out-of-pocket max');
+    expect(result.answer).toContain('Standard HSA');
+    expect(result.answer).not.toContain('We can stay with medical');
+  });
+
   it('answers direct coverage-tier questions instead of replaying generic medical scaffolding', async () => {
     const session = makeSession({
       step: 'active_chat',

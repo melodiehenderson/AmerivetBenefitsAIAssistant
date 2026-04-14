@@ -3270,6 +3270,14 @@ function buildContinuationReply(session: Session, query: string): string | null 
   }
 
   if (
+    activeTopic === 'Medical'
+    && /compare the deductible and out-of-pocket tradeoff right next to those premiums/i.test(lastBotMessage)
+    && (isSimpleAffirmation(normalizedQuery) || isAffirmativeCompareFollowup(normalizedQuery))
+  ) {
+    return buildTopicReply(session, 'Medical', 'compare the deductible and out-of-pocket max across the medical plans');
+  }
+
+  if (
     activeTopic === 'HSA/FSA'
     && /compare \*\*standard hsa\*\* versus \*\*enhanced hsa\*\* next and explain which medical path fits that long-term savings approach better/i.test(lastBotMessage)
     && (isSimpleAffirmation(normalizedQuery) || isAffirmativeCompareFollowup(normalizedQuery))

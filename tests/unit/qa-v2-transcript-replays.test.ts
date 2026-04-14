@@ -2062,6 +2062,11 @@ describe('qa-v2 transcript replays', () => {
           mustContain: ['Here are the monthly medical premiums for Employee + Family coverage in WA', 'Kaiser Standard HMO'],
           mustNotContain: ['We can stay with medical'],
         },
+        {
+          user: 'yes, do that',
+          mustContain: ['Deductible', 'Out-of-pocket max', 'Standard HSA'],
+          mustNotContain: ['We can stay with medical'],
+        },
       ],
       makeSession({
         userName: 'Ted',

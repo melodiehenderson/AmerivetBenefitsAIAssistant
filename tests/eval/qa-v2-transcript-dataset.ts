@@ -2307,6 +2307,11 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
         mustContain: ['Here are the monthly medical premiums for Employee + Family coverage in WA', 'Kaiser Standard HMO'],
         mustNotContain: ['We can stay with medical'],
       },
+      {
+        user: 'yes, do that',
+        mustContain: ['Deductible', 'Out-of-pocket max', 'Standard HSA'],
+        mustNotContain: ['We can stay with medical'],
+      },
     ],
   },
   {
