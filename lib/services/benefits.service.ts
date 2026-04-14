@@ -3,15 +3,20 @@ import { getRepositories } from '@/lib/azure/cosmos';
 import { logger } from '@/lib/logger';
 import { v4 as uuidv4 } from 'uuid';
 import {
-  amerivetBenefits2024_2025,
-  getPlanById,
-  getPlansByRegion as getCatalogPlansByRegion,
-  isEligibleForPlan,
-} from '@/lib/data/amerivet';
-// Derive local types from the catalog instance to avoid path/type export issues
-type BenefitPlan = (typeof amerivetBenefits2024_2025)['medicalPlans'][number];
-type OpenEnrollment = (typeof amerivetBenefits2024_2025)['openEnrollment'];
-type EligibilityRules = (typeof amerivetBenefits2024_2025)['eligibility'];
+  getAllAmerivetBenefitPlans,
+  getAmerivetBenefitsPackage,
+  getAmerivetPlanById,
+  getAmerivetPlansByRegion,
+  isEligibleForAmerivetPlan,
+  listAmerivetPlanTypes,
+  listAmerivetProviders,
+  type AmerivetBenefitsPackage,
+} from '@/lib/data/amerivet-package';
+import type { BenefitPlan, AmerivetBenefitsCatalog } from '@/lib/data/amerivet';
+
+type OpenEnrollment = AmerivetBenefitsCatalog['openEnrollment'];
+type EligibilityRules = AmerivetBenefitsCatalog['eligibility'];
+type SpecialCoverage = AmerivetBenefitsCatalog['specialCoverage'];
 
 export interface BenefitsQuery {
   region?: string;
@@ -43,8 +48,21 @@ export interface PremiumCalculation {
   employeeContribution: number;
 }
 
+type BenefitsServiceOptions = {
+  benefitsPackage?: AmerivetBenefitsPackage;
+};
+
 export class BenefitsService {
   private benefitsRepository: any = null;
+  private readonly benefitsPackage?: AmerivetBenefitsPackage;
+
+  constructor(options: BenefitsServiceOptions = {}) {
+    this.benefitsPackage = options.benefitsPackage;
+  }
+
+  private getActivePackage(): AmerivetBenefitsPackage {
+    return this.benefitsPackage ?? getAmerivetBenefitsPackage();
+  }
 
   private async initializeRepository() {
     // Initialize on first use; keep lightweight for unit tests
@@ -185,19 +203,20 @@ export class BenefitsService {
    */
   async getAvailablePlans(query: BenefitsQuery = {}): Promise<BenefitPlan[]> {
     try {
-      let plans = [
-        ...amerivetBenefits2024_2025.medicalPlans,
-        amerivetBenefits2024_2025.dentalPlan,
-        amerivetBenefits2024_2025.visionPlan,
-        ...amerivetBenefits2024_2025.voluntaryPlans
-      ];
+      const activePackage = this.getActivePackage();
+      let plans = getAllAmerivetBenefitPlans(activePackage);
 
       // Filter by region
       if (query.region) {
-        const regionalPlanIds = (amerivetBenefits2024_2025.regionalPlans as any)[query.region] || [];
+        const expandedRegion = activePackage.stateAbbrevToName[query.region.toUpperCase()] ?? query.region;
+        const regionalPlanIds =
+          activePackage.catalog.regionalPlans[query.region] ||
+          activePackage.catalog.regionalPlans[expandedRegion] ||
+          [];
         plans = plans.filter(plan => 
           plan.regionalAvailability.includes('nationwide') || 
           plan.regionalAvailability.includes(query.region!) ||
+          plan.regionalAvailability.includes(expandedRegion) ||
           regionalPlanIds.includes(plan.id)
         );
       }
@@ -215,7 +234,7 @@ export class BenefitsService {
       // Filter by eligibility
       if (query.employeeType && query.hoursWorked !== undefined) {
         plans = plans.filter(plan => 
-          isEligibleForPlan(plan.id, query.employeeType!, query.hoursWorked!, query.region || 'nationwide')
+          isEligibleForAmerivetPlan(plan.id, query.employeeType!, query.hoursWorked!, query.region || 'nationwide', activePackage)
         );
       }
 
@@ -236,7 +255,7 @@ export class BenefitsService {
    */
   async getPlanDetails(planId: string): Promise<BenefitPlan | null> {
     try {
-      const plan = getPlanById(planId);
+      const plan = getAmerivetPlanById(planId, this.getActivePackage());
       
       if (plan) {
         logger.info({ planId, planName: plan.name }, 'Plan details retrieved');
@@ -257,9 +276,10 @@ export class BenefitsService {
   async comparePlans(planIds: string[]): Promise<PlanComparison[]> {
     try {
       const comparisons: PlanComparison[] = [];
+      const activePackage = this.getActivePackage();
 
       for (const planId of planIds) {
-        const plan = getPlanById(planId);
+        const plan = getAmerivetPlanById(planId, activePackage);
         if (plan) {
           comparisons.push({
             planId: plan.id,
@@ -296,7 +316,7 @@ export class BenefitsService {
     payFrequency: 'monthly' | 'biweekly' = 'monthly'
   ): Promise<PremiumCalculation | null> {
     try {
-      const plan = getPlanById(planId);
+      const plan = getAmerivetPlanById(planId, this.getActivePackage());
       if (!plan) {
         logger.warn({ planId }, 'Plan not found for premium calculation');
         return null;
@@ -341,7 +361,7 @@ export class BenefitsService {
    */
   async getOpenEnrollmentInfo(): Promise<OpenEnrollment> {
     try {
-      const enrollment = amerivetBenefits2024_2025.openEnrollment;
+      const enrollment = this.getActivePackage().catalog.openEnrollment;
       
       logger.info({
         year: enrollment.year,
@@ -360,7 +380,7 @@ export class BenefitsService {
    */
   async getEligibilityRules(): Promise<EligibilityRules> {
     try {
-      const eligibility = amerivetBenefits2024_2025.eligibility;
+      const eligibility = this.getActivePackage().catalog.eligibility;
       
       logger.info({
         fullTimeHours: eligibility.fullTimeHours,
@@ -384,11 +404,18 @@ export class BenefitsService {
     region: string
   ): Promise<{ eligible: boolean; reason?: string }> {
     try {
-      const eligible = isEligibleForPlan(planId, employeeType as 'full-time' | 'part-time', hoursWorked, region);
+      const activePackage = this.getActivePackage();
+      const eligible = isEligibleForAmerivetPlan(
+        planId,
+        employeeType as 'full-time' | 'part-time',
+        hoursWorked,
+        region,
+        activePackage,
+      );
       
       let reason: string | undefined;
       if (!eligible) {
-        const plan = getPlanById(planId);
+        const plan = getAmerivetPlanById(planId, activePackage);
         if (plan) {
           if (!plan.regionalAvailability.includes('nationwide') && !plan.regionalAvailability.includes(region)) {
             reason = `Plan not available in ${region}`;
@@ -423,7 +450,7 @@ export class BenefitsService {
    */
   async getPlansByRegion(region: string): Promise<BenefitPlan[]> {
     try {
-      const plans = getCatalogPlansByRegion(region);
+      const plans = getAmerivetPlansByRegion(region, this.getActivePackage());
       
       logger.info({
         region,
@@ -468,9 +495,9 @@ export class BenefitsService {
   /**
    * Get special coverage information
    */
-  async getSpecialCoverage(): Promise<typeof amerivetBenefits2024_2025.specialCoverage> {
+  async getSpecialCoverage(): Promise<SpecialCoverage> {
     try {
-      const specialCoverage = amerivetBenefits2024_2025.specialCoverage;
+      const specialCoverage = this.getActivePackage().catalog.specialCoverage;
       
       logger.info({
         hsaEffective: specialCoverage.hsa.effectiveDate
@@ -489,10 +516,7 @@ export class BenefitsService {
   async getPlanTypes(): Promise<string[]> {
     try {
       const planTypes = [...new Set([
-        ...amerivetBenefits2024_2025.medicalPlans.map((p: BenefitPlan) => p.type),
-        amerivetBenefits2024_2025.dentalPlan.type,
-        amerivetBenefits2024_2025.visionPlan.type,
-        ...amerivetBenefits2024_2025.voluntaryPlans.map((p: BenefitPlan) => p.type),
+        ...listAmerivetPlanTypes(this.getActivePackage()),
         'voluntary' // Add voluntary as a separate type for test compatibility
       ])];
 
@@ -510,12 +534,7 @@ export class BenefitsService {
    */
   async getProviders(): Promise<string[]> {
     try {
-      const providers = [...new Set([
-        ...amerivetBenefits2024_2025.medicalPlans.map((p: BenefitPlan) => p.provider),
-        amerivetBenefits2024_2025.dentalPlan.provider,
-        amerivetBenefits2024_2025.visionPlan.provider,
-        ...amerivetBenefits2024_2025.voluntaryPlans.map((p: BenefitPlan) => p.provider)
-      ])];
+      const providers = [...new Set(listAmerivetProviders(this.getActivePackage()))];
 
       logger.info({ providers }, 'Providers retrieved');
 

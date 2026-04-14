@@ -11,13 +11,18 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { amerivetBenefits2024_2025, KAISER_AVAILABLE_STATE_CODES } from '@/lib/data/amerivet';
+import { getAmerivetBenefitsPackage, isKaiserEligibleForState } from '@/lib/data/amerivet-package';
+import {
+  buildCalculatorPlanPricing,
+  getCalculatorPlanMonthlyPremium,
+  type CalculatorCoverageSelection,
+} from '@/lib/utils/medical-cost-calculator';
 import { ArrowLeft, Calculator, DollarSign, Activity, Pill, Hospital, HeartPulse, AlertCircle } from 'lucide-react';
 import { Slider } from '@/components/ui/slider';
 import { AmeriVetLogo } from '@/components/amerivet-logo';
 
-// Plans from canonical catalog
-const catalogPlans = amerivetBenefits2024_2025.medicalPlans;
+const activeBenefitsPackage = getAmerivetBenefitsPackage();
+const catalogPlans = activeBenefitsPackage.catalog.medicalPlans;
 
 // US States for dropdown
 const US_STATES = [
@@ -40,18 +45,10 @@ const US_STATES = [
   { code: 'WV', name: 'West Virginia' }, { code: 'WI', name: 'Wisconsin' }, { code: 'WY', name: 'Wyoming' },
 ];
 
-// Coverage tier multipliers
-const COVERAGE_MULTIPLIERS: Record<string, number> = {
-  'employee-only': 1,
-  'employee-spouse': 1.8,
-  'employee-children': 1.5,
-  'employee-family': 2.5,
-};
-
 export default function CalculatorPage() {
   const router = useRouter();
   const [planType, setPlanType] = useState(catalogPlans[0]?.id ?? 'bcbstx-standard-hsa');
-  const [coverage, setCoverage] = useState('employee-only');
+  const [coverage, setCoverage] = useState<CalculatorCoverageSelection>('employee-only');
   const [userState, setUserState] = useState('');
   const [salary, setSalary] = useState('60000');
   const [visits, setVisits] = useState([10]);
@@ -60,7 +57,7 @@ export default function CalculatorPage() {
   const [surgeries, setSurgeries] = useState([0]);
 
   const isKaiserAvailable = Boolean(
-    userState && KAISER_AVAILABLE_STATE_CODES.includes(userState as (typeof KAISER_AVAILABLE_STATE_CODES)[number]),
+    userState && isKaiserEligibleForState(userState, activeBenefitsPackage),
   );
 
   useEffect(() => {
@@ -81,25 +78,13 @@ export default function CalculatorPage() {
   const pricing = Object.fromEntries(
     catalogPlans.map((p) => [
       p.id,
-      {
-        label: p.name,
-        monthly: p.tiers.employeeOnly,
-        copayVisit: p.coverage?.copays?.primaryCare ?? 20,
-        hospDay: p.coverage?.deductibles?.individual
-          ? Math.round(p.coverage.deductibles.individual / 5)
-          : 200,
-        rx: p.coverage?.copays?.lenses ?? 10, // closest per-item cost proxy
-        surgery: p.benefits.outOfPocketMax
-          ? Math.round(p.benefits.outOfPocketMax / 13)
-          : 500,
-      },
+      buildCalculatorPlanPricing(p),
     ]),
-  ) as Record<string, { label: string; monthly: number; copayVisit: number; hospDay: number; rx: number; surgery: number }>;
+  ) as Record<string, ReturnType<typeof buildCalculatorPlanPricing>>;
 
   const calc = useMemo(() => {
     const conf = pricing[planType] ?? pricing[catalogPlans[0]?.id ?? ''];
-    const multiplier = COVERAGE_MULTIPLIERS[coverage] || 1;
-    const premiumMonthly = conf.monthly * multiplier;
+    const premiumMonthly = conf.monthlyByCoverage[coverage] ?? 0;
     const premiumAnnual = premiumMonthly * 12;
     const usage = {
       visits: visits[0] * conf.copayVisit,
@@ -111,8 +96,6 @@ export default function CalculatorPage() {
     const total = premiumAnnual + outOfPocket;
     return { conf, premiumMonthly, premiumAnnual, usage, outOfPocket, total };
   }, [planType, coverage, visits, hospitalDays, rxPerMonth, surgeries]);
-
-  const multiplier = COVERAGE_MULTIPLIERS[coverage] || 1;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -179,7 +162,7 @@ export default function CalculatorPage() {
                       })
                       .map((p) => (
                         <SelectItem key={p.id} value={p.id}>
-                          {p.name} - ${Math.round((pricing[p.id]?.monthly ?? p.tiers.employeeOnly) * multiplier)}/month
+                          {p.name} - ${Math.round(getCalculatorPlanMonthlyPremium(p, coverage))}/month
                         </SelectItem>
                       ))}
                   </SelectContent>

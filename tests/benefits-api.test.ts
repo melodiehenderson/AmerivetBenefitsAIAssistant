@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { benefitsService } from '../lib/services/benefits.service';
+import { BenefitsService, benefitsService } from '../lib/services/benefits.service';
+import { createAmerivetBenefitsPackage, getAmerivetBenefitsPackage } from '../lib/data/amerivet-package';
 
 // Mock the logger
 vi.mock('@/lib/logging/logger', () => ({
@@ -51,6 +52,47 @@ describe('Benefits Service', () => {
       
       expect(bcbstxPlans.every(plan => plan.provider === 'BCBSTX')).toBe(true);
       expect(kaiserPlans.every(plan => plan.provider === 'Kaiser')).toBe(true);
+    });
+
+    it('can run against a fixture package without mutating the default package', async () => {
+      const current = getAmerivetBenefitsPackage();
+      const fixturePackage = createAmerivetBenefitsPackage({
+        ...current,
+        packageId: 'amerivet-service-fixture',
+        displayName: 'AmeriVet Service Fixture',
+        catalog: {
+          ...current.catalog,
+          openEnrollment: {
+            ...current.catalog.openEnrollment,
+            year: '2026-2027',
+          },
+          medicalPlans: current.catalog.medicalPlans.map((plan) =>
+            plan.id === 'bcbstx-standard-hsa'
+              ? {
+                  ...plan,
+                  name: 'Standard HSA Fixture',
+                }
+              : plan.id === 'kaiser-standard-hmo'
+                ? {
+                    ...plan,
+                    regionalAvailability: [...plan.regionalAvailability, 'Texas'],
+                  }
+                : plan,
+          ),
+          regionalPlans: {
+            ...current.catalog.regionalPlans,
+            Texas: ['kaiser-standard-hmo'],
+          },
+        },
+        kaiserAvailableStateCodes: ['CA', 'GA', 'TX', 'WA'],
+      });
+      const fixtureService = new BenefitsService({ benefitsPackage: fixturePackage });
+
+      const texasPlans = await fixtureService.getAvailablePlans({ region: 'Texas' });
+
+      expect(texasPlans.some((plan) => plan.provider === 'Kaiser')).toBe(true);
+      expect(texasPlans.some((plan) => plan.name === 'Standard HSA Fixture')).toBe(true);
+      expect((await benefitsService.getAvailablePlans({ region: 'Texas' })).some((plan) => plan.provider === 'Kaiser')).toBe(false);
     });
   });
 

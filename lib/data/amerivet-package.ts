@@ -4,6 +4,7 @@ import {
   STATE_ABBREV_TO_NAME,
   type AmerivetBenefitsCatalog,
   type BenefitPlan,
+  type BenefitTier,
 } from '@/lib/data/amerivet';
 
 export interface AmerivetBenefitsPackage {
@@ -82,6 +83,90 @@ export function getAllAmerivetBenefitPlans(
     catalog.visionPlan,
     ...catalog.voluntaryPlans,
   ];
+}
+
+export function getAmerivetPlanById(
+  planId: string,
+  benefitsPackage: AmerivetBenefitsPackage = getAmerivetBenefitsPackage(),
+): BenefitPlan | undefined {
+  return getAllAmerivetBenefitPlans(benefitsPackage).find((plan) => plan.id === planId);
+}
+
+export function getAmerivetPlansByRegion(
+  region: string,
+  benefitsPackage: AmerivetBenefitsPackage = getAmerivetBenefitsPackage(),
+): BenefitPlan[] {
+  const { catalog, stateAbbrevToName } = benefitsPackage;
+  const normalizedRegion = region.toLowerCase();
+  const expandedName = stateAbbrevToName[region.toUpperCase()] ?? region;
+  const directMatches =
+    catalog.regionalPlans[region] ??
+    catalog.regionalPlans[expandedName] ??
+    [];
+
+  return getAllAmerivetBenefitPlans(benefitsPackage).filter((plan) => {
+    if (directMatches.includes(plan.id)) {
+      return true;
+    }
+
+    const regions = plan.regionalAvailability.map((entry) => entry.toLowerCase());
+    if (regions.includes('nationwide')) {
+      return true;
+    }
+
+    return regions.includes(normalizedRegion) || regions.includes(expandedName.toLowerCase());
+  });
+}
+
+export function isEligibleForAmerivetPlan(
+  planId: string,
+  employeeType: 'full-time' | 'part-time',
+  hoursWorked: number,
+  region: string,
+  benefitsPackage: AmerivetBenefitsPackage = getAmerivetBenefitsPackage(),
+): boolean {
+  const plan = getAmerivetPlanById(planId, benefitsPackage);
+  if (!plan) {
+    return false;
+  }
+
+  const partTimeHours = benefitsPackage.catalog.eligibility.partTimeHours;
+  const meetsHours = employeeType === 'full-time'
+    ? hoursWorked >= Math.max(30, plan.eligibility.minHours)
+    : hoursWorked >= Math.max(partTimeHours, plan.eligibility.minHours);
+
+  if (!meetsHours) {
+    return false;
+  }
+
+  const normalizedRegion = region.toLowerCase();
+  const availableRegions = plan.regionalAvailability.map((entry) => entry.toLowerCase());
+
+  if (availableRegions.includes('nationwide')) {
+    return true;
+  }
+
+  return availableRegions.includes(normalizedRegion);
+}
+
+export function listAmerivetPlanTypes(
+  benefitsPackage: AmerivetBenefitsPackage = getAmerivetBenefitsPackage(),
+): string[] {
+  return Array.from(new Set(getAllAmerivetBenefitPlans(benefitsPackage).map((plan) => plan.type)));
+}
+
+export function listAmerivetProviders(
+  benefitsPackage: AmerivetBenefitsPackage = getAmerivetBenefitsPackage(),
+): string[] {
+  return Array.from(new Set(getAllAmerivetBenefitPlans(benefitsPackage).map((plan) => plan.provider)));
+}
+
+export function calculateAmerivetTierMonthly(
+  planId: string,
+  tier: BenefitTier,
+  benefitsPackage: AmerivetBenefitsPackage = getAmerivetBenefitsPackage(),
+): number | undefined {
+  return getAmerivetPlanById(planId, benefitsPackage)?.tiers[tier];
 }
 
 export function isKaiserEligibleForState(
