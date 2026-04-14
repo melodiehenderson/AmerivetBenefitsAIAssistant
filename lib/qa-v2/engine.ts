@@ -344,7 +344,20 @@ function isShortTopicPivot(query: string, topic: string): boolean {
     'HSA/FSA': /^(hsa|fsa|hsa fsa|hsa\/fsa)$/,
   };
 
-  return topicPatterns[topic]?.test(normalized) || false;
+  if (topicPatterns[topic]?.test(normalized)) return true;
+
+  const guidedPivotPatterns: Record<string, RegExp> = {
+    Medical: /^(?:show me|tell me about|let s do|lets do|do|look at|move to|move on to)\s+(?:my\s+)?(?:medical|health|medical plans?|medical options?|kaiser|hsa plans?)(?:\s+next)?$/,
+    Dental: /^(?:show me|tell me about|let s do|lets do|do|look at|move to|move on to)\s+(?:my\s+)?dental(?:\s+next)?$/,
+    Vision: /^(?:show me|tell me about|let s do|lets do|do|look at|move to|move on to)\s+(?:my\s+)?(?:vision|eye|glasses|contacts)(?:\s+next)?$/,
+    'Life Insurance': /^(?:show me|tell me about|let s do|lets do|do|look at|move to|move on to)\s+(?:my\s+)?(?:life|life insurance|life ins|term life|whole life|basic life)(?:\s+next)?$/,
+    Disability: /^(?:show me|tell me about|let s do|lets do|do|look at|move to|move on to)\s+(?:my\s+)?(?:disability|std|ltd)(?:\s+next)?$/,
+    'Critical Illness': /^(?:show me|tell me about|let s do|lets do|do|look at|move to|move on to)\s+(?:my\s+)?(?:critical illness|illness)(?:\s+next)?$/,
+    'Accident/AD&D': /^(?:show me|tell me about|let s do|lets do|do|look at|move to|move on to)\s+(?:my\s+)?(?:accident|ad&d|ad d|ad\/d)(?:\s+next)?$/,
+    'HSA/FSA': /^(?:show me|tell me about|let s do|lets do|do|look at|move to|move on to)\s+(?:my\s+)?(?:hsa|fsa|hsa fsa|hsa\/fsa)(?:\s+next)?$/,
+  };
+
+  return guidedPivotPatterns[topic]?.test(normalized) || false;
 }
 
 function canonicalTopicQuery(topic: string, query: string): string {

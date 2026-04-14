@@ -3108,6 +3108,96 @@ describe('qa-v2 engine', () => {
     expect(result.answer).not.toContain('Please ask that one a little more specifically');
   });
 
+  it('treats a bare "life" as a real topic pivot even from stale vision context', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Madeline',
+      hasCollectedName: true,
+      userAge: 29,
+      userState: 'CO',
+      dataConfirmed: true,
+      currentTopic: 'Vision',
+      lastBotMessage: 'Vision coverage: **VSP Vision Plus**.',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'life',
+      session,
+    });
+
+    expect(result.answer).toContain('Life insurance options:');
+    expect(result.answer).not.toContain('We can stay with vision');
+    expect(session.currentTopic).toBe('Life Insurance');
+  });
+
+  it('treats "show me life next" as a real topic pivot instead of stale-topic guidance', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Madeline',
+      hasCollectedName: true,
+      userAge: 29,
+      userState: 'CO',
+      dataConfirmed: true,
+      currentTopic: 'Vision',
+      completedTopics: ['Dental', 'Vision'],
+      lastBotMessage: 'Since you have already looked at dental too, the next most useful area is usually:\n\n- life, disability, or supplemental protection',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'show me life next',
+      session,
+    });
+
+    expect(result.answer).toContain('Life insurance options:');
+    expect(result.answer).not.toContain('Here are the benefits available to you as an AmeriVet employee');
+    expect(session.currentTopic).toBe('Life Insurance');
+  });
+
+  it('treats a bare "disability" as a real topic pivot even from stale dental context', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Madeline',
+      hasCollectedName: true,
+      userAge: 29,
+      userState: 'CO',
+      dataConfirmed: true,
+      currentTopic: 'Dental',
+      lastBotMessage: 'Dental coverage: **BCBSTX Dental PPO**.',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'disability',
+      session,
+    });
+
+    expect(result.answer).toContain('Disability coverage is meant to protect part of your income');
+    expect(result.answer).not.toContain('We can stay with dental');
+    expect(session.currentTopic).toBe('Disability');
+  });
+
+  it('treats "ok lets do disability next" as a direct pivot after life guidance', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Madeline',
+      hasCollectedName: true,
+      userAge: 29,
+      userState: 'CO',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      completedTopics: ['Medical', 'Life Insurance'],
+      lastBotMessage: 'If you want to keep going after life insurance, the most useful next comparison is usually:\n\n- disability if you want income protection while you are alive',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'ok lets do disability next',
+      session,
+    });
+
+    expect(result.answer).toContain('Disability coverage is meant to protect part of your income');
+    expect(result.answer).not.toContain('Please ask that one a little more specifically');
+    expect(session.currentTopic).toBe('Disability');
+  });
+
   it('answers package-level recommendation questions directly even when medical is the stale active topic', async () => {
     const session = makeSession({
       step: 'active_chat',

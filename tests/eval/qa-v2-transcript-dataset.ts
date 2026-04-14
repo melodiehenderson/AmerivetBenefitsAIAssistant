@@ -2461,4 +2461,31 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
       },
     ],
   },
+  {
+    id: 'V2-TX-082',
+    category: 'bare_pivot_and_next_phrase_continuity',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Madeline',
+      hasCollectedName: true,
+      userAge: 29,
+      userState: 'CO',
+      dataConfirmed: true,
+      currentTopic: 'Vision',
+      completedTopics: ['Dental', 'Vision'],
+      lastBotMessage: 'Since you have already looked at dental too, the next most useful area is usually:\n\n- life, disability, or supplemental protection',
+    },
+    turns: [
+      {
+        user: 'life',
+        mustContain: ['Life insurance options:'],
+        mustNotContain: ['We can stay with vision'],
+      },
+      {
+        user: 'ok lets do disability next',
+        mustContain: ['Disability coverage is meant to protect part of your income'],
+        mustNotContain: ['We can stay with life insurance', 'Please ask that one a little more specifically'],
+      },
+    ],
+  },
 ];
