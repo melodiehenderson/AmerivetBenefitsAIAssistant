@@ -2536,4 +2536,24 @@ describe('qa-v2 transcript replays', () => {
       }),
     );
   });
+
+  it('replays employer-provided life split guidance instead of the generic life recommendation scaffold', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'what split do you recommend between whole life and voluntary term life?',
+          mustContain: ['80% Voluntary Term Life / 20% Whole Life'],
+          mustNotContain: ['life insurance is usually worth tightening up'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'Life Insurance',
+      }),
+    );
+  });
 });

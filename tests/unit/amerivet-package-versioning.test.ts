@@ -7,9 +7,11 @@ import {
   createAmerivetBenefitsPackage,
   getAmerivetCatalogForPrompt,
   getAmerivetBenefitsPackage,
+  getAmerivetEmployerGuidanceRules,
   isKaiserEligibleForState,
   listAmerivetBenefitsPackageIds,
 } from '@/lib/data/amerivet-package';
+import { findAmerivetEmployerGuidanceRule } from '@/lib/data/amerivet-employer-guidance';
 
 function makeSession(overrides: Partial<Session> = {}): Session {
   return {
@@ -136,5 +138,29 @@ describe('amerivet package versioning seam', () => {
 
     expect(response).toContain('Kaiser Standard HMO');
     expect(response).not.toContain('only available in CA, GA, WA, and OR');
+  });
+
+  it('registers structured employer guidance rules alongside the active AmeriVet package', () => {
+    const rules = getAmerivetEmployerGuidanceRules();
+    const splitRule = rules.find((rule) => rule.id === 'life-default-term-whole-split');
+
+    expect(splitRule?.allocation.primaryPlan).toBe('voluntary_term_life');
+    expect(splitRule?.allocation.primaryPercent).toBe(80);
+    expect(splitRule?.allocation.secondaryPlan).toBe('whole_life');
+    expect(splitRule?.allocation.secondaryPercent).toBe(20);
+  });
+
+  it('matches the life split guidance rule only for term-versus-whole decision questions', () => {
+    const match = findAmerivetEmployerGuidanceRule(
+      'Life Insurance',
+      'What split do you recommend between whole life and voluntary term life?',
+    );
+    const noMatch = findAmerivetEmployerGuidanceRule(
+      'Life Insurance',
+      'What life insurance options do I have?',
+    );
+
+    expect(match?.id).toBe('life-default-term-whole-split');
+    expect(noMatch).toBeNull();
   });
 });

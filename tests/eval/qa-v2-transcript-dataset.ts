@@ -3089,4 +3089,25 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
       },
     ],
   },
+  {
+    id: 'V2-TX-092',
+    category: 'life_employer_guidance_split',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      lastBotMessage: 'Life insurance options:\n\n- **Unum Basic Life & AD&D**',
+    },
+    turns: [
+      {
+        user: 'what split do you recommend between whole life and voluntary term life?',
+        mustContain: ['80% Voluntary Term Life / 20% Whole Life'],
+        mustNotContain: ['life insurance is usually worth tightening up'],
+      },
+    ],
+  },
 ];

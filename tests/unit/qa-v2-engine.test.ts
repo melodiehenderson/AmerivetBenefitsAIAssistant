@@ -2181,6 +2181,27 @@ describe('qa-v2 engine', () => {
     expect(result.answer).not.toContain('I can help with life insurance');
   });
 
+  it('uses the employer guidance split when the user asks how to divide whole life and voluntary term life', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'what split do you recommend between whole life and voluntary term life?',
+      session,
+    });
+
+    expect(result.answer).toContain('80% Voluntary Term Life / 20% Whole Life');
+    expect(result.answer).toContain('included base layer');
+    expect(result.answer).not.toContain('life insurance is usually worth tightening up');
+  });
+
   it('answers spouse-specific medical follow-ups after a recommendation', async () => {
     const session = makeSession({
       step: 'active_chat',

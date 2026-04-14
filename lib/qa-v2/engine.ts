@@ -1,4 +1,5 @@
 import { getAmerivetBenefitsPackage } from '@/lib/data/amerivet-package';
+import { findAmerivetEmployerGuidanceRule } from '@/lib/data/amerivet-employer-guidance';
 import type { Session } from '@/lib/rag/session-store';
 import { extractName } from '@/lib/session-logic';
 import pricingUtils from '@/lib/rag/pricing-utils';
@@ -2932,6 +2933,13 @@ function inferSupplementalTopicForFollowup(session: Session, query: string): 'Li
 }
 
 function buildSupplementalRecommendationReply(topic: string, session: Session, query: string): string | null {
+  if (topic === 'Life Insurance' && findAmerivetEmployerGuidanceRule(topic, query)) {
+    const employerGuidanceAnswer = buildNonMedicalDetailAnswer(topic, query, session);
+    if (employerGuidanceAnswer) {
+      return employerGuidanceAnswer;
+    }
+  }
+
   const lower = query.toLowerCase();
   const userHistory = (session.messages || [])
     .filter((message) => message.role === 'user')

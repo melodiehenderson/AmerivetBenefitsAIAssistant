@@ -1,5 +1,6 @@
 import type { Session } from '@/lib/rag/session-store';
 import { getAmerivetBenefitsPackage } from '@/lib/data/amerivet-package';
+import { findAmerivetEmployerGuidanceRule } from '@/lib/data/amerivet-employer-guidance';
 
 const ENROLLMENT_PORTAL_URL = process.env.ENROLLMENT_PORTAL_URL || 'https://wd5.myworkday.com/amerivet/login.html';
 
@@ -10,6 +11,30 @@ function getLifePlans() {
     term: lifePlans.find((plan) => /term life/i.test(plan.name)),
     whole: lifePlans.find((plan) => /whole life/i.test(plan.name)),
   };
+}
+
+function buildEmployerLifeSplitGuidanceReply(query: string): string | null {
+  const rule = findAmerivetEmployerGuidanceRule('Life Insurance', query);
+  if (!rule) return null;
+
+  const { basic, term, whole } = getLifePlans();
+  const primaryLabel = rule.allocation.primaryPlan === 'voluntary_term_life'
+    ? (term?.name || 'Voluntary Term Life')
+    : (whole?.name || 'Whole Life');
+  const secondaryLabel = rule.allocation.secondaryPlan === 'whole_life'
+    ? (whole?.name || 'Whole Life')
+    : (term?.name || 'Voluntary Term Life');
+
+  return [
+    `If you want a blended default between permanent coverage and extra term coverage, AmeriVet's current employer guidance is **${rule.recommendationLabel}**.`,
+    ``,
+    `What that means in practice:`,
+    `- Keep **${basic?.name || 'Basic Life'}** as the included base layer`,
+    `- Put the larger share into **${primaryLabel}** for the main income-replacement layer`,
+    `- Keep the smaller share in **${secondaryLabel}** if you want some permanent cash-value coverage on top`,
+    ``,
+    `So if you want me to lead the default split, I would usually start there and only move off it if you want almost all pure term protection or you care much more about permanent whole-life features.`,
+  ].join('\n');
 }
 
 export function isNonMedicalDetailQuestion(topic: string, query: string): boolean {
@@ -60,6 +85,11 @@ export function buildNonMedicalDetailAnswer(topic: string, query: string, _sessi
   }
 
   if (topic === 'Life Insurance') {
+    const employerSplitGuidance = buildEmployerLifeSplitGuidanceReply(query);
+    if (employerSplitGuidance) {
+      return employerSplitGuidance;
+    }
+
     if ((/\b(if i do nothing|what life insurance do i get|included life|included coverage|default life|automatic coverage|automatically enrolled|already included|included by default|get automatically|without having to pay more|without paying more|without extra cost)\b/i.test(lower) && /\b(life|coverage|insurance|plans?)\b/i.test(lower)) || /\bemployer-paid basic life\b/i.test(lower)) {
       return [
         `If you do nothing, AmeriVet still gives you **${basic?.name || 'Basic Life & AD&D'}** as the included base layer.`,
