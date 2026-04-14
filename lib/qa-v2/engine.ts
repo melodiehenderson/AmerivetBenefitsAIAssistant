@@ -1479,6 +1479,8 @@ function buildHsaFsaPracticalFitReply(session: Session, query: string): string |
       `- The account stays with you`,
       `- Unused funds can roll over year to year`,
       `- It is the stronger fit for building a longer-term healthcare cushion`,
+      ``,
+      `If you want, I can compare **Standard HSA** versus **Enhanced HSA** next and explain which medical path fits that long-term savings approach better.`,
     ].join('\n');
   }
 
@@ -1642,6 +1644,8 @@ function buildHsaFitSpecificReply(focus: HsaFitFocus): string {
       `- unused HSA funds roll over year to year`,
       `- the account stays with you`,
       `- it is better for building a longer-term healthcare cushion instead of spending everything in the current plan year`,
+      ``,
+      `If you want, I can compare **Standard HSA** versus **Enhanced HSA** next and explain which medical path fits that long-term savings approach better.`,
     ].join('\n');
   }
 
@@ -2122,6 +2126,7 @@ function isOnlyOptionQuestion(query: string): boolean {
 function shouldHandleSupplementalFitFollowup(query: string): boolean {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
   return isSimpleAffirmation(query)
+    || /\b(do that|do this|do it|let'?s do that|let'?s do this|let'?s do it)\b/i.test(lower)
     || /\b(worth\s+considering|is\s+it\s+worth|worth\s+adding|should\s+i\s+get|should\s+i\s+add|do\s+i\s+need\s+it|when\s+would\s+i\s+want|tell\s+me\s+more|help\s+me\s+think\s+through|how\s+do\s+i\s+know|how\s+can\s+i\s+tell)\b/i.test(lower);
 }
 
@@ -2181,6 +2186,8 @@ function buildMedicalSelfServiceReply(session: Session, query: string): string |
     `- Open the AmeriVet medical plan materials in Workday: ${ENROLLMENT_PORTAL_URL}`,
     `- Look for the prescription-drug section or any linked carrier formulary / drug-pricing tool for the plan you are comparing`,
     `- If Workday does not show the exact RX detail clearly, HR at ${HR_PHONE} is the fastest way to confirm where AmeriVet wants you to check it`,
+    ``,
+    `If you want, I can still compare the medical options at a high level for someone who expects ongoing prescriptions.`,
   ].join('\n');
 }
 
@@ -3248,6 +3255,31 @@ function buildContinuationReply(session: Session, query: string): string | null 
 
   if (activeTopic === 'Medical' && isMedicalPregnancySignal(normalizedQuery) && !isCostModelRequest(normalizedQuery)) {
     return buildTopicReply(session, 'Medical', /maternity|pregnan|baby|birth|delivery|prenatal|postnatal/i.test(lower) ? normalizedQuery : 'maternity coverage');
+  }
+
+  if (
+    activeTopic === 'Medical'
+    && /compare the medical options at a high level for someone who expects ongoing prescriptions/i.test(lastBotMessage)
+    && (isSimpleAffirmation(normalizedQuery) || isAffirmativeCompareFollowup(normalizedQuery))
+  ) {
+    return [
+      `If **ongoing prescriptions** are part of the picture, I would usually compare the stronger-protection medical option more seriously instead of only chasing the cheapest premium.`,
+      ``,
+      buildTopicReply(session, 'Medical', 'which medical plan is better if I expect ongoing prescriptions'),
+    ].join('\n');
+  }
+
+  if (
+    activeTopic === 'HSA/FSA'
+    && /compare \*\*standard hsa\*\* versus \*\*enhanced hsa\*\* next and explain which medical path fits that long-term savings approach better/i.test(lastBotMessage)
+    && (isSimpleAffirmation(normalizedQuery) || isAffirmativeCompareFollowup(normalizedQuery))
+  ) {
+    setTopic(session, 'Medical');
+    return [
+      `If **long-term HSA savings** are part of the goal, the medical question is usually about which HSA-qualified plan still fits your expected care without overpaying for protection you may not need.`,
+      ``,
+      buildTopicReply(session, 'Medical', 'compare Standard HSA and Enhanced HSA if I want long-term HSA savings'),
+    ].join('\n');
   }
 
   if (activeTopic === 'HSA/FSA' && (isDirectHsaFsaFitQuestion(normalizedQuery) || isHsaFsaRuleQuestion(normalizedQuery) || hsaFitFocus)) {

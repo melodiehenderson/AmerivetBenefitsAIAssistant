@@ -499,6 +499,16 @@ describe('qa-v2 transcript replays', () => {
           mustContain: ['Standard HSA', 'HSA is usually the cleaner fit'],
           mustNotContain: ['HSA/FSA overview'],
         },
+        {
+          user: 'long-term savings',
+          mustContain: ['HSA is usually the cleaner fit', 'compare **Standard HSA** versus **Enhanced HSA** next'],
+          mustNotContain: ['We can stay with HSA/FSA'],
+        },
+        {
+          user: 'yes, do that',
+          mustContain: ['long-term HSA savings', 'Standard HSA', 'Enhanced HSA'],
+          mustNotContain: ['We can stay with HSA/FSA'],
+        },
       ],
       makeSession({
         userName: 'Sarah',
@@ -1942,8 +1952,31 @@ describe('qa-v2 transcript replays', () => {
       [
         {
           user: 'where can i go to see the rx costs myself?',
-          mustContain: ['Workday', 'prescription tiers or drug-pricing details', 'carrier formulary / drug-pricing tool'],
+          mustContain: ['Workday', 'prescription tiers or drug-pricing details', 'carrier formulary / drug-pricing tool', 'compare the medical options at a high level for someone who expects ongoing prescriptions'],
           mustNotContain: ['We can stay with medical'],
+        },
+      ],
+      makeSession({
+        userName: 'Madeline',
+        hasCollectedName: true,
+        userAge: 29,
+        userState: 'CO',
+        dataConfirmed: true,
+        currentTopic: 'Medical',
+        lastBotMessage: 'Here is the prescription coverage comparison across the available medical plans:\n\n- Standard HSA: I do not have the prescription drug tier details in the current summary, so I do not want to guess.',
+      }),
+    );
+
+    await replayTranscript(
+      [
+        {
+          user: 'where can i go to see the rx costs myself?',
+          mustContain: ['Workday', 'carrier formulary / drug-pricing tool'],
+        },
+        {
+          user: 'yes, do that',
+          mustContain: ['My recommendation:', 'ongoing prescriptions'],
+          mustNotContain: ['Workday'],
         },
       ],
       makeSession({
@@ -1963,6 +1996,11 @@ describe('qa-v2 transcript replays', () => {
           user: 'can you give me a ballpark idea of what the ci insurance would cost?',
           mustContain: ['do **not** have a grounded flat-rate premium', 'Workday'],
           mustNotContain: ['We can stay with supplemental protection'],
+        },
+        {
+          user: 'yes, do that',
+          mustContain: ['Critical illness is usually worth considering'],
+          mustNotContain: ['do **not** have a grounded flat-rate premium'],
         },
       ],
       makeSession({
@@ -2197,6 +2235,41 @@ describe('qa-v2 transcript replays', () => {
         currentTopic: 'Medical',
         coverageTierLock: 'Employee Only',
         lastBotMessage: 'A coverage tier is the level of people you are enrolling.',
+      }),
+    );
+  });
+
+  it('replays the screenshot-style family medical tier flow into routine-care-first package guidance', async () => {
+    await replayTranscript(
+      [
+        {
+          user: "what's a coverage tier?",
+          mustContain: ['A coverage tier is just the level of people you are enrolling', 'Employee Only'],
+        },
+        {
+          user: 'oh okay, no i have 2 kids',
+          mustContain: ['updated the household to **Employee + Child(ren)** coverage', 'Medical plan options (Employee + Child(ren))'],
+        },
+        {
+          user: 'okay can you show me the plans for my coverage tier',
+          mustContain: ['Medical plan options (Employee + Child(ren))', 'Want to compare plans or switch coverage tiers?'],
+        },
+        {
+          user: 'what else should i consider?',
+          mustContain: ['split the next step after medical into two lanes', '**dental**', '**life insurance**', 'default nudge here is usually **dental first**', 'take you straight into **dental** next'],
+          mustNotContain: ['the next most useful step after medical is usually **life insurance**'],
+        },
+      ],
+      makeSession({
+        userName: 'Susie',
+        hasCollectedName: true,
+        userAge: 23,
+        userState: 'OR',
+        dataConfirmed: true,
+        currentTopic: 'Medical',
+        coverageTierLock: 'Employee Only',
+        completedTopics: ['Medical'],
+        lastBotMessage: 'Medical plan options (Employee Only):\n\nWant to compare plans or switch coverage tiers?',
       }),
     );
   });

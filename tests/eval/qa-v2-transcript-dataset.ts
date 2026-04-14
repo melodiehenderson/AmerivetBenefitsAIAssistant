@@ -2154,6 +2154,16 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
         mustContain: ['Standard HSA', 'HSA is usually the cleaner fit'],
         mustNotContain: ['HSA/FSA overview'],
       },
+      {
+        user: 'long-term savings',
+        mustContain: ['HSA is usually the cleaner fit', 'compare **Standard HSA** versus **Enhanced HSA** next'],
+        mustNotContain: ['We can stay with HSA/FSA'],
+      },
+      {
+        user: 'yes, do that',
+        mustContain: ['long-term HSA savings', 'Standard HSA', 'Enhanced HSA'],
+        mustNotContain: ['We can stay with HSA/FSA'],
+      },
     ],
   },
   {
@@ -2633,8 +2643,13 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
     turns: [
       {
         user: 'where can i go to see the rx costs myself?',
-        mustContain: ['Workday', 'prescription tiers or drug-pricing details', 'carrier formulary / drug-pricing tool'],
+        mustContain: ['Workday', 'prescription tiers or drug-pricing details', 'carrier formulary / drug-pricing tool', 'compare the medical options at a high level for someone who expects ongoing prescriptions'],
         mustNotContain: ['We can stay with medical'],
+      },
+      {
+        user: 'yes, do that',
+        mustContain: ['My recommendation:', 'ongoing prescriptions'],
+        mustNotContain: ['Workday'],
       },
     ],
   },
@@ -2656,6 +2671,11 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
         user: 'can you give me a ballpark idea of what the ci insurance would cost?',
         mustContain: ['do **not** have a grounded flat-rate premium', 'Workday'],
         mustNotContain: ['We can stay with supplemental protection'],
+      },
+      {
+        user: 'yes, do that',
+        mustContain: ['Critical illness is usually worth considering'],
+        mustNotContain: ['do **not** have a grounded flat-rate premium'],
       },
     ],
   },
@@ -2706,6 +2726,41 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
         user: 'oh okay, no i have 2 kids',
         mustContain: ['updated the household to **Employee + Child(ren)** coverage', 'Medical plan options (Employee + Child(ren))'],
         mustNotContain: ['We can stay with medical'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-079C',
+    category: 'household_only_medical_correction_flows_into_package_guidance',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Susie',
+      hasCollectedName: true,
+      userAge: 23,
+      userState: 'OR',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee Only',
+      completedTopics: ['Medical'],
+      lastBotMessage: 'Medical plan options (Employee Only):\n\nWant to compare plans or switch coverage tiers?',
+    },
+    turns: [
+      {
+        user: "what's a coverage tier?",
+        mustContain: ['A coverage tier is just the level of people you are enrolling', 'Employee Only'],
+      },
+      {
+        user: 'oh okay, no i have 2 kids',
+        mustContain: ['updated the household to **Employee + Child(ren)** coverage', 'Medical plan options (Employee + Child(ren))'],
+      },
+      {
+        user: 'okay can you show me the plans for my coverage tier',
+        mustContain: ['Medical plan options (Employee + Child(ren))', 'Want to compare plans or switch coverage tiers?'],
+      },
+      {
+        user: 'what else should i consider?',
+        mustContain: ['split the next step after medical into two lanes', '**dental**', '**life insurance**', 'default nudge here is usually **dental first**', 'take you straight into **dental** next'],
+        mustNotContain: ['the next most useful step after medical is usually **life insurance**'],
       },
     ],
   },

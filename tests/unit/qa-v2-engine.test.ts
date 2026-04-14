@@ -2950,6 +2950,36 @@ describe('qa-v2 engine', () => {
 
     expect(result.answer).toContain('HSA is usually the cleaner fit');
     expect(result.answer).toContain('roll over year to year');
+    expect(result.answer).toContain('compare **Standard HSA** versus **Enhanced HSA** next');
+  });
+
+  it('supports a bare "yes, do that" after long-term HSA fit guidance by pivoting into HSA-plan comparison', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Sarah',
+      hasCollectedName: true,
+      userAge: 42,
+      userState: 'FL',
+      dataConfirmed: true,
+      currentTopic: 'HSA/FSA',
+      pendingGuidancePrompt: 'hsa_vs_fsa',
+      pendingGuidanceTopic: 'HSA/FSA',
+    });
+
+    await runQaV2Engine({
+      query: 'long-term savings',
+      session,
+    });
+
+    const result = await runQaV2Engine({
+      query: 'yes, do that',
+      session,
+    });
+
+    expect(result.answer).toContain('long-term HSA savings');
+    expect(result.answer).toContain('Standard HSA');
+    expect(result.answer).toContain('Enhanced HSA');
+    expect(result.answer).not.toContain('We can stay with HSA/FSA');
   });
 
   it('narrows HSA-versus-FSA fit when the user says they will use it this year', async () => {
@@ -3138,7 +3168,35 @@ describe('qa-v2 engine', () => {
     expect(result.answer).toContain('Workday');
     expect(result.answer).toContain('prescription tiers or drug-pricing details');
     expect(result.answer).toContain('carrier formulary / drug-pricing tool');
+    expect(result.answer).toContain('compare the medical options at a high level for someone who expects ongoing prescriptions');
     expect(result.answer).not.toContain('We can stay with medical');
+  });
+
+  it('supports a bare "yes" after RX self-service guidance by pivoting back into a prescription-sensitive medical comparison', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Madeline',
+      hasCollectedName: true,
+      userAge: 29,
+      userState: 'CO',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      lastBotMessage: 'Here is the prescription coverage comparison across the available medical plans:\n\n- Standard HSA: I do not have the prescription drug tier details in the current summary, so I do not want to guess.',
+    });
+
+    await runQaV2Engine({
+      query: 'where can i go to see the rx costs myself?',
+      session,
+    });
+
+    const result = await runQaV2Engine({
+      query: 'yes, do that',
+      session,
+    });
+
+    expect(result.answer).toContain('My recommendation:');
+    expect(result.answer).toContain('ongoing prescriptions');
+    expect(result.answer).not.toContain('Workday');
   });
 
   it('answers real-person support asks directly instead of looping on the active topic', async () => {
@@ -3343,6 +3401,32 @@ describe('qa-v2 engine', () => {
     expect(result.answer).toContain('do **not** have a grounded flat-rate premium');
     expect(result.answer).toContain('Workday');
     expect(result.answer).not.toContain('We can stay with supplemental protection');
+  });
+
+  it('supports a bare "yes" after CI pricing deferral by moving into worth-it guidance', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Madeline',
+      hasCollectedName: true,
+      userAge: 29,
+      userState: 'CO',
+      dataConfirmed: true,
+      currentTopic: 'Critical Illness',
+      lastBotMessage: 'Critical illness coverage is a supplemental benefit that can pay a lump-sum cash benefit if you are diagnosed with a covered serious condition.',
+    });
+
+    await runQaV2Engine({
+      query: 'can you give me a ballpark idea of what the ci insurance would cost?',
+      session,
+    });
+
+    const result = await runQaV2Engine({
+      query: 'yes, do that',
+      session,
+    });
+
+    expect(result.answer).toContain('Critical illness is usually worth considering');
+    expect(result.answer).not.toContain('do **not** have a grounded flat-rate premium');
   });
 
   it('answers combined life-and-disability cost questions with a grounded pricing structure answer', async () => {
