@@ -289,7 +289,7 @@ describe('qa-v2 transcript replays', () => {
         },
         {
           user: "what's next?",
-          mustContain: ['HSA/FSA'],
+          mustContain: ['life insurance', 'bigger household-protection decision'],
           mustNotContain: ['optional supplemental coverage'],
         },
       ],
@@ -302,6 +302,130 @@ describe('qa-v2 transcript replays', () => {
         currentTopic: 'Medical',
         coverageTierLock: 'Employee + Family',
         selectedPlan: 'Standard HSA',
+      }),
+    );
+  });
+
+  it('replays package guidance from a settled medical choice into the matching tax-account next step', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'what else should i consider?',
+          mustContain: ['Because you are leaning toward **Enhanced HSA**', 'HSA/FSA'],
+          mustNotContain: ['dental/vision if you want to round out routine care coverage'],
+        },
+      ],
+      makeSession({
+        userName: 'Sarah',
+        hasCollectedName: true,
+        userAge: 33,
+        userState: 'GA',
+        dataConfirmed: true,
+        currentTopic: 'Medical',
+        completedTopics: ['Medical'],
+        selectedPlan: 'Enhanced HSA',
+      }),
+    );
+  });
+
+  it('replays package guidance from settled routine care into household-protection next steps', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'what should i look at next?',
+          mustContain: ['routine care questions look more settled', 'life insurance'],
+          mustNotContain: ['dental is the natural companion', 'vision is the natural companion'],
+        },
+      ],
+      makeSession({
+        userName: 'Sarah',
+        hasCollectedName: true,
+        userAge: 33,
+        userState: 'GA',
+        dataConfirmed: true,
+        currentTopic: 'Vision',
+        completedTopics: ['Medical', 'Dental', 'Vision'],
+        coverageTierLock: 'Employee + Family',
+        familyDetails: { hasSpouse: true, numChildren: 2 },
+        selectedPlan: 'Enhanced HSA',
+      }),
+    );
+  });
+
+  it('replays package guidance from family HSA/FSA follow-ups into protection instead of looping back to medical', async () => {
+    await replayTranscript(
+      [
+        {
+          user: "what's next?",
+          mustContain: ['life insurance', 'household protection is usually the bigger remaining decision'],
+          mustNotContain: ['Going back to your medical choice'],
+        },
+      ],
+      makeSession({
+        userName: 'Sarah',
+        hasCollectedName: true,
+        userAge: 33,
+        userState: 'GA',
+        dataConfirmed: true,
+        currentTopic: 'HSA/FSA',
+        completedTopics: ['Medical', 'HSA/FSA'],
+        coverageTierLock: 'Employee + Family',
+        familyDetails: { hasSpouse: true, numChildren: 2 },
+        selectedPlan: 'Standard HSA',
+      }),
+    );
+  });
+
+  it('replays a bare "yes, do that" after settled-medical package guidance into HSA/FSA overview', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'what else should i consider?',
+          mustContain: ['Because you are leaning toward **Enhanced HSA**', 'HSA/FSA'],
+        },
+        {
+          user: 'yes, do that',
+          mustContain: ['HSA is usually the cleaner fit', 'tax account aligned'],
+          mustNotContain: ['Because you are leaning toward **Enhanced HSA**'],
+        },
+      ],
+      makeSession({
+        userName: 'Sarah',
+        hasCollectedName: true,
+        userAge: 33,
+        userState: 'GA',
+        dataConfirmed: true,
+        currentTopic: 'Medical',
+        completedTopics: ['Medical'],
+        selectedPlan: 'Enhanced HSA',
+      }),
+    );
+  });
+
+  it('replays a bare "yes, do that" after settled routine-care guidance into life insurance details', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'what should i look at next?',
+          mustContain: ['routine care questions look more settled', 'life insurance'],
+        },
+        {
+          user: 'yes, do that',
+          mustContain: ['Life insurance options:', 'Unum Basic Life & AD&D'],
+          mustNotContain: ['routine care questions look more settled'],
+        },
+      ],
+      makeSession({
+        userName: 'Sarah',
+        hasCollectedName: true,
+        userAge: 33,
+        userState: 'GA',
+        dataConfirmed: true,
+        currentTopic: 'Vision',
+        completedTopics: ['Medical', 'Dental', 'Vision'],
+        coverageTierLock: 'Employee + Family',
+        familyDetails: { hasSpouse: true, numChildren: 2 },
+        selectedPlan: 'Enhanced HSA',
       }),
     );
   });
@@ -857,7 +981,7 @@ describe('qa-v2 transcript replays', () => {
         },
         {
           user: 'no, i’m done with medical. what else should i be thinking about?',
-          mustContain: ['dental/vision', 'life/disability'],
+          mustContain: ['**Dental**', 'Life insurance'],
         },
         {
           user: "wasn't there one about illness?",

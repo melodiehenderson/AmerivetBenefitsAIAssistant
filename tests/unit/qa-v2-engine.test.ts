@@ -601,8 +601,81 @@ describe('qa-v2 engine', () => {
       session,
     });
 
-    expect(result.answer).toContain('HSA/FSA');
+    expect(result.answer).toContain('accident coverage');
     expect(result.answer).not.toContain('optional supplemental coverage');
+  });
+
+  it('uses package guidance to point a settled medical choice toward the matching tax-account decision', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Mandy',
+      hasCollectedName: true,
+      userAge: 35,
+      userState: 'GA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      completedTopics: ['Medical'],
+      selectedPlan: 'Enhanced HSA',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'what else should i consider?',
+      session,
+    });
+
+    expect(result.answer).toContain('Because you are leaning toward **Enhanced HSA**');
+    expect(result.answer).toContain('HSA/FSA');
+    expect(result.answer).not.toContain('dental/vision if you want to round out routine care coverage');
+  });
+
+  it('uses package guidance to move routine-care-complete households toward protection benefits', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Mandy',
+      hasCollectedName: true,
+      userAge: 35,
+      userState: 'GA',
+      dataConfirmed: true,
+      currentTopic: 'Vision',
+      completedTopics: ['Medical', 'Dental', 'Vision'],
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      selectedPlan: 'Enhanced HSA',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'what should i look at next?',
+      session,
+    });
+
+    expect(result.answer).toContain('routine care questions look more settled');
+    expect(result.answer).toContain('life insurance');
+    expect(result.answer).not.toContain('dental is the natural companion');
+  });
+
+  it('uses package guidance to move family HSA/FSA follow-ups toward protection instead of looping back to medical', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Mandy',
+      hasCollectedName: true,
+      userAge: 35,
+      userState: 'GA',
+      dataConfirmed: true,
+      currentTopic: 'HSA/FSA',
+      completedTopics: ['Medical', 'HSA/FSA'],
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      selectedPlan: 'Standard HSA',
+    });
+
+    const result = await runQaV2Engine({
+      query: "what's next?",
+      session,
+    });
+
+    expect(result.answer).toContain('life insurance');
+    expect(result.answer).toContain('household protection is usually the bigger remaining decision');
+    expect(result.answer).not.toContain('Going back to your medical choice');
   });
 
   it('does not sound like re-onboarding when benefits-overview questions are asked after demographics are already known', async () => {
@@ -1418,7 +1491,7 @@ describe('qa-v2 engine', () => {
 
     expect(session.userState).toBe('WA');
     expect(result.answer).not.toContain('updated your state to OK');
-    expect(result.answer).toContain('Going back to your medical choice');
+    expect(result.answer).toContain('most useful next step is usually **medical**');
   });
 
   it('refreshes medical options after a state correction instead of falling into a generic medical prompt', async () => {
@@ -2392,6 +2465,62 @@ describe('qa-v2 engine', () => {
     });
 
     expect(result.answer).toContain('Projected Healthcare Costs for Employee + Family coverage');
+  });
+
+  it('supports a bare "yes, do that" after package guidance points a settled medical choice toward HSA/FSA', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Sarah',
+      hasCollectedName: true,
+      userAge: 42,
+      userState: 'FL',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      completedTopics: ['Medical'],
+      selectedPlan: 'Enhanced HSA',
+    });
+
+    await runQaV2Engine({
+      query: 'what else should i consider?',
+      session,
+    });
+
+    const result = await runQaV2Engine({
+      query: 'yes, do that',
+      session,
+    });
+
+    expect(result.answer).toContain('HSA is usually the cleaner fit');
+    expect(result.answer).toContain('tax account aligned');
+  });
+
+  it('supports a bare "yes, do that" after package guidance points settled routine care toward life insurance', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Sarah',
+      hasCollectedName: true,
+      userAge: 42,
+      userState: 'FL',
+      dataConfirmed: true,
+      currentTopic: 'Vision',
+      completedTopics: ['Medical', 'Dental', 'Vision'],
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      selectedPlan: 'Enhanced HSA',
+    });
+
+    await runQaV2Engine({
+      query: 'what should i look at next?',
+      session,
+    });
+
+    const result = await runQaV2Engine({
+      query: 'yes, do that',
+      session,
+    });
+
+    expect(result.answer).toContain('Life insurance options:');
+    expect(result.answer).toContain('Unum Basic Life & AD&D');
   });
 
   it('handles "what would you do?" after accident-versus-critical comparison', async () => {

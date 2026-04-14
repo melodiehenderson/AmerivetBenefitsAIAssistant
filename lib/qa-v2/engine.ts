@@ -153,47 +153,225 @@ function buildBenefitsLineupPrompt(session: Session): string {
   return `${intro}\n\n${buildAllBenefitsMenu()}\n\nWhat would you like to explore first?`;
 }
 
+function sessionHasDependents(session: Session): boolean {
+  return /employee\s+\+\s+(spouse|child|family)/i.test(session.coverageTierLock || '')
+    || Boolean(session.familyDetails?.hasSpouse)
+    || Boolean((session.familyDetails?.numChildren || 0) > 0);
+}
+
+function hasCoveredTopic(session: Session, topic: string, currentTopic?: string | null): boolean {
+  return (currentTopic || session.currentTopic || null) === topic
+    || (session.completedTopics || []).includes(topic);
+}
+
+function nextUncoveredTopic(
+  session: Session,
+  topics: string[],
+  currentTopic?: string | null,
+): string | null {
+  return topics.find((candidate) => !hasCoveredTopic(session, candidate, currentTopic)) || null;
+}
+
 function buildPackageGuidance(session: Session, topic?: string | null): string {
   const completed = new Set(session.completedTopics || []);
-  switch (topic) {
+  const currentTopic = topic || session.currentTopic || null;
+  const hasDependents = sessionHasDependents(session);
+  const hasMedical = hasCoveredTopic(session, 'Medical', currentTopic);
+  const hasHsaFsa = hasCoveredTopic(session, 'HSA/FSA', currentTopic);
+  const nextRoutineTopic = nextUncoveredTopic(session, ['Dental', 'Vision'], currentTopic);
+  const nextProtectionTopic = nextUncoveredTopic(session, ['Life Insurance', 'Disability'], currentTopic);
+  const nextSupplementalTopic = nextUncoveredTopic(session, ['Critical Illness', 'Accident/AD&D'], currentTopic);
+  const selectedPlan = session.selectedPlan || '';
+  const selectedMedicalPath = /Kaiser Standard HMO|Standard HSA|Enhanced HSA/i.test(selectedPlan)
+    ? selectedPlan
+    : null;
+  const hsaRelevantMedicalPath = /Kaiser Standard HMO|Standard HSA|Enhanced HSA/i.test(selectedPlan);
+
+  switch (currentTopic) {
     case 'Medical':
+      if (hasDependents && nextProtectionTopic) {
+        setPendingTopicSuggestion(session, nextProtectionTopic);
+        return [
+          `Since you appear to be covering more than just yourself, the next most useful step after medical is usually **${nextProtectionTopic === 'Life Insurance' ? 'life insurance' : 'disability'}**.`,
+          ``,
+          `- ${nextProtectionTopic === 'Life Insurance' ? 'Life insurance helps if other people would need support or income replacement if something happened to you' : 'Disability helps if missing part of your paycheck would be the more immediate household risk'}`,
+          `- ${nextProtectionTopic === 'Life Insurance' ? 'Disability is usually the companion protection decision after that, because paycheck protection matters too' : 'Life insurance is usually the companion protection decision after that if other people depend on your income'}`,
+          nextRoutineTopic
+            ? `- ${nextRoutineTopic} can come after that if you still want to round out routine care coverage`
+            : `- After that, we can either tighten the tax-account fit or look at smaller supplemental add-ons`,
+        ].join('\n');
+      }
+
+      if (!hasHsaFsa && hsaRelevantMedicalPath) {
+        setPendingTopicSuggestion(session, 'HSA/FSA');
+        return [
+          selectedMedicalPath
+            ? `Because you are leaning toward **${selectedMedicalPath}**, the next most useful step is usually **HSA/FSA** so the tax account matches the medical path.`
+            : `The next most useful step is usually **HSA/FSA** so the tax account matches the medical path you are leaning toward.`,
+          ``,
+          /Kaiser Standard HMO/i.test(selectedPlan)
+            ? `- Kaiser Standard HMO generally points you toward the FSA side of the decision rather than HSA eligibility`
+            : `- Standard HSA and Enhanced HSA make the HSA-versus-FSA decision more important, because the account choice changes the tax side of the package`,
+          nextRoutineTopic
+            ? `- ${nextRoutineTopic} is the next routine-care decision after that if you still want to round out the package`
+            : `- After that, we can move to the smaller add-ons if you still want more protection`,
+        ].join('\n');
+      }
+
+      if (nextRoutineTopic) {
+        setPendingTopicSuggestion(session, nextRoutineTopic);
+        return [
+          `If you want to move on from medical, the most useful next step is usually **${nextRoutineTopic}** if routine care coverage matters.`,
+          ``,
+          `- ${nextRoutineTopic} helps round out the everyday-care side of the package`,
+          nextProtectionTopic
+            ? `- ${nextProtectionTopic === 'Life Insurance' ? 'Life insurance' : 'Disability'} is the more important move first if family or paycheck protection matters more than routine care`
+            : `- If routine care is settled, we can move to protection benefits next`,
+        ].join('\n');
+      }
+
+      if (nextProtectionTopic) {
+        setPendingTopicSuggestion(session, nextProtectionTopic);
+        return [
+          `If you want to move on from medical, the next most useful step is usually **${nextProtectionTopic === 'Life Insurance' ? 'life insurance' : 'disability'}**.`,
+          ``,
+          `- That is usually the next package decision once the core medical choice is settled`,
+          nextSupplementalTopic
+            ? `- After that, we can compare ${nextSupplementalTopic === 'Critical Illness' ? 'critical illness' : 'accident coverage'} if you want extra cash-support protection`
+            : `- After that, we can either tighten the tax-account fit or wrap up the smaller add-ons`,
+        ].join('\n');
+      }
+
       return [
-        `If you want to move on from medical, the most useful next step is usually one of these:`,
+        `If you want to move on from medical, the next most useful step is usually one of these:`,
         ``,
-        `- dental/vision if you want to round out routine care coverage`,
-        `- life/disability if you are thinking more about income and family protection`,
+        `- HSA/FSA if you want to make sure the tax-account side matches the medical path you picked`,
+        `- Accident or critical illness if you still want extra cash-support protection on top of the core package`,
       ].join('\n');
     case 'Dental':
-      return completed.has('Vision')
-        ? [
-          `Since you have already looked at vision too, the next most useful area is usually:`,
+      if (!hasMedical) {
+        setPendingTopicSuggestion(session, 'Medical');
+        return [
+          `If you want to keep going after dental, the next most useful step is usually **medical** because that is still the bigger core coverage decision.`,
           ``,
-          `- life, disability, or supplemental protection`,
-        ].join('\n')
-        : [
-          `Since dental is usually a yes/no decision rather than a plan comparison, the next useful step is usually:`,
-          ``,
-          `- Vision`,
-          `- Life insurance`,
-          `- Disability`,
-          `- Supplemental protection`,
+          `- Medical drives the biggest premium, deductible, and out-of-pocket exposure`,
+          `- After that, we can come back to vision or protection benefits depending on what matters more`,
         ].join('\n');
+      }
+
+      if (!completed.has('Vision')) {
+        setPendingTopicSuggestion(session, 'Vision');
+        return [
+          `Since dental is usually a yes/no decision rather than a plan comparison, the next useful step is usually **vision** if routine care matters for your household.`,
+          ``,
+          `- Vision is the natural companion if you expect eye exams, glasses, or contacts`,
+          nextProtectionTopic
+            ? `- ${nextProtectionTopic === 'Life Insurance' ? 'Life insurance' : 'Disability'} matters more first if family or paycheck protection is the bigger concern`
+            : `- If routine care is settled, we can move to protection benefits after that`,
+        ].join('\n');
+      }
+
+      if (hasDependents && nextProtectionTopic) {
+        setPendingTopicSuggestion(session, nextProtectionTopic);
+        return [
+          `Since routine care questions look more settled, the next most useful area is usually **${nextProtectionTopic === 'Life Insurance' ? 'life insurance' : 'disability'}**.`,
+          ``,
+          `- That is usually the bigger next decision for a household beyond dental and vision`,
+          nextSupplementalTopic
+            ? `- After that, we can compare ${nextSupplementalTopic === 'Critical Illness' ? 'critical illness' : 'accident coverage'} if you want extra cash-support protection`
+            : `- After that, we can tighten any remaining tax-account or supplemental questions`,
+        ].join('\n');
+      }
+
+      if (!hasHsaFsa && hsaRelevantMedicalPath) {
+        setPendingTopicSuggestion(session, 'HSA/FSA');
+        return [
+          `Since routine care questions look more settled, the next most useful step is usually **HSA/FSA** so the tax-account side matches your medical path.`,
+          ``,
+          `- That matters more once the core medical decision is already in place`,
+          `- After that, we can still move to life, disability, or supplemental protection if needed`,
+        ].join('\n');
+      }
+
+      return [
+        `Since you have already looked at vision too, the next most useful area is usually:`,
+        ``,
+        `- life, disability, or supplemental protection`,
+      ].join('\n');
     case 'Vision':
-      return completed.has('Dental')
-        ? [
-          `Since you have already looked at dental too, the next most useful area is usually:`,
+      if (!hasMedical) {
+        setPendingTopicSuggestion(session, 'Medical');
+        return [
+          `If you want to keep going after vision, the next most useful step is usually **medical** because that is still the bigger core coverage decision.`,
           ``,
-          `- life, disability, or supplemental protection`,
-        ].join('\n')
-        : [
-          `Since vision is usually a yes/no decision rather than a plan comparison, the next useful step is usually:`,
-          ``,
-          `- Dental`,
-          `- Life insurance`,
-          `- Disability`,
-          `- Supplemental protection`,
+          `- Medical drives the biggest premium, deductible, and out-of-pocket exposure`,
+          `- After that, we can come back to dental or protection benefits depending on what matters more`,
         ].join('\n');
+      }
+
+      if (!completed.has('Dental')) {
+        setPendingTopicSuggestion(session, 'Dental');
+        return [
+          `Since vision is usually a yes/no decision rather than a plan comparison, the next useful step is usually **dental** if routine care matters for your household.`,
+          ``,
+          `- Dental is the natural companion if you expect cleanings, fillings, crowns, or orthodontic use`,
+          nextProtectionTopic
+            ? `- ${nextProtectionTopic === 'Life Insurance' ? 'Life insurance' : 'Disability'} matters more first if family or paycheck protection is the bigger concern`
+            : `- If routine care is settled, we can move to protection benefits after that`,
+        ].join('\n');
+      }
+
+      if (hasDependents && nextProtectionTopic) {
+        setPendingTopicSuggestion(session, nextProtectionTopic);
+        return [
+          `Since routine care questions look more settled, the next most useful area is usually **${nextProtectionTopic === 'Life Insurance' ? 'life insurance' : 'disability'}**.`,
+          ``,
+          `- That is usually the bigger next decision for a household beyond dental and vision`,
+          nextSupplementalTopic
+            ? `- After that, we can compare ${nextSupplementalTopic === 'Critical Illness' ? 'critical illness' : 'accident coverage'} if you want extra cash-support protection`
+            : `- After that, we can tighten any remaining tax-account or supplemental questions`,
+        ].join('\n');
+      }
+
+      if (!hasHsaFsa && hsaRelevantMedicalPath) {
+        setPendingTopicSuggestion(session, 'HSA/FSA');
+        return [
+          `Since routine care questions look more settled, the next most useful step is usually **HSA/FSA** so the tax-account side matches your medical path.`,
+          ``,
+          `- That matters more once the core medical decision is already in place`,
+          `- After that, we can still move to life, disability, or supplemental protection if needed`,
+        ].join('\n');
+      }
+
+      return [
+        `Since you have already looked at dental too, the next most useful area is usually:`,
+        ``,
+        `- life, disability, or supplemental protection`,
+      ].join('\n');
     case 'Life Insurance':
+      if (!completed.has('Disability')) {
+        setPendingTopicSuggestion(session, 'Disability');
+        return [
+          `If you want to keep going after life insurance, the most useful next comparison is usually **disability**.`,
+          ``,
+          `- Life protects the household if something happens to you`,
+          `- Disability protects the paycheck if you are unable to work but still living with the ongoing bills`,
+          nextSupplementalTopic
+            ? `- After that, we can look at ${nextSupplementalTopic === 'Critical Illness' ? 'critical illness' : 'accident coverage'} if you want smaller cash-support add-ons`
+            : `- After that, we can wrap up any smaller add-on questions`,
+        ].join('\n');
+      }
+
+      if (!hasMedical) {
+        setPendingTopicSuggestion(session, 'Medical');
+        return [
+          `If you want to keep going after life insurance, the next most useful move is usually **medical** if you still have not settled the core plan choice.`,
+          ``,
+          `- Medical is still the biggest cost-risk decision in the package`,
+          `- After that, we can return to the smaller add-ons if you want more protection`,
+        ].join('\n');
+      }
+
       return [
         `If you want to keep going after life insurance, the most useful next comparison is usually:`,
         ``,
@@ -201,6 +379,29 @@ function buildPackageGuidance(session: Session, topic?: string | null): string {
         `- Critical illness or accident coverage for extra cash-support protection`,
       ].join('\n');
     case 'Disability':
+      if (!completed.has('Life Insurance')) {
+        setPendingTopicSuggestion(session, 'Life Insurance');
+        return [
+          `If you want to keep going after disability, the most useful companion benefit is usually **life insurance**.`,
+          ``,
+          `- Disability protects the paycheck while you are alive but unable to work`,
+          `- Life insurance protects the household if you are no longer there to provide that income`,
+          nextSupplementalTopic
+            ? `- After that, we can look at ${nextSupplementalTopic === 'Critical Illness' ? 'critical illness' : 'accident coverage'} if you want smaller cash-support add-ons`
+            : `- After that, we can wrap up any smaller add-on questions`,
+        ].join('\n');
+      }
+
+      if (!hasMedical) {
+        setPendingTopicSuggestion(session, 'Medical');
+        return [
+          `If you want to keep going after disability, the next most useful move is usually **medical** if you still have not settled the core plan choice.`,
+          ``,
+          `- Medical is still the biggest cost-risk decision in the package`,
+          `- After that, we can return to the smaller add-ons if you want more protection`,
+        ].join('\n');
+      }
+
       return [
         `If you want to keep going after disability, the most useful companion benefit is usually:`,
         ``,
@@ -208,6 +409,35 @@ function buildPackageGuidance(session: Session, topic?: string | null): string {
         `- Critical illness or accident coverage depending on how much extra protection you want`,
       ].join('\n');
     case 'Critical Illness':
+      if (hasDependents && nextProtectionTopic) {
+        setPendingTopicSuggestion(session, nextProtectionTopic);
+        return [
+          `Before you spend more time on smaller add-ons, the next most useful step is usually **${nextProtectionTopic === 'Life Insurance' ? 'life insurance' : 'disability'}**.`,
+          ``,
+          `- That is usually the bigger household-protection decision`,
+          `- Critical illness works better as an extra layer after the core protection choices are in place`,
+        ].join('\n');
+      }
+
+      if (!completed.has('Accident/AD&D')) {
+        setPendingTopicSuggestion(session, 'Accident/AD&D');
+        return [
+          `If you want to keep going after critical illness, the next useful step is usually **accident coverage** if you want to compare the smaller cash-support add-ons.`,
+          ``,
+          `- Critical illness is more about diagnosis-triggered cash support`,
+          `- Accident coverage is the cleaner contrast if the concern is injury risk`,
+        ].join('\n');
+      }
+
+      if (!hasHsaFsa && hsaRelevantMedicalPath) {
+        setPendingTopicSuggestion(session, 'HSA/FSA');
+        return [
+          `If you want to keep going after critical illness, the next useful step is usually **HSA/FSA** so the tax-account side matches your medical path.`,
+          ``,
+          `- That usually matters more than adding even more small payroll deductions`,
+        ].join('\n');
+      }
+
       return [
         `If you want to keep going after critical illness, the next useful step is usually:`,
         ``,
@@ -215,6 +445,35 @@ function buildPackageGuidance(session: Session, topic?: string | null): string {
         `- HSA/FSA if you want to tighten the tax side of your benefits package`,
       ].join('\n');
     case 'Accident/AD&D':
+      if (hasDependents && nextProtectionTopic) {
+        setPendingTopicSuggestion(session, nextProtectionTopic);
+        return [
+          `Before you spend more time on smaller add-ons, the next most useful step is usually **${nextProtectionTopic === 'Life Insurance' ? 'life insurance' : 'disability'}**.`,
+          ``,
+          `- That is usually the bigger household-protection decision`,
+          `- Accident coverage works better as an extra layer after the core protection choices are in place`,
+        ].join('\n');
+      }
+
+      if (!completed.has('Critical Illness')) {
+        setPendingTopicSuggestion(session, 'Critical Illness');
+        return [
+          `If you want to keep going after Accident/AD&D, the next useful step is usually **critical illness** if you want to compare the smaller cash-support add-ons.`,
+          ``,
+          `- Accident coverage is more about injury-triggered cash support`,
+          `- Critical illness is the cleaner contrast if the concern is diagnosis risk`,
+        ].join('\n');
+      }
+
+      if (!hasHsaFsa && hsaRelevantMedicalPath) {
+        setPendingTopicSuggestion(session, 'HSA/FSA');
+        return [
+          `If you want to keep going after Accident/AD&D, the next useful step is usually **HSA/FSA** so the tax-account side matches your medical path.`,
+          ``,
+          `- That usually matters more than adding even more small payroll deductions`,
+        ].join('\n');
+      }
+
       return [
         `If you want to keep going after Accident/AD&D, the next useful step is usually:`,
         ``,
@@ -222,13 +481,52 @@ function buildPackageGuidance(session: Session, topic?: string | null): string {
         `- HSA/FSA if you want to round out the tax side of the package`,
       ].join('\n');
     case 'HSA/FSA':
+      if (!hasMedical) {
+        setPendingTopicSuggestion(session, 'Medical');
+        return [
+          `From here, the most useful next step is usually **medical** so the tax account matches the plan you are actually comparing.`,
+          ``,
+          `- HSA versus FSA only makes full sense once the medical path is clearer`,
+          `- After that, we can decide whether routine care or protection benefits deserve attention next`,
+        ].join('\n');
+      }
+
+      if (hasDependents && nextProtectionTopic) {
+        setPendingTopicSuggestion(session, nextProtectionTopic);
+        return [
+          `From here, the most useful next step is usually **${nextProtectionTopic === 'Life Insurance' ? 'life insurance' : 'disability'}** if the household depends on your income.`,
+          ``,
+          `- The tax-account choice is helpful, but household protection is usually the bigger remaining decision`,
+          nextRoutineTopic
+            ? `- ${nextRoutineTopic} can come after that if you still want routine care coverage`
+            : `- After that, we can wrap up any smaller add-on questions`,
+        ].join('\n');
+      }
+
+      if (nextRoutineTopic) {
+        setPendingTopicSuggestion(session, nextRoutineTopic);
+        return [
+          `From here, the most useful next step is usually **${nextRoutineTopic}** if you still want routine care coverage on top of the medical plan.`,
+          ``,
+          `- That is usually the next practical coverage decision once the tax-account fit is settled`,
+          nextProtectionTopic
+            ? `- ${nextProtectionTopic === 'Life Insurance' ? 'Life insurance' : 'Disability'} matters more first if household protection is the bigger concern`
+            : `- After that, we can wrap up any smaller add-on questions`,
+        ].join('\n');
+      }
+
       return [
         `From here, the most useful next step is usually:`,
         ``,
-        `- Going back to your medical choice so the tax account matches the plan you are leaning toward`,
         `- Wrapping up any remaining supplemental-protection questions`,
+        `- Closing out any loose routine-care questions`,
       ].join('\n');
     default:
+      if (hasDependents) {
+        setPendingTopicSuggestion(session, 'Life Insurance');
+      } else if (!hasMedical) {
+        setPendingTopicSuggestion(session, 'Medical');
+      }
       return [
         `If you want, I can help you think through what to consider next based on one of these priorities:`,
         ``,
