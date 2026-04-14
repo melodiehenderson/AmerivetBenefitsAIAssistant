@@ -1742,6 +1742,92 @@ describe('qa-v2 transcript replays', () => {
     );
   });
 
+  it('replays a stale hsa/fsa detour back into medical compare and a fresh heavy-usage recommendation', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'no - go back to medical and compare the plans for my family',
+          mustContain: ['Here is the practical tradeoff across AmeriVet\'s medical options', 'Standard HSA', 'Enhanced HSA'],
+          mustNotContain: ['HSA/FSA overview', 'We can stay with medical'],
+        },
+        {
+          user: 'which one is better if we expect a lot of care?',
+          mustContain: ['My recommendation: Enhanced HSA', 'Because you described more than minimal usage'],
+          mustNotContain: ['My recommendation: Standard HSA', 'We can stay with medical'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'HSA/FSA',
+        selectedPlan: 'Standard HSA',
+        pendingGuidancePrompt: 'hsa_vs_fsa',
+        pendingGuidanceTopic: 'HSA/FSA',
+        lastBotMessage: 'HSA/FSA overview:\n\n- HSA stands for Health Savings Account\n- FSA stands for Flexible Spending Account',
+      }),
+    );
+  });
+
+  it('replays selected-plan reconsideration as a fresh medical recommendation instead of anchoring to the stale plan lean', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'i know i said standard before, but make the case for enhanced if we expect more specialist visits',
+          mustContain: ['My recommendation: Enhanced HSA', 'specialist visits'],
+          mustNotContain: ['My recommendation: Standard HSA', 'We can stay with medical'],
+        },
+        {
+          user: 'should we switch from standard to enhanced if we expect a lot of care this year?',
+          mustContain: ['My recommendation: Enhanced HSA', 'lower deductible and stronger cost protection'],
+          mustNotContain: ['My recommendation: Standard HSA', 'We can stay with medical'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'Medical',
+        selectedPlan: 'Standard HSA',
+        coverageTierLock: 'Employee + Family',
+        familyDetails: { hasSpouse: true, numChildren: 2 },
+        lastBotMessage: 'Recommendation for Employee + Family coverage:\n\nMy recommendation: Standard HSA.',
+      }),
+    );
+  });
+
+  it('replays household tier corrections by replacing stale family pricing state instead of stacking on top of it', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'actually compare the costs for employee + family since we have 2 kids',
+          mustContain: ['Projected Healthcare Costs for Employee + Family coverage in Washington', 'Kaiser Standard HMO'],
+          mustNotContain: ['Employee + Spouse coverage'],
+        },
+        {
+          user: 'actually it is just me and the 2 kids now, so show me the employee + child pricing',
+          mustContain: ['Here are the monthly medical premiums for Employee + Child(ren) coverage in WA', 'Standard HSA'],
+          mustNotContain: ['Employee + Family coverage', 'Employee + Spouse coverage'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'Medical',
+        coverageTierLock: 'Employee + Spouse',
+        familyDetails: { hasSpouse: true },
+        lastBotMessage: 'Projected Healthcare Costs for Employee + Spouse coverage in Washington (moderate usage):',
+      }),
+    );
+  });
+
   it('replays life-versus-disability and multi-supplement narrowing as comparison guidance instead of stale topic cards', async () => {
     await replayTranscript(
       [

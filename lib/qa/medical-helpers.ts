@@ -53,13 +53,40 @@ function inferCoverageTierFromSession(session: Session): string | null {
   return null;
 }
 
+function extractExplicitCoverageTierFromQuery(query: string): string | null {
+  const low = query.toLowerCase();
+
+  if (/\b(employee\s*\+\s*family|family\s+coverage|family\s+plan|family\s+pricing|whole\s+family|for\s+the\s+whole\s+family)\b/i.test(low)) {
+    return 'Employee + Family';
+  }
+
+  if (/\b(employee\s*\+\s*spouse|spouse\s+coverage|spouse\s+pricing|just\s+me\s+and\s+(?:my\s+)?(?:spouse|partner|wife|husband)|me\s+and\s+my\s+(?:spouse|partner|wife|husband))\b/i.test(low)) {
+    return 'Employee + Spouse';
+  }
+
+  if (/\b(employee\s*\+\s*child(?:ren)?|employee\s*\+\s*\d+\s*kids?|employee\s*\+\s*(?:one|two|three|four|five|six)\s+kids?|child(?:ren)?\s+coverage|child(?:ren)?\s+pricing|just\s+me\s+and\s+(?:the\s+)?(?:\d+|one|two|three|four|five|six)\s+(?:kids?|children)|just\s+me\s+and\s+my\s+kids|me\s+and\s+the\s+kids)\b/i.test(low)) {
+    return 'Employee + Child(ren)';
+  }
+
+  if (/\b(employee\s*only|just\s*me|only\s*me|no\s+dependents?)\b/i.test(low)) {
+    return 'Employee Only';
+  }
+
+  return null;
+}
+
 function inferCoverageTierFromQuery(query: string, session: Session): string {
   const low = query.toLowerCase();
+  const explicitTier = extractExplicitCoverageTierFromQuery(low);
   const hasSpouseMention = mentionsSpouseLike(low);
   const explicitChildCount = extractChildCountFromQuery(low);
   const hasChildMention = explicitChildCount !== null || mentionsChildLike(low);
   const sessionTier = inferCoverageTierFromSession(session) || session.coverageTierLock || null;
   const hasGenericFamilyMention = /\bfamily\s*4\+|\bfamily4\+|\b(employee\s*\+\s*family|family\s*(?:of|plan|coverage)|for\s*(?:my|the|our)\s*family)\b/i.test(low);
+
+  if (explicitTier) {
+    return explicitTier;
+  }
 
   if (hasSpouseMention && hasChildMention) {
     return 'Employee + Family';
@@ -160,6 +187,14 @@ function getFilteredMedicalPricingRows(session: Session, coverageTier: string) {
 
 export function getCoverageTierForQuery(query: string, session: Session): string {
   return inferCoverageTierFromQuery(query, session);
+}
+
+function shouldIgnoreSelectedPlanBias(query: string): boolean {
+  return /\b(should\s+(?:we|i)\s+switch|switch\s+from\s+(?:the\s+)?(?:standard|enhanced|kaiser)|make\s+the\s+case\s+for\s+(?:the\s+)?(?:standard|enhanced|kaiser)|sell\s+me\s+on\s+(?:the\s+)?(?:standard|enhanced|kaiser)|talk\s+me\s+into\s+(?:the\s+)?(?:standard|enhanced|kaiser)|i\s+know\s+i\s+said\s+(?:standard|enhanced|kaiser)|instead\s+of\s+(?:standard|enhanced|kaiser)|rather\s+than\s+(?:standard|enhanced|kaiser)|don'?t\s+want\s+(?:standard|enhanced|kaiser)|do\s+not\s+want\s+(?:standard|enhanced|kaiser)|not\s+(?:standard|enhanced|kaiser)|which\s+(?:one|medical\s+plan|plan)\s+is\s+better|what\s+(?:medical\s+)?plan\s+is\s+better)\b/i.test(query)
+    || (
+      /\b(which\s+(?:one|medical\s+plan|plan)|what\s+(?:medical\s+)?plan)\b/i.test(query)
+      && /\b(expect|care|specialist|prescription|usage|visit|visits)\b/i.test(query)
+    );
 }
 
 export function buildCrossBenefitDeductibleAnswer(query: string): string | null {
@@ -264,12 +299,12 @@ export function buildRecommendationOverview(query: string, session: Session): st
   if (/\b(calculate|estimate|project(?:ed)?|model)\b.*\b(cost|costs|expense|expenses)\b|\bhealthcare\s+costs?\b.*\b(next\s+year|\d{4}|estimate|project)\b/.test(lower)) {
     return null;
   }
-  const recommendationSignal = /\b(recommendation|recommend|suggest|best\s+plan|best\s+option|which\s+plan|what\s+plan|what\s+do\s+you\s+recommend|what[’']?s\s+best\s+for\s+me|how\s+do\s+i\s+decide(?:\s+which\s+one)?|help\s+me\s+choose|which\s+one\s+is\s+best)\b/i.test(lower);
+  const recommendationSignal = /\b(recommendation|recommend|suggest|best\s+plan|best\s+option|which\s+plan|what\s+plan|what\s+do\s+you\s+recommend|what[’']?s\s+best\s+for\s+me|how\s+do\s+i\s+decide(?:\s+which\s+one)?|help\s+me\s+choose|which\s+one\s+is\s+best|which\s+one\s+is\s+better|make\s+the\s+case\s+for|sell\s+me\s+on|talk\s+me\s+into|should\s+(?:we|i)\s+switch|is\s+(?:enhanced|standard|kaiser)\s+worth)\b/i.test(lower);
   const healthySignal = /\b(healthy|low\s+utilization|low\s+use|low\s+usage|rarely\s+(?:go|use))\b/i.test(lower);
   const singleSignal = /\b(single|individual|just\s+me|only\s+me|no\s+dependents|no\s+kids|no\s+children)\b/i.test(lower);
   const savingsSignal = /\b(save\s+money|low\s+cost|cheapest|lowest\s+premium|save\s+on\s+premiums|budget)\b/i.test(lower);
   const lowestOutOfPocketSignal = /\b(lowest|least)\s+out[- ]of[- ]pocket|\blowest\s+oop|\bminimi[sz]e\s+out[- ]of[- ]pocket\b/i.test(lower);
-  const higherUsageSignal = /\b(high\s+usage|high\s+utilization|frequent\s+(?:doctor|specialist|care|visits?)|regular\s+(?:care|visits?)|ongoing\s+care|chronic|ongoing\s+prescriptions?|a\s+lot\s+of\s+care|more\s+medical\s+use|heavy\s+usage)\b/i.test(lower);
+  const higherUsageSignal = /\b(high\s+usage|high\s+utilization|frequent\s+(?:doctor|specialist|care|visits?)|regular\s+(?:care|visits?)|ongoing\s+care|chronic|ongoing\s+prescriptions?|a\s+lot\s+of\s+care|expect(?:ing)?\s+a\s+lot\s+of\s+care|more\s+medical\s+use|heavy\s+usage|more\s+(?:doctor|specialist)\s+visits?|specialist\s+visits?|more\s+care|more\s+medical\s+care)\b/i.test(lower);
   const moderateUsageSignal = /\b(moderate\s+usage|some\s+medical\s+use|occasional\s+(?:care|visits?)|a\s+few\s+visits?)\b/i.test(lower);
   const explicitNonMedicalCategory = /\b(dental|vision|life(?:\s+insurance)?|disability|critical(?:\s+illness)?|accident|hospital\s+indemnity|hsa\/fsa|fsa)\b/i.test(lower);
   const wantsMedicalRecommendation = /\b(medical|health|hsa|kaiser|ppo|hmo|standard\s+hsa|enhanced\s+hsa)\b/i.test(lower)
@@ -281,6 +316,8 @@ export function buildRecommendationOverview(query: string, session: Session): st
   const pregnancySignal = sessionHasPregnancySignal(session, query);
   const householdSignal = sessionHasHouseholdSignal(session, query);
   const selectedPlan = session.selectedPlan || '';
+  const ignoreSelectedPlan = shouldIgnoreSelectedPlanBias(query);
+  const explicitPressureTestPlan = /\b(make\s+the\s+case\s+for|sell\s+me\s+on|talk\s+me\s+into)\s+(?:the\s+)?(standard|enhanced|kaiser)\b/i.exec(lower)?.[2] || null;
 
   if (!(recommendationSignal || healthySignal || savingsSignal || lowestOutOfPocketSignal || higherUsageSignal || moderateUsageSignal || pregnancySignal)) return null;
   if (!wantsMedicalRecommendation) return null;
@@ -318,9 +355,21 @@ export function buildRecommendationOverview(query: string, session: Session): st
   let recommendationPlan = 'Standard HSA';
   let recommendationReason = `it keeps premiums lowest while still giving you full HSA eligibility`;
 
-  if (
+  if (explicitPressureTestPlan === 'enhanced') {
+    recommendationPlan = 'Enhanced HSA';
+    recommendationReason = higherUsageSignal || lowestOutOfPocketSignal
+      ? `that is the stronger fit once you expect more specialist visits, recurring care, or lower out-of-pocket exposure to matter`
+      : `that is the specific option you asked me to pressure-test, so I am answering the strongest case for Enhanced HSA instead of defaulting back to the old lean`;
+  } else if (explicitPressureTestPlan === 'standard') {
+    recommendationPlan = 'Standard HSA';
+    recommendationReason = `that is the option you asked me to pressure-test, so the question becomes whether keeping premium lower matters more than stronger deductible protection`;
+  } else if (explicitPressureTestPlan === 'kaiser') {
+    recommendationPlan = 'Kaiser Standard HMO';
+    recommendationReason = `that is the option you asked me to pressure-test, so the real question is whether the integrated Kaiser network is the main thing you want`;
+  } else if (
     selectedPlan
     && /Standard HSA|Enhanced HSA|Kaiser Standard HMO/i.test(selectedPlan)
+    && !ignoreSelectedPlan
     && !lowestOutOfPocketSignal
     && !(pregnancySignal && householdSignal)
   ) {

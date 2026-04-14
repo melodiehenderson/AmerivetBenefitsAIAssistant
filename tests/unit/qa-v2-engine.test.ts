@@ -3073,6 +3073,7 @@ describe('qa-v2 engine', () => {
     expect(result.answer).toContain('qualifying life event');
     expect(result.answer).toContain('Workday');
     expect(result.answer).not.toContain('Here is the maternity coverage comparison');
+    expect(session.coverageTierLock).toBe('Employee + Family');
   });
 
   it('answers marriage-related QLE timing directly instead of falling back to medical scaffolding', async () => {
@@ -3214,5 +3215,90 @@ describe('qa-v2 engine', () => {
     expect(result.answer).toContain('narrow down disability versus the smaller supplemental cash benefits');
     expect(result.answer).toContain('disability first');
     expect(result.answer).not.toContain('Critical illness coverage is a supplemental benefit');
+  });
+
+  it('switches from stale hsa/fsa context back into medical compare and heavy-usage recommendation without keeping the old plan lean', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'HSA/FSA',
+      selectedPlan: 'Standard HSA',
+      pendingGuidancePrompt: 'hsa_vs_fsa',
+      pendingGuidanceTopic: 'HSA/FSA',
+      lastBotMessage: 'HSA/FSA overview:\n\n- HSA stands for Health Savings Account\n- FSA stands for Flexible Spending Account',
+    });
+
+    const compare = await runQaV2Engine({
+      query: 'no - go back to medical and compare the plans for my family',
+      session,
+    });
+
+    expect(compare.answer).toContain('Here is the practical tradeoff across AmeriVet\'s medical options');
+    expect(session.currentTopic).toBe('Medical');
+    expect(session.coverageTierLock).toBe('Employee + Family');
+    expect(session.pendingGuidancePrompt).toBeUndefined();
+    expect(session.pendingGuidanceTopic).toBeUndefined();
+
+    const recommendation = await runQaV2Engine({
+      query: 'which one is better if we expect a lot of care?',
+      session,
+    });
+
+    expect(recommendation.answer).toContain('My recommendation: Enhanced HSA');
+    expect(recommendation.answer).not.toContain('My recommendation: Standard HSA');
+    expect(session.selectedPlan).toBeUndefined();
+  });
+
+  it('clears stale selected-plan memory when the user pressure-tests enhanced for heavier specialist use', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      selectedPlan: 'Standard HSA',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      lastBotMessage: 'Recommendation for Employee + Family coverage:\n\nMy recommendation: Standard HSA.',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'i know i said standard before, but make the case for enhanced if we expect more specialist visits',
+      session,
+    });
+
+    expect(result.answer).toContain('My recommendation: Enhanced HSA');
+    expect(result.answer).not.toContain('My recommendation: Standard HSA');
+    expect(session.selectedPlan).toBeUndefined();
+  });
+
+  it('overwrites spouse memory when the user corrects the household down to employee-plus-children pricing', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      lastBotMessage: 'Projected Healthcare Costs for Employee + Family coverage in Washington (moderate usage):',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'actually it is just me and the 2 kids now, so show me the employee + child pricing',
+      session,
+    });
+
+    expect(result.answer).toContain('Here are the monthly medical premiums for Employee + Child(ren) coverage');
+    expect(session.coverageTierLock).toBe('Employee + Child(ren)');
+    expect(session.familyDetails).toEqual({ hasSpouse: false, numChildren: 2 });
   });
 });
