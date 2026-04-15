@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { hybridLLMRouter } from '@/lib/services/hybrid-llm-router';
+import { getAmerivetPackageCopySnapshot } from '@/lib/data/amerivet-package-copy';
 
 type SessionStep = 'start' | 'awaiting_state' | 'awaiting_dept' | 'active_chat';
 
@@ -19,6 +20,10 @@ type Session = {
 };
 
 const sessionStore = new Map<string, Session>();
+const packageCopy = getAmerivetPackageCopySnapshot();
+const fallbackVoluntaryBenefits = [...packageCopy.lifePlanNames, ...packageCopy.disabilityPlanNames]
+  .filter((name, index, items) => items.indexOf(name) === index)
+  .join(', ');
 
 // Sprint 2 & 3 content and persona configuration
 const WELCOME_MESSAGE = `**Welcome! I'm your AmeriVet Benefits Assistant.**
@@ -304,13 +309,13 @@ I'll review your benefits document and summarize the key points:
 - File: ${fileName}
 - Type: Benefits summary / plan details
 - Provider: AmeriVet Benefits
-- Coverage Period: 2024-2025
+- Coverage Period: ${packageCopy.openEnrollment.year}
 
 **What I Typically Look For**
-- Health Plans: Kaiser HMO options (Standard and Enhanced)
-- Dental Coverage: Regional DHMO plan options
-- Vision Benefits: Eye care and corrective lenses
-- Voluntary Benefits: Disability, life insurance, and worksite benefits
+- Health Plans: ${packageCopy.medicalPlanNames.join(', ')}
+- Dental Coverage: ${packageCopy.dentalPlanName}
+- Vision Benefits: ${packageCopy.visionPlanName}
+- Voluntary Benefits: ${fallbackVoluntaryBenefits || 'life and disability options'}
 
 **Cost Structure (Examples)**
 - Monthly premiums vary by plan and tier
@@ -327,6 +332,7 @@ I'll review your benefits document and summarize the key points:
   }
 
   if (['hsa', 'health savings', 'investment'].some((k) => lowerMessage.includes(k))) {
+    const hsaPlan = packageCopy.hsaReferencePlan;
     return respond(
       `**HSA Quick Guide**
 
@@ -335,11 +341,11 @@ I'll review your benefits document and summarize the key points:
 - Triple tax advantage on contributions, growth, and qualified withdrawals
 - Good fit if you have low-to-moderate medical usage and an emergency fund
 
-**Cost Snapshot (example individual)**
-- Monthly Premium: $200
-- Annual Premium: $2,400
-- Deductible: $3,500
-- Suggested HSA contribution: $4,300/year ($358/month)
+**Cost Snapshot (${hsaPlan?.name ?? 'reference HSA plan'})**
+- Monthly Premium: ${hsaPlan ? `$${hsaPlan.monthlyPremium.toFixed(2)}` : 'Varies by plan'}
+- Annual Premium: ${hsaPlan ? `$${hsaPlan.annualPremium.toFixed(2)}` : 'Varies by plan'}
+- Deductible: ${hsaPlan ? `$${hsaPlan.deductible.toLocaleString()}` : 'Varies by plan'}
+- Contribution approach: choose an amount based on your expected care usage and tax goals
 - Always show costs as: "$X per month ($Y annually)"`
         + CROSS_SELL_TIP,
       'pattern-matching',
@@ -350,7 +356,7 @@ I'll review your benefits document and summarize the key points:
     `**AmeriVet Benefits Assistant (fallback mode)**
 
 I can help you with:
-- Plan information: Kaiser HMO, HSA/HDHP, PPO, Dental, Vision
+- Plan information: ${packageCopy.medicalPlanNames.join(', ')}, ${packageCopy.dentalPlanName}, ${packageCopy.visionPlanName}
 - Cost and coverage analysis: monthly vs. annual costs, comparisons
 - Document help: upload benefits PDFs for review
 - Enrollment guidance: steps and timelines

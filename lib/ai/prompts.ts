@@ -1,5 +1,10 @@
 // lib/ai/prompts.ts
 import type { ArtifactKind } from '@/components/artifact';
+import { getAmerivetPackageCopySnapshot } from '@/lib/data/amerivet-package-copy';
+import {
+  getAmerivetBenefitsPackage,
+  type AmerivetBenefitsPackage,
+} from '@/lib/data/amerivet-package';
 
 // Define Geo type locally
 interface Geo {
@@ -15,26 +20,49 @@ Artifacts is a special user interface mode that helps users with writing, editin
 ...
 `;
 
-export const benefitsAdvisorPrompt = `You are a knowledgeable and friendly benefits advisor AI assistant for Amerivet employees. You have access to comprehensive information about Amerivet's benefits plans, including medical, dental, vision, life insurance, and disability coverage.
+function buildOpenEnrollmentCopy(
+  benefitsPackage: AmerivetBenefitsPackage = getAmerivetBenefitsPackage(),
+): string {
+  const snapshot = getAmerivetPackageCopySnapshot(benefitsPackage);
+  const { openEnrollment, specialCoverage } = snapshot;
+
+  return [
+    `- Open Enrollment: ${openEnrollment.year} (${openEnrollment.startDate} to ${openEnrollment.endDate})`,
+    `- Most benefits effective: ${openEnrollment.effectiveDate}`,
+    `- HSA effective: ${specialCoverage.hsa.effectiveDate}`,
+    `- Commuter effective: ${specialCoverage.commuter.effectiveDate}`,
+  ].join('\n');
+}
+
+export function getBenefitsAdvisorPrompt(
+  benefitsPackage: AmerivetBenefitsPackage = getAmerivetBenefitsPackage(),
+): string {
+  const snapshot = getAmerivetPackageCopySnapshot(benefitsPackage);
+  const { catalog } = benefitsPackage;
+  const medicalPlanList = snapshot.medicalPlanBullets
+    .map((line, index) => `${index + 1}. ${line}`)
+    .join('\n');
+  const lifeLine = snapshot.lifePlanNames.length
+    ? snapshot.lifePlanNames.join(', ')
+    : 'Basic Life & AD&D';
+  const disabilityLine = snapshot.disabilityPlanNames.length
+    ? snapshot.disabilityPlanNames.join(', ')
+    : 'Disability benefits';
+
+  return `You are a knowledgeable and friendly benefits advisor AI assistant for Amerivet employees. You have access to comprehensive information about Amerivet's benefits plans, including medical, dental, vision, life insurance, and disability coverage.
 
 Key Information about Amerivet Benefits:
-- Open Enrollment: 2024-2025 (exact dates TBD)
-- Most benefits effective: October 1, 2024
-- HSA, FSA, commuter benefits effective: January 1, 2025
-- Eligibility: Full-time employees (30+ hours/week)
-- Coverage effective: 1st of month following hire date
+${buildOpenEnrollmentCopy(benefitsPackage)}
+- Eligibility: Full-time employees (${catalog.eligibility.fullTimeHours}+ hours/week)
+- Coverage effective: ${catalog.eligibility.coverageEffective}
 
 Medical Plans Available:
-1. BCBSTX Standard HSA - $86.84/month employee cost
-2. BCBSTX Enhanced HSA - $160.36/month employee cost  
-3. BCBSTX PPO - $267.42/month employee cost
-4. Kaiser Standard HMO - $196.30/month employee cost (CA, OR, WA only)
-5. Kaiser Enhanced HMO - $379.26/month employee cost (CA, OR, WA only)
+${medicalPlanList}
 
-Dental: BCBSTX - $28.90/month employee cost
-Vision: BCBSTX EyeMed - $5.24/month employee cost
-Life Insurance: $25,000 basic life & AD&D (employer-paid)
-Disability: Short-term and long-term disability available (employee-paid)
+Dental: ${snapshot.dentalPlanBullet}
+Vision: ${snapshot.visionPlanBullet}
+Life Insurance: ${lifeLine}
+Disability: ${disabilityLine}
 
 You can help employees:
 - Compare different benefit plans
@@ -45,32 +73,40 @@ You can help employees:
 - Answer questions about specific benefits
 
 Always provide accurate, helpful information and guide employees to make informed decisions about their benefits.`;
+}
+
+export const benefitsAdvisorPrompt = getBenefitsAdvisorPrompt();
 
 // THIS IS THE FIX: Exporting the constant that the chat API needs.
-export const CHAT_SYSTEM_PROMPT = `You are an expert Benefits Assistant AI helping Amerivet employees understand and manage their benefits.
+export function getChatSystemPrompt(
+  benefitsPackage: AmerivetBenefitsPackage = getAmerivetBenefitsPackage(),
+): string {
+  const snapshot = getAmerivetPackageCopySnapshot(benefitsPackage);
+  const { catalog } = benefitsPackage;
+  const medicalLines = snapshot.medicalPlanBullets.map((line) => `- ${line}`).join('\n');
 
-You have access to comprehensive information about Amerivet's 2024-2025 benefits plans, including:
+  return `You are an expert Benefits Assistant AI helping Amerivet employees understand and manage their benefits.
+
+You have access to comprehensive information about ${snapshot.displayName}, including:
 
 MEDICAL PLANS:
-- BCBSTX Standard HSA: $86.84/month, $2K deductible, 20% coinsurance
-- BCBSTX Enhanced HSA: $160.36/month, $2K deductible, 20% coinsurance  
-- BCBSTX PPO: $267.42/month, $500 deductible, 20% coinsurance
-- Kaiser Standard HMO: $196.30/month, $0 deductible, $20 copays (CA/OR/WA only)
-- Kaiser Enhanced HMO: $379.26/month, $0 deductible, $10 copays (CA/OR/WA only)
+${medicalLines}
 
 OTHER BENEFITS:
-- Dental (BCBSTX): $28.90/month
-- Vision (EyeMed): $5.24/month
-- Basic Life & AD&D: $25,000 (employer-paid)
-- Short-term Disability: Employee-paid, age-banded rates
-- Long-term Disability: Employee-paid, age-banded rates
+- Dental: ${snapshot.dentalPlanBullet}
+- Vision: ${snapshot.visionPlanBullet}
+- Life Insurance: ${snapshot.lifePlanNames.join(', ')}
+- Disability: ${snapshot.disabilityPlanNames.join(', ')}
 
 ELIGIBILITY:
-- Full-time employees (30+ hours/week)
-- Coverage effective 1st of month following hire
-- Dependents: spouse, domestic partner, children under 26
+- Full-time employees (${catalog.eligibility.fullTimeHours}+ hours/week)
+- Coverage effective ${catalog.eligibility.coverageEffective}
+- Dependents: spouse=${catalog.eligibility.dependents.spouse ? 'yes' : 'no'}, domestic partner=${catalog.eligibility.dependents.domesticPartner ? 'yes' : 'no'}, children=${catalog.eligibility.dependents.children}
 
 You can help employees compare plans, calculate costs, understand coverage, and navigate enrollment. Always provide accurate, helpful information specific to Amerivet's benefits.`;
+}
+
+export const CHAT_SYSTEM_PROMPT = getChatSystemPrompt();
 
 export const regularPrompt = benefitsAdvisorPrompt;
 
@@ -97,11 +133,12 @@ export const systemPrompt = ({
   requestHints: RequestHints;
 }) => {
   const requestPrompt = getRequestPromptFromHints(requestHints);
+  const advisorPrompt = getBenefitsAdvisorPrompt();
 
   if (selectedChatModel === 'chat-model-reasoning') {
-    return `${benefitsAdvisorPrompt}\n\n${requestPrompt}`;
+    return `${advisorPrompt}\n\n${requestPrompt}`;
   } else {
-    return `${benefitsAdvisorPrompt}\n\n${requestPrompt}\n\n${artifactsPrompt}`;
+    return `${advisorPrompt}\n\n${requestPrompt}\n\n${artifactsPrompt}`;
   }
 };
 
