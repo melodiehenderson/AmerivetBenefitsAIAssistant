@@ -1005,6 +1005,16 @@ function buildPackageRecommendationReply(session: Session, query: string): strin
   const numChildren = session.familyDetails?.numChildren || 0;
   const pregnancy = hasPregnancyContext(session, query);
   const soleBreadwinner = /\b(sole\s+bread\s*winner|breadwinner|only\s+income|sole\s+provider|only\s+provider|family\s+relies\s+on\s+my\s+income|rely\s+on\s+my\s+income|single\s+(?:mom|dad))\b/i.test(householdText);
+  const currentTopic = session.currentTopic || '';
+  const completedTopics = new Set(session.completedTopics || []);
+  const lastBot = (session.lastBotMessage || '').toLowerCase();
+  const medicalAlreadyInMotion = currentTopic === 'Medical'
+    || completedTopics.has('Medical')
+    || /medical plan options|monthly medical premiums|practical tradeoff across amerivet's medical options|recommendation for .* coverage|deductible|out-of-pocket max/i.test(lastBot);
+  const lifeAlreadyInMotion = currentTopic === 'Life Insurance'
+    || completedTopics.has('Life Insurance')
+    || /life insurance options:|voluntary term life|whole life|basic life|80% voluntary term life/i.test(lastBot);
+  const protectionPriority = soleBreadwinner || hasSpouse || numChildren > 0;
 
   const likelyTier = hasSpouse && numChildren > 0
     ? 'Employee + Family'
@@ -1022,14 +1032,23 @@ function buildPackageRecommendationReply(session: Session, query: string): strin
       : `- **Medical first**: because that is still the biggest cost and coverage decision in the package`,
   ];
 
+  if (medicalAlreadyInMotion) {
+    lines.push(`- **Medical is already the active anchor**, so I would mainly use it to decide what deserves the next dollar after the core plan is settled`);
+  }
+
   if (likelyTier !== 'Employee Only') {
     lines.push(`- **Use ${likelyTier} medical pricing as your working tier** once the household changes are active`);
   }
 
-  if (soleBreadwinner || hasSpouse || numChildren > 0) {
+  if (protectionPriority) {
+    setPendingGuidance(session, 'life_vs_disability', 'Life Insurance');
     lines.push(`- **Disability next**, because protecting the paycheck usually matters before smaller supplemental add-ons when other people depend on your income`);
     lines.push(`- **Life insurance after that**, especially if you want more protection than AmeriVet's employer-paid basic life benefit`);
+    if (lifeAlreadyInMotion) {
+      lines.push(`- **If extra life coverage is already clearly in play**, I would usually treat **Voluntary Term Life** as the main added layer and **Whole Life** as the smaller permanent layer`);
+    }
   } else {
+    setPendingGuidance(session, 'dental_vs_vision', 'Dental');
     lines.push(`- **Dental or vision next only if you already expect to use them**, because they are routine-care add-ons rather than the main financial-risk decision`);
   }
 
@@ -1041,11 +1060,21 @@ function buildPackageRecommendationReply(session: Session, query: string): strin
 
   lines.push(`- **Accident and critical illness last**, because they are usually optional extra cash-protection layers after medical and income protection are settled`);
   lines.push(``);
-  lines.push(
-    soleBreadwinner || hasSpouse || numChildren > 0
-      ? `So if you want the shortest version: I would usually settle **medical first**, then look at **disability/life**, then decide whether **dental/vision** are worth adding, and only then worry about **critical illness or accident**.`
-      : `So if you want the shortest version: I would usually settle **medical first**, then decide whether **dental/vision** are worth adding, then look at **life/disability**, and only after that consider **critical illness or accident**.`,
-  );
+  if (protectionPriority && lifeAlreadyInMotion) {
+    lines.push(`So if you want the shortest version: keep **medical** as the anchor, then use **disability/life** as the next real decision, and if you already know you want extra life coverage I would usually start with **Voluntary Term Life** before adding much **Whole Life**.`);
+    lines.push(`If you want, I can help you decide whether **disability** or **extra life** deserves the next dollar first.`);
+  } else {
+    lines.push(
+      protectionPriority
+        ? `So if you want the shortest version: I would usually settle **medical first**, then look at **disability/life**, then decide whether **dental/vision** are worth adding, and only then worry about **critical illness or accident**.`
+        : `So if you want the shortest version: I would usually settle **medical first**, then decide whether **dental/vision** are worth adding, then look at **life/disability**, and only after that consider **critical illness or accident**.`,
+    );
+    lines.push(
+      protectionPriority
+        ? `If you want, I can help you decide whether **disability** or **life insurance** deserves your next decision first.`
+        : `If you want, I can help you decide whether **dental** or **vision** deserves your next decision first.`,
+    );
+  }
 
   return lines.join('\n');
 }

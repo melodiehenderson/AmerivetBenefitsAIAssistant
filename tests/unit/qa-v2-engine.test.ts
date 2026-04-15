@@ -2341,6 +2341,31 @@ describe('qa-v2 engine', () => {
     expect(result.answer).toContain('If your spouse is generally healthy');
   });
 
+  it('makes package recommendations more situational when life coverage is already the active decision', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      lastBotMessage: 'Life insurance options:\n\n- Unum Basic Life & AD&D is the employer-paid base life and AD&D benefit\n- Unum Voluntary Term Life is the extra employee-paid term coverage\n- Allstate Whole Life is the permanent option with cash value',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'knowing what you know about me, which benefits would you recommend i get?',
+      session,
+    });
+
+    expect(result.answer).toContain('Based on what you have told me, I would usually prioritize your benefits in this order');
+    expect(result.answer).toContain('keep **medical** as the anchor');
+    expect(result.answer).toContain('Voluntary Term Life');
+    expect(result.answer).toContain('Whole Life');
+    expect(result.answer).toContain('disability');
+  });
+
   it('answers broader household wording like "the kids" after a medical recommendation', async () => {
     const session = makeSession({
       step: 'active_chat',
