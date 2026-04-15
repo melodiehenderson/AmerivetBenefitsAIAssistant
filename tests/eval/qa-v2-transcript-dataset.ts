@@ -3294,6 +3294,28 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
     ],
   },
   {
+    id: 'V2-TX-094C',
+    category: 'life_employer_guidance_active_topic_family_wording',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      lastBotMessage: 'My practical take: life insurance is usually worth tightening up if other people rely on your income and would need support if something happened to you.',
+    },
+    turns: [
+      {
+        user: 'ok, so i have a wife and 2 kids. so i want life insurance. i think i also want voluntary term - can you help me with that?',
+        mustContain: ['80% Voluntary Term Life / 20% Whole Life', 'Basic Life', 'Voluntary Term Life'],
+        mustNotContain: ['life insurance is usually worth tightening up'],
+      },
+    ],
+  },
+  {
     id: 'V2-TX-095',
     category: 'life_employer_guidance_family_protection_followthrough',
     initialSession: {

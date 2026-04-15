@@ -2317,6 +2317,30 @@ describe('qa-v2 engine', () => {
     expect(result.answer).not.toContain('life insurance is usually worth tightening up');
   });
 
+  it('uses the employer guidance split for natural family wording inside an active life-insurance thread even without prior split scaffolding', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      lastBotMessage: 'My practical take: life insurance is usually worth tightening up if other people rely on your income and would need support if something happened to you.',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'ok, so i have a wife and 2 kids. so i want life insurance. i think i also want voluntary term - can you help me with that?',
+      session,
+    });
+
+    expect(result.answer).toContain('80% Voluntary Term Life / 20% Whole Life');
+    expect(result.answer).toContain('Basic Life');
+    expect(result.answer).toContain('Voluntary Term Life');
+    expect(result.answer).not.toContain('life insurance is usually worth tightening up');
+  });
+
   it('uses the employer guidance split for short life-decision followups after earlier family-protection context is already in the thread', async () => {
     const session = makeSession({
       step: 'active_chat',

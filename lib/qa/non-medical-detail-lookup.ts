@@ -37,13 +37,14 @@ function resolveEmployerLifeSplitGuidanceRule(query: string, session: Session) {
   const sessionHasDependents = Boolean(session.familyDetails?.hasSpouse)
     || Boolean((session.familyDetails?.numChildren || 0) > 0)
     || /employee\s+\+\s+(spouse|child|family)/i.test(session.coverageTierLock || '');
+  const activeLifeContext = session.currentTopic === 'Life Insurance';
   const lastBotDiscussedLifeMix = /\blife insurance options:|voluntary term life|whole life|basic life|useful next life-insurance step|how much protection is worth paying|how much life insurance to add|default split|my practical take\b|other people rely on your income|included base benefit\b/i.test(lastBot);
   const asksProductDecision = /\b(which\s+one\s+should\s+i\s+get|which\s+ones\s+should\s+i\s+get|which\s+should\s+i\s+get|what\s+do\s+you\s+recommend|how\s+much\s+would\s+you\s+recommend|what\s+amount\s+would\s+you\s+recommend|how\s+much\s+of\s+each\s+would\s+you\s+recommend|help\s+me\s+with\s+that|help\s+me\s+decide|what\s+should\s+i\s+think\s+about|should\s+i\s+pay\s+for\s+more|how\s+much\s+should\s+i\s+get|how\s+much\s+coverage\s+should\s+i\s+get|how\s+much\s+protection\s+is\s+worth\s+paying|which\s+of\s+those\s+should\s+i\s+get)\b/i.test(lower);
   const mentionsExtraLifeChoice = /\b(voluntary\s+term(?:\s+life)?|whole\s+life|permanent|more\s+than\s+just\s+(?:the\s+)?basic|extra\s+life|additional\s+life|also\s+want\s+(?:voluntary\s+)?term(?:\s+life)?|want\s+(?:voluntary\s+)?term(?:\s+life)?|beyond\s+(?:the\s+)?basic|should\s+i\s+get\s+voluntary(?:\s+term(?:\s+life)?)?\s+and\s+(?:whole\s+)?life|should\s+i\s+get\s+whole\s+life\s+or\s+(?:voluntary\s+)?term(?:\s+life)?)\b/i.test(combined);
   const familyContext = sessionHasDependents || /\b(wife|husband|spouse|partner|kids?|children|family|dependents?)\b/i.test(combined);
   const incomeProtectionContext = /\b(other\s+people\s+rely\s+on\s+your\s+income|family\s+relies\s+on\s+your\s+income|depend(?:s)?\s+on\s+your\s+income|income\s+replacement|household\s+protection|more\s+than\s+just\s+(?:the\s+)?basic\s+life|base\s+benefit\s+isn'?t\s+enough)\b/i.test(combined);
 
-  if (lastBotDiscussedLifeMix && asksProductDecision && (mentionsExtraLifeChoice || familyContext || incomeProtectionContext)) {
+  if ((lastBotDiscussedLifeMix || activeLifeContext) && asksProductDecision && (mentionsExtraLifeChoice || familyContext || incomeProtectionContext)) {
     return AMERIVET_EMPLOYER_GUIDANCE_RULES.find((rule) =>
       rule.topic === 'Life Insurance' && rule.intentFamily === 'life_split_term_vs_whole',
     ) || null;

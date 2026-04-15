@@ -2675,6 +2675,28 @@ describe('qa-v2 transcript replays', () => {
     );
   });
 
+  it('replays natural family wording into the employer split guidance when life insurance is already the active topic', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'ok, so i have a wife and 2 kids. so i want life insurance. i think i also want voluntary term - can you help me with that?',
+          mustContain: ['80% Voluntary Term Life / 20% Whole Life', 'Basic Life', 'Voluntary Term Life'],
+          mustNotContain: ['life insurance is usually worth tightening up'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'Life Insurance',
+        familyDetails: { hasSpouse: true, numChildren: 2 },
+        lastBotMessage: 'My practical take: life insurance is usually worth tightening up if other people rely on your income and would need support if something happened to you.',
+      }),
+    );
+  });
+
   it('replays short life-decision followups into the employer split guidance when earlier family-protection context already exists in the thread', async () => {
     await replayTranscript(
       [
