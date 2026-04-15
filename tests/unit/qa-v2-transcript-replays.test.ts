@@ -2724,6 +2724,28 @@ describe('qa-v2 transcript replays', () => {
     );
   });
 
+  it('replays life practical-take followthrough into life-specific guidance instead of generic supplemental fit copy', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'yes please - help me think through that',
+          mustContain: ['Life insurance is usually worth tightening up', 'Basic Life', 'Voluntary Term Life', 'Whole Life', 'life versus disability'],
+          mustNotContain: ['A supplemental benefit is usually worth considering'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'Life Insurance',
+        familyDetails: { hasSpouse: true, numChildren: 2 },
+        lastBotMessage: 'My practical take is that if people rely on your income, I would not leave life insurance as an afterthought.',
+      }),
+    );
+  });
+
   it('replays short amount followups into the employer split guidance when prior life recommendation context already established more-than-basic life needs', async () => {
     await replayTranscript(
       [

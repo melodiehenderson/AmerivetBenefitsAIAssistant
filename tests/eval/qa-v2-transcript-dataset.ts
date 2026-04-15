@@ -3425,6 +3425,28 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
     ],
   },
   {
+    id: 'V2-TX-096C2',
+    category: 'life_employer_guidance_active_topic_followthrough',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      lastBotMessage: 'My practical take is that if people rely on your income, I would not leave life insurance as an afterthought.',
+    },
+    turns: [
+      {
+        user: 'yes please - help me think through that',
+        mustContain: ['Life insurance is usually worth tightening up', 'Basic Life', 'Voluntary Term Life', 'Whole Life', 'life versus disability'],
+        mustNotContain: ['A supplemental benefit is usually worth considering'],
+      },
+    ],
+  },
+  {
     id: 'V2-TX-096D',
     category: 'life_employer_guidance_split_adjustment_followups',
     initialSession: {

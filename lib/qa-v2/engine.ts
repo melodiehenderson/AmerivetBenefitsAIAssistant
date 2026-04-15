@@ -2280,6 +2280,30 @@ function buildWhyNotOtherFirstReply(kind: 'accident_vs_critical' | 'life_vs_disa
 
 function buildSupplementalFitGuidance(session: Session, topicOverride?: string | null): string {
   const topic = topicOverride || session.currentTopic || session.pendingGuidanceTopic || 'Supplemental';
+  const conversationText = [
+    ...(session.messages || []).map((message) => message.content.toLowerCase()),
+    (session.lastBotMessage || '').toLowerCase(),
+  ].join('\n');
+  const familyProtectionContext = Boolean(session.familyDetails?.hasSpouse)
+    || Boolean((session.familyDetails?.numChildren || 0) > 0)
+    || /employee\s+\+\s+(spouse|child|family)/i.test(session.coverageTierLock || '')
+    || /\b(spouse|wife|husband|partner|kids?|children|family|household|dependents?)\b/i.test(conversationText);
+
+  if (topic === 'Life Insurance') {
+    setPendingGuidance(session, 'supplemental_fit', 'Life Insurance');
+    return [
+      `Life insurance is usually worth tightening up when other people would need support if something happened to you.`,
+      ``,
+      `The practical order is usually:`,
+      `- Keep **Basic Life** as the included base layer`,
+      `- Add **Voluntary Term Life** first if the bigger job is household income replacement`,
+      `- Add **Whole Life** only if you also want a permanent cash-value layer on top`,
+      ``,
+      familyProtectionContext
+        ? `If family protection is still the focus, the next decision is usually whether to size extra life now or compare **life versus disability** if paycheck protection still feels exposed.`
+        : `If you want, I can help you decide whether extra life is worth tightening up before the other optional protections.`,
+    ].join('\n');
+  }
 
   if (topic === 'Accident/AD&D') {
     setPendingGuidance(session, 'accident_vs_critical', 'Accident/AD&D');
@@ -2336,7 +2360,7 @@ function buildSupplementalFitGuidance(session: Session, topicOverride?: string |
 
 function isWorthAddingFollowup(query: string): boolean {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
-  return /\b(how\s+do\s+i\s+know|how\s+can\s+i\s+tell|is\s+it\s+worth|worth\s+adding|worth\s+it|should\s+i\s+get|should\s+i\s+add|do\s+i\s+need\s+it|useful|only\s+option|do\s+you\s+recommend|what\s+would\s+you\s+recommend|what\s+do\s+you\s+recommend|which\s+one\s+should\s+i\s+get|which\s+ones\s+should\s+i\s+get|which\s+should\s+i\s+get|should\s+i\s+pay\s+for\s+more|what\s+should\s+i\s+think\s+about|how\s+much\s+should\s+i\s+get|how\s+much\s+coverage\s+should\s+i\s+get)\b/i.test(lower);
+  return /\b(how\s+do\s+i\s+know|how\s+can\s+i\s+tell|is\s+it\s+worth|worth\s+adding|worth\s+it|should\s+i\s+get|should\s+i\s+add|do\s+i\s+need\s+it|useful|only\s+option|do\s+you\s+recommend|what\s+would\s+you\s+recommend|what\s+do\s+you\s+recommend|which\s+one\s+should\s+i\s+get|which\s+ones\s+should\s+i\s+get|which\s+should\s+i\s+get|should\s+i\s+pay\s+for\s+more|what\s+should\s+i\s+think\s+about|how\s+much\s+should\s+i\s+get|how\s+much\s+coverage\s+should\s+i\s+get|help\s+me\s+think\s+through(?:\s+that|\s+this|\s+it)?)\b/i.test(lower);
 }
 
 function isRoutineCareComparisonPrompt(query: string): boolean {
@@ -2398,7 +2422,7 @@ function shouldHandleSupplementalFitFollowup(query: string): boolean {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
   return isGuidanceAdvanceAffirmation(query)
     || /\b(do that|do this|do it|let'?s do that|let'?s do this|let'?s do it)\b/i.test(lower)
-    || /\b(worth\s+considering|is\s+it\s+worth|worth\s+adding|should\s+i\s+get|should\s+i\s+add|do\s+i\s+need\s+it|when\s+would\s+i\s+want|tell\s+me\s+more|help\s+me\s+think\s+through|how\s+do\s+i\s+know|how\s+can\s+i\s+tell)\b/i.test(lower);
+    || /\b(worth\s+considering|is\s+it\s+worth|worth\s+adding|should\s+i\s+get|should\s+i\s+add|do\s+i\s+need\s+it|when\s+would\s+i\s+want|tell\s+me\s+more|help\s+me\s+think\s+through|how\s+do\s+i\s+know|how\s+can\s+i\s+tell|what\s+should\s+i\s+add\s+next|which\s+one\s+matters\s+more|which\s+one\s+first|what\s+else\s+should\s+i\s+consider)\b/i.test(lower);
 }
 
 function isRepeatedSupplementalWorthQuestion(query: string): boolean {
@@ -3192,7 +3216,7 @@ function buildSupplementalRecommendationReply(topic: string, session: Session, q
 
 function isSupplementalRecommendationQuestion(query: string): boolean {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
-  return /\b(should\s+i\s+get|should\s+i\s+add|do\s+you\s+recommend|would\s+you\s+recommend|so\s+should\s+i\s+get\s+it|so\s+should\s+i\s+add\s+it|with\s+my\s+situation|for\s+my\s+family|for\s+our\s+family|sole\s+bread[- ]?winner|only\s+income|bread[- ]?winner|what\s+would\s+you\s+recommend|what\s+do\s+you\s+recommend|right\s+for\s+me|how\s+do\s+i\s+decide|help\s+me\s+decide|which\s+one\s+should\s+i\s+get|which\s+ones\s+should\s+i\s+get|which\s+should\s+i\s+get|should\s+i\s+pay\s+for\s+more|what\s+should\s+i\s+think\s+about|how\s+much\s+should\s+i\s+get|how\s+much\s+coverage\s+should\s+i\s+get)\b/i.test(lower);
+  return /\b(should\s+i\s+get|should\s+i\s+add|do\s+you\s+recommend|would\s+you\s+recommend|so\s+should\s+i\s+get\s+it|so\s+should\s+i\s+add\s+it|with\s+my\s+situation|for\s+my\s+family|for\s+our\s+family|sole\s+bread[- ]?winner|only\s+income|bread[- ]?winner|what\s+would\s+you\s+recommend|what\s+do\s+you\s+recommend|right\s+for\s+me|how\s+do\s+i\s+decide|help\s+me\s+decide|which\s+one\s+should\s+i\s+get|which\s+ones\s+should\s+i\s+get|which\s+should\s+i\s+get|should\s+i\s+pay\s+for\s+more|what\s+should\s+i\s+think\s+about|what\s+should\s+i\s+add\s+next|how\s+much\s+should\s+i\s+get|how\s+much\s+coverage\s+should\s+i\s+get)\b/i.test(lower);
 }
 
 function isFamilySpecificFollowup(query: string): boolean {

@@ -2369,6 +2369,32 @@ describe('qa-v2 engine', () => {
     expect(result.answer).not.toContain('life insurance is usually worth tightening up');
   });
 
+  it('keeps life followthrough life-specific when the user asks to think it through after a life practical take', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      lastBotMessage: 'My practical take is that if people rely on your income, I would not leave life insurance as an afterthought.',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'yes please - help me think through that',
+      session,
+    });
+
+    expect(result.answer).toContain('Life insurance is usually worth tightening up');
+    expect(result.answer).toContain('Basic Life');
+    expect(result.answer).toContain('Voluntary Term Life');
+    expect(result.answer).toContain('Whole Life');
+    expect(result.answer).toContain('life versus disability');
+    expect(result.answer).not.toContain('A supplemental benefit is usually worth considering');
+  });
+
   it('uses the employer guidance split for short amount followups after a prior life recommendation thread without needing family details on the current turn', async () => {
     const session = makeSession({
       step: 'active_chat',
