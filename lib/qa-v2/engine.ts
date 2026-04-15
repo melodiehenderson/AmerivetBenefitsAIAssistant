@@ -1276,6 +1276,24 @@ function buildSupplementalNarrowingReply(session: Session, query: string): strin
   const mentionsCritical = /\bcritical(?:\s+illness)?\b/i.test(lower);
   const mentionsAccident = /\b(accident|ad&d|ad\/d)\b/i.test(lower);
 
+  if (mentionsLife && mentionsDisability && (mentionsCritical || mentionsAccident)) {
+    const lifeFirst = lifeProtectionFocus === 'survivor_protection';
+    return [
+      lifeFirst
+        ? `If you are choosing across **life insurance**, **disability**, and the smaller supplemental cash benefits, I would usually settle **life insurance first** when survivor protection is the biggest concern.`
+        : `If you are choosing across **life insurance**, **disability**, and the smaller supplemental cash benefits, I would usually settle **disability first** when the household depends on your paycheck.`,
+      ``,
+      `After that:`,
+      lifeFirst
+        ? `- tighten **disability** next if the household also depends heavily on your ongoing paycheck`
+        : `- tighten **life insurance** next if the household would still need more survivor protection than the employer-paid basic benefit`,
+      ...(mentionsCritical ? [`- choose **Critical Illness** after that if the bigger fear is the financial shock of a serious diagnosis`] : []),
+      ...(mentionsAccident ? [`- choose **Accident/AD&D** after that if the bigger fear is injury risk`] : []),
+      ``,
+      `So my practical order is usually: **medical first**, then **life/disability**, and only after that **critical illness or accident** if you still want an extra cash-support layer.`,
+    ].join('\n');
+  }
+
   if (mentionsLife && mentionsDisability) {
     if (lifeProtectionFocus === 'survivor_protection') {
       return [
@@ -1303,6 +1321,18 @@ function buildSupplementalNarrowingReply(session: Session, query: string): strin
       householdDependsOnIncome || lifeProtectionFocus === 'paycheck_protection'
         ? `So if you are asking me to lead the decision, I would usually do **disability first**, then add more **life insurance** if the household still needs more survivor protection than the employer-paid basic benefit.`
         : `So if you are asking me to lead the decision, I would usually choose the one that covers the bigger real-world gap first: paycheck interruption or survivor protection.`,
+      ].join('\n');
+  }
+
+  if (mentionsLife && (mentionsCritical || mentionsAccident)) {
+    return [
+      `If you are choosing between **life insurance** and the smaller supplemental cash benefits, I would usually settle **life insurance first** when the household would need support if something happened to you.`,
+      ``,
+      `After that:`,
+      ...(mentionsCritical ? [`- choose **Critical Illness** if the bigger fear is the financial shock of a serious diagnosis`] : []),
+      ...(mentionsAccident ? [`- choose **Accident/AD&D** if the bigger fear is injury risk`] : []),
+      ``,
+      `So my practical order is usually: **medical first**, then **life/disability** if household protection matters, and only after that **critical illness or accident** if you still want a smaller cash-support layer.`,
     ].join('\n');
   }
 
