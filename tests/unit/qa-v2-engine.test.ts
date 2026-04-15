@@ -2500,7 +2500,8 @@ describe('qa-v2 engine', () => {
     });
 
     expect(first.answer).toContain('protecting your family');
-    expect(first.answer).toContain('life insurance next');
+    expect(first.answer).toContain('disability next');
+    expect(first.answer).toContain('life insurance right after that');
 
     const second = await runQaV2Engine({
       query: 'routine care',
@@ -2533,7 +2534,8 @@ describe('qa-v2 engine', () => {
     });
 
     expect(result.answer).toContain('If protecting your family is the top priority');
-    expect(result.answer).toContain('life insurance next');
+    expect(result.answer).toContain('disability next');
+    expect(result.answer).toContain('life insurance right after that');
   });
 
   it('treats cost-oriented wording as healthcare-cost narrowing after general benefit guidance', async () => {

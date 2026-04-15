@@ -1067,7 +1067,7 @@ function buildPackageRecommendationReply(session: Session, query: string): strin
     lines.push(
       protectionPriority
         ? `So if you want the shortest version: I would usually settle **medical first**, then look at **disability/life**, then decide whether **dental/vision** are worth adding, and only then worry about **critical illness or accident**.`
-        : `So if you want the shortest version: I would usually settle **medical first**, then decide whether **dental/vision** are worth adding, then look at **life/disability**, and only after that consider **critical illness or accident**.`,
+        : `So if you want the shortest version: I would usually settle **medical first**, then decide whether **dental/vision** are worth adding, then look at **disability/life**, and only after that consider **critical illness or accident**.`,
     );
     lines.push(
       protectionPriority
@@ -1718,11 +1718,11 @@ function buildBenefitDecisionGuidance(session: Session, focus?: BenefitPriorityF
       `If protecting your family is the top priority, I would focus here first:`,
       ``,
       `- Keep medical in place first so a major illness or injury does not become the biggest financial hit`,
-      `- Look at life insurance next so your household has income replacement if something happens to you`,
-      `- Look at disability after that, because protecting your paycheck is often just as important as the death benefit when people rely on your income`,
+      `- Look at disability next, because protecting your paycheck is usually the more immediate family-protection risk when people rely on your income`,
+      `- Tighten up life insurance right after that so your household has longer-term income replacement if something happens to you, especially if the employer-paid basic life benefit would not be enough`,
       `- Treat dental and vision as secondary unless your household expects regular routine use`,
       ``,
-      `If you want, I can walk you through life versus disability next and explain which one usually matters more for family protection.`,
+      `If you want, I can walk you through disability versus extra life next and explain which one usually matters first for family protection.`,
     ].join('\n');
   }
 
@@ -1759,12 +1759,12 @@ function buildBenefitDecisionGuidance(session: Session, focus?: BenefitPriorityF
     ``,
     `- Medical first if you want to manage the biggest healthcare cost risk`,
     `- Dental and vision next if you expect routine use and want predictable everyday coverage`,
-    `- Life and disability next if protecting family income matters more than routine care`,
+    `- Disability and life next if protecting family income matters more than routine care`,
     `- Accident or critical illness last if you want extra cash-support protection on top of your core coverage`,
   ];
 
   if (hasDependents) {
-    guidance.push('', `Since you appear to be covering more than just yourself, the most important areas are usually medical first, then life/disability protection, then dental/vision if your household expects to use them.`);
+    guidance.push('', `Since you appear to be covering more than just yourself, the most important areas are usually medical first, then disability/life protection, then dental/vision if your household expects to use them.`);
   }
 
   guidance.push('', `If you want, tell me whether you are optimizing more for healthcare costs, family protection, or routine care, and I’ll narrow down what is most worth considering first.`);
@@ -2208,7 +2208,7 @@ function buildSupplementalFitGuidance(session: Session, topicOverride?: string |
   return [
     `A supplemental benefit is usually worth considering when you already have your core medical decision in place and want an extra layer of cash-support protection.`,
     ``,
-    `The usual order is: medical first, then life/disability if income protection matters, then supplemental benefits if you want extra protection on top.`,
+    `The usual order is: medical first, then disability/life if income protection matters, then supplemental benefits if you want extra protection on top.`,
     ``,
     `If you want, I can narrow down whether accident, critical illness, or disability is the most relevant next step for your situation.`,
   ].join('\n');
@@ -3619,7 +3619,7 @@ function buildContinuationReply(session: Session, query: string): string | null 
       setPendingGuidance(session, 'accident_vs_critical', 'Accident/AD&D');
       return buildAccidentVsCriticalComparison();
     }
-    if (/walk you through life versus disability/i.test(lastBotMessage)) {
+    if (/walk you through life versus disability|walk you through disability versus extra life/i.test(lastBotMessage)) {
       return buildLifeVsDisabilityComparison();
     }
     if (/decide whether dental or vision is more worth adding first/i.test(lastBotMessage)) {

@@ -95,7 +95,7 @@ describe('qa-v2 transcript replays', () => {
         },
         {
           user: 'what about for our family?',
-          mustContain: ['If protecting your family is the top priority', 'life insurance next'],
+          mustContain: ['If protecting your family is the top priority', 'disability next', 'life insurance right after that'],
           mustNotContain: ['Tell me which area you want to focus on next'],
         },
       ],
@@ -626,7 +626,7 @@ describe('qa-v2 transcript replays', () => {
       [
         {
           user: "what benefit should i pay attention to first if i'm mostly worried about protecting my family?",
-          mustContain: ['protecting your family', 'life insurance next', 'disability'],
+          mustContain: ['protecting your family', 'disability next', 'life insurance right after that'],
           mustNotContain: ['Tell me which area you want to focus on next'],
         },
         {
