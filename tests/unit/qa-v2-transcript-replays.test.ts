@@ -2565,6 +2565,52 @@ describe('qa-v2 transcript replays', () => {
     );
   });
 
+  it('replays broad next-step guidance after life into disability first and HSA/FSA second when an HSA medical path is already selected', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'what else should i be considering to my benefits?',
+          mustContain: ['**disability**', '**HSA/FSA**', '**Enhanced HSA**'],
+          mustNotContain: ['smaller add-on questions'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'Life Insurance',
+        completedTopics: ['Medical', 'Life Insurance'],
+        familyDetails: { hasSpouse: true, numChildren: 2 },
+        selectedPlan: 'Enhanced HSA',
+      }),
+    );
+  });
+
+  it('replays next-step guidance after life and disability into HSA/FSA when the protection choices are already covered', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'what should i look at next?',
+          mustContain: ['**HSA/FSA**', '**Enhanced HSA**'],
+          mustNotContain: ['smaller add-on questions'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'Life Insurance',
+        completedTopics: ['Medical', 'Life Insurance', 'Disability'],
+        familyDetails: { hasSpouse: true, numChildren: 2 },
+        selectedPlan: 'Enhanced HSA',
+      }),
+    );
+  });
+
   it('replays employer-provided life split guidance instead of the generic life recommendation scaffold', async () => {
     await replayTranscript(
       [

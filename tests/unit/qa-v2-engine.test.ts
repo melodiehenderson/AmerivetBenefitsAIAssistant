@@ -3005,6 +3005,55 @@ describe('qa-v2 engine', () => {
     expect(result.answer).toContain('Unum Basic Life & AD&D');
   });
 
+  it('keeps HSA/FSA visible after life guidance when disability still comes first', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Sarah',
+      hasCollectedName: true,
+      userAge: 42,
+      userState: 'FL',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      completedTopics: ['Medical', 'Life Insurance'],
+      selectedPlan: 'Enhanced HSA',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+    });
+
+    const result = await runQaV2Engine({
+      query: 'what else should i be considering to my benefits?',
+      session,
+    });
+
+    expect(result.answer).toContain('**disability**');
+    expect(result.answer).toContain('**HSA/FSA**');
+    expect(result.answer).toContain('**Enhanced HSA**');
+    expect(result.answer).not.toContain('smaller add-on questions');
+  });
+
+  it('moves from life into HSA/FSA once the main protection decisions are already covered', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Sarah',
+      hasCollectedName: true,
+      userAge: 42,
+      userState: 'FL',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      completedTopics: ['Medical', 'Life Insurance', 'Disability'],
+      selectedPlan: 'Enhanced HSA',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+    });
+
+    const result = await runQaV2Engine({
+      query: 'what should i look at next?',
+      session,
+    });
+
+    expect(result.answer).toContain('**HSA/FSA**');
+    expect(result.answer).toContain('**Enhanced HSA**');
+    expect(result.answer).not.toContain('smaller add-on questions');
+  });
+
   it('handles "what would you do?" after accident-versus-critical comparison', async () => {
     const session = makeSession({
       step: 'active_chat',

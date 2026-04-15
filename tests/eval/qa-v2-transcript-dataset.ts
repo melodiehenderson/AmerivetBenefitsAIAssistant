@@ -3140,6 +3140,52 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
     ],
   },
   {
+    id: 'V2-TX-091A',
+    category: 'life_next_guidance_with_hsa_followthrough',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      completedTopics: ['Medical', 'Life Insurance'],
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      selectedPlan: 'Enhanced HSA',
+    },
+    turns: [
+      {
+        user: 'what else should i be considering to my benefits?',
+        mustContain: ['**disability**', '**HSA/FSA**', '**Enhanced HSA**'],
+        mustNotContain: ['smaller add-on questions'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-091B',
+    category: 'life_to_hsa_next_guidance_after_protection',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      completedTopics: ['Medical', 'Life Insurance', 'Disability'],
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      selectedPlan: 'Enhanced HSA',
+    },
+    turns: [
+      {
+        user: 'what should i look at next?',
+        mustContain: ['**HSA/FSA**', '**Enhanced HSA**'],
+        mustNotContain: ['smaller add-on questions'],
+      },
+    ],
+  },
+  {
     id: 'V2-TX-092',
     category: 'life_employer_guidance_split',
     initialSession: {

@@ -410,10 +410,19 @@ function buildPackageGuidance(session: Session, topic?: string | null): string {
           ``,
           `- Life protects the household if something happens to you`,
           `- Disability protects the paycheck if you are unable to work but still living with the ongoing bills`,
+          !hasHsaFsa && hsaRelevantMedicalPath
+            ? selectedMedicalPath
+              ? `- Once the core protection choices are clearer, **HSA/FSA** is the next tax-account fit decision for **${selectedMedicalPath}**`
+              : `- Once the core protection choices are clearer, **HSA/FSA** is the next tax-account fit decision so the medical path and account choice stay aligned`
+            : '',
           nextSupplementalTopic
             ? `- After that, we can look at ${nextSupplementalTopic === 'Critical Illness' ? 'critical illness' : 'accident coverage'} if you want smaller cash-support add-ons`
             : `- After that, we can wrap up any smaller add-on questions`,
-        ].join('\n');
+          ``,
+          !hasHsaFsa && hsaRelevantMedicalPath
+            ? buildGuidancePivotPrompt('Disability', 'HSA/FSA')
+            : '',
+        ].filter(Boolean).join('\n');
       }
 
       if (!hasMedical) {
@@ -423,6 +432,23 @@ function buildPackageGuidance(session: Session, topic?: string | null): string {
           ``,
           `- Medical is still the biggest cost-risk decision in the package`,
           `- After that, we can return to the smaller add-ons if you want more protection`,
+        ].join('\n');
+      }
+
+      if (!hasHsaFsa && hsaRelevantMedicalPath) {
+        setPendingTopicSuggestion(session, 'HSA/FSA');
+        return [
+          `If you want to keep going after life insurance, the most useful next step is usually **HSA/FSA** so the tax-account side matches your medical path.`,
+          ``,
+          `- You have already looked at the main household-protection question, so the cleaner remaining package-fit decision is whether the tax account matches the medical path`,
+          selectedMedicalPath
+            ? `- Because you are leaning toward **${selectedMedicalPath}**, the HSA/FSA choice now affects how well the package fits together`
+            : `- That matters more now because the medical path is already clearer than the remaining smaller add-ons`,
+          nextSupplementalTopic
+            ? `- After that, we can still compare ${nextSupplementalTopic === 'Critical Illness' ? 'critical illness' : 'accident coverage'} if you want smaller cash-support add-ons`
+            : `- After that, we can wrap up any smaller add-on questions`,
+          ``,
+          buildGuidancePivotPrompt('HSA/FSA', nextSupplementalTopic),
         ].join('\n');
       }
 
@@ -440,10 +466,19 @@ function buildPackageGuidance(session: Session, topic?: string | null): string {
           ``,
           `- Disability protects the paycheck while you are alive but unable to work`,
           `- Life insurance protects the household if you are no longer there to provide that income`,
+          !hasHsaFsa && hsaRelevantMedicalPath
+            ? selectedMedicalPath
+              ? `- Once the core protection choices are clearer, **HSA/FSA** is the next tax-account fit decision for **${selectedMedicalPath}**`
+              : `- Once the core protection choices are clearer, **HSA/FSA** is the next tax-account fit decision so the medical path and account choice stay aligned`
+            : '',
           nextSupplementalTopic
             ? `- After that, we can look at ${nextSupplementalTopic === 'Critical Illness' ? 'critical illness' : 'accident coverage'} if you want smaller cash-support add-ons`
             : `- After that, we can wrap up any smaller add-on questions`,
-        ].join('\n');
+          ``,
+          !hasHsaFsa && hsaRelevantMedicalPath
+            ? buildGuidancePivotPrompt('Life Insurance', 'HSA/FSA')
+            : '',
+        ].filter(Boolean).join('\n');
       }
 
       if (!hasMedical) {
@@ -453,6 +488,23 @@ function buildPackageGuidance(session: Session, topic?: string | null): string {
           ``,
           `- Medical is still the biggest cost-risk decision in the package`,
           `- After that, we can return to the smaller add-ons if you want more protection`,
+        ].join('\n');
+      }
+
+      if (!hasHsaFsa && hsaRelevantMedicalPath) {
+        setPendingTopicSuggestion(session, 'HSA/FSA');
+        return [
+          `If you want to keep going after disability, the next most useful step is usually **HSA/FSA** so the tax-account side matches your medical path.`,
+          ``,
+          `- You have already looked at the main income-protection question, so the cleaner remaining package-fit decision is whether the tax account matches the medical path`,
+          selectedMedicalPath
+            ? `- Because you are leaning toward **${selectedMedicalPath}**, the HSA/FSA choice now affects how well the package fits together`
+            : `- That matters more now because the medical path is already clearer than the remaining smaller add-ons`,
+          nextSupplementalTopic
+            ? `- After that, we can still compare ${nextSupplementalTopic === 'Critical Illness' ? 'critical illness' : 'accident coverage'} if you want smaller cash-support add-ons`
+            : `- After that, we can wrap up any smaller add-on questions`,
+          ``,
+          buildGuidancePivotPrompt('HSA/FSA', nextSupplementalTopic),
         ].join('\n');
       }
 
