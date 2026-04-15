@@ -2268,6 +2268,29 @@ describe('qa-v2 engine', () => {
     expect(result.answer).not.toContain('life insurance is usually worth tightening up');
   });
 
+  it('uses the employer guidance split when the user says they want more than the basic life coverage and asks for a recommendation', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+    });
+
+    const result = await runQaV2Engine({
+      query: 'i have a wife and 2 kids and want more than just the basic life coverage. what do you recommend?',
+      session,
+    });
+
+    expect(result.answer).toContain('80% Voluntary Term Life / 20% Whole Life');
+    expect(result.answer).toContain('Basic Life');
+    expect(result.answer).toContain('Voluntary Term Life');
+    expect(result.answer).not.toContain('life insurance is usually worth tightening up');
+  });
+
   it('uses the employer guidance split for broader life-amount questions once life options are already active', async () => {
     const session = makeSession({
       step: 'active_chat',
@@ -2283,6 +2306,30 @@ describe('qa-v2 engine', () => {
 
     const result = await runQaV2Engine({
       query: 'how much should i get?',
+      session,
+    });
+
+    expect(result.answer).toContain('80% Voluntary Term Life / 20% Whole Life');
+    expect(result.answer).toContain('Basic Life');
+    expect(result.answer).toContain('Voluntary Term Life');
+    expect(result.answer).not.toContain('life insurance is usually worth tightening up');
+  });
+
+  it('uses the employer guidance split for softer recommendation wording like "how much would you recommend" once life options are active', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      lastBotMessage: 'Here is the practical difference across AmeriVet\'s life insurance options:\n\n- Unum Basic Life & AD&D is the employer-paid base life and AD&D benefit\n- Unum Voluntary Term Life is the extra employee-paid term coverage\n- Allstate Whole Life is the permanent option with cash value',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'how much would you recommend?',
       session,
     });
 

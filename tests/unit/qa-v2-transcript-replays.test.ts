@@ -2623,6 +2623,49 @@ describe('qa-v2 transcript replays', () => {
     );
   });
 
+  it('replays direct extra-life recommendation asks into the employer split guidance without needing explicit term-versus-whole wording', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'i have a wife and 2 kids and want more than just the basic life coverage. what do you recommend?',
+          mustContain: ['80% Voluntary Term Life / 20% Whole Life', 'Basic Life', 'Voluntary Term Life'],
+          mustNotContain: ['life insurance is usually worth tightening up'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'Life Insurance',
+        familyDetails: { hasSpouse: true, numChildren: 2 },
+      }),
+    );
+  });
+
+  it('replays softer recommendation wording into the employer split guidance after life options are active', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'how much would you recommend?',
+          mustContain: ['80% Voluntary Term Life / 20% Whole Life', 'Basic Life', 'Voluntary Term Life'],
+          mustNotContain: ['life insurance is usually worth tightening up'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'Life Insurance',
+        familyDetails: { hasSpouse: true, numChildren: 2 },
+        lastBotMessage: 'Here is the practical difference across AmeriVet\'s life insurance options:\n\n- Unum Basic Life & AD&D is the employer-paid base life and AD&D benefit\n- Unum Voluntary Term Life is the extra employee-paid term coverage\n- Allstate Whole Life is the permanent option with cash value',
+      }),
+    );
+  });
+
   it('replays a longer family life-decision thread into the same practical employer-guidance path', async () => {
     await replayTranscript(
       [
