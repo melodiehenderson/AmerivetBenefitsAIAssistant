@@ -3178,6 +3178,40 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
   },
   {
     id: 'V2-TX-096',
+    category: 'life_employer_guidance_longer_thread',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+    },
+    turns: [
+      {
+        user: 'life insurance info',
+        mustContain: ['Life insurance options:'],
+      },
+      {
+        user: 'which ones should i get?',
+        mustContain: ['80% Voluntary Term Life / 20% Whole Life'],
+        mustNotContain: ['life insurance is usually worth tightening up'],
+      },
+      {
+        user: 'how much should i get?',
+        mustContain: ['80% Voluntary Term Life / 20% Whole Life', 'Basic Life'],
+        mustNotContain: ['life insurance is usually worth tightening up'],
+      },
+      {
+        user: 'how much protection is worth paying for if your family relies on your income?',
+        mustContain: ['80% Voluntary Term Life / 20% Whole Life', 'Voluntary Term Life'],
+        mustNotContain: ['life insurance is usually worth tightening up'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-097',
     category: 'therapy_specialist_practical_costs',
     initialSession: {
       step: 'active_chat',
@@ -3203,7 +3237,7 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
     ],
   },
   {
-    id: 'V2-TX-097',
+    id: 'V2-TX-098',
     category: 'hsa_context_declined_back_to_medical_plans',
     initialSession: {
       step: 'active_chat',

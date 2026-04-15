@@ -2623,6 +2623,40 @@ describe('qa-v2 transcript replays', () => {
     );
   });
 
+  it('replays a longer family life-decision thread into the same practical employer-guidance path', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'life insurance info',
+          mustContain: ['Life insurance options:'],
+        },
+        {
+          user: 'which ones should i get?',
+          mustContain: ['80% Voluntary Term Life / 20% Whole Life'],
+          mustNotContain: ['life insurance is usually worth tightening up'],
+        },
+        {
+          user: 'how much should i get?',
+          mustContain: ['80% Voluntary Term Life / 20% Whole Life', 'Basic Life'],
+          mustNotContain: ['life insurance is usually worth tightening up'],
+        },
+        {
+          user: 'how much protection is worth paying for if your family relies on your income?',
+          mustContain: ['80% Voluntary Term Life / 20% Whole Life', 'Voluntary Term Life'],
+          mustNotContain: ['life insurance is usually worth tightening up'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'WA',
+        dataConfirmed: true,
+        familyDetails: { hasSpouse: true, numChildren: 2 },
+      }),
+    );
+  });
+
   it('replays therapist-cost questions into grounded medical comparison instead of generic medical menus', async () => {
     await replayTranscript(
       [
