@@ -3924,6 +3924,52 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
     ],
   },
   {
+    id: 'V2-TX-102AA',
+    category: 'medical_context_deictic_family_pricing_replay',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      lastBotMessage: 'Medical plan options (Employee + Family):\n\n- Standard HSA (BCBSTX): $321.45/month\n- Enhanced HSA (BCBSTX): $412.37/month\n\nWant to compare plans or switch coverage tiers?',
+    },
+    turns: [
+      {
+        user: 'what will that cost?',
+        mustContain: ['Employee + Family coverage', 'Standard HSA'],
+        mustNotContain: ['A useful next medical step is usually one of these'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-102AB',
+    category: 'hsa_context_deictic_spouse_pricing_replay',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'HSA/FSA',
+      coverageTierLock: 'Employee + Spouse',
+      familyDetails: { hasSpouse: true, numChildren: 0 },
+      lastBotMessage: 'Medical plan options (Employee + Spouse):\n\n- Standard HSA (BCBSTX): $190.31/month\n- Enhanced HSA (BCBSTX): $275.10/month\n\nWant to compare plans or switch coverage tiers?',
+    },
+    turns: [
+      {
+        user: 'how much would that be for my spouse?',
+        mustContain: ['Employee + Spouse coverage', 'Standard HSA'],
+        mustNotContain: ['HSA/FSA overview', 'FSA is usually the cleaner fit'],
+      },
+    ],
+  },
+  {
     id: 'V2-TX-102A',
     category: 'hsa_context_natural_family_pricing_pivot',
     initialSession: {

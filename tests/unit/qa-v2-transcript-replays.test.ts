@@ -3365,6 +3365,52 @@ describe('qa-v2 transcript replays', () => {
     );
   });
 
+  it('replays short "what will that cost" pricing wording back into medical when the prior bot message already established medical plan options', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'what will that cost?',
+          mustContain: ['Employee + Family coverage', 'Standard HSA'],
+          mustNotContain: ['A useful next medical step is usually one of these'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'Medical',
+        coverageTierLock: 'Employee + Family',
+        familyDetails: { hasSpouse: true, numChildren: 2 },
+        lastBotMessage: 'Medical plan options (Employee + Family):\n\n- Standard HSA (BCBSTX): $321.45/month\n- Enhanced HSA (BCBSTX): $412.37/month\n\nWant to compare plans or switch coverage tiers?',
+      }),
+    );
+  });
+
+  it('replays short spouse-price wording back into medical from HSA/FSA when the prior bot message already established medical plan options', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'how much would that be for my spouse?',
+          mustContain: ['Employee + Spouse coverage', 'Standard HSA'],
+          mustNotContain: ['HSA/FSA overview', 'FSA is usually the cleaner fit'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'HSA/FSA',
+        coverageTierLock: 'Employee + Spouse',
+        familyDetails: { hasSpouse: true, numChildren: 0 },
+        lastBotMessage: 'Medical plan options (Employee + Spouse):\n\n- Standard HSA (BCBSTX): $190.31/month\n- Enhanced HSA (BCBSTX): $275.10/month\n\nWant to compare plans or switch coverage tiers?',
+      }),
+    );
+  });
+
   it('replays natural spouse-and-kids premium asks back into medical from HSA/FSA context', async () => {
     await replayTranscript(
       [

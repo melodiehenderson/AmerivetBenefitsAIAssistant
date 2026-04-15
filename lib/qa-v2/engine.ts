@@ -1247,6 +1247,45 @@ function isMedicalPremiumReplayQuestion(query: string): boolean {
     );
 }
 
+function contextualMedicalPricingReplayQuery(session: Session, query: string): string | null {
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  if (!lower || isMedicalPremiumReplayQuestion(query) || isMedicalPlanComparisonOrPricingQuestion(query)) {
+    return null;
+  }
+
+  if (/\b(therapy|therapist|mental\s+health|behavioral\s+health|counsel(?:ing|or)|specialist|doctor|visit|visits|prescriptions?|rx|drugs?|maternity|pregnan\w*|delivery|copay|copays|coinsurance|deductible|out[- ]of[- ]pocket|oop)\b/i.test(lower)) {
+    return null;
+  }
+
+  const hasShortPricingSignal = /\b(what\s+will\s+that\s+cost|what\s+would\s+that\s+cost|how\s+much\s+would\s+that\s+be|how\s+much\s+would\s+that\s+cost|what\s+about\s+that\s+price|what\s+about\s+that\s+cost|what\s+about\s+the\s+family\s+price|what\s+about\s+family\s+pricing|what\s+about\s+spouse\s+pricing|how\s+much\s+would\s+that\s+be\s+for\s+my\s+spouse|how\s+much\s+would\s+that\s+be\s+for\s+my\s+family|and\s+what\s+about\s+the\s+price|and\s+what\s+would\s+that\s+be)\b/i.test(lower);
+  if (!hasShortPricingSignal) {
+    return null;
+  }
+
+  const lastBot = (session.lastBotMessage || '').toLowerCase();
+  const activeTopic = session.currentTopic || inferTopicFromLastBotMessage(session.lastBotMessage);
+  const hasEstablishedMedicalPricingContext = activeTopic === 'Medical'
+    || /medical plan options|monthly medical premiums|side-by-side comparison for .* coverage|practical tradeoff across amerivet's medical options|want to compare plans or switch coverage tiers/i.test(lastBot);
+
+  if (!hasEstablishedMedicalPricingContext) {
+    return null;
+  }
+
+  if (/\b(spouse|wife|husband|partner)\b/i.test(lower)) {
+    return 'show me the spouse prices';
+  }
+
+  if (/\b(family|whole family|kids?|children|sons?|daughters?)\b/i.test(lower)) {
+    return 'show me the family prices';
+  }
+
+  const tier = session.coverageTierLock || coverageTierFromConversation(session) || 'Employee Only';
+  if (/Spouse/i.test(tier)) return 'show me the spouse prices';
+  if (/Family/i.test(tier)) return 'show me the family prices';
+  if (/Child/i.test(tier)) return 'show me the employee + child pricing';
+  return 'what are the medical plan prices again?';
+}
+
 function buildMedicalPremiumReplayReply(session: Session, query: string): string {
   const coverageTier = getCoverageTierForQuery(query, session);
   const rows = getFilteredMedicalPricingRowsForTier(session, coverageTier);
@@ -1489,6 +1528,7 @@ function buildHighPriorityIntentReply(session: Session, query: string): EngineRe
   const hasDirectMedicalSignal = /\b(plan|plans|medical|kaiser|hsa|hmo|ppo|coverage|coverage\s+tier|deductible|premium|premiums|copay|copays|coinsurance|out[- ]of[- ]pocket|oop|max|therapy|therapist|mental\s+health|specialist|prescriptions?|rx|drugs?|maternity|pregnan\w*|delivery|network|routine\s+care|doctor|visit|visits|wife|husband|spouse|partner|kids?|children|family|household)\b/i.test(lower);
   const isBareBenefitPriorityFocus = /^(\s*(healthcare costs|family protection|routine care)\s*)$/i.test(normalizedQuery);
   const wantsMedicalPremiumReplay = isMedicalPremiumReplayQuestion(normalizedQuery);
+  const contextualPricingReplayQuery = contextualMedicalPricingReplayQuery(session, normalizedQuery);
   const wantsMedicalCostEstimate = isCostModelRequest(normalizedQuery)
     || /\b(what\s+are\s+the\s+costs?|what\s+would\s+the\s+costs?\s+be|estimate\s+the\s+likely\s+costs?|estimate\s+likely\s+costs?|projected\s+costs?|show\s+me\s+the\s+costs?|what\s+would\s+i\s+pay)\b/i.test(lower);
 
@@ -1523,6 +1563,15 @@ function buildHighPriorityIntentReply(session: Session, query: string): EngineRe
   if (isQleTimingQuestion(normalizedQuery)) {
     clearPendingGuidance(session);
     return { answer: buildQleTimingReply(session, normalizedQuery), metadata: { intercept: 'qle-timing-v2' } };
+  }
+
+  if (contextualPricingReplayQuery) {
+    clearPendingGuidance(session);
+    setTopic(session, 'Medical');
+    return {
+      answer: buildMedicalPremiumReplayReply(session, contextualPricingReplayQuery),
+      metadata: { intercept: 'medical-pricing-contextual-replay-v2', topic: 'Medical' },
+    };
   }
 
   if (

@@ -5274,6 +5274,55 @@ describe('qa-v2 engine', () => {
     expect(result.answer).not.toContain('FSA is usually the cleaner fit');
   });
 
+  it('treats short "what will that cost" followups as medical premium replays when the prior bot message already established medical plan options', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      lastBotMessage: 'Medical plan options (Employee + Family):\n\n- Standard HSA (BCBSTX): $321.45/month\n- Enhanced HSA (BCBSTX): $412.37/month\n\nWant to compare plans or switch coverage tiers?',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'what will that cost?',
+      session,
+    });
+
+    expect(result.answer).toContain('Here are the monthly medical premiums for Employee + Family coverage');
+    expect(result.answer).toContain('Standard HSA');
+    expect(result.answer).not.toContain('A useful next medical step is usually one of these');
+  });
+
+  it('treats short spouse-price followups as medical premium replays even from HSA/FSA context when the medical plan context is already established', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'HSA/FSA',
+      coverageTierLock: 'Employee + Spouse',
+      familyDetails: { hasSpouse: true, numChildren: 0 },
+      lastBotMessage: 'Medical plan options (Employee + Spouse):\n\n- Standard HSA (BCBSTX): $190.31/month\n- Enhanced HSA (BCBSTX): $275.10/month\n\nWant to compare plans or switch coverage tiers?',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'how much would that be for my spouse?',
+      session,
+    });
+
+    expect(result.answer).toContain('Here are the monthly medical premiums for Employee + Spouse coverage');
+    expect(result.answer).toContain('Standard HSA');
+    expect(result.answer).not.toContain('HSA/FSA overview');
+    expect(result.answer).not.toContain('FSA is usually the cleaner fit');
+  });
+
   it('treats direct Standard-HSA-versus-Kaiser compares as medical plan comparisons even from HSA/FSA context', async () => {
     const session = makeSession({
       step: 'active_chat',
