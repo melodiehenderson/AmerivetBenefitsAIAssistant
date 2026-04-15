@@ -711,6 +711,11 @@ function isMedicalPlanComparisonOrPricingQuestion(query: string): boolean {
   ) || (
     /\b(whole family|my family|family|wife|husband|spouse|partner|kids?|children|household|employee\s*\+\s*(?:family|spouse|child(?:ren)?)|cover myself)\b/i.test(lower)
       && /\b(price|prices|pricing|premium|premiums|per month|monthly|show me|breakdown|what would (?:i|we) pay|what would it cost|how much would it cost|cost to cover)\b/i.test(lower)
+  ) || (
+    /\bcover\s+(?:me|myself)\b/i.test(lower)
+      && /\b(wife|husband|spouse|partner)\b/i.test(lower)
+      && /\b(kids?|children|family)\b/i.test(lower)
+      && /\b(price|prices|pricing|premium|premiums|per month|monthly|show me|what would (?:i|we) pay|what would it cost|how much would it cost)\b/i.test(lower)
   );
 }
 
@@ -1214,7 +1219,13 @@ function buildQleTimingReply(session: Session, query: string): string {
 
 function isMedicalPremiumReplayQuestion(query: string): boolean {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
-  return /\b(show\s+me\s+the\s+numbers(?:\s+again)?|show\s+me\s+the\s+monthly\s+numbers|show\s+me\s+how\s+much\s+i\s+have\s+to\s+pay\s+each\s+month|monthly\s+premiums?|per\s+month\s+on\s+each\s+plan|how\s+much\s+will\s+my\s+premium\s+be|how\s+much\s+(?:the\s+)?premiums?\s+are|what\s+are\s+the\s+premiums?|what\s+are\s+the\s+medical\s+plan\s+prices?|what\s+are\s+the\s+prices?\s+again|what\s+are\s+the\s+medical\s+plan\s+prices?\s+again|what\s+would\s+the\s+premium\s+be|what\s+would\s+(?:i|we)\s+pay|what\s+would\s+it\s+cost|how\s+much\s+would\s+it\s+cost|how\s+much\s+are\s+the\s+family\s+medical\s+plans?|how\s+much\s+are\s+the\s+medical\s+plans?|what\s+does\s+(?:spouse|family|medical)\s+coverage\s+cost|cost\s+to\s+cover|show\s+me\s+.*pricing|pricing\s+for\s+employee|show\s+me\s+the\s+employee\s*\+|show\s+me\s+the\s+employee\s*\+\s*(?:family|spouse|child(?:ren)?)\s+(?:premiums|prices)|employee\s*\+\s*(?:family|spouse|child(?:ren)?)\s+pricing|employee\s*\+\s*(?:family|spouse|child(?:ren)?)\s+premiums|employee\s*\+\s*(?:family|spouse|child(?:ren)?)\s+prices|just\s+plan\s+pricing|what\s+about\s+just\s+plan\s+pricing|whole\s+family\s+pricing|show\s+me\s+the\s+family\s+prices|show\s+me\s+family\s+prices|family\s+prices|show\s+me\s+the\s+spouse\s+prices|spouse\s+prices|prices?\s+for\s+premiums?|show\s+me\s+the\s+prices|show\s+me\s+the\s+premiums|show\s+me\s+the\s+breakdown\s+of\s+(?:(?:each\s+of\s+)?(?:those|these)\s+plans?|each\s+plan)|breakdown\s+of\s+(?:(?:each\s+of\s+)?(?:those|these)\s+plans?|each\s+plan)|just\s+wanna\s+see\s+(?:the\s+)?plans?)\b/i.test(lower);
+  return /\b(show\s+me\s+the\s+numbers(?:\s+again)?|show\s+me\s+the\s+monthly\s+numbers|show\s+me\s+how\s+much\s+i\s+have\s+to\s+pay\s+each\s+month|monthly\s+premiums?|per\s+month\s+on\s+each\s+plan|how\s+much\s+will\s+my\s+premium\s+be|how\s+much\s+(?:the\s+)?premiums?\s+are|what\s+are\s+the\s+premiums?|what\s+are\s+the\s+medical\s+plan\s+prices?|what\s+are\s+the\s+prices?\s+again|what\s+are\s+the\s+medical\s+plan\s+prices?\s+again|what\s+would\s+the\s+premium\s+be|what\s+would\s+(?:i|we)\s+pay|what\s+would\s+it\s+cost|how\s+much\s+would\s+it\s+cost|how\s+much\s+are\s+the\s+family\s+medical\s+plans?|how\s+much\s+are\s+the\s+medical\s+plans?|what\s+does\s+(?:spouse|family|medical)\s+coverage\s+cost|cost\s+to\s+cover|show\s+me\s+.*pricing|pricing\s+for\s+employee|show\s+me\s+the\s+employee\s*\+|show\s+me\s+the\s+employee\s*\+\s*(?:family|spouse|child(?:ren)?)\s+(?:premiums|prices)|employee\s*\+\s*(?:family|spouse|child(?:ren)?)\s+pricing|employee\s*\+\s*(?:family|spouse|child(?:ren)?)\s+premiums|employee\s*\+\s*(?:family|spouse|child(?:ren)?)\s+prices|just\s+plan\s+pricing|what\s+about\s+just\s+plan\s+pricing|whole\s+family\s+pricing|show\s+me\s+the\s+family\s+prices|show\s+me\s+family\s+prices|family\s+prices|show\s+me\s+the\s+spouse\s+prices|spouse\s+prices|prices?\s+for\s+premiums?|show\s+me\s+the\s+prices|show\s+me\s+the\s+premiums|show\s+me\s+the\s+breakdown\s+of\s+(?:(?:each\s+of\s+)?(?:those|these)\s+plans?|each\s+plan)|breakdown\s+of\s+(?:(?:each\s+of\s+)?(?:those|these)\s+plans?|each\s+plan)|just\s+wanna\s+see\s+(?:the\s+)?plans?)\b/i.test(lower)
+    || (
+      /\bcover\s+(?:me|myself)\b/i.test(lower)
+      && /\b(wife|husband|spouse|partner)\b/i.test(lower)
+      && /\b(kids?|children|family)\b/i.test(lower)
+      && /\b(price|prices|pricing|premium|premiums|per month|monthly|show me|what would (?:i|we) pay|what would it cost|how much would it cost)\b/i.test(lower)
+    );
 }
 
 function buildMedicalPremiumReplayReply(session: Session, query: string): string {
