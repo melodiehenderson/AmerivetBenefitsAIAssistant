@@ -4239,6 +4239,53 @@ describe('qa-v2 engine', () => {
     expect(result.answer).not.toContain('We can stay with medical');
   });
 
+  it('answers broader package-priority wording with HSA-aware guidance when an HSA medical path and life are already in motion', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      completedTopics: ['Medical', 'Life Insurance'],
+      selectedPlan: 'Enhanced HSA',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      lastBotMessage: 'Life insurance options:\n\n- Unum Basic Life & AD&D is the employer-paid base life and AD&D benefit\n- Unum Voluntary Term Life is the extra employee-paid term coverage\n- Allstate Whole Life is the permanent option with cash value',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'what would you do if you were me with these benefits?',
+      session,
+    });
+
+    expect(result.answer).toContain('Based on what you have told me, I would usually prioritize your benefits in this order');
+    expect(result.answer).toContain('**disability**');
+    expect(result.answer).toContain('**HSA/FSA**');
+    expect(result.answer).toContain('**Enhanced HSA**');
+    expect(result.answer).not.toContain('We can stay with life insurance');
+  });
+
+  it('treats broader radar wording as benefit-decision guidance instead of falling back to a benefits overview', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+    });
+
+    const result = await runQaV2Engine({
+      query: 'what else should be on my radar with these benefits?',
+      session,
+    });
+
+    expect(result.answer).toContain('what is actually worth attention first');
+    expect(result.answer).toContain('Medical first');
+    expect(result.answer).not.toContain('Here are the benefits available to you as an AmeriVet employee');
+  });
+
   it('answers baby-related QLE timing directly instead of replaying maternity plan detail', async () => {
     const session = makeSession({
       step: 'active_chat',

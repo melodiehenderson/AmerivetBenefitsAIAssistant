@@ -2199,6 +2199,30 @@ describe('qa-v2 transcript replays', () => {
     );
   });
 
+  it('replays broader package-priority wording from a life-and-hsa context into disability plus HSA/FSA guidance', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'what would you do if you were me with these benefits?',
+          mustContain: ['Based on what you have told me', '**disability**', '**HSA/FSA**', '**Enhanced HSA**'],
+          mustNotContain: ['We can stay with life insurance'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'Life Insurance',
+        completedTopics: ['Medical', 'Life Insurance'],
+        selectedPlan: 'Enhanced HSA',
+        familyDetails: { hasSpouse: true, numChildren: 2 },
+        lastBotMessage: 'Life insurance options:\n\n- Unum Basic Life & AD&D is the employer-paid base life and AD&D benefit\n- Unum Voluntary Term Life is the extra employee-paid term coverage\n- Allstate Whole Life is the permanent option with cash value',
+      }),
+    );
+  });
+
   it('replays a bare "yes, do that" after medical copay explanation into a grounded copay comparison', async () => {
     await replayTranscript(
       [

@@ -1044,7 +1044,7 @@ function getFilteredMedicalPricingRowsForTier(session: Session, coverageTier: st
 
 function isPackageRecommendationQuestion(query: string): boolean {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
-  return /\b(which\s+benefits?\s+should\s+i\s+(?:get|take)|which\s+benefits?\s+do\s+you\s+recommend|which\s+ones?\s+would\s+you\s+recommend\s+i\s+get|what\s+benefits?\s+should\s+i\s+(?:get|take)|what\s+other\s+benefits?\s+should\s+i\s+get|should\s+i\s+get\s+any\s+of\s+the\s+other\s+benefits|knowing\s+what\s+you\s+know\s+about\s+me|based\s+on\s+what\s+you\s+know\s+about\s+me)\b/i.test(lower);
+  return /\b(which\s+benefits?\s+should\s+i\s+(?:get|take)|which\s+benefits?\s+do\s+you\s+recommend|which\s+ones?\s+would\s+you\s+recommend\s+i\s+get|what\s+benefits?\s+should\s+i\s+(?:get|take)|what\s+other\s+benefits?\s+should\s+i\s+get|should\s+i\s+get\s+any\s+of\s+the\s+other\s+benefits|knowing\s+what\s+you\s+know\s+about\s+me|based\s+on\s+what\s+you\s+know\s+about\s+me|what\s+would\s+you\s+do\s+if\s+you\s+were\s+me(?:\s+with\s+(?:these|my)\s+(?:benefits|coverage|package))?|if\s+you\s+were\s+me(?:\s+with\s+(?:these|my)\s+(?:benefits|coverage|package))?\s+what\s+would\s+you\s+(?:get|do)|how\s+would\s+you\s+prioriti[sz]e\s+(?:my|these)?\s*(?:benefits|coverage|package)|what\s+should\s+i\s+prioriti[sz]e\s+next\s+(?:with|for)\s+(?:my|these)?\s*(?:benefits|coverage|package)|what\s+should\s+i\s+get\s+next\s+(?:with|for)\s+(?:my|these)?\s*(?:benefits|coverage|package))\b/i.test(lower);
 }
 
 function buildPackageRecommendationReply(session: Session, query: string): string {
@@ -1060,6 +1060,14 @@ function buildPackageRecommendationReply(session: Session, query: string): strin
   const currentTopic = session.currentTopic || '';
   const completedTopics = new Set(session.completedTopics || []);
   const lastBot = (session.lastBotMessage || '').toLowerCase();
+  const selectedPlanContext = `${session.selectedPlan || ''}\n${session.lastBotMessage || ''}\n${query}`;
+  const hsaQualifiedPath = /Enhanced HSA|Standard HSA/i.test(selectedPlanContext);
+  const hsaPlanLabel = /Enhanced HSA/i.test(selectedPlanContext)
+    ? 'Enhanced HSA'
+    : /Standard HSA/i.test(selectedPlanContext)
+      ? 'Standard HSA'
+      : 'your HSA-qualified medical plan';
+  const kaiserPath = /Kaiser Standard HMO/i.test(selectedPlanContext);
   const medicalAlreadyInMotion = currentTopic === 'Medical'
     || completedTopics.has('Medical')
     || /medical plan options|monthly medical premiums|practical tradeoff across amerivet's medical options|recommendation for .* coverage|deductible|out-of-pocket max/i.test(lastBot);
@@ -1088,6 +1096,12 @@ function buildPackageRecommendationReply(session: Session, query: string): strin
     lines.push(`- **Medical is already the active anchor**, so I would mainly use it to decide what deserves the next dollar after the core plan is settled`);
   }
 
+  if (medicalAlreadyInMotion && hsaQualifiedPath) {
+    lines.push(`- **HSA/FSA right after the core medical choice**, because staying on **${hsaPlanLabel}** means the tax-account decision becomes part of the same healthcare-cost strategy`);
+  } else if (medicalAlreadyInMotion && kaiserPath) {
+    lines.push(`- **FSA only if pre-tax near-term spending matters**, because **Kaiser Standard HMO** is the non-HSA-qualified medical path`);
+  }
+
   if (likelyTier !== 'Employee Only') {
     lines.push(`- **Use ${likelyTier} medical pricing as your working tier** once the household changes are active`);
   }
@@ -1113,18 +1127,34 @@ function buildPackageRecommendationReply(session: Session, query: string): strin
   lines.push(`- **Accident and critical illness last**, because they are usually optional extra cash-protection layers after medical and income protection are settled`);
   lines.push(``);
   if (protectionPriority && lifeAlreadyInMotion) {
-    lines.push(`So if you want the shortest version: keep **medical** as the anchor, then use **disability/life** as the next real decision, and if you already know you want extra life coverage I would usually start with **Voluntary Term Life** before adding much **Whole Life**.`);
-    lines.push(`If you want, I can help you decide whether **disability** or **extra life** deserves the next dollar first.`);
+    lines.push(
+      hsaQualifiedPath
+        ? `So if you want the shortest version: keep **medical** as the anchor, use **disability/life** as the next real protection decision, line up **HSA/FSA** with **${hsaPlanLabel}**, and if you already know you want extra life coverage I would usually start with **Voluntary Term Life** before adding much **Whole Life**.`
+        : `So if you want the shortest version: keep **medical** as the anchor, then use **disability/life** as the next real decision, and if you already know you want extra life coverage I would usually start with **Voluntary Term Life** before adding much **Whole Life**.`,
+    );
+    lines.push(
+      hsaQualifiedPath
+        ? `If you want, I can help you decide whether **disability** or **HSA/FSA** deserves the next decision first.`
+        : `If you want, I can help you decide whether **disability** or **extra life** deserves the next dollar first.`,
+    );
   } else {
     lines.push(
       protectionPriority
-        ? `So if you want the shortest version: I would usually settle **medical first**, then look at **disability/life**, then decide whether **dental/vision** are worth adding, and only then worry about **critical illness or accident**.`
-        : `So if you want the shortest version: I would usually settle **medical first**, then decide whether **dental/vision** are worth adding, then look at **disability/life**, and only after that consider **critical illness or accident**.`,
+        ? hsaQualifiedPath
+          ? `So if you want the shortest version: I would usually settle **medical first**, then look at **disability/life**, then line up **HSA/FSA** with **${hsaPlanLabel}**, then decide whether **dental/vision** are worth adding, and only after that worry about **critical illness or accident**.`
+          : `So if you want the shortest version: I would usually settle **medical first**, then look at **disability/life**, then decide whether **dental/vision** are worth adding, and only then worry about **critical illness or accident**.`
+        : hsaQualifiedPath
+          ? `So if you want the shortest version: I would usually settle **medical first**, line up **HSA/FSA** with **${hsaPlanLabel}**, then decide whether **dental/vision** are worth adding, then look at **disability/life**, and only after that consider **critical illness or accident**.`
+          : `So if you want the shortest version: I would usually settle **medical first**, then decide whether **dental/vision** are worth adding, then look at **disability/life**, and only after that consider **critical illness or accident**.`,
     );
     lines.push(
       protectionPriority
-        ? `If you want, I can help you decide whether **disability** or **life insurance** deserves your next decision first.`
-        : `If you want, I can help you decide whether **dental** or **vision** deserves your next decision first.`,
+        ? hsaQualifiedPath
+          ? `If you want, I can help you decide whether **disability** or **HSA/FSA** deserves your next decision first.`
+          : `If you want, I can help you decide whether **disability** or **life insurance** deserves your next decision first.`
+        : hsaQualifiedPath
+          ? `If you want, I can help you decide whether **HSA/FSA** or **dental/vision** deserves your next decision first.`
+          : `If you want, I can help you decide whether **dental** or **vision** deserves your next decision first.`,
     );
   }
 
@@ -1775,7 +1805,7 @@ function isBenefitDecisionGuidanceRequest(query: string): boolean {
   if (isMedicalDetailQuestion(lower)) return false;
   if (/\b(plan|kaiser|standard hsa|enhanced hsa|maternity|pregnan|copay|prescription|deductible|coinsurance|out[- ]of[- ]pocket)\b/i.test(lower)) return false;
   return (
-    /\b(worth\s+considering|think\s+through|help\s+me\s+decide|what\s+should\s+i\s+consider|what\s+else\s+should\s+i\s+consider|which\s+of\s+these\s+benefits|which\s+benefit\s+is\s+worth|what\s+should\s+i\s+look\s+at\s+first|pay\s+attention\s+to\s+first)\b/i.test(lower)
+    /\b(worth\s+considering|think\s+through|help\s+me\s+decide|what\s+should\s+i\s+consider|what\s+else\s+should\s+i\s+consider|what\s+else\s+should\s+be\s+on\s+my\s+radar|what\s+should\s+be\s+on\s+my\s+radar|what\s+should\s+i\s+prioriti[sz]e\s+next|what\s+should\s+i\s+focus\s+on\s+next|what\s+should\s+i\s+be\s+paying\s+attention\s+to|which\s+of\s+these\s+benefits|which\s+benefit\s+is\s+worth|what\s+should\s+i\s+look\s+at\s+first|pay\s+attention\s+to\s+first)\b/i.test(lower)
     && /\b(benefit|benefits|package|coverage)\b/i.test(lower)
   ) || /\bprotecting\s+my\s+family|routine\s+care|healthcare\s+costs\b/i.test(lower);
 }

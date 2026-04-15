@@ -2365,6 +2365,30 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
     ],
   },
   {
+    id: 'V2-TX-075AA',
+    category: 'package_recommendation_hsa_life_context',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      completedTopics: ['Medical', 'Life Insurance'],
+      selectedPlan: 'Enhanced HSA',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      lastBotMessage: 'Life insurance options:\n\n- Unum Basic Life & AD&D is the employer-paid base life and AD&D benefit\n- Unum Voluntary Term Life is the extra employee-paid term coverage\n- Allstate Whole Life is the permanent option with cash value',
+    },
+    turns: [
+      {
+        user: 'what would you do if you were me with these benefits?',
+        mustContain: ['Based on what you have told me', '**disability**', '**HSA/FSA**', '**Enhanced HSA**'],
+        mustNotContain: ['We can stay with life insurance'],
+      },
+    ],
+  },
+  {
     id: 'V2-TX-075B',
     category: 'medical_term_invite_followthrough',
     initialSession: {
