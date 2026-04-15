@@ -2601,6 +2601,58 @@ describe('qa-v2 transcript replays', () => {
     );
   });
 
+  it('replays short life-decision followups into the employer split guidance when earlier family-protection context already exists in the thread', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'which of those should i get?',
+          mustContain: ['80% Voluntary Term Life / 20% Whole Life', 'Voluntary Term Life'],
+          mustNotContain: ['life insurance is usually worth tightening up'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'Life Insurance',
+        messages: [
+          { role: 'user', content: 'life insurance info' },
+          { role: 'assistant', content: 'Life insurance options:\n\n- Unum Basic Life & AD&D is the employer-paid base life and AD&D benefit\n- Unum Voluntary Term Life is the extra employee-paid term coverage\n- Allstate Whole Life is the permanent option with cash value' },
+          { role: 'user', content: 'how much protection is worth paying for if your family relies on your income?' },
+          { role: 'assistant', content: 'If you are asking how I would structure extra life coverage once the included base benefit is not enough, AmeriVet\'s current employer guidance is **80% Voluntary Term Life / 20% Whole Life**.' },
+        ],
+        lastBotMessage: 'My practical take is that if people rely on your income, I would not leave life insurance as an afterthought.',
+      }),
+    );
+  });
+
+  it('replays short amount followups into the employer split guidance when prior life recommendation context already established more-than-basic life needs', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'how much should i get?',
+          mustContain: ['80% Voluntary Term Life / 20% Whole Life', 'Basic Life'],
+          mustNotContain: ['life insurance is usually worth tightening up'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'Life Insurance',
+        messages: [
+          { role: 'user', content: 'i have a wife and 2 kids and want more than just the basic life coverage. what do you recommend?' },
+          { role: 'assistant', content: 'If you are asking how I would structure extra life coverage once the included base benefit is not enough, AmeriVet\'s current employer guidance is **80% Voluntary Term Life / 20% Whole Life**.' },
+        ],
+        lastBotMessage: 'Here is the practical difference across AmeriVet\'s life insurance options:\n\n- Unum Basic Life & AD&D is the employer-paid base life and AD&D benefit\n- Unum Voluntary Term Life is the extra employee-paid term coverage\n- Allstate Whole Life is the permanent option with cash value',
+      }),
+    );
+  });
+
   it('replays vague active-topic followups into topic-aware next-step guidance instead of asking for more specificity', async () => {
     await replayTranscript(
       [
