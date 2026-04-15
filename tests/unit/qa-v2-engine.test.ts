@@ -2268,6 +2268,53 @@ describe('qa-v2 engine', () => {
     expect(result.answer).not.toContain('life insurance is usually worth tightening up');
   });
 
+  it('uses the employer guidance split for broader life-amount questions once life options are already active', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      lastBotMessage: 'Life insurance options:\n\n- Unum Basic Life & AD&D is the employer-paid base life and AD&D benefit\n- Unum Voluntary Term Life is the extra employee-paid term coverage\n- Allstate Whole Life is the permanent option with cash value',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'how much should i get?',
+      session,
+    });
+
+    expect(result.answer).toContain('80% Voluntary Term Life / 20% Whole Life');
+    expect(result.answer).toContain('Basic Life');
+    expect(result.answer).toContain('Voluntary Term Life');
+    expect(result.answer).not.toContain('life insurance is usually worth tightening up');
+  });
+
+  it('uses the employer guidance split for family-protection payoff questions after life guidance menus', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      lastBotMessage: 'A useful next life-insurance step is usually one of these:\n\n- Whether life or disability matters more first\n- How much protection is worth paying for if your family relies on your income',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'How much protection is worth paying for if your family relies on your income?',
+      session,
+    });
+
+    expect(result.answer).toContain('80% Voluntary Term Life / 20% Whole Life');
+    expect(result.answer).toContain('Basic Life');
+    expect(result.answer).not.toContain('life insurance is usually worth tightening up');
+  });
+
   it('answers spouse-specific medical follow-ups after a recommendation', async () => {
     const session = makeSession({
       step: 'active_chat',

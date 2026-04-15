@@ -3134,6 +3134,50 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
   },
   {
     id: 'V2-TX-094',
+    category: 'life_employer_guidance_broader_amount_trigger',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      lastBotMessage: 'Life insurance options:\n\n- Unum Basic Life & AD&D is the employer-paid base life and AD&D benefit\n- Unum Voluntary Term Life is the extra employee-paid term coverage\n- Allstate Whole Life is the permanent option with cash value',
+    },
+    turns: [
+      {
+        user: 'how much should i get?',
+        mustContain: ['80% Voluntary Term Life / 20% Whole Life', 'Basic Life', 'Voluntary Term Life'],
+        mustNotContain: ['life insurance is usually worth tightening up'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-095',
+    category: 'life_employer_guidance_family_protection_followthrough',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      lastBotMessage: 'A useful next life-insurance step is usually one of these:\n\n- Whether life or disability matters more first\n- How much protection is worth paying for if your family relies on your income',
+    },
+    turns: [
+      {
+        user: 'how much protection is worth paying for if your family relies on your income?',
+        mustContain: ['80% Voluntary Term Life / 20% Whole Life', 'Basic Life'],
+        mustNotContain: ['life insurance is usually worth tightening up'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-096',
     category: 'therapy_specialist_practical_costs',
     initialSession: {
       step: 'active_chat',
@@ -3159,7 +3203,7 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
     ],
   },
   {
-    id: 'V2-TX-095',
+    id: 'V2-TX-097',
     category: 'hsa_context_declined_back_to_medical_plans',
     initialSession: {
       step: 'active_chat',
