@@ -2317,6 +2317,29 @@ describe('qa-v2 engine', () => {
     expect(result.answer).not.toContain('life insurance is usually worth tightening up');
   });
 
+  it('uses the employer guidance split for direct recommendation asks after the included life base has already been explained', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      lastBotMessage: 'If you do nothing, AmeriVet still gives you Basic Life & AD&D as the included base layer.',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'what do you recommend?',
+      session,
+    });
+
+    expect(result.answer).toContain('80% Voluntary Term Life / 20% Whole Life');
+    expect(result.answer).toContain('Basic Life');
+    expect(result.answer).toContain('Voluntary Term Life');
+    expect(result.answer).not.toContain('life insurance is usually worth tightening up');
+  });
+
   it('uses the employer guidance split for natural family wording inside an active life-insurance thread even without prior split scaffolding', async () => {
     const session = makeSession({
       step: 'active_chat',

@@ -3251,6 +3251,27 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
     ],
   },
   {
+    id: 'V2-TX-0940',
+    category: 'life_employer_guidance_included_base_followup',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      lastBotMessage: 'If you do nothing, AmeriVet still gives you Basic Life & AD&D as the included base layer.',
+    },
+    turns: [
+      {
+        user: 'what do you recommend?',
+        mustContain: ['80% Voluntary Term Life / 20% Whole Life', 'Basic Life', 'Voluntary Term Life'],
+        mustNotContain: ['life insurance is usually worth tightening up'],
+      },
+    ],
+  },
+  {
     id: 'V2-TX-094A',
     category: 'life_employer_guidance_soft_recommendation_trigger',
     initialSession: {

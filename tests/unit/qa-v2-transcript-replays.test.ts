@@ -2675,6 +2675,27 @@ describe('qa-v2 transcript replays', () => {
     );
   });
 
+  it('replays direct life recommendation asks into the employer split guidance after the included base life has already been explained', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'what do you recommend?',
+          mustContain: ['80% Voluntary Term Life / 20% Whole Life', 'Basic Life', 'Voluntary Term Life'],
+          mustNotContain: ['life insurance is usually worth tightening up'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'Life Insurance',
+        lastBotMessage: 'If you do nothing, AmeriVet still gives you Basic Life & AD&D as the included base layer.',
+      }),
+    );
+  });
+
   it('replays natural family wording into the employer split guidance when life insurance is already the active topic', async () => {
     await replayTranscript(
       [
