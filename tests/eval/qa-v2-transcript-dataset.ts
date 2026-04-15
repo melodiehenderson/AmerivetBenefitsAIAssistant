@@ -470,6 +470,34 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
   },
   {
     id: 'V2-TX-020',
+    category: 'family_protection_compare_followup',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Sarah',
+      hasCollectedName: true,
+      userAge: 42,
+      userState: 'FL',
+      dataConfirmed: true,
+      coverageTierLock: 'Employee + Family',
+    },
+    turns: [
+      {
+        user: "what benefit should i pay attention to first if i'm mostly worried about protecting my family?",
+        mustContain: ['protecting your family'],
+      },
+      {
+        user: "yes, i'd like that",
+        mustContain: ['simplest way to separate life insurance from disability'],
+      },
+      {
+        user: 'why not life first if my spouse and kids would need support if i die?',
+        mustContain: ['Life absolutely can come first', 'support after my death'],
+        mustNotContain: ['Tell me which area you want to focus on next'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-020A',
     category: 'medical_recommendation_why_followup',
     initialSession: {
       step: 'active_chat',
@@ -3394,7 +3422,7 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
     turns: [
       {
         user: 'i see a therapist 2x monthly, what will that cost?',
-        mustContain: ['Therapy / specialist care', 'Standard HSA', 'Enhanced HSA'],
+        mustContain: ['Therapy / specialist care', 'Standard HSA', 'Enhanced HSA', 'recurring part of your year'],
         mustNotContain: ['A useful next medical step is usually one of these'],
       },
       {

@@ -284,6 +284,8 @@ describe('qa-v2 engine', () => {
     expect(result.answer).toContain('Therapy / specialist care');
     expect(result.answer).toContain('Standard HSA');
     expect(result.answer).toContain('Enhanced HSA');
+    expect(result.answer).toContain('Enhanced HSA');
+    expect(result.answer).toContain('recurring part of your year');
     expect(result.answer).not.toContain('A useful next medical step is usually one of these');
   });
 
@@ -3105,6 +3107,48 @@ describe('qa-v2 engine', () => {
 
     expect(result.answer).toContain('Disability often can come first');
     expect(result.answer).toContain('paycheck');
+  });
+
+  it('leans life first when a life-versus-disability question is framed around survivor protection', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Sarah',
+      hasCollectedName: true,
+      userAge: 42,
+      userState: 'FL',
+      dataConfirmed: true,
+      coverageTierLock: 'Employee + Family',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'if my spouse and kids would need support if i die, should i do life insurance or disability first?',
+      session,
+    });
+
+    expect(result.answer).toContain('life insurance first');
+    expect(result.answer).toContain('survivor protection');
+    expect(result.answer).not.toContain('disability first when the household depends on your paycheck');
+  });
+
+  it('answers "why not life first?" after life-versus-disability comparison when survivor protection is the concern', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Sarah',
+      hasCollectedName: true,
+      userAge: 42,
+      userState: 'FL',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      lastBotMessage: 'Here is the simplest way to separate life insurance from disability:',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'why not life first if my spouse and kids would need support if i die?',
+      session,
+    });
+
+    expect(result.answer).toContain('Life absolutely can come first');
+    expect(result.answer).toContain('support after my death');
   });
 
   it('handles family-specific follow-ups after dental-versus-vision comparison', async () => {

@@ -1886,6 +1886,34 @@ describe('qa-v2 transcript replays', () => {
     );
   });
 
+  it('replays survivor-protection wording into life-first guidance after family-protection comparison guidance', async () => {
+    await replayTranscript(
+      [
+        {
+          user: "what benefit should i pay attention to first if i'm mostly worried about protecting my family?",
+          mustContain: ['protecting your family'],
+        },
+        {
+          user: "yes, i'd like that",
+          mustContain: ['simplest way to separate life insurance from disability'],
+        },
+        {
+          user: 'why not life first if my spouse and kids would need support if i die?',
+          mustContain: ['Life absolutely can come first', 'support after my death'],
+          mustNotContain: ['Tell me which area you want to focus on next'],
+        },
+      ],
+      makeSession({
+        userName: 'Sarah',
+        hasCollectedName: true,
+        userAge: 42,
+        userState: 'FL',
+        dataConfirmed: true,
+        coverageTierLock: 'Employee + Family',
+      }),
+    );
+  });
+
   it('replays "why not vision first?" after routine-care comparison guidance', async () => {
     await replayTranscript(
       [
@@ -2826,7 +2854,7 @@ describe('qa-v2 transcript replays', () => {
       [
         {
           user: 'i see a therapist 2x monthly, what will that cost?',
-          mustContain: ['Therapy / specialist care', 'Standard HSA', 'Enhanced HSA'],
+          mustContain: ['Therapy / specialist care', 'Standard HSA', 'Enhanced HSA', 'recurring part of your year'],
           mustNotContain: ['A useful next medical step is usually one of these'],
         },
         {

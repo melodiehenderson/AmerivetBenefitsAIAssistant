@@ -332,11 +332,22 @@ function buildServiceComparison(
   return lines.join('\n');
 }
 
-function buildTherapyComparison(plans: MedicalPlanSummary[]): string {
+function hasRecurringTherapyUsage(queryLower: string): boolean {
+  return /\b(therapy|therapist|mental\s+health|behavioral\s+health|counsel(?:ing|or))\b/i.test(queryLower)
+    && /\b(weekly|twice\s+(?:a\s+)?month|2x\s+monthly|monthly|every\s+month|every\s+week|regular(?:ly)?|ongoing|recurring|frequent)\b/i.test(queryLower);
+}
+
+function buildTherapyComparison(plans: MedicalPlanSummary[], queryLower = ''): string {
   const lines = ['Here is the Therapy / specialist care comparison across the available medical plans:', ''];
   for (const plan of plans) {
     const therapyDetail = plan.physicalTherapy || 'I do not have a separate therapy line item in the current summary';
     lines.push(`- **${plan.displayName}**: ${therapyDetail}; closest specialist proxy: ${plan.specialist}`);
+  }
+  if (hasRecurringTherapyUsage(queryLower)) {
+    lines.push(
+      '',
+      `If therapy is likely to be a recurring part of your year, **Enhanced HSA** is the plan I would look at first because repeated specialist-style use makes the stronger point-of-service protection more valuable.`,
+    );
   }
   return lines.join('\n');
 }
@@ -657,10 +668,10 @@ export function buildMedicalPlanDetailAnswer(
       return [
         `For therapy-related care, the safest grounded comparison is the plan's therapy line where it exists, plus the specialist cost line when a separate therapy copay is not listed.`,
         ``,
-        buildTherapyComparison(summaries),
+        buildTherapyComparison(summaries, queryLower),
       ].join('\n');
     }
-    return buildTherapyComparison(summaries);
+    return buildTherapyComparison(summaries, queryLower);
   }
 
   if (/\b(primary\s+care|pcp|doctor\s+visit|office\s+visit|specialist|urgent\s+care|emergency\s+room|er|copay|copays)\b/i.test(queryLower) && plansFromQuery.length !== 1) {

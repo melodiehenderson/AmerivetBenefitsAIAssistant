@@ -1200,6 +1200,16 @@ function isSupplementalNarrowingQuestion(query: string): boolean {
       && /\b(life|disability|critical|accident|supplemental)\b/i.test(lower);
 }
 
+function detectLifeProtectionFocus(text: string): 'survivor_protection' | 'paycheck_protection' | null {
+  const lower = stripAffirmationLeadIn(text.trim()).toLowerCase();
+  const survivorProtection = /\b(if\s+i\s+die|if\s+i\s+died|after\s+my\s+death|after\s+i\s+die|if\s+something\s+happens?\s+to\s+me|if\s+something\s+happened\s+to\s+me|if\s+i\s+passed\s+away|if\s+i\s+wasn'?t\s+here|survivor\s+protection|survivor\s+support|death\s+benefit|would\s+need\s+support\s+if\s+i\s+die|would\s+need\s+support\s+if\s+something\s+happens?\s+to\s+me|would\s+need\s+support\s+after\s+my\s+death)\b/i.test(lower);
+  const paycheckProtection = /\b(if\s+i\s+can'?t\s+work|if\s+i\s+couldn'?t\s+work|if\s+i\s+get\s+sick\s+and\s+can'?t\s+work|if\s+i\s+got\s+hurt\s+and\s+can'?t\s+work|unable\s+to\s+work|can'?t\s+work|couldn'?t\s+work|paycheck|income\s+interruption|income\s+stops?|while\s+i'?m\s+alive|if\s+i'?m\s+alive\s+but\s+can'?t\s+work)\b/i.test(lower);
+
+  if (survivorProtection && !paycheckProtection) return 'survivor_protection';
+  if (paycheckProtection && !survivorProtection) return 'paycheck_protection';
+  return null;
+}
+
 function buildSupplementalNarrowingReply(session: Session, query: string): string {
   const lower = query.toLowerCase();
   const householdText = `${(session.messages || [])
@@ -1208,14 +1218,28 @@ function buildSupplementalNarrowingReply(session: Session, query: string): strin
     .join('\n')}\n${query}`.toLowerCase();
   const soleBreadwinner = /\b(sole\s+bread\s*winner|breadwinner|only\s+income|sole\s+provider|only\s+provider|family\s+relies\s+on\s+my\s+income|rely\s+on\s+my\s+income|single\s+(?:mom|dad))\b/i.test(householdText);
   const householdDependsOnIncome = soleBreadwinner || /\b(spouse|wife|husband|partner|kids?|children|family|household)\b/i.test(householdText);
+  const lifeProtectionFocus = detectLifeProtectionFocus(householdText);
   const mentionsLife = /\b(life(?:\s+insurance)?|term life|voluntary term(?:\s+life)?|whole life|basic life|25k)\b/i.test(lower);
   const mentionsDisability = /\b(disability|std|ltd|short[- ]?term|long[- ]?term)\b/i.test(lower);
   const mentionsCritical = /\bcritical(?:\s+illness)?\b/i.test(lower);
   const mentionsAccident = /\b(accident|ad&d|ad\/d)\b/i.test(lower);
 
   if (mentionsLife && mentionsDisability) {
+    if (lifeProtectionFocus === 'survivor_protection') {
+      return [
+        `If you are choosing between more life insurance and disability because your household would need support **if something happened to you**, I would usually tighten up **life insurance first**.`,
+        ``,
+        `Why:`,
+        `- **Life insurance** is the household-replacement decision if you die`,
+        `- **Disability** is the paycheck-protection decision if you are alive but unable to work`,
+        `- If the fear is survivor protection more than paycheck interruption, the bigger immediate gap is usually whether the employer-paid basic life benefit would actually be enough`,
+        ``,
+        `So if you are asking me to lead the decision, I would usually do **life insurance first**, then tighten up **disability** right after that if the household also depends heavily on your ongoing paycheck.`,
+      ].join('\n');
+    }
+
     return [
-      householdDependsOnIncome
+      householdDependsOnIncome || lifeProtectionFocus === 'paycheck_protection'
         ? `If you are choosing between more life insurance and disability, I would usually tighten up **disability first** when the household depends on your paycheck.`
         : `If you are choosing between more life insurance and disability, the practical split is paycheck protection versus long-term survivor protection.`,
       ``,
@@ -1224,7 +1248,7 @@ function buildSupplementalNarrowingReply(session: Session, query: string): strin
       `- **Life insurance** protects the household if you die`,
       `- AmeriVet already gives you a basic employer-paid life benefit, so the extra gap is often disability first when missing income would hurt immediately`,
       ``,
-      householdDependsOnIncome
+      householdDependsOnIncome || lifeProtectionFocus === 'paycheck_protection'
         ? `So if you are asking me to lead the decision, I would usually do **disability first**, then add more **life insurance** if the household still needs more survivor protection than the employer-paid basic benefit.`
         : `So if you are asking me to lead the decision, I would usually choose the one that covers the bigger real-world gap first: paycheck interruption or survivor protection.`,
     ].join('\n');
@@ -1826,7 +1850,22 @@ function buildAccidentVsCriticalComparison(): string {
   ].join('\n');
 }
 
-function buildLifeVsDisabilityComparison(): string {
+function buildLifeVsDisabilityComparison(query = ''): string {
+  const lifeProtectionFocus = detectLifeProtectionFocus(query);
+
+  if (lifeProtectionFocus === 'survivor_protection') {
+    return [
+      `Here is the simplest way to separate life insurance from disability:`,
+      ``,
+      `- Life insurance is for protecting your household if you die`,
+      `- Disability is for protecting part of your income if you are alive but unable to work because of illness or injury`,
+      `- If your bigger fear is what happens to your spouse, kids, or household **after your death**, life insurance usually becomes the first thing I would tighten up`,
+      `- Disability still matters right after that if the household also depends heavily on your ongoing paycheck`,
+      ``,
+      `So when the question is really about **survivor protection**, I would usually do **life insurance first**, then disability right after that.`,
+    ].join('\n');
+  }
+
   return [
     `Here is the simplest way to separate life insurance from disability:`,
     ``,
@@ -2081,8 +2120,25 @@ function buildComparisonFamilyReply(
   const lower = query.toLowerCase();
   const spouseFocused = /\bspouse\b|\bpartner\b/i.test(lower);
   const childFocused = /\bkids?\b|\bchildren\b/i.test(lower);
+  const lifeProtectionFocus = detectLifeProtectionFocus(query);
 
   if (kind === 'life_vs_disability') {
+    if (lifeProtectionFocus === 'survivor_protection') {
+      return [
+        childFocused
+          ? `If you are thinking about what your kids would need if something happened to you, life insurance usually becomes the first thing I would tighten up.`
+          : spouseFocused
+            ? `If you are thinking about what your spouse or partner would need if something happened to you, life insurance usually becomes the first thing I would tighten up.`
+            : `If you are thinking about survivor protection for your household, life insurance usually becomes the first thing I would tighten up.`,
+        ``,
+        `- Life insurance is the household-replacement decision if something happens to you`,
+        `- Disability still matters, but that is the paycheck-protection decision while you are alive`,
+        `- So if the main fear is survivor support rather than paycheck interruption, life usually deserves the first extra attention`,
+        ``,
+        `So my practical order is usually **life first**, then **disability** right after that if the household also depends on your paycheck.`,
+      ].join('\n');
+    }
+
     return [
       childFocused
         ? `If you are thinking about your kids first, life and disability usually work together rather than replacing each other.`
@@ -2127,6 +2183,7 @@ function buildComparisonFamilyReply(
 
 function buildWhyNotOtherFirstReply(kind: 'accident_vs_critical' | 'life_vs_disability' | 'dental_vs_vision', query: string): string | null {
   const lower = query.toLowerCase();
+  const lifeProtectionFocus = detectLifeProtectionFocus(query);
 
   if (kind === 'dental_vs_vision' && /\bwhy not vision first\b/i.test(lower)) {
     return [
@@ -2143,6 +2200,17 @@ function buildWhyNotOtherFirstReply(kind: 'accident_vs_critical' | 'life_vs_disa
       ``,
       `That is because a work-stopping illness or injury can create financial stress long before anyone is thinking about a life insurance payout.`,
       `So if paycheck interruption feels like the more immediate risk, disability first is a very reasonable way to think about it.`,
+    ].join('\n');
+  }
+
+  if (kind === 'life_vs_disability' && /\bwhy not life first\b/i.test(lower)) {
+    return [
+      lifeProtectionFocus === 'survivor_protection'
+        ? `Life absolutely can come first if your bigger fear is what your household would need and how they would find support after my death.`
+        : `Life absolutely can come first when the bigger gap is survivor protection rather than paycheck interruption.`,
+      ``,
+      `That is because life insurance is the household-replacement decision if you die, while disability is the paycheck-protection decision while you are alive.`,
+      `So if the concern is "would my spouse, partner, or kids be supported after my death?", life first is a very reasonable way to think about it.`,
     ].join('\n');
   }
 
@@ -2670,6 +2738,7 @@ function isMedicalCoverageTierQuestion(query: string): boolean {
   if (
     isCostModelRequest(query)
     || isMedicalPremiumReplayQuestion(query)
+    || /\b(life(?:\s+insurance)?|term\s+life|whole\s+life|basic\s+life|disability|std|ltd|critical(?:\s+illness)?|accident|ad&d|ad\/d)\b/i.test(lower)
     || /\b(compare|show\s+me|what\s+are|what\s+would)\b[^.?!]{0,40}\b(cost|costs|pricing|premium|premiums)\b/i.test(lower)
   ) {
     return false;
@@ -3106,6 +3175,7 @@ function buildContinuationReply(session: Session, query: string): string | null 
   const wantsThatOne = /\b(that one|that plan|that option|the recommended one)\b/i.test(lower);
   const wantsFamilySpecific = isFamilySpecificFollowup(normalizedQuery);
   const contextualComparisonKind = detectContextualComparisonKind(session, normalizedQuery);
+  const lifeProtectionFocus = detectLifeProtectionFocus(normalizedQuery);
 
   if (isMedicalCoverageTierQuestion(normalizedQuery)) {
     setTopic(session, 'Medical');
@@ -3200,7 +3270,10 @@ function buildContinuationReply(session: Session, query: string): string | null 
     }
   }
 
-  if (isLifeFamilyCoverageQuestion(normalizedQuery)) {
+  if (
+    isLifeFamilyCoverageQuestion(normalizedQuery)
+    && !/simplest way to separate life insurance from disability/i.test(lastBotMessage)
+  ) {
     setTopic(session, 'Life Insurance');
     return buildTopicReply(session, 'Life Insurance', normalizedQuery);
   }
@@ -3358,7 +3431,7 @@ function buildContinuationReply(session: Session, query: string): string | null 
 
   if (session.pendingGuidancePrompt === 'life_vs_disability' && isAffirmativeCompareFollowup(normalizedQuery)) {
     clearPendingGuidance(session);
-    return buildLifeVsDisabilityComparison();
+    return buildLifeVsDisabilityComparison(normalizedQuery);
   }
 
   if (session.pendingGuidancePrompt === 'dental_vs_vision' && isAffirmativeCompareFollowup(normalizedQuery)) {
@@ -3383,7 +3456,7 @@ function buildContinuationReply(session: Session, query: string): string | null 
       return buildDentalVsVisionDecision();
     }
     if (contextualComparisonKind === 'life_vs_disability') {
-      return buildLifeVsDisabilityComparison();
+      return buildLifeVsDisabilityComparison(normalizedQuery);
     }
     if (contextualComparisonKind === 'accident_vs_critical') {
       setPendingGuidance(session, 'accident_vs_critical', 'Accident/AD&D');
@@ -3635,7 +3708,7 @@ function buildContinuationReply(session: Session, query: string): string | null 
         return buildSupplementalPracticalTake('Accident/AD&D');
       }
       if (/life insurance from disability/i.test(lastBotMessage)) {
-        return buildSupplementalPracticalTake('Disability');
+        return buildSupplementalPracticalTake(lifeProtectionFocus === 'survivor_protection' ? 'Life Insurance' : 'Disability');
       }
       if (/dental and vision as the next add-on/i.test(lastBotMessage)) {
         return `My practical take is to choose dental first if you already expect fillings, crowns, or orthodontic use, and vision first if the household already knows it will use exams, glasses, or contacts every year. If you do not already know the household will use vision, dental usually has the bigger upside.`;
@@ -3660,7 +3733,7 @@ function buildContinuationReply(session: Session, query: string): string | null 
       return buildAccidentVsCriticalComparison();
     }
     if (/walk you through life versus disability|walk you through disability versus extra life/i.test(lastBotMessage)) {
-      return buildLifeVsDisabilityComparison();
+      return buildLifeVsDisabilityComparison(normalizedQuery);
     }
     if (/decide whether dental or vision is more worth adding first/i.test(lastBotMessage)) {
       return buildDentalVsVisionDecision();
