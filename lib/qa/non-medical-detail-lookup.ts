@@ -176,6 +176,41 @@ function buildEmployerLifeSplitAdjustmentReply(query: string, session: Session):
   ].join('\n');
 }
 
+function buildLifeDecisionFrameworkReply(query: string, session: Session): string | null {
+  const lower = query.toLowerCase();
+  const asksDirectLifeDecision = /\b(which\s+one\s+should\s+i\s+get|which\s+ones\s+should\s+i\s+get|which\s+of\s+those\s+should\s+i\s+get|which\s+should\s+i\s+get|what\s+do\s+you\s+recommend|would\s+you\s+recommend|what\s+would\s+you\s+recommend|how\s+much\s+should\s+i\s+get|how\s+much\s+coverage\s+should\s+i\s+get|how\s+much\s+would\s+you\s+recommend|what\s+amount\s+would\s+you\s+recommend|how\s+much\s+protection\s+is\s+worth\s+paying)\b/i.test(lower);
+  if (!asksDirectLifeDecision) return null;
+
+  const { basic, term, whole } = getLifePlans();
+  const combined = [
+    ...(session.messages || []).map((message) => message.content.toLowerCase()),
+    (session.lastBotMessage || '').toLowerCase(),
+    lower,
+  ].join('\n');
+  const hasFamilyOrIncomeContext = Boolean(session.familyDetails?.hasSpouse)
+    || Boolean((session.familyDetails?.numChildren || 0) > 0)
+    || /employee\s+\+\s+(spouse|child|family)/i.test(session.coverageTierLock || '')
+    || /\b(wife|husband|spouse|partner|kids?|children|family|dependents?|other\s+people\s+rely\s+on\s+your\s+income|family\s+relies\s+on\s+your\s+income|depend(?:s)?\s+on\s+your\s+income|income\s+replacement|base\s+benefit\s+isn'?t\s+enough)\b/i.test(combined);
+
+  return [
+    hasFamilyOrIncomeContext
+      ? `If you want the short practical answer, I would treat **${basic?.name || 'Basic Life'}** as the included base and make **${term?.name || 'Voluntary Term Life'}** the first extra layer when the job is protecting the household.`
+      : `If you want the short practical answer, I would treat **${basic?.name || 'Basic Life'}** as the included base and use **${term?.name || 'Voluntary Term Life'}** as the first extra paid layer when the goal is simply more life coverage.`,
+    ``,
+    `How I would think about it:`,
+    `- Keep **${basic?.name || 'Basic Life'}** as the included starting point`,
+    `- Use **${term?.name || 'Voluntary Term Life'}** first when you want the cleaner extra income-protection layer`,
+    `- Reach for **${whole?.name || 'Whole Life'}** only when permanent coverage and cash-value features are part of why you are buying more life insurance`,
+    hasFamilyOrIncomeContext
+      ? `- If other people rely on your income, the main gap is usually that the included base benefit is too small by itself`
+      : `- If you mostly just want more coverage without a permanent-life goal, term usually deserves your attention before whole life`,
+    ``,
+    hasFamilyOrIncomeContext
+      ? `So my practical answer is: tighten up **${term?.name || 'Voluntary Term Life'}** before you worry about giving **${whole?.name || 'Whole Life'}** a bigger role.`
+      : `So my practical answer is: start with **${term?.name || 'Voluntary Term Life'}** for extra protection, and only add **${whole?.name || 'Whole Life'}** if the permanent-life features are actually part of the goal.`,
+  ].join('\n');
+}
+
 export function isNonMedicalDetailQuestion(topic: string, query: string): boolean {
   if (!topic || !query) return false;
   const lower = query.toLowerCase();
@@ -231,6 +266,10 @@ export function buildNonMedicalDetailAnswer(topic: string, query: string, sessio
     const employerSplitAdjustment = buildEmployerLifeSplitAdjustmentReply(query, session);
     if (employerSplitAdjustment) {
       return employerSplitAdjustment;
+    }
+    const lifeDecisionFramework = buildLifeDecisionFrameworkReply(query, session);
+    if (lifeDecisionFramework) {
+      return lifeDecisionFramework;
     }
 
     if ((/\b(if i do nothing|what life insurance do i get|included life|included coverage|default life|automatic coverage|automatically enrolled|already included|included by default|get automatically|without having to pay more|without paying more|without extra cost)\b/i.test(lower) && /\b(life|coverage|insurance|plans?)\b/i.test(lower)) || /\bemployer-paid basic life\b/i.test(lower)) {

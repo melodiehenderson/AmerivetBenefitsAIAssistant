@@ -3253,6 +3253,32 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
     ],
   },
   {
+    id: 'V2-TX-093A',
+    category: 'life_generic_decision_framework',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      lastBotMessage: 'Life insurance options:\n\n- Unum Basic Life & AD&D is the employer-paid base life and AD&D benefit\n- Unum Voluntary Term Life is the extra employee-paid term coverage\n- Allstate Whole Life is the permanent option with cash value',
+    },
+    turns: [
+      {
+        user: 'which of those should i get?',
+        mustContain: ['Basic Life', 'Voluntary Term Life', 'Whole Life'],
+        mustNotContain: ['life insurance is usually worth tightening up'],
+      },
+      {
+        user: 'how much should i get?',
+        mustContain: ['Basic Life', 'Voluntary Term Life', 'Whole Life'],
+        mustNotContain: ['life insurance is usually worth tightening up'],
+      },
+    ],
+  },
+  {
     id: 'V2-TX-094',
     category: 'life_employer_guidance_broader_amount_trigger',
     initialSession: {

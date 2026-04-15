@@ -2677,6 +2677,32 @@ describe('qa-v2 transcript replays', () => {
     );
   });
 
+  it('replays generic life choice wording into a sharper term-versus-whole framework before family split context exists', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'which of those should i get?',
+          mustContain: ['Basic Life', 'Voluntary Term Life', 'Whole Life'],
+          mustNotContain: ['life insurance is usually worth tightening up'],
+        },
+        {
+          user: 'how much should i get?',
+          mustContain: ['Basic Life', 'Voluntary Term Life', 'Whole Life'],
+          mustNotContain: ['life insurance is usually worth tightening up'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'Life Insurance',
+        lastBotMessage: 'Life insurance options:\n\n- Unum Basic Life & AD&D is the employer-paid base life and AD&D benefit\n- Unum Voluntary Term Life is the extra employee-paid term coverage\n- Allstate Whole Life is the permanent option with cash value',
+      }),
+    );
+  });
+
   it('replays broader life-amount wording into the employer split guidance once life options are already active', async () => {
     await replayTranscript(
       [
