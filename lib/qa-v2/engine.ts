@@ -2829,7 +2829,11 @@ function usageLevelFromQuery(query: string): 'low' | 'moderate' | 'high' {
   const lower = query.toLowerCase();
   const recurringTherapySignal = /\b(therapy|therapist|mental\s+health|behavioral\s+health|counsel(?:ing|or))\b/i.test(lower)
     && /\b(weekly|twice\s+(?:a\s+)?month|2x\s+monthly|monthly|every\s+month|every\s+week|regular(?:ly)?|ongoing|recurring|frequent)\b/i.test(lower);
-  if (recurringTherapySignal) return 'high';
+  const recurringSpecialistSignal = /\b(specialist|psychiatrist|psychologist|physical\s+therapy|physical\s+therapist)\b/i.test(lower)
+    && /\b(weekly|twice\s+(?:a\s+)?month|2x\s+monthly|monthly|every\s+month|every\s+week|regular(?:ly)?|ongoing|recurring|frequent)\b/i.test(lower);
+  const recurringPrescriptionSignal = /\b(prescriptions?|rx|drugs?|medications?|meds?)\b/i.test(lower)
+    && /\b(weekly|monthly|every\s+month|regular(?:ly)?|ongoing|recurring|frequent|takes?\s+\d+\s+(?:prescriptions?|medications?)|on\s+\d+\s+(?:prescriptions?|medications?)|multiple\s+(?:prescriptions?|medications?))\b/i.test(lower);
+  if (recurringTherapySignal || recurringSpecialistSignal || recurringPrescriptionSignal) return 'high';
   if (/\bhigh\s+usage\b|\bhigh\s+utilization\b|\busage\s+level\s+is\s+high\b|\bfrequent\b|\bongoing\b/i.test(lower)) return 'high';
   if (/\bmoderate\s+usage\b|\bmoderate\s+utilization\b|\busage\s+level\s+is\s+moderate\b/i.test(lower)) return 'moderate';
   if (/\blow\s+usage\b|\bgenerally\s+healthy\b|\bhealthy\b|\blow\s+bills\b|\blow\s+medical\s+use\b/i.test(lower)) return 'low';

@@ -3589,6 +3589,50 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
     ],
   },
   {
+    id: 'V2-TX-097C',
+    category: 'prescription_recurring_usage_recommendation',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'TX',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee + Spouse',
+      familyDetails: { hasSpouse: true, numChildren: 0 },
+      lastBotMessage: 'Here is the practical tradeoff across AmeriVet\'s medical options:',
+    },
+    turns: [
+      {
+        user: 'which plan do you recommend if my wife takes 2 prescriptions?',
+        mustContain: ['My recommendation: Enhanced HSA', 'more than minimal usage'],
+        mustNotContain: ['Quick clarifier'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-097D',
+    category: 'specialist_recurring_usage_recommendation',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'TX',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      lastBotMessage: 'Here is the practical tradeoff across AmeriVet\'s medical options:',
+    },
+    turns: [
+      {
+        user: 'which plan do you recommend if i see a specialist every month?',
+        mustContain: ['My recommendation: Enhanced HSA', 'more than minimal usage'],
+        mustNotContain: ['Quick clarifier'],
+      },
+    ],
+  },
+  {
     id: 'V2-TX-098',
     category: 'hsa_context_declined_back_to_medical_plans',
     initialSession: {

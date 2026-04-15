@@ -3031,6 +3031,50 @@ describe('qa-v2 transcript replays', () => {
     );
   });
 
+  it('replays recurring-prescription recommendation asks into enhanced medical guidance without a generic clarifier', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'which plan do you recommend if my wife takes 2 prescriptions?',
+          mustContain: ['My recommendation: Enhanced HSA', 'more than minimal usage'],
+          mustNotContain: ['Quick clarifier'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'TX',
+        dataConfirmed: true,
+        currentTopic: 'Medical',
+        coverageTierLock: 'Employee + Spouse',
+        familyDetails: { hasSpouse: true, numChildren: 0 },
+        lastBotMessage: 'Here is the practical tradeoff across AmeriVet\'s medical options:',
+      }),
+    );
+  });
+
+  it('replays recurring-specialist recommendation asks into enhanced medical guidance without a generic clarifier', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'which plan do you recommend if i see a specialist every month?',
+          mustContain: ['My recommendation: Enhanced HSA', 'more than minimal usage'],
+          mustNotContain: ['Quick clarifier'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'TX',
+        dataConfirmed: true,
+        currentTopic: 'Medical',
+        lastBotMessage: 'Here is the practical tradeoff across AmeriVet\'s medical options:',
+      }),
+    );
+  });
+
   it('replays just-wanna-see-the-plans phrasing back into medical from stale hsa/fsa context', async () => {
     await replayTranscript(
       [

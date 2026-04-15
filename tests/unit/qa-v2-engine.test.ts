@@ -4595,6 +4595,53 @@ describe('qa-v2 engine', () => {
     expect(result.answer).not.toContain('Quick clarifier');
   });
 
+  it('recommends enhanced when the household has ongoing prescriptions in plain language', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'TX',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee + Spouse',
+      familyDetails: { hasSpouse: true, numChildren: 0 },
+      lastBotMessage: 'Here is the practical tradeoff across AmeriVet\'s medical options.',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'which plan do you recommend if my wife takes 2 prescriptions?',
+      session,
+    });
+
+    expect(result.answer).toContain('My recommendation: Enhanced HSA');
+    expect(result.answer).toContain('more than minimal usage');
+    expect(result.answer).not.toContain('Quick clarifier');
+  });
+
+  it('recommends enhanced when the user describes regular specialist visits in plain language', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'TX',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee Only',
+      lastBotMessage: 'Here is the practical tradeoff across AmeriVet\'s medical options.',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'which plan do you recommend if i see a specialist every month?',
+      session,
+    });
+
+    expect(result.answer).toContain('My recommendation: Enhanced HSA');
+    expect(result.answer).toContain('more than minimal usage');
+    expect(result.answer).not.toContain('Quick clarifier');
+  });
+
   it('recommends enhanced when the user asks for more predictable costs instead of falling back to a clarifier', async () => {
     const session = makeSession({
       step: 'active_chat',
