@@ -1,4 +1,5 @@
 import { getAmerivetBenefitsPackage } from '@/lib/data/amerivet-package';
+import { getAmerivetPackageCopySnapshot } from '@/lib/data/amerivet-package-copy';
 import type { Session } from '@/lib/rag/session-store';
 import { extractName } from '@/lib/session-logic';
 import pricingUtils from '@/lib/rag/pricing-utils';
@@ -27,6 +28,7 @@ import { buildLiveSupportMessage, buildQleFilingOrderMessage } from '@/lib/qa/po
 const ENROLLMENT_PORTAL_URL = process.env.ENROLLMENT_PORTAL_URL || 'https://wd5.myworkday.com/amerivet/login.html';
 const HR_PHONE = process.env.HR_PHONE_NUMBER || '888-217-4728';
 const ACTIVE_AMERIVET_PACKAGE = getAmerivetBenefitsPackage();
+const ACTIVE_AMERIVET_COPY = getAmerivetPackageCopySnapshot(ACTIVE_AMERIVET_PACKAGE);
 
 const TOPIC_ORDER = ['Medical', 'Dental', 'Vision', 'Life Insurance', 'Disability', 'Critical Illness', 'Accident/AD&D', 'HSA/FSA'] as const;
 
@@ -137,14 +139,18 @@ function setPendingTopicSuggestion(session: Session, topic: string) {
 }
 
 function buildAllBenefitsMenu(): string {
+  const medicalLine = ACTIVE_AMERIVET_COPY.medicalPlanNames.join(', ');
+  const lifeLine = ACTIVE_AMERIVET_COPY.lifePlanNames.join(', ');
+  const disabilityLine = ACTIVE_AMERIVET_COPY.disabilityPlanNames.join(', ');
+
   return [
     'Here are the benefits available to you as an AmeriVet employee:',
     '',
-    '- Medical (Standard HSA, Enhanced HSA, and Kaiser Standard HMO where available)',
-    '- Dental (BCBSTX Dental PPO)',
-    '- Vision (VSP Vision Plus)',
-    '- Life Insurance (Unum Basic Life, Unum Voluntary Term, Allstate Whole Life)',
-    '- Disability (Short-Term and Long-Term through Unum)',
+    `- Medical (${medicalLine})`,
+    `- Dental (${ACTIVE_AMERIVET_COPY.dentalPlanName})`,
+    `- Vision (${ACTIVE_AMERIVET_COPY.visionPlanName})`,
+    `- Life Insurance (${lifeLine})`,
+    `- Disability (${disabilityLine})`,
     '- Critical Illness (Allstate)',
     '- Accident/AD&D (Allstate)',
     '- HSA/FSA Accounts',

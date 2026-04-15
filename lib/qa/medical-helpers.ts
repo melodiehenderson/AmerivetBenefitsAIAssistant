@@ -151,11 +151,17 @@ export function buildPpoClarificationForState(
   options?: MedicalHelperOptions,
 ): string {
   const benefitsPackage = options?.benefitsPackage ?? getAmerivetBenefitsPackage();
-  if (state && isKaiserEligibleForState(state, benefitsPackage)) {
-    return `AmeriVet does not offer a standalone PPO medical plan. Your medical options are Standard HSA and Enhanced HSA (BCBSTX) plus Kaiser Standard HMO in ${state}. The HSA plans use a nationwide PPO network, but they are HDHP/HSA plans, not a traditional PPO.`;
+  const { standard, enhanced, kaiser } = getMedicalPlansCatalog(benefitsPackage);
+  const basePlanNames = [standard?.name, enhanced?.name].filter(Boolean).join(' and ');
+  const sharedProvider = standard?.provider && enhanced?.provider && standard.provider === enhanced.provider
+    ? ` (${standard.provider})`
+    : '';
+
+  if (state && isKaiserEligibleForState(state, benefitsPackage) && kaiser) {
+    return `AmeriVet does not offer a standalone PPO medical plan. Your medical options are ${basePlanNames}${sharedProvider} plus ${kaiser.name} in ${state}. The HSA-compatible plans use a nationwide PPO network, but they are HDHP/HSA plans, not a traditional PPO.`;
   }
-  const stateNote = state ? ` In ${state}, your medical options are Standard HSA and Enhanced HSA (BCBSTX).` : '';
-  return `AmeriVet does not offer a standalone PPO medical plan.${stateNote} The HSA plans use a nationwide PPO network, but they are HDHP/HSA plans, not a traditional PPO.`;
+  const stateNote = state ? ` In ${state}, your medical options are ${basePlanNames}${sharedProvider}.` : '';
+  return `AmeriVet does not offer a standalone PPO medical plan.${stateNote} The HSA-compatible plans use a nationwide PPO network, but they are HDHP/HSA plans, not a traditional PPO.`;
 }
 
 export function buildPpoClarificationFallback(session: Pick<Session, 'userState'>): string {
@@ -170,25 +176,39 @@ export function buildKaiserUnavailableFallback(
   const stateLabel = (session.userState || 'your state').toUpperCase();
   const benefitsPackage = options?.benefitsPackage ?? getAmerivetBenefitsPackage();
   const kaiserCopy = getKaiserAvailabilityCopy(benefitsPackage);
+  const { standard, enhanced, kaiser } = getMedicalPlansCatalog(benefitsPackage);
+  const standardName = standard?.name ?? 'the lower-premium HSA option';
+  const enhancedName = enhanced?.name ?? 'the lower-deductible HSA option';
+  const kaiserName = kaiser?.name ?? 'the Kaiser option';
   if (variant === 'pricing') {
-    return `Kaiser Standard HMO is only available in ${kaiserCopy.nameList}. Since you're in ${stateLabel}, your medical plan options are **Standard HSA** and **Enhanced HSA**. Would you like pricing for those?`;
+    return `${kaiserName} is only available in ${kaiserCopy.nameList}. Since you're in ${stateLabel}, your medical plan options are **${standardName}** and **${enhancedName}**. Would you like pricing for those?`;
   }
   if (variant === 'redirect') {
     const nyNote = stateLabel === 'NY'
-      ? `\n\nFor New York employees, the strongest alternative is **Enhanced HSA** on the BCBSTX nationwide PPO network if you want stronger cost protection.`
+      ? `\n\nFor New York employees, the strongest alternative is **${enhancedName}** on the nationwide PPO network if you want stronger cost protection.`
       : '';
-    return `Kaiser is only available in ${kaiserCopy.nameList}. In ${stateLabel}, your medical options are:\n\n- Standard HSA (BCBS of Texas) ΓÇö lower premium, higher deductible, full HSA contribution eligible\n- Enhanced HSA (BCBS of Texas) ΓÇö higher premium, lower deductible, better for anticipated medical use\n\nBoth use the nationwide BCBSTX PPO network.${nyNote} Would you like a side-by-side comparison?`;
+    return `Kaiser is only available in ${kaiserCopy.nameList}. In ${stateLabel}, your medical options are:\n\n- ${standardName} (${standard?.provider || 'medical carrier'}) ΓÇö lower premium, higher deductible, full HSA contribution eligible\n- ${enhancedName} (${enhanced?.provider || 'medical carrier'}) ΓÇö higher premium, lower deductible, better for anticipated medical use\n\nBoth use the nationwide PPO network.${nyNote} Would you like a side-by-side comparison?`;
   }
-  return `Kaiser Standard HMO is only available in ${kaiserCopy.nameList}. Since you're in ${stateLabel}, your medical options are **Standard HSA** and **Enhanced HSA**. Would you like to compare those two instead?`;
+  return `${kaiserName} is only available in ${kaiserCopy.nameList}. Since you're in ${stateLabel}, your medical options are **${standardName}** and **${enhancedName}**. Would you like to compare those two instead?`;
 }
 
 function getMedicalPlansCatalog(benefitsPackage: AmerivetBenefitsPackage = getAmerivetBenefitsPackage()) {
   const medicalPlans = benefitsPackage.catalog.medicalPlans;
-  const findPlan = (name: string) => medicalPlans.find((p) => p.name.toLowerCase() === name.toLowerCase()) || null;
+  const integratedPlan = medicalPlans.find((plan) =>
+    /kaiser/i.test(plan.provider)
+    || /kaiser/i.test(plan.name)
+    || /\bhmo\b/i.test(plan.name)
+    || /kaiser/i.test(plan.id),
+  ) || null;
+  const hsaLikePlans = medicalPlans.filter((plan) => !integratedPlan || plan.id !== integratedPlan.id);
+  const byPremium = [...hsaLikePlans].sort((a, b) => a.premiums.employee.monthly - b.premiums.employee.monthly);
+  const byDeductible = [...hsaLikePlans].sort((a, b) => a.benefits.deductible - b.benefits.deductible);
+  const standard = byPremium[0] || hsaLikePlans[0] || null;
+  const enhanced = byDeductible.find((plan) => plan.id !== standard?.id) || byDeductible[0] || standard || null;
   return {
-    standard: findPlan('Standard HSA'),
-    enhanced: findPlan('Enhanced HSA'),
-    kaiser: findPlan('Kaiser Standard HMO'),
+    standard,
+    enhanced,
+    kaiser: integratedPlan,
   };
 }
 

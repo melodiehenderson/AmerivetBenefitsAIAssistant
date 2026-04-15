@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { buildCategoryExplorationResponse, buildDentalVisionComparisonResponse } from '@/lib/qa/category-response-builders';
+import { buildKaiserUnavailableFallback, buildPpoClarificationForState } from '@/lib/qa/medical-helpers';
 import pricingUtils, { getDentalPlanDetails } from '@/lib/rag/pricing-utils';
 import type { Session } from '@/lib/rag/session-store';
 import {
@@ -74,6 +75,31 @@ function makeFixturePackage() {
   });
 }
 
+function makeRenamedMedicalFixturePackage() {
+  const current = getAmerivetBenefitsPackage();
+
+  return createAmerivetBenefitsPackage({
+    ...current,
+    packageId: 'amerivet-2026-renamed-medical-fixture',
+    displayName: 'AmeriVet Benefits 2026 Renamed Medical Fixture',
+    catalog: {
+      ...current.catalog,
+      medicalPlans: current.catalog.medicalPlans.map((plan) => {
+        if (plan.id === 'bcbstx-standard-hsa') {
+          return { ...plan, name: 'AmeriVet Saver HDHP' };
+        }
+        if (plan.id === 'bcbstx-enhanced-hsa') {
+          return { ...plan, name: 'AmeriVet Shield HDHP' };
+        }
+        if (plan.id === 'kaiser-standard-hmo') {
+          return { ...plan, name: 'AmeriVet Coordinated Care HMO' };
+        }
+        return plan;
+      }),
+    },
+  });
+}
+
 describe('amerivet package versioning seam', () => {
   it('keeps the current AmeriVet package registered by default', () => {
     expect(listAmerivetBenefitsPackageIds()).toContain('amerivet-2024-2025');
@@ -138,6 +164,20 @@ describe('amerivet package versioning seam', () => {
 
     expect(response).toContain('Kaiser Standard HMO');
     expect(response).not.toContain('only available in CA, GA, WA, and OR');
+  });
+
+  it('uses fixture medical plan names in shared PPO and Kaiser fallback copy', () => {
+    const fixture = makeRenamedMedicalFixturePackage();
+    const ppoAnswer = buildPpoClarificationForState('GA', { benefitsPackage: fixture });
+    const redirect = buildKaiserUnavailableFallback(makeSession({ userState: 'NY' }), 'redirect', { benefitsPackage: fixture });
+
+    expect(ppoAnswer).toContain('AmeriVet Saver HDHP');
+    expect(ppoAnswer).toContain('AmeriVet Shield HDHP');
+    expect(ppoAnswer).toContain('AmeriVet Coordinated Care HMO in GA');
+    expect(redirect).toContain('AmeriVet Saver HDHP');
+    expect(redirect).toContain('AmeriVet Shield HDHP');
+    expect(redirect).not.toContain('Standard HSA');
+    expect(redirect).not.toContain('Enhanced HSA');
   });
 
   it('registers structured employer guidance rules alongside the active AmeriVet package', () => {
