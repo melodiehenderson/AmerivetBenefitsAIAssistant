@@ -3110,6 +3110,27 @@ describe('qa-v2 transcript replays', () => {
     );
   });
 
+  it('replays recurring-therapy recommendation asks into enhanced medical guidance even from life context', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'which plan do you recommend if i see a therapist twice a month?',
+          mustContain: ['My recommendation: Enhanced HSA', 'more than minimal usage'],
+          mustNotContain: ['Life insurance options:'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'TX',
+        dataConfirmed: true,
+        currentTopic: 'Life Insurance',
+        lastBotMessage: 'Life insurance options:\n\n- Unum Basic Life & AD&D is the employer-paid base life and AD&D benefit\n- Unum Voluntary Term Life is the extra employee-paid term coverage\n- Allstate Whole Life is the permanent option with cash value',
+      }),
+    );
+  });
+
   it('replays recurring-prescription recommendation asks into enhanced medical guidance without a generic clarifier', async () => {
     await replayTranscript(
       [
@@ -3129,6 +3150,29 @@ describe('qa-v2 transcript replays', () => {
         coverageTierLock: 'Employee + Spouse',
         familyDetails: { hasSpouse: true, numChildren: 0 },
         lastBotMessage: 'Here is the practical tradeoff across AmeriVet\'s medical options:',
+      }),
+    );
+  });
+
+  it('replays recurring-care cost estimates back into medical even from hsa/fsa context', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'estimate likely costs if my wife sees a specialist every month',
+          mustContain: ['Projected Healthcare Costs for Employee + Spouse coverage', 'Enhanced HSA'],
+          mustNotContain: ['HSA/FSA overview', 'FSA is usually the cleaner fit'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'TX',
+        dataConfirmed: true,
+        currentTopic: 'HSA/FSA',
+        coverageTierLock: 'Employee + Spouse',
+        familyDetails: { hasSpouse: true, numChildren: 0 },
+        lastBotMessage: 'Here is the simplest way to think about HSA versus FSA fit:',
       }),
     );
   });

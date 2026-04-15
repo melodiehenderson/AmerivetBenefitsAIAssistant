@@ -3668,6 +3668,27 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
     ],
   },
   {
+    id: 'V2-TX-097BA',
+    category: 'life_context_therapy_recurring_usage_recommendation',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'TX',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      lastBotMessage: 'Life insurance options:\n\n- Unum Basic Life & AD&D is the employer-paid base life and AD&D benefit\n- Unum Voluntary Term Life is the extra employee-paid term coverage\n- Allstate Whole Life is the permanent option with cash value',
+    },
+    turns: [
+      {
+        user: 'which plan do you recommend if i see a therapist twice a month?',
+        mustContain: ['My recommendation: Enhanced HSA', 'more than minimal usage'],
+        mustNotContain: ['Life insurance options:'],
+      },
+    ],
+  },
+  {
     id: 'V2-TX-097C',
     category: 'prescription_recurring_usage_recommendation',
     initialSession: {
@@ -3687,6 +3708,29 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
         user: 'which plan do you recommend if my wife takes 2 prescriptions?',
         mustContain: ['My recommendation: Enhanced HSA', 'more than minimal usage'],
         mustNotContain: ['Quick clarifier'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-097CA',
+    category: 'hsa_context_recurring_usage_cost_estimate',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'TX',
+      dataConfirmed: true,
+      currentTopic: 'HSA/FSA',
+      coverageTierLock: 'Employee + Spouse',
+      familyDetails: { hasSpouse: true, numChildren: 0 },
+      lastBotMessage: 'Here is the simplest way to think about HSA versus FSA fit:',
+    },
+    turns: [
+      {
+        user: 'estimate likely costs if my wife sees a specialist every month',
+        mustContain: ['Projected Healthcare Costs for Employee + Spouse coverage', 'Enhanced HSA'],
+        mustNotContain: ['HSA/FSA overview', 'FSA is usually the cleaner fit'],
       },
     ],
   },

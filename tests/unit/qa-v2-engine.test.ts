@@ -4712,6 +4712,28 @@ describe('qa-v2 engine', () => {
     expect(result.answer).not.toContain('Quick clarifier');
   });
 
+  it('treats recurring-therapy recommendation asks as direct medical pivots even from life context', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'TX',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      lastBotMessage: 'Life insurance options:\n\n- Unum Basic Life & AD&D is the employer-paid base life and AD&D benefit\n- Unum Voluntary Term Life is the extra employee-paid term coverage\n- Allstate Whole Life is the permanent option with cash value',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'which plan do you recommend if i see a therapist twice a month?',
+      session,
+    });
+
+    expect(result.answer).toContain('My recommendation: Enhanced HSA');
+    expect(result.answer).toContain('more than minimal usage');
+    expect(result.answer).not.toContain('Life insurance options:');
+  });
+
   it('recommends enhanced when the household has ongoing prescriptions in plain language', async () => {
     const session = makeSession({
       step: 'active_chat',
@@ -4781,6 +4803,31 @@ describe('qa-v2 engine', () => {
     expect(result.answer).toContain('My recommendation: Enhanced HSA');
     expect(result.answer).toContain('recurring care for a child');
     expect(result.answer).not.toContain('Quick clarifier');
+  });
+
+  it('treats recurring-care cost estimates as direct medical pivots even from hsa/fsa context', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'TX',
+      dataConfirmed: true,
+      currentTopic: 'HSA/FSA',
+      coverageTierLock: 'Employee + Spouse',
+      familyDetails: { hasSpouse: true, numChildren: 0 },
+      lastBotMessage: 'Here is the simplest way to think about HSA versus FSA fit:',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'estimate likely costs if my wife sees a specialist every month',
+      session,
+    });
+
+    expect(result.answer).toContain('Projected Healthcare Costs for Employee + Spouse coverage');
+    expect(result.answer).toContain('Enhanced HSA');
+    expect(result.answer).not.toContain('HSA/FSA overview');
+    expect(result.answer).not.toContain('FSA is usually the cleaner fit');
   });
 
   it('recommends enhanced when the user asks for more predictable costs instead of falling back to a clarifier', async () => {

@@ -1467,6 +1467,8 @@ function buildHighPriorityIntentReply(session: Session, query: string): EngineRe
   const medicalContext = activeTopic === 'Medical'
     || explicitTopic === 'Medical'
     || /\b(plan|plans|medical|kaiser|hsa|hmo|ppo|coverage|premium|premiums|employee\s*\+|spouse|family|kids?|children|household)\b/i.test(lower);
+  const hasDirectMedicalSignal = /\b(plan|plans|medical|kaiser|hsa|hmo|ppo|coverage|coverage\s+tier|deductible|premium|premiums|copay|copays|coinsurance|out[- ]of[- ]pocket|oop|max|therapy|therapist|mental\s+health|specialist|prescriptions?|rx|drugs?|maternity|pregnan\w*|delivery|network|routine\s+care|doctor|visit|visits|wife|husband|spouse|partner|kids?|children|family|household)\b/i.test(lower);
+  const isBareBenefitPriorityFocus = /^(\s*(healthcare costs|family protection|routine care)\s*)$/i.test(normalizedQuery);
   const wantsMedicalPremiumReplay = isMedicalPremiumReplayQuestion(normalizedQuery);
   const wantsMedicalCostEstimate = isCostModelRequest(normalizedQuery)
     || /\b(what\s+are\s+the\s+costs?|what\s+would\s+the\s+costs?\s+be|estimate\s+the\s+likely\s+costs?|estimate\s+likely\s+costs?|projected\s+costs?|show\s+me\s+the\s+costs?|what\s+would\s+i\s+pay)\b/i.test(lower);
@@ -1527,6 +1529,24 @@ function buildHighPriorityIntentReply(session: Session, query: string): EngineRe
     return {
       answer: buildTopicReply(session, 'HSA/FSA', normalizedQuery),
       metadata: { intercept: 'direct-hsa-fsa-priority-v2', topic: 'HSA/FSA' },
+    };
+  }
+
+  if (isCostModelRequest(normalizedQuery) && hasDirectMedicalSignal && !isBareBenefitPriorityFocus) {
+    clearPendingGuidance(session);
+    setTopic(session, 'Medical');
+    return {
+      answer: buildTopicReply(session, 'Medical', normalizedQuery),
+      metadata: { intercept: 'medical-cost-model-priority-v2', topic: 'Medical' },
+    };
+  }
+
+  if (isDirectMedicalRecommendationQuestion(normalizedQuery) && hasDirectMedicalSignal) {
+    clearPendingGuidance(session);
+    setTopic(session, 'Medical');
+    return {
+      answer: buildTopicReply(session, 'Medical', normalizedQuery),
+      metadata: { intercept: 'direct-medical-recommendation-priority-v2', topic: 'Medical' },
     };
   }
 
