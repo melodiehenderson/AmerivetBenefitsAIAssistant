@@ -2962,6 +2962,11 @@ describe('qa-v2 transcript replays', () => {
           mustContain: ['80% Voluntary Term Life / 20% Whole Life', 'Basic Life', 'Voluntary Term Life', 'Whole Life'],
           mustNotContain: ['life insurance is usually worth tightening up'],
         },
+        {
+          user: 'how much protection is worth paying for if your family relies on your income?',
+          mustContain: ['80% Voluntary Term Life / 20% Whole Life', 'Basic Life', 'Voluntary Term Life'],
+          mustNotContain: ['For life-insurance cost, the practical split is:'],
+        },
       ],
       makeSession({
         userName: 'Ted',

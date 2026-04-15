@@ -2569,6 +2569,31 @@ describe('qa-v2 engine', () => {
     expect(result.answer).not.toContain('life insurance is usually worth tightening up');
   });
 
+  it('keeps life-sizing followup questions in recommendation mode instead of slipping into life-pricing structure', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      pendingGuidancePrompt: 'life_sizing',
+      pendingGuidanceTopic: 'Life Insurance',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      lastBotMessage: 'The practical way I would decide how much life insurance to add is this:\n\n- treat **Basic Life** as the included starting point\n- use **Voluntary Term Life** as the first extra layer\n- use **Whole Life** only if you specifically want permanent coverage',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'How much protection is worth paying for if your family relies on your income?',
+      session,
+    });
+
+    expect(result.answer).toContain('80% Voluntary Term Life / 20% Whole Life');
+    expect(result.answer).toContain('Basic Life');
+    expect(result.answer).not.toContain('For life-insurance cost, the practical split is:');
+  });
+
   it('answers how to move off the employer life split with a practical term-versus-whole adjustment framework', async () => {
     const session = makeSession({
       step: 'active_chat',

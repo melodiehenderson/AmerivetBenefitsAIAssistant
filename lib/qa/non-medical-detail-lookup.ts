@@ -22,6 +22,11 @@ function isPureVoluntaryTermAmountQuestion(queryLower: string): boolean {
     && !/\b(whole\s+life|permanent|perm)\b/i.test(queryLower);
 }
 
+function isExplicitPricingQuestion(queryLower: string): boolean {
+  return /\b(cost|costs|price|prices|rate|rates|premium|premiums)\b/i.test(queryLower)
+    || /\b(how\s+much\s+(?:is|are|would|does|do)|what\s+would\s+(?:i|we|it)|without\s+paying\s+more|without\s+extra\s+cost)\b/i.test(queryLower);
+}
+
 function hasLifeFamilyOrIncomeContext(session: Session, query: string): boolean {
   const combined = [
     ...(session.messages || []).map((message) => message.content.toLowerCase()),
@@ -256,10 +261,11 @@ export function buildNonMedicalDetailAnswer(topic: string, query: string, sessio
   const lower = query.toLowerCase();
   const { basic, term, whole } = getLifePlans();
   const costQuestion = /\b(how\s+much|cost|costs|price|prices|rate|rates|premium|premiums)\b/i.test(lower);
+  const explicitCostQuestion = isExplicitPricingQuestion(lower);
   const asksAboutLife = /\b(life(?:\s+insurance)?|term life|voluntary term(?:\s+life)?|whole life|basic life|voluntary life)\b/i.test(lower);
   const asksAboutDisability = /\b(disability|short[- ]term|long[- ]term|std|ltd)\b/i.test(lower);
 
-  if (costQuestion && asksAboutLife && asksAboutDisability) {
+  if (explicitCostQuestion && asksAboutLife && asksAboutDisability) {
     return [
       `At a high level:`,
       `- **Basic Life & AD&D** is employer-paid, so that base layer does not add an employee premium`,
@@ -388,7 +394,7 @@ export function buildNonMedicalDetailAnswer(topic: string, query: string, sessio
       ].join('\n');
     }
 
-    if (costQuestion) {
+    if (explicitCostQuestion) {
       return [
         `For life-insurance cost, the practical split is:`,
         ``,
