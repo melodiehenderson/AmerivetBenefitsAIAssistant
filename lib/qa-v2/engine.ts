@@ -3304,6 +3304,13 @@ function buildContinuationReply(session: Session, query: string): string | null 
       || (session.currentTopic === 'Life Insurance' || session.currentTopic === 'Disability' || session.currentTopic === 'Critical Illness' || session.currentTopic === 'Accident/AD&D'
         ? session.currentTopic
         : inferTopicFromLastBotMessage(lastBotMessage));
+    if (fitTopic === 'Life Insurance') {
+      const detailedAnswer = buildNonMedicalDetailAnswer('Life Insurance', normalizedQuery, session);
+      if (detailedAnswer) {
+        setTopic(session, 'Life Insurance');
+        return detailedAnswer;
+      }
+    }
     if (
       fitTopic
       && (fitTopic === 'Life Insurance' || fitTopic === 'Disability' || fitTopic === 'Critical Illness' || fitTopic === 'Accident/AD&D')
@@ -3514,6 +3521,13 @@ function buildContinuationReply(session: Session, query: string): string | null 
     (inferredSupplementalTopic === 'Accident/AD&D' || inferredSupplementalTopic === 'Critical Illness' || inferredSupplementalTopic === 'Disability' || inferredSupplementalTopic === 'Life Insurance')
     && isRepeatedSupplementalWorthQuestion(normalizedQuery)
   ) {
+    if (inferredSupplementalTopic === 'Life Insurance') {
+      const detailedAnswer = buildNonMedicalDetailAnswer('Life Insurance', normalizedQuery, session);
+      if (detailedAnswer) {
+        setTopic(session, 'Life Insurance');
+        return detailedAnswer;
+      }
+    }
     setTopic(session, inferredSupplementalTopic);
     return buildSupplementalPracticalTake(inferredSupplementalTopic);
   }
@@ -3522,11 +3536,25 @@ function buildContinuationReply(session: Session, query: string): string | null 
     (activeTopic === 'Accident/AD&D' || activeTopic === 'Critical Illness' || activeTopic === 'Disability' || activeTopic === 'Life Insurance')
     && isRepeatedSupplementalWorthQuestion(normalizedQuery)
   ) {
+    if (activeTopic === 'Life Insurance') {
+      const detailedAnswer = buildNonMedicalDetailAnswer('Life Insurance', normalizedQuery, session);
+      if (detailedAnswer) {
+        setTopic(session, 'Life Insurance');
+        return detailedAnswer;
+      }
+    }
     setTopic(session, activeTopic);
     return buildSupplementalPracticalTake(activeTopic);
   }
 
   if ((activeTopic === 'Accident/AD&D' || activeTopic === 'Critical Illness' || activeTopic === 'Disability' || activeTopic === 'Life Insurance') && isWorthAddingFollowup(normalizedQuery)) {
+    if (activeTopic === 'Life Insurance') {
+      const detailedAnswer = buildNonMedicalDetailAnswer('Life Insurance', normalizedQuery, session);
+      if (detailedAnswer) {
+        setTopic(session, 'Life Insurance');
+        return detailedAnswer;
+      }
+    }
     if (isSupplementalRecommendationQuestion(normalizedQuery)) {
       const recommendation = buildSupplementalRecommendationReply(activeTopic, session, normalizedQuery);
       if (recommendation) {
@@ -3539,6 +3567,13 @@ function buildContinuationReply(session: Session, query: string): string | null 
   }
 
   if ((inferredSupplementalTopic === 'Accident/AD&D' || inferredSupplementalTopic === 'Critical Illness' || inferredSupplementalTopic === 'Disability' || inferredSupplementalTopic === 'Life Insurance') && isWorthAddingFollowup(normalizedQuery)) {
+    if (inferredSupplementalTopic === 'Life Insurance') {
+      const detailedAnswer = buildNonMedicalDetailAnswer('Life Insurance', normalizedQuery, session);
+      if (detailedAnswer) {
+        setTopic(session, 'Life Insurance');
+        return detailedAnswer;
+      }
+    }
     if (isSupplementalRecommendationQuestion(normalizedQuery)) {
       const recommendation = buildSupplementalRecommendationReply(inferredSupplementalTopic, session, normalizedQuery);
       if (recommendation) {

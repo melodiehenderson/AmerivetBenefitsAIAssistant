@@ -2792,6 +2792,35 @@ describe('qa-v2 transcript replays', () => {
     );
   });
 
+  it('replays followup questions about when to move off the employer life split into a practical adjustment framework', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'what split do you recommend between whole life and voluntary term life?',
+          mustContain: ['80% Voluntary Term Life / 20% Whole Life'],
+        },
+        {
+          user: 'how do i know how much of each to get?',
+          mustContain: ['80% Voluntary Term Life / 20% Whole Life', 'more Unum Voluntary Term Life', 'more Allstate Whole Life'],
+          mustNotContain: ['life insurance is usually worth tightening up'],
+        },
+        {
+          user: 'when would i want more whole life?',
+          mustContain: ['of the mix toward', 'Whole Life', 'cash-value'],
+          mustNotContain: ['life insurance is usually worth tightening up'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'Life Insurance',
+      }),
+    );
+  });
+
   it('replays therapist-cost questions into grounded medical comparison instead of generic medical menus', async () => {
     await replayTranscript(
       [

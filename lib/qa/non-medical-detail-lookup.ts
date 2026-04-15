@@ -84,6 +84,69 @@ function buildEmployerLifeSplitGuidanceReply(query: string, session: Session): s
   ].join('\n');
 }
 
+function buildEmployerLifeSplitAdjustmentReply(query: string, session: Session): string | null {
+  const defaultRule = AMERIVET_EMPLOYER_GUIDANCE_RULES.find((rule) =>
+    rule.topic === 'Life Insurance' && rule.intentFamily === 'life_split_term_vs_whole',
+  );
+  if (!defaultRule) return null;
+
+  const lower = query.toLowerCase();
+  const history = [
+    ...(session.messages || []).map((message) => message.content.toLowerCase()),
+    (session.lastBotMessage || '').toLowerCase(),
+    lower,
+  ].join('\n');
+  const hasSplitContext = history.includes(defaultRule.recommendationLabel.toLowerCase())
+    || /\bdefault split\b|\b80\s*%?\s*voluntary\s+term\s+life\b|\b20\s*%?\s*whole\s+life\b/i.test(history);
+  if (!hasSplitContext) return null;
+
+  const asksHowMuchOfEach = /\b(how\s+do\s+i\s+know\s+how\s+much\s+of\s+each\s+to\s+get|how\s+much\s+of\s+each|how\s+would\s+you\s+adjust\s+that\s+split|when\s+would\s+you\s+change\s+that\s+split|when\s+would\s+i\s+move\s+off\s+that\s+split|when\s+would\s+i\s+not\s+use\s+80\s*\/\s*20)\b/i.test(lower);
+  const asksMoreWhole = /\b(when\s+would\s+i\s+want\s+more\s+whole\s+life|when\s+would\s+i\s+want\s+more\s+permanent|when\s+would\s+whole\s+life\s+matter\s+more|when\s+would\s+i\s+lean\s+more\s+whole\s+life)\b/i.test(lower);
+  const asksMoreTerm = /\b(when\s+would\s+i\s+want\s+more\s+(?:voluntary\s+)?term(?:\s+life)?|when\s+would\s+term\s+life\s+matter\s+more|when\s+would\s+i\s+lean\s+more\s+(?:voluntary\s+)?term(?:\s+life)?)\b/i.test(lower);
+
+  if (!(asksHowMuchOfEach || asksMoreWhole || asksMoreTerm)) {
+    return null;
+  }
+
+  const { basic, term, whole } = getLifePlans();
+
+  if (asksMoreWhole) {
+    return [
+      `I would usually move **more** of the mix toward **${whole?.name || 'Whole Life'}** only when the permanent piece is part of the actual goal, not just because you want more protection.`,
+      ``,
+      `That usually means one of these is true:`,
+      `- You specifically want some coverage that does not expire as long as premiums are paid`,
+      `- You care about the cash-value / permanent-life features enough to pay extra for them`,
+      `- You still want extra income protection, but you also want a meaningful permanent layer instead of keeping whole life as the smaller sidecar`,
+      ``,
+      `If the main job is still household income replacement, I would usually keep **${term?.name || 'Voluntary Term Life'}** as the bigger piece and only increase whole life if those permanent features really matter to you.`,
+    ].join('\n');
+  }
+
+  if (asksMoreTerm) {
+    return [
+      `I would usually push **more** of the mix toward **${term?.name || 'Voluntary Term Life'}** when the main goal is straightforward family income protection rather than permanent-life features.`,
+      ``,
+      `That usually means one of these is true:`,
+      `- Other people rely on your paycheck and the main gap is simply that **${basic?.name || 'Basic Life'}** is too small by itself`,
+      `- You want the cleaner, bigger extra layer without paying for cash-value features you may not care about`,
+      `- You are trying to add more coverage in the simplest way before even thinking about a permanent slice`,
+      ``,
+      `So if the real question is "how do I protect the household better?", I would usually tilt **more** toward voluntary term life before I add more whole life.`,
+    ].join('\n');
+  }
+
+  return [
+    `The clean way I would use the **${defaultRule.recommendationLabel}** default is this: keep it as the starting split, then move off it only if the household clearly leans one direction.`,
+    ``,
+    `- Keep **more ${term?.name || 'Voluntary Term Life'}** when the main job is bigger income replacement for the household`,
+    `- Keep **more ${whole?.name || 'Whole Life'}** only when you specifically care about permanent coverage and cash-value features`,
+    `- Stay close to the default when you want both, but still want the bigger share doing the income-protection job`,
+    ``,
+    `So my practical answer is: use **${basic?.name || 'Basic Life'}** as the base, let voluntary term do most of the heavy lifting, and only give whole life a bigger share if the permanent-life features are truly part of the goal.`,
+  ].join('\n');
+}
+
 export function isNonMedicalDetailQuestion(topic: string, query: string): boolean {
   if (!topic || !query) return false;
   const lower = query.toLowerCase();
@@ -135,6 +198,10 @@ export function buildNonMedicalDetailAnswer(topic: string, query: string, sessio
     const employerSplitGuidance = buildEmployerLifeSplitGuidanceReply(query, session);
     if (employerSplitGuidance) {
       return employerSplitGuidance;
+    }
+    const employerSplitAdjustment = buildEmployerLifeSplitAdjustmentReply(query, session);
+    if (employerSplitAdjustment) {
+      return employerSplitAdjustment;
     }
 
     if ((/\b(if i do nothing|what life insurance do i get|included life|included coverage|default life|automatic coverage|automatically enrolled|already included|included by default|get automatically|without having to pay more|without paying more|without extra cost)\b/i.test(lower) && /\b(life|coverage|insurance|plans?)\b/i.test(lower)) || /\bemployer-paid basic life\b/i.test(lower)) {

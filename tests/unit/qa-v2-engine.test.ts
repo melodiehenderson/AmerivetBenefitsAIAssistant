@@ -2416,6 +2416,29 @@ describe('qa-v2 engine', () => {
     expect(result.answer).not.toContain('life insurance is usually worth tightening up');
   });
 
+  it('answers how to move off the employer life split with a practical term-versus-whole adjustment framework', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      lastBotMessage: 'If you are asking how I would structure extra life coverage once the included base benefit is not enough, AmeriVet\'s current employer guidance is **80% Voluntary Term Life / 20% Whole Life**.',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'how do i know how much of each to get?',
+      session,
+    });
+
+    expect(result.answer).toContain('80% Voluntary Term Life / 20% Whole Life');
+    expect(result.answer).toContain('more Unum Voluntary Term Life');
+    expect(result.answer).toContain('more Allstate Whole Life');
+    expect(result.answer).toContain('Basic Life');
+  });
+
   it('answers spouse-specific medical follow-ups after a recommendation', async () => {
     const session = makeSession({
       step: 'active_chat',

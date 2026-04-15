@@ -3329,6 +3329,35 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
     ],
   },
   {
+    id: 'V2-TX-096D',
+    category: 'life_employer_guidance_split_adjustment_followups',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+    },
+    turns: [
+      {
+        user: 'what split do you recommend between whole life and voluntary term life?',
+        mustContain: ['80% Voluntary Term Life / 20% Whole Life'],
+      },
+      {
+        user: 'how do i know how much of each to get?',
+        mustContain: ['80% Voluntary Term Life / 20% Whole Life', 'more Unum Voluntary Term Life', 'more Allstate Whole Life'],
+        mustNotContain: ['life insurance is usually worth tightening up'],
+      },
+      {
+        user: 'when would i want more whole life?',
+        mustContain: ['of the mix toward', 'Whole Life', 'cash-value'],
+        mustNotContain: ['life insurance is usually worth tightening up'],
+      },
+    ],
+  },
+  {
     id: 'V2-TX-096B',
     category: 'active_topic_contextual_fallbacks',
     initialSession: {
