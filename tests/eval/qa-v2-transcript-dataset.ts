@@ -3520,4 +3520,50 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
       },
     ],
   },
+  {
+    id: 'V2-TX-099',
+    category: 'life_context_pricing_pivot_back_to_medical',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      lastBotMessage: 'Life insurance options:\n\n- Unum Basic Life & AD&D is the employer-paid base life and AD&D benefit\n- Unum Voluntary Term Life is the extra employee-paid term coverage\n- Allstate Whole Life is the permanent option with cash value',
+    },
+    turns: [
+      {
+        user: 'what about just plan pricing?',
+        mustContain: ['Standard HSA'],
+        mustNotContain: ['Life insurance options:', 'Voluntary Term Life'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-100',
+    category: 'rx_context_pricing_pivot_back_to_medical',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      lastBotMessage: 'For exact prescription tiers or drug-pricing details, I would use Workday as the starting point rather than guess from memory.\n\nIf you want, I can still compare the medical options at a high level for someone who expects ongoing prescriptions.',
+    },
+    turns: [
+      {
+        user: 'what about just plan pricing?',
+        mustContain: ['Standard HSA'],
+        mustNotContain: ['Workday', 'ongoing prescriptions'],
+      },
+    ],
+  },
 ];

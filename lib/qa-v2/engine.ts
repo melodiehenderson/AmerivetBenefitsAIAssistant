@@ -3266,6 +3266,14 @@ function buildContinuationReply(session: Session, query: string): string | null 
     return buildTopicReply(session, 'Medical', canonicalTopicQuery('Medical', normalizedQuery));
   }
 
+  if (
+    isMedicalPlanComparisonOrPricingQuestion(normalizedQuery)
+    && !/\b(voluntary\s+term(?:\s+life)?|term\s+life|whole\s+life|basic\s+life|life\s+insurance|disability|critical\s+illness|accident(?:\/ad&d)?|ad&d)\b/i.test(lower)
+  ) {
+    setTopic(session, 'Medical');
+    return buildTopicReply(session, 'Medical', normalizedQuery);
+  }
+
   if (isHsaFsaCompatibilityQuestion(normalizedQuery)) {
     setTopic(session, 'HSA/FSA');
     return buildTopicReply(session, 'HSA/FSA', normalizedQuery);
