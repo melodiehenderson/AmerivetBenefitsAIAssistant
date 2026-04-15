@@ -3143,4 +3143,27 @@ describe('qa-v2 transcript replays', () => {
       }),
     );
   });
+
+  it('replays natural spouse-and-kids premium asks back into medical from HSA/FSA context', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'what would i pay to cover me, my wife, and my kids?',
+          mustContain: ['Employee + Family coverage', 'Standard HSA'],
+          mustNotContain: ['HSA/FSA overview', 'FSA is usually the cleaner fit'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'HSA/FSA',
+        coverageTierLock: 'Employee Only',
+        familyDetails: { hasSpouse: false, numChildren: 0 },
+        lastBotMessage: 'Here is the simplest way to think about HSA versus FSA fit:',
+      }),
+    );
+  });
 });

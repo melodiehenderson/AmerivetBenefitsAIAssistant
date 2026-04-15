@@ -63,7 +63,11 @@ function inferCoverageTierFromSession(session: Session): string | null {
 function extractExplicitCoverageTierFromQuery(query: string): string | null {
   const low = query.toLowerCase();
 
-  if (/\b(employee\s*\+\s*family|family\s+coverage|family\s+plan|family\s+pricing|whole\s+family|for\s+the\s+whole\s+family)\b/i.test(low)) {
+  if (
+    /\b(employee\s*\+\s*family|family\s+coverage|family\s+plan|family\s+pricing|whole\s+family|for\s+the\s+whole\s+family)\b/i.test(low)
+    || /\b(?:me|myself)\b[^.?!]{0,40}\b(?:spouse|wife|husband|partner)\b[^.?!]{0,40}\b(?:kids?|children|sons?|daughters?)\b/i.test(low)
+    || /\b(?:spouse|wife|husband|partner)\b[^.?!]{0,30}\b(?:kids?|children|sons?|daughters?)\b/i.test(low)
+  ) {
     return 'Employee + Family';
   }
 

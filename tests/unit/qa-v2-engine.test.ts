@@ -4861,6 +4861,31 @@ describe('qa-v2 engine', () => {
     expect(result.answer).not.toContain('A useful next medical step is usually one of these');
   });
 
+  it('treats natural spouse-and-kids premium asks as family pricing pivots even from HSA/FSA context', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'HSA/FSA',
+      coverageTierLock: 'Employee Only',
+      familyDetails: { hasSpouse: false, numChildren: 0 },
+      lastBotMessage: 'Here is the simplest way to think about HSA versus FSA fit:',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'what would i pay to cover me, my wife, and my kids?',
+      session,
+    });
+
+    expect(result.answer).toContain('Here are the monthly medical premiums for Employee + Family coverage');
+    expect(result.answer).toContain('Standard HSA');
+    expect(result.answer).not.toContain('HSA/FSA overview');
+    expect(result.answer).not.toContain('FSA is usually the cleaner fit');
+  });
+
   it('treats other-than-life followups as a move past life instead of replaying life options', async () => {
     const session = makeSession({
       step: 'active_chat',
