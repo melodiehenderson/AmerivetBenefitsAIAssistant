@@ -39,9 +39,25 @@ This phase established the current baseline:
 Reference:
 - `docs/qa-v2-mvp-baseline-merge-summary.md`
 
+## Current Status Snapshot
+
+The work has not progressed in a perfectly linear phase-by-phase order.
+
+Current read:
+
+- Phase 0 is complete and merged
+- Phase 1 is complete and merged
+- Phase 2 is partially complete: the AmeriVet package resolver/versioning seam exists in key QA/shared-helper paths, but full swap validation and remaining surface alignment still remain
+- Phase 3 is partially complete: recommendation and counselor behavior improved materially during Phase 1, and the first employer-guidance rule now exists, but broader recommendation coverage is still ahead
+- Phase 4 is partially complete: common plan-detail and practical-answer coverage is much stronger, but full document-replacing breadth is not done
+- Phase 5 is partially complete: release-gate validation is already being used actively, but cross-surface parity work is not finished
+- Phase 6 has not started in earnest
+
+This is intentional enough to keep: we pulled forward the package seam, counselor improvements, and release-gate validation because they were directly helpful to the AmeriVet MVP rather than waiting for a perfectly sequential roadmap.
+
 ## Phase 1: Continuity And Correction
 
-Status: in progress
+Status: complete
 
 Goal:
 - make ordinary conversation flow feel reliable and natural
@@ -65,9 +81,24 @@ Primary validation:
 - transcript replay tests
 - transcript eval dataset
 
+Completed during this phase:
+- explicit name, age, state, household, and tier corrections
+- short pivots and `next` phrasing continuity
+- direct yes/no and follow-through continuity inside active topics
+- therapy/specialist practical-question routing improvements
+- employer-guidance seam introduction for targeted life-insurance recommendations
+- first employer rule:
+  - default split of `80% Voluntary Term Life / 20% Whole Life`
+
+Deferred non-blocking sticky spots to revisit later:
+- some broader life-decision turns still answer one level too generically before landing on the more specific split or decision framework
+- some life follow-ups still lean toward pricing structure when a clearer decision framework would be more useful
+
+These should be treated as targeted counselor-quality follow-up work, not as reasons to reopen broad Phase 1 continuity churn.
+
 ## Phase 2: AmeriVet Package Versioning And Swap Layer
 
-Status: in progress
+Status: partially complete
 
 Goal:
 - make AmeriVet's package easy to swap for open enrollment without rewriting the engine
@@ -100,7 +131,19 @@ Primary validation:
 - transcript replay tests against more than one AmeriVet package version where possible
 - cross-surface spot checks for package parity
 
+Already completed in this area:
+- introduced an AmeriVet package resolver/versioning seam
+- moved key shared pricing and QA helpers behind the active package path
+- added swap-style tests to prove the seam is real
+
+Still left:
+- extend the seam more completely across remaining user-facing surfaces and supporting helpers
+- add stronger open-enrollment swap simulation against more than one AmeriVet package fixture
+- reduce remaining direct AmeriVet package reads where they still create replacement pain
+
 ## Phase 3: Recommendation And Counselor Quality
+
+Status: partially complete
 
 Goal:
 - make the bot act like a practical benefits counselor when the user asks for help deciding
@@ -125,7 +168,19 @@ Primary validation:
 - transcript replay families for decision flow
 - LLM-as-judge cases for factual accuracy, completeness, and non-hallucination
 
+Already completed in this area:
+- package-level recommendation behavior is much stronger than the original baseline
+- recommendation and reconsideration flows are materially better in medical, HSA/FSA, and life/disability paths
+- employer guidance can now shape recommendation output through a dedicated seam
+
+Still left:
+- widen recommendation intent detection so more natural wording lands on the right counselor answer earlier
+- add more employer-provided human guidance rules cleanly through the same layer
+- keep improving decision-framework quality in life, disability, critical illness, dental, and vision worth-it conversations
+
 ## Phase 4: Document-Replacing Answer Coverage
+
+Status: partially complete
 
 Goal:
 - make the assistant reliably answer the common benefits questions employees would otherwise look up manually
@@ -156,7 +211,19 @@ Primary validation:
 - retrieval-live checks
 - LLM-as-judge semantic checks for cases that are not fully capturable by string matching
 
+Already completed in this area:
+- stronger direct handling for many common plan-detail and practical-question families
+- better plan comparison, household-tier, HSA/FSA, and therapy/specialist answer coverage
+- deterministic eval coverage is already above the original minimum target
+
+Still left:
+- broader policy/document-bound answer coverage
+- more complete STD / leave pay and other document-heavy rule coverage
+- continue replacing lookup-style responses with grounded, direct answers across more categories
+
 ## Phase 5: Cross-Surface Truth And Release Gates
+
+Status: partially complete
 
 Goal:
 - ensure every user-facing surface agrees on package truth and that release decisions are driven by repeatable validation
@@ -177,7 +244,18 @@ Primary validation:
 - LLM judge suite
 - targeted cross-surface parity checks
 
+Already completed in this area:
+- deterministic, transcript, retrieval-live, and judge-live validation are active working gates
+- release decisions are already being made against real validation runs, not screenshots alone
+
+Still left:
+- broader parity checks across chat, calculator, compare, and any remaining surfaces
+- cleaner cross-surface package-truth enforcement
+- a more explicit merge/release checklist tied to those gates
+
 ## Phase 6: Multi-Employer Expansion
+
+Status: not started
 
 Goal:
 - generalize the package system from "AmeriVet versionable" to "employer-agnostic"
