@@ -3541,8 +3541,8 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
     turns: [
       {
         user: 'yes please - help me think through that',
-        mustContain: ['Life insurance is usually worth tightening up', 'Basic Life', 'Voluntary Term Life', 'Whole Life', 'life versus disability'],
-        mustNotContain: ['A supplemental benefit is usually worth considering'],
+        mustContain: ['80% Voluntary Term Life / 20% Whole Life', 'Basic Life', 'Voluntary Term Life', 'Whole Life'],
+        mustNotContain: ['A useful next life-insurance step', 'A supplemental benefit is usually worth considering'],
       },
     ],
   },

@@ -2456,12 +2456,14 @@ describe('qa-v2 engine', () => {
       session,
     });
 
-    expect(result.answer).toContain('Life insurance is usually worth tightening up');
+    expect(result.answer).toContain('80% Voluntary Term Life / 20% Whole Life');
     expect(result.answer).toContain('Basic Life');
     expect(result.answer).toContain('Voluntary Term Life');
     expect(result.answer).toContain('Whole Life');
-    expect(result.answer).toContain('life versus disability');
+    expect(result.answer).not.toContain('A useful next life-insurance step');
     expect(result.answer).not.toContain('A supplemental benefit is usually worth considering');
+    expect(session.pendingGuidancePrompt).toBe('life_sizing');
+    expect(session.pendingGuidanceTopic).toBe('Life Insurance');
   });
 
   it('keeps followthrough inside the life-sizing path after a direct life amount answer', async () => {

@@ -3069,7 +3069,14 @@ function buildTopicReply(session: Session, topic: string, query: string): string
     }
     if (/\b(should\s+i\s+get|should\s+i\s+add|do\s+you\s+recommend|would\s+you\s+recommend|worth\s+it|worth\s+adding|with\s+my\s+situation|for\s+my\s+family|for\s+our\s+family|sole\s+bread[- ]?winner|only\s+income|bread[- ]?winner)\b/i.test(query.toLowerCase())) {
       const recommendation = buildSupplementalRecommendationReply(topic, session, query);
-      if (recommendation) return recommendation;
+      if (recommendation) {
+        if (topic === 'Life Insurance') {
+          setPendingGuidance(session, 'life_sizing', 'Life Insurance');
+        } else {
+          setPendingGuidance(session, 'supplemental_fit', topic);
+        }
+        return recommendation;
+      }
     }
   }
 
@@ -3544,6 +3551,19 @@ function buildContinuationReply(session: Session, query: string): string | null 
     && /\b(which\s+matters\s+more|which\s+one\s+first|which\s+matters\s+more\s+first)\b/i.test(lower)
   ) {
     return buildLifeVsDisabilityComparison();
+  }
+
+  if (
+    (activeTopic === 'Life Insurance' || inferredSupplementalTopic === 'Life Insurance')
+    && (
+      isGuidanceAdvanceAffirmation(normalizedQuery)
+      || /\b(help\s+me\s+think\s+through\s+that|help\s+me\s+think\s+through\s+this|help\s+me\s+think\s+through\s+it)\b/i.test(lower)
+    )
+    && /life insurance is usually worth tightening up|people rely on your income|household would need support if something happened to you/i.test(lastBotMessage)
+  ) {
+    setPendingGuidance(session, 'life_sizing', 'Life Insurance');
+    setTopic(session, 'Life Insurance');
+    return buildLifeSizingGuidance(session);
   }
 
   if (session.pendingGuidancePrompt === 'benefit_decision' && focus) {
