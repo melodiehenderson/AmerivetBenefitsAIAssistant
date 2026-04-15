@@ -3030,4 +3030,50 @@ describe('qa-v2 transcript replays', () => {
       }),
     );
   });
+
+  it('replays employee-plus-spouse premium asks back into medical from HSA/FSA context', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'show me the employee + spouse premiums',
+          mustContain: ['Employee + Spouse coverage', 'Standard HSA'],
+          mustNotContain: ['HSA/FSA overview', 'FSA is usually the cleaner fit'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'HSA/FSA',
+        coverageTierLock: 'Employee + Spouse',
+        familyDetails: { hasSpouse: true, numChildren: 0 },
+        lastBotMessage: 'Here is the simplest way to think about HSA versus FSA fit:',
+      }),
+    );
+  });
+
+  it('replays family-price asks back into medical from disability context', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'show me the family prices',
+          mustContain: ['Employee + Family coverage', 'Standard HSA'],
+          mustNotContain: ['Disability is really paycheck protection'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'Disability',
+        coverageTierLock: 'Employee + Family',
+        familyDetails: { hasSpouse: true, numChildren: 2 },
+        lastBotMessage: 'Disability is really paycheck protection.',
+      }),
+    );
+  });
 });

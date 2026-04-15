@@ -3588,4 +3588,50 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
       },
     ],
   },
+  {
+    id: 'V2-TX-101',
+    category: 'hsa_context_employee_spouse_pricing_pivot',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'HSA/FSA',
+      coverageTierLock: 'Employee + Spouse',
+      familyDetails: { hasSpouse: true, numChildren: 0 },
+      lastBotMessage: 'Here is the simplest way to think about HSA versus FSA fit:',
+    },
+    turns: [
+      {
+        user: 'show me the employee + spouse premiums',
+        mustContain: ['Employee + Spouse coverage', 'Standard HSA'],
+        mustNotContain: ['HSA/FSA overview', 'FSA is usually the cleaner fit'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-102',
+    category: 'disability_context_family_pricing_pivot',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Disability',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      lastBotMessage: 'Disability is really paycheck protection.',
+    },
+    turns: [
+      {
+        user: 'show me the family prices',
+        mustContain: ['Employee + Family coverage', 'Standard HSA'],
+        mustNotContain: ['Disability is really paycheck protection'],
+      },
+    ],
+  },
 ];

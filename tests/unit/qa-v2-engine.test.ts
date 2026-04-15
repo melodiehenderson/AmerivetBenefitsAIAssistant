@@ -4692,6 +4692,55 @@ describe('qa-v2 engine', () => {
     expect(result.answer).not.toContain('ongoing prescriptions');
   });
 
+  it('treats employee-plus-spouse premium asks as medical pivots even from HSA/FSA context', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'HSA/FSA',
+      coverageTierLock: 'Employee + Spouse',
+      familyDetails: { hasSpouse: true, numChildren: 0 },
+      lastBotMessage: 'Here is the simplest way to think about HSA versus FSA fit:',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'show me the employee + spouse premiums',
+      session,
+    });
+
+    expect(result.answer).toContain('Here are the monthly medical premiums for Employee + Spouse coverage');
+    expect(result.answer).toContain('Standard HSA');
+    expect(result.answer).not.toContain('HSA/FSA overview');
+    expect(result.answer).not.toContain('FSA is usually the cleaner fit');
+  });
+
+  it('treats family-price asks as medical pivots even from disability context', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Disability',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      lastBotMessage: 'Disability is really paycheck protection.',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'show me the family prices',
+      session,
+    });
+
+    expect(result.answer).toContain('Here are the monthly medical premiums for Employee + Family coverage');
+    expect(result.answer).toContain('Standard HSA');
+    expect(result.answer).not.toContain('Disability is really paycheck protection');
+  });
+
   it('answers whole-family premium asks as medical pricing replays instead of generic guidance', async () => {
     const session = makeSession({
       step: 'active_chat',
