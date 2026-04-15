@@ -2988,6 +2988,60 @@ describe('qa-v2 engine', () => {
     expect(result.answer).toContain('injury-related events');
   });
 
+  it('primes a direct disability recommendation so a plain yes opens the life-versus-disability guidance', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Sarah',
+      hasCollectedName: true,
+      userAge: 42,
+      userState: 'FL',
+      dataConfirmed: true,
+      currentTopic: 'Disability',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      coverageTierLock: 'Employee + Family',
+    });
+
+    await runQaV2Engine({
+      query: 'should i get disability if my household depends on my paycheck?',
+      session,
+    });
+
+    const result = await runQaV2Engine({
+      query: 'yes please',
+      session,
+    });
+
+    expect(result.answer).toContain('simplest way to separate life insurance from disability');
+    expect(result.answer).toContain('paycheck-protection decision');
+    expect(result.answer).not.toContain('Disability is usually worth considering if missing part of your paycheck');
+  });
+
+  it('primes a direct critical-illness recommendation so a plain yes opens the accident-versus-critical comparison', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Sarah',
+      hasCollectedName: true,
+      userAge: 42,
+      userState: 'FL',
+      dataConfirmed: true,
+      currentTopic: 'Critical Illness',
+    });
+
+    await runQaV2Engine({
+      query: 'should i add critical illness?',
+      session,
+    });
+
+    const result = await runQaV2Engine({
+      query: 'yes please',
+      session,
+    });
+
+    expect(result.answer).toContain('plain-language difference between Accident/AD&D and Critical Illness');
+    expect(result.answer).toContain('injury-related events');
+    expect(result.answer).not.toContain('Critical illness is usually worth considering when you want extra cash support');
+  });
+
   it('handles an affirmative life-versus-disability follow-up after family-protection guidance', async () => {
     const session = makeSession({
       step: 'active_chat',

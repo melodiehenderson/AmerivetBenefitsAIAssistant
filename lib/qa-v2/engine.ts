@@ -143,6 +143,25 @@ function setPendingTopicSuggestion(session: Session, topic: string) {
   session.pendingTopicSuggestion = topic;
 }
 
+function primeSupplementalRecommendationFollowup(session: Session, topic: string) {
+  if (topic === 'Life Insurance') {
+    setPendingGuidance(session, 'life_sizing', 'Life Insurance');
+    return;
+  }
+
+  if (topic === 'Disability') {
+    setPendingGuidance(session, 'life_vs_disability', 'Life Insurance');
+    return;
+  }
+
+  if (topic === 'Accident/AD&D' || topic === 'Critical Illness') {
+    setPendingGuidance(session, 'accident_vs_critical', 'Accident/AD&D');
+    return;
+  }
+
+  setPendingGuidance(session, 'supplemental_fit', topic === 'Life Insurance' ? 'Life Insurance' : 'Supplemental');
+}
+
 function buildAllBenefitsMenu(): string {
   const medicalLine = ACTIVE_AMERIVET_COPY.medicalPlanNames.join(', ');
   const lifeLine = ACTIVE_AMERIVET_COPY.lifePlanNames.join(', ');
@@ -3093,6 +3112,8 @@ function buildTopicReply(session: Session, topic: string, query: string): string
     if (detailedAnswer) {
       if (topic === 'Life Insurance' && isLifeSizingDecisionQuestion(query)) {
         setPendingGuidance(session, 'life_sizing', 'Life Insurance');
+      } else if (isSupplementalRecommendationQuestion(query)) {
+        primeSupplementalRecommendationFollowup(session, topic);
       } else if (topic === 'Accident/AD&D' || topic === 'Critical Illness' || topic === 'Disability' || topic === 'Life Insurance') {
         setPendingGuidance(session, 'supplemental_fit', topic);
       }
@@ -3101,11 +3122,7 @@ function buildTopicReply(session: Session, topic: string, query: string): string
     if (/\b(should\s+i\s+get|should\s+i\s+add|do\s+you\s+recommend|would\s+you\s+recommend|worth\s+it|worth\s+adding|with\s+my\s+situation|for\s+my\s+family|for\s+our\s+family|sole\s+bread[- ]?winner|only\s+income|bread[- ]?winner)\b/i.test(query.toLowerCase())) {
       const recommendation = buildSupplementalRecommendationReply(topic, session, query);
       if (recommendation) {
-        if (topic === 'Life Insurance') {
-          setPendingGuidance(session, 'life_sizing', 'Life Insurance');
-        } else {
-          setPendingGuidance(session, 'supplemental_fit', topic);
-        }
+        primeSupplementalRecommendationFollowup(session, topic);
         return recommendation;
       }
     }
@@ -3569,6 +3586,7 @@ function buildContinuationReply(session: Session, query: string): string | null 
     const recommendation = buildSupplementalRecommendationReply(inferredSupplementalTopic, session, normalizedQuery);
     if (recommendation) {
       setTopic(session, inferredSupplementalTopic);
+      primeSupplementalRecommendationFollowup(session, inferredSupplementalTopic);
       return recommendation;
     }
   }
@@ -3759,6 +3777,7 @@ function buildContinuationReply(session: Session, query: string): string | null 
     const recommendation = buildSupplementalRecommendationReply(inferredSupplementalTopic, session, normalizedQuery);
     if (recommendation) {
       setTopic(session, inferredSupplementalTopic);
+      primeSupplementalRecommendationFollowup(session, inferredSupplementalTopic);
       return recommendation;
     }
   }
@@ -3920,6 +3939,7 @@ function buildContinuationReply(session: Session, query: string): string | null 
       const recommendation = buildSupplementalRecommendationReply(activeTopic, session, normalizedQuery);
       if (recommendation) {
         setTopic(session, activeTopic);
+        primeSupplementalRecommendationFollowup(session, activeTopic);
         return recommendation;
       }
     }
@@ -3939,6 +3959,7 @@ function buildContinuationReply(session: Session, query: string): string | null 
       const recommendation = buildSupplementalRecommendationReply(inferredSupplementalTopic, session, normalizedQuery);
       if (recommendation) {
         setTopic(session, inferredSupplementalTopic);
+        primeSupplementalRecommendationFollowup(session, inferredSupplementalTopic);
         return recommendation;
       }
     }

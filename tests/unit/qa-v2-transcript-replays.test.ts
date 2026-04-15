@@ -1657,6 +1657,32 @@ describe('qa-v2 transcript replays', () => {
     );
   });
 
+  it('replays a plain yes after a direct disability recommendation into life-versus-disability guidance', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'should i get disability if my household depends on my paycheck?',
+          mustContain: ['paycheck'],
+        },
+        {
+          user: 'yes please',
+          mustContain: ['simplest way to separate life insurance from disability', 'if you are alive but unable to work'],
+          mustNotContain: ['Disability is usually worth considering if missing part of your paycheck'],
+        },
+      ],
+      makeSession({
+        userName: 'Sarah',
+        hasCollectedName: true,
+        userAge: 42,
+        userState: 'FL',
+        dataConfirmed: true,
+        currentTopic: 'Disability',
+        coverageTierLock: 'Employee + Family',
+        familyDetails: { hasSpouse: true, numChildren: 2 },
+      }),
+    );
+  });
+
   it('replays "why would i pick that?" after routine-care comparison as a grounded practical take', async () => {
     await replayTranscript(
       [

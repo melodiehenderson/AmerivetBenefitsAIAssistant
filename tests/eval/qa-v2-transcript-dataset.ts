@@ -2128,6 +2128,33 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
     ],
   },
   {
+    id: 'V2-TX-067B',
+    category: 'supplemental_recommendation_yes_followthrough',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Mandy',
+      hasCollectedName: true,
+      userAge: 33,
+      userState: 'GA',
+      dataConfirmed: true,
+      currentTopic: 'Disability',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+    },
+    turns: [
+      {
+        user: 'should i get disability if my household depends on my paycheck?',
+        mustContain: ['paycheck'],
+        mustNotContain: ['ask that one a little more specifically'],
+      },
+      {
+        user: 'yes please',
+        mustContain: ['simplest way to separate life insurance from disability', 'if you are alive but unable to work'],
+        mustNotContain: ['Disability is usually worth considering if missing part of your paycheck'],
+      },
+    ],
+  },
+  {
     id: 'V2-TX-068',
     category: 'household_direct_question_precedence',
     initialSession: {
