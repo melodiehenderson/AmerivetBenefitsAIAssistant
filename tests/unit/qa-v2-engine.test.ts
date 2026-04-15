@@ -2366,6 +2366,9 @@ describe('qa-v2 engine', () => {
 
     expect(result.answer).toContain('80% Voluntary Term Life / 20% Whole Life');
     expect(result.answer).toContain('Basic Life');
+    expect(result.answer).toContain('If you can only afford **one** extra paid life layer');
+    expect(result.answer).toContain('Voluntary Term Life');
+    expect(result.answer).toContain('Whole Life');
     expect(result.answer).not.toContain('life insurance is usually worth tightening up');
   });
 

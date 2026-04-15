@@ -68,17 +68,27 @@ function buildEmployerLifeSplitGuidanceReply(query: string, session: Session): s
   const intro = asksAmountOrProtectionDecision
     ? `If you are asking how I would structure extra life coverage once the included base benefit is not enough, AmeriVet's current employer guidance is **${rule.recommendationLabel}**.`
     : `If you want a blended default between permanent coverage and extra term coverage, AmeriVet's current employer guidance is **${rule.recommendationLabel}**.`;
+  const amountDecisionBullets = [
+    `What that means in practice:`,
+    `- Keep **${basic?.name || 'Basic Life'}** as the included base layer`,
+    `- If you can only afford **one** extra paid life layer, start with **${primaryLabel}** before you add whole life`,
+    `- Use the bigger **${primaryLabel}** share for the main income-replacement job if other people rely on your paycheck`,
+    `- Keep the smaller **${secondaryLabel}** slice only if you also want some permanent cash-value coverage on top`,
+  ];
+  const blendBullets = [
+    `What that means in practice:`,
+    `- Keep **${basic?.name || 'Basic Life'}** as the included base layer`,
+    `- Put the larger share into **${primaryLabel}** for the main income-replacement layer`,
+    `- Keep the smaller share in **${secondaryLabel}** if you want some permanent cash-value coverage on top`,
+  ];
   const closing = asksAmountOrProtectionDecision
-    ? `So my practical answer is: keep **${basic?.name || 'Basic Life'}** as the base, add **${primaryLabel}** as the main extra layer if other people rely on your income, and only add a smaller **${secondaryLabel}** slice if you also want permanent whole-life coverage.`
+    ? `So my practical answer is: if other people rely on your income, make sure you have a meaningful **${primaryLabel}** layer first, and only give **${secondaryLabel}** a bigger share if the permanent whole-life features are part of the goal.`
     : `So if you want me to lead the default split, I would usually start there and only move off it if you want almost all pure term protection or you care much more about permanent whole-life features.`;
 
   return [
     intro,
     ``,
-    `What that means in practice:`,
-    `- Keep **${basic?.name || 'Basic Life'}** as the included base layer`,
-    `- Put the larger share into **${primaryLabel}** for the main income-replacement layer`,
-    `- Keep the smaller share in **${secondaryLabel}** if you want some permanent cash-value coverage on top`,
+    ...(asksAmountOrProtectionDecision ? amountDecisionBullets : blendBullets),
     ``,
     closing,
   ].join('\n');

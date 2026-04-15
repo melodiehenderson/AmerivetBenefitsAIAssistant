@@ -2698,7 +2698,7 @@ describe('qa-v2 transcript replays', () => {
       [
         {
           user: 'how much protection is worth paying for if your family relies on your income?',
-          mustContain: ['80% Voluntary Term Life / 20% Whole Life', 'Basic Life'],
+          mustContain: ['80% Voluntary Term Life / 20% Whole Life', 'Basic Life', 'If you can only afford **one** extra paid life layer', 'Whole Life'],
           mustNotContain: ['life insurance is usually worth tightening up'],
         },
       ],
