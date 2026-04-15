@@ -3154,6 +3154,29 @@ describe('qa-v2 transcript replays', () => {
     );
   });
 
+  it('replays child recurring-therapy recommendation asks into enhanced medical guidance with a household-specific rationale', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'which plan do you recommend if my daughter sees a therapist every week?',
+          mustContain: ['My recommendation: Enhanced HSA', 'recurring care for a child'],
+          mustNotContain: ['Quick clarifier'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'TX',
+        dataConfirmed: true,
+        currentTopic: 'Medical',
+        coverageTierLock: 'Employee + Family',
+        familyDetails: { hasSpouse: true, numChildren: 2 },
+        lastBotMessage: 'Here is the practical tradeoff across AmeriVet\'s medical options:',
+      }),
+    );
+  });
+
   it('replays just-wanna-see-the-plans phrasing back into medical from stale hsa/fsa context', async () => {
     await replayTranscript(
       [

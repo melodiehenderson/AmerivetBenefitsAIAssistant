@@ -4759,6 +4759,30 @@ describe('qa-v2 engine', () => {
     expect(result.answer).not.toContain('Quick clarifier');
   });
 
+  it('recommends enhanced with a child-specific recurring-care rationale when a child has ongoing therapy', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'TX',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      lastBotMessage: 'Here is the practical tradeoff across AmeriVet\'s medical options.',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'which plan do you recommend if my daughter sees a therapist every week?',
+      session,
+    });
+
+    expect(result.answer).toContain('My recommendation: Enhanced HSA');
+    expect(result.answer).toContain('recurring care for a child');
+    expect(result.answer).not.toContain('Quick clarifier');
+  });
+
   it('recommends enhanced when the user asks for more predictable costs instead of falling back to a clarifier', async () => {
     const session = makeSession({
       step: 'active_chat',

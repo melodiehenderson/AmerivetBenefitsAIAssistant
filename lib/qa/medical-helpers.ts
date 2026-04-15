@@ -374,6 +374,8 @@ export function buildRecommendationOverview(
     || /\b(high\s+usage|high\s+utilization|frequent\s+(?:doctor|specialist|care|visits?)|regular\s+(?:care|visits?)|ongoing\s+care|chronic|ongoing\s+prescriptions?|a\s+lot\s+of\s+care|expect(?:ing)?\s+a\s+lot\s+of\s+care|more\s+medical\s+use|heavy\s+usage|more\s+(?:doctor|specialist)\s+visits?|specialist\s+visits?|more\s+care|more\s+medical\s+care)\b/i.test(lower);
   const moderateUsageSignal = /\b(moderate\s+usage|some\s+medical\s+use|occasional\s+(?:care|visits?)|a\s+few\s+visits?)\b/i.test(lower);
   const explicitNonMedicalCategory = /\b(dental|vision|life(?:\s+insurance)?|disability|critical(?:\s+illness)?|accident|hospital\s+indemnity|hsa\/fsa|fsa)\b/i.test(lower);
+  const spouseUsageContext = /\b(wife|husband|spouse|partner)\b/i.test(lower) && (recurringTherapySignal || recurringSpecialistSignal || recurringPrescriptionSignal);
+  const childUsageContext = /\b(kids?|children|son|daughter)\b/i.test(lower) && (recurringTherapySignal || recurringSpecialistSignal || recurringPrescriptionSignal);
   const wantsMedicalRecommendation = /\b(medical|health|hsa|kaiser|ppo|hmo|standard\s+hsa|enhanced\s+hsa)\b/i.test(lower)
     || (session.currentTopic || '').toLowerCase().includes('medical')
     || /\b(standard\s+hsa|enhanced\s+hsa|kaiser\s+standard\s+hmo|medical\s+plan options|medical options|compare plans)\b/i.test(session.lastBotMessage || '')
@@ -460,6 +462,10 @@ export function buildRecommendationOverview(
     recommendationPlan = 'Enhanced HSA';
     recommendationReason = lowestOutOfPocketSignal
       ? `it is the better fit when your main goal is lower out-of-pocket exposure rather than the lowest premium`
+      : spouseUsageContext
+        ? `your spouse's recurring care makes the stronger deductible and point-of-service protection more likely to matter`
+        : childUsageContext
+          ? `your household already sounds like it has recurring care for a child, which makes the stronger deductible and point-of-service protection more likely to matter`
       : `the lower deductible and stronger cost protection usually matter more once you expect regular care`;
   } else if (mentionsIntegratedNetworkPreference && kaiser && session.userState && isKaiserEligibleForState(session.userState, benefitsPackage)) {
     recommendationPlan = 'Kaiser Standard HMO';
@@ -501,7 +507,11 @@ export function buildRecommendationOverview(
     msg += `\nBecause you said more predictable costs matter, **Enhanced HSA** is the one I would look at first.`;
   }
   if (usageBand === 'high' || usageBand === 'moderate') {
-    msg += `\nBecause you described more than minimal usage, **Enhanced HSA** is the one I would look at first.`;
+    msg += spouseUsageContext
+      ? `\nBecause your spouse's recurring care already sounds like more than minimal usage, **Enhanced HSA** is the one I would look at first.`
+      : childUsageContext
+        ? `\nBecause your household already sounds like it has recurring care for a child, **Enhanced HSA** is the one I would look at first.`
+        : `\nBecause you described more than minimal usage, **Enhanced HSA** is the one I would look at first.`;
   }
   if (lowestOutOfPocketSignal) {
     msg += recommendationPlan === 'Kaiser Standard HMO'
