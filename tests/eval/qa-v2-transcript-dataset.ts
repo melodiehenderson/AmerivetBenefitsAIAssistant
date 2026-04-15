@@ -3110,4 +3110,73 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
       },
     ],
   },
+  {
+    id: 'V2-TX-093',
+    category: 'life_employer_guidance_broader_family_trigger',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      lastBotMessage: 'Here is the practical difference across AmeriVet\'s life insurance options:\n\n- Unum Basic Life & AD&D is the employer-paid base life and AD&D benefit\n- Unum Voluntary Term Life is the extra employee-paid term coverage\n- Allstate Whole Life is the permanent option with cash value',
+    },
+    turns: [
+      {
+        user: 'which ones should i get?',
+        mustContain: ['80% Voluntary Term Life / 20% Whole Life'],
+        mustNotContain: ['life insurance is usually worth tightening up'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-094',
+    category: 'therapy_specialist_practical_costs',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      lastBotMessage: 'Here is the practical tradeoff across AmeriVet\'s medical options:',
+    },
+    turns: [
+      {
+        user: 'i see a therapist 2x monthly, what will that cost?',
+        mustContain: ['Therapy / specialist care', 'Standard HSA', 'Enhanced HSA'],
+        mustNotContain: ['A useful next medical step is usually one of these'],
+      },
+      {
+        user: 'is a therapist a specialist?',
+        mustContain: ['Usually yes', 'specialist'],
+        mustNotContain: ['A useful next medical step is usually one of these'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-095',
+    category: 'hsa_context_declined_back_to_medical_plans',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'HSA/FSA',
+      lastBotMessage: 'HSA/FSA overview:',
+    },
+    turns: [
+      {
+        user: "i don't really care about hsa fsa stuff yet. i just wanna see the plans",
+        mustContain: ['Standard HSA'],
+        mustNotContain: ['HSA/FSA overview', 'FSA is usually the more natural pre-tax account'],
+      },
+    ],
+  },
 ];

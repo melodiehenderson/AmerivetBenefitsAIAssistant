@@ -243,6 +243,50 @@ describe('qa-v2 engine', () => {
     expect(specialist.answer).not.toContain('We can stay with medical');
   });
 
+  it('answers therapist-specialist questions directly inside medical instead of drifting into scaffolding', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'is a therapist a specialist?',
+      session,
+    });
+
+    expect(result.answer).toContain('Usually yes');
+    expect(result.answer).toContain('specialist');
+    expect(result.answer).not.toContain('We can stay with medical');
+  });
+
+  it('answers therapy-cost questions as grounded medical comparisons instead of generic menus', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      lastBotMessage: 'Here is the practical tradeoff across AmeriVet\'s medical options:',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'i see a therapist 2x monthly, what will that cost?',
+      session,
+    });
+
+    expect(result.answer).toContain('Therapy / specialist care');
+    expect(result.answer).toContain('Standard HSA');
+    expect(result.answer).toContain('Enhanced HSA');
+    expect(result.answer).not.toContain('A useful next medical step is usually one of these');
+  });
+
   it('defines urgent care, er, and prescription coverage terms directly inside medical', async () => {
     const session = makeSession({
       step: 'active_chat',
@@ -2199,6 +2243,28 @@ describe('qa-v2 engine', () => {
 
     expect(result.answer).toContain('80% Voluntary Term Life / 20% Whole Life');
     expect(result.answer).toContain('included base layer');
+    expect(result.answer).not.toContain('life insurance is usually worth tightening up');
+  });
+
+  it('uses the employer guidance split for broader family-protection life decisions after life options are already in play', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      lastBotMessage: 'Here is the practical difference across AmeriVet\'s life insurance options:\n\n- Unum Basic Life & AD&D is the employer-paid base life and AD&D benefit\n- Unum Voluntary Term Life is the extra employee-paid term coverage\n- Allstate Whole Life is the permanent option with cash value',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'which ones should i get?',
+      session,
+    });
+
+    expect(result.answer).toContain('80% Voluntary Term Life / 20% Whole Life');
     expect(result.answer).not.toContain('life insurance is usually worth tightening up');
   });
 
@@ -4168,6 +4234,29 @@ describe('qa-v2 engine', () => {
     expect(result.answer).toContain('Kaiser Standard HMO');
     expect(result.answer).not.toContain('FSA is usually the more natural pre-tax account');
     expect(result.answer).not.toContain('HSA/FSA overview');
+  });
+
+  it('routes just-wanna-see-the-plans asks back into medical even when the user explicitly declines hsa/fsa talk', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'HSA/FSA',
+      lastBotMessage: 'HSA/FSA overview:',
+    });
+
+    const result = await runQaV2Engine({
+      query: "i don't really care about hsa fsa stuff yet. i just wanna see the plans",
+      session,
+    });
+
+    expect(result.answer).toMatch(/(?:Here is the practical tradeoff across AmeriVet's medical options|Here is a side-by-side comparison|Here are the monthly medical premiums|Medical plan options)/);
+    expect(result.answer).toContain('Standard HSA');
+    expect(result.answer).not.toContain('HSA/FSA overview');
+    expect(result.answer).not.toContain('FSA is usually the more natural pre-tax account');
   });
 
   it('answers whole-family premium asks as medical pricing replays instead of generic guidance', async () => {

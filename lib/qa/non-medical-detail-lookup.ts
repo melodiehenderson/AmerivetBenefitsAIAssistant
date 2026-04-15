@@ -1,6 +1,9 @@
 import type { Session } from '@/lib/rag/session-store';
 import { getAmerivetBenefitsPackage } from '@/lib/data/amerivet-package';
-import { findAmerivetEmployerGuidanceRule } from '@/lib/data/amerivet-employer-guidance';
+import {
+  AMERIVET_EMPLOYER_GUIDANCE_RULES,
+  findAmerivetEmployerGuidanceRule,
+} from '@/lib/data/amerivet-employer-guidance';
 
 const ENROLLMENT_PORTAL_URL = process.env.ENROLLMENT_PORTAL_URL || 'https://wd5.myworkday.com/amerivet/login.html';
 
@@ -13,8 +16,40 @@ function getLifePlans() {
   };
 }
 
-function buildEmployerLifeSplitGuidanceReply(query: string): string | null {
-  const rule = findAmerivetEmployerGuidanceRule('Life Insurance', query);
+function isPureVoluntaryTermAmountQuestion(queryLower: string): boolean {
+  return /\b(how\s+much\s+should\s+i\s+get|how\s+much\s+coverage\s+should\s+i\s+get|help\s+me\s+decide\s+how\s+much|help\s+me\s+determine\s+how\s+much|help\s+me\s+figure\s+out\s+how\s+much|decide\s+how\s+much|determine\s+how\s+much|figure\s+out\s+how\s+much)\b/i.test(queryLower)
+    && /\b(voluntary\s+term(?:\s+life)?|term\s+life)\b/i.test(queryLower)
+    && !/\b(whole\s+life|permanent|perm)\b/i.test(queryLower);
+}
+
+function resolveEmployerLifeSplitGuidanceRule(query: string, session: Session) {
+  const lower = query.toLowerCase();
+  if (isPureVoluntaryTermAmountQuestion(lower)) return null;
+
+  const explicitRule = findAmerivetEmployerGuidanceRule('Life Insurance', query);
+  if (explicitRule) return explicitRule;
+
+  const lastBot = (session.lastBotMessage || '').toLowerCase();
+  const combined = `${lastBot}\n${lower}`;
+  const sessionHasDependents = Boolean(session.familyDetails?.hasSpouse)
+    || Boolean((session.familyDetails?.numChildren || 0) > 0)
+    || /employee\s+\+\s+(spouse|child|family)/i.test(session.coverageTierLock || '');
+  const lastBotDiscussedLifeMix = /\blife insurance options:|voluntary term life|whole life|basic life\b/i.test(lastBot);
+  const asksProductDecision = /\b(which\s+one\s+should\s+i\s+get|which\s+ones\s+should\s+i\s+get|which\s+should\s+i\s+get|what\s+do\s+you\s+recommend|help\s+me\s+with\s+that|help\s+me\s+decide|what\s+should\s+i\s+think\s+about|should\s+i\s+pay\s+for\s+more)\b/i.test(lower);
+  const mentionsExtraLifeChoice = /\b(voluntary\s+term(?:\s+life)?|whole\s+life|permanent|more\s+than\s+just\s+(?:the\s+)?basic|extra\s+life|additional\s+life|also\s+want\s+(?:voluntary\s+)?term(?:\s+life)?|want\s+(?:voluntary\s+)?term(?:\s+life)?|beyond\s+(?:the\s+)?basic)\b/i.test(combined);
+  const familyContext = sessionHasDependents || /\b(wife|husband|spouse|partner|kids?|children|family|dependents?)\b/i.test(combined);
+
+  if (lastBotDiscussedLifeMix && asksProductDecision && (mentionsExtraLifeChoice || familyContext)) {
+    return AMERIVET_EMPLOYER_GUIDANCE_RULES.find((rule) =>
+      rule.topic === 'Life Insurance' && rule.intentFamily === 'life_split_term_vs_whole',
+    ) || null;
+  }
+
+  return null;
+}
+
+function buildEmployerLifeSplitGuidanceReply(query: string, session: Session): string | null {
+  const rule = resolveEmployerLifeSplitGuidanceRule(query, session);
   if (!rule) return null;
 
   const { basic, term, whole } = getLifePlans();
@@ -43,7 +78,7 @@ export function isNonMedicalDetailQuestion(topic: string, query: string): boolea
   const costQuestion = /\b(how\s+much|cost|costs|price|prices|rate|rates|premium|premiums)\b/i.test(lower);
 
   if (topic === 'Life Insurance') {
-    return /\b(portable|guaranteed issue|cash value|whole life|term life|voluntary term(?:\s+life)?|basic life|voluntary life|age[- ]banded|rates? locked|coverage amount|how much life insurance|how much can i get|how much should i get|how much coverage should i get|help me decide how much|help me determine how much|help me figure out how much|decide how much|determine how much|figure out how much|if i do nothing|what life insurance do i get|included life|included coverage|default life|automatic coverage|automatically enrolled|already included|included by default|get automatically|without having to pay more|without paying more|without extra cost|1x|5x salary|spouse coverage|partner coverage|dependent child coverage|family coverage|cover my spouse|cover my partner|cover my wife|cover my husband|cover my family|cover my kids|cover my children|cover my dependents)\b/i.test(lower)
+    return /\b(portable|guaranteed issue|cash value|whole life|term life|voluntary term(?:\s+life)?|basic life|voluntary life|age[- ]banded|rates? locked|coverage amount|how much life insurance|how much can i get|how much should i get|how much coverage should i get|help me decide how much|help me determine how much|help me figure out how much|decide how much|determine how much|figure out how much|if i do nothing|what life insurance do i get|included life|included coverage|default life|automatic coverage|automatically enrolled|already included|included by default|get automatically|without having to pay more|without paying more|without extra cost|1x|5x salary|spouse coverage|partner coverage|dependent child coverage|family coverage|cover my spouse|cover my partner|cover my wife|cover my husband|cover my family|cover my kids|cover my children|cover my dependents|which one should i get|which ones should i get|which should i get|should i pay for more|what should i think about)\b/i.test(lower)
       || costQuestion;
   }
 
@@ -65,7 +100,7 @@ export function isNonMedicalDetailQuestion(topic: string, query: string): boolea
   return false;
 }
 
-export function buildNonMedicalDetailAnswer(topic: string, query: string, _session: Session): string | null {
+export function buildNonMedicalDetailAnswer(topic: string, query: string, session: Session): string | null {
   const lower = query.toLowerCase();
   const { basic, term, whole } = getLifePlans();
   const costQuestion = /\b(how\s+much|cost|costs|price|prices|rate|rates|premium|premiums)\b/i.test(lower);
@@ -85,7 +120,7 @@ export function buildNonMedicalDetailAnswer(topic: string, query: string, _sessi
   }
 
   if (topic === 'Life Insurance') {
-    const employerSplitGuidance = buildEmployerLifeSplitGuidanceReply(query);
+    const employerSplitGuidance = buildEmployerLifeSplitGuidanceReply(query, session);
     if (employerSplitGuidance) {
       return employerSplitGuidance;
     }

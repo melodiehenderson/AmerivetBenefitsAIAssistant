@@ -332,6 +332,15 @@ function buildServiceComparison(
   return lines.join('\n');
 }
 
+function buildTherapyComparison(plans: MedicalPlanSummary[]): string {
+  const lines = ['Here is the Therapy / specialist care comparison across the available medical plans:', ''];
+  for (const plan of plans) {
+    const therapyDetail = plan.physicalTherapy || 'I do not have a separate therapy line item in the current summary';
+    lines.push(`- **${plan.displayName}**: ${therapyDetail}; closest specialist proxy: ${plan.specialist}`);
+  }
+  return lines.join('\n');
+}
+
 function buildPlanCoverageAnswer(summary: MedicalPlanSummary, coverageTier: string): string {
   const plan = getCatalogPlan(summary);
   const lines = [
@@ -560,6 +569,16 @@ export function buildMedicalPlanDetailAnswer(
     return buildMedicalTermExplanation('specialist');
   }
 
+  if (/\b(is\s+(?:a\s+)?therap(?:ist|y)\s+(?:a\s+)?specialist|does\s+(?:a\s+)?therap(?:ist|y)\s+count\s+as\s+specialist(?:\s+care)?|would\s+(?:a\s+)?therap(?:ist|y)\s+be\s+specialist(?:\s+care)?)\b/i.test(queryLower)) {
+    return [
+      `Usually yes — therapy visits are generally closer to **specialist / behavioral-health care** than to primary care for cost-sharing purposes.`,
+      ``,
+      `In AmeriVet's current summaries, the safest grounded proxy when there is not a separate therapy copay line is the **specialist** cost line for the plan.`,
+      ``,
+      `If you want, I can compare the medical plans specifically on therapy / specialist cost-sharing next.`,
+    ].join('\n');
+  }
+
   if (/\b(what\s+does\s+urgent\s+care\s+mean|what\s+is\s+urgent\s+care)\b/i.test(queryLower)) {
     return buildMedicalTermExplanation('urgent_care');
   }
@@ -631,6 +650,17 @@ export function buildMedicalPlanDetailAnswer(
       '',
       pricingUtils.compareMaternityCosts(coverageTier, session.userState),
     ].join('\n');
+  }
+
+  if (/\b(physical\s+therapy|therapy|therapist|pt|outpatient\s+therapy|mental\s+health)\b/i.test(queryLower) && plansFromQuery.length !== 1) {
+    if (/\b(cost|costs|what\s+would\s+i\s+pay|what\s+will\s+that\s+cost|what\s+are\s+my\s+costs|copay|copays|specialist)\b/i.test(queryLower)) {
+      return [
+        `For therapy-related care, the safest grounded comparison is the plan's therapy line where it exists, plus the specialist cost line when a separate therapy copay is not listed.`,
+        ``,
+        buildTherapyComparison(summaries),
+      ].join('\n');
+    }
+    return buildTherapyComparison(summaries);
   }
 
   if (/\b(primary\s+care|pcp|doctor\s+visit|office\s+visit|specialist|urgent\s+care|emergency\s+room|er|copay|copays)\b/i.test(queryLower) && plansFromQuery.length !== 1) {
@@ -783,7 +813,7 @@ export function buildMedicalPlanDetailAnswer(
     return `${summary.displayName}: preventive care is ${summary.preventiveCare}.`;
   }
 
-  if (/\b(physical\s+therapy|therapy|pt|outpatient\s+therapy)\b/i.test(queryLower)) {
+  if (/\b(physical\s+therapy|therapy|therapist|pt|outpatient\s+therapy)\b/i.test(queryLower)) {
     return summary.physicalTherapy
       ? `${summary.displayName}: ${summary.physicalTherapy}.`
       : `${summary.displayName}: I do not have a separate physical therapy line item in my current summary, so I do not want to guess.`;

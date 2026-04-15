@@ -2556,4 +2556,73 @@ describe('qa-v2 transcript replays', () => {
       }),
     );
   });
+
+  it('replays broader family life-decision wording into the employer split guidance once life options are already active', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'which ones should i get?',
+          mustContain: ['80% Voluntary Term Life / 20% Whole Life'],
+          mustNotContain: ['life insurance is usually worth tightening up'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'Life Insurance',
+        familyDetails: { hasSpouse: true, numChildren: 2 },
+        lastBotMessage: 'Here is the practical difference across AmeriVet\'s life insurance options:\n\n- Unum Basic Life & AD&D is the employer-paid base life and AD&D benefit\n- Unum Voluntary Term Life is the extra employee-paid term coverage\n- Allstate Whole Life is the permanent option with cash value',
+      }),
+    );
+  });
+
+  it('replays therapist-cost questions into grounded medical comparison instead of generic medical menus', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'i see a therapist 2x monthly, what will that cost?',
+          mustContain: ['Therapy / specialist care', 'Standard HSA', 'Enhanced HSA'],
+          mustNotContain: ['A useful next medical step is usually one of these'],
+        },
+        {
+          user: 'is a therapist a specialist?',
+          mustContain: ['Usually yes', 'specialist'],
+          mustNotContain: ['A useful next medical step is usually one of these'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'Medical',
+        lastBotMessage: 'Here is the practical tradeoff across AmeriVet\'s medical options:',
+      }),
+    );
+  });
+
+  it('replays just-wanna-see-the-plans phrasing back into medical from stale hsa/fsa context', async () => {
+    await replayTranscript(
+      [
+        {
+          user: "i don't really care about hsa fsa stuff yet. i just wanna see the plans",
+          mustContain: ['Standard HSA'],
+          mustNotContain: ['HSA/FSA overview', 'FSA is usually the more natural pre-tax account'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'HSA/FSA',
+        lastBotMessage: 'HSA/FSA overview:',
+      }),
+    );
+  });
 });
