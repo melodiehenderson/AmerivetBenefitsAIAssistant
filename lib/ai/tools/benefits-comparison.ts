@@ -9,7 +9,10 @@ import {
   getPlansByType,
 } from '@/lib/data/amerivet-benefits';
 import type { BenefitPlan, BenefitTier } from '@/lib/data/amerivet';
-import type { AmerivetBenefitsPackage } from '@/lib/data/amerivet-package';
+import {
+  getAmerivetBenefitsPackage,
+  type AmerivetBenefitsPackage,
+} from '@/lib/data/amerivet-package';
 
 type LegacyCoverageTierInput =
   | BenefitTier
@@ -42,6 +45,7 @@ export function createBenefitsComparisonTools(
   options: BenefitsComparisonToolOptions = {},
 ) {
   const benefitsPackage = options.benefitsPackage;
+  const activePackage = benefitsPackage ?? getAmerivetBenefitsPackage();
 
   return {
     comparePlans: {
@@ -231,10 +235,12 @@ export function createBenefitsComparisonTools(
             .concat(getPlansByType('vision', benefitsPackage))
             .concat(getPlansByType('voluntary', benefitsPackage))
           : AMERIVET_BENEFIT_PLANS;
-        const isEligible = employeeType === 'full-time' && hoursPerWeek >= 30;
+        const { eligibility } = activePackage.catalog;
+        const isEligible =
+          employeeType === 'full-time' && hoursPerWeek >= eligibility.fullTimeHours;
         const activeEligiblePlans = isEligible ? eligiblePlans : [];
         const voluntaryPlans = eligiblePlans.filter((plan) =>
-          plan.type === 'voluntary' && hoursPerWeek >= 20,
+          plan.type === 'voluntary' && hoursPerWeek >= eligibility.partTimeHours,
         );
 
         return {
@@ -251,12 +257,8 @@ export function createBenefitsComparisonTools(
             name: plan.name,
             type: plan.type,
           })),
-          waitingPeriod: '1st of month following hire date',
-          dependentEligibility: {
-            spouse: true,
-            domesticPartner: true,
-            children: 'Under 26, regardless of marital/residence/student status',
-          },
+          waitingPeriod: eligibility.coverageEffective,
+          dependentEligibility: eligibility.dependents,
         };
       },
     },
@@ -268,18 +270,24 @@ export function createBenefitsComparisonTools(
         properties: {},
       },
       execute: async () => {
+        const { openEnrollment, specialCoverage } = activePackage.catalog;
+        const datesConfirmed = Boolean(openEnrollment.startDate && openEnrollment.endDate);
+
         return {
-          year: '2024-2025',
-          startDate: 'TBD', // Brandon needs to provide
-          endDate: 'TBD', // Brandon needs to provide
-          effectiveDate: '2024-10-01',
+          year: openEnrollment.year,
+          startDate: openEnrollment.startDate,
+          endDate: openEnrollment.endDate,
+          effectiveDate: openEnrollment.effectiveDate,
           specialEffectiveDates: {
-            hsa: '2025-01-01',
-            fsa: '2025-01-01',
-            commuter: '2025-01-01',
+            hsa: specialCoverage.hsa.effectiveDate,
+            commuter: specialCoverage.commuter.effectiveDate,
           },
-          status: 'Open enrollment dates pending confirmation from Brandon',
-          actionRequired: 'Contact Brandon for exact open enrollment dates',
+          status: datesConfirmed
+            ? `Open enrollment dates loaded from ${activePackage.displayName}`
+            : `Open enrollment dates pending for ${activePackage.displayName}`,
+          actionRequired: datesConfirmed
+            ? 'Use the active package dates when guiding enrollment decisions.'
+            : 'Confirm the active package dates before giving deadline guidance.',
         };
       },
     },
