@@ -4886,6 +4886,30 @@ describe('qa-v2 engine', () => {
     expect(result.answer).not.toContain('FSA is usually the cleaner fit');
   });
 
+  it('treats direct Standard-HSA-versus-Kaiser compares as medical plan comparisons even from HSA/FSA context', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'HSA/FSA',
+      coverageTierLock: 'Employee Only',
+      lastBotMessage: 'Here is the simplest way to think about HSA versus FSA fit:',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'compare standard hsa with kaiser please',
+      session,
+    });
+
+    expect(result.answer).toContain('Standard HSA');
+    expect(result.answer).toContain('Kaiser Standard HMO');
+    expect(result.answer).not.toContain('HSA/FSA overview');
+    expect(result.answer).not.toContain('FSA is usually the cleaner fit');
+  });
+
   it('treats other-than-life followups as a move past life instead of replaying life options', async () => {
     const session = makeSession({
       step: 'active_chat',

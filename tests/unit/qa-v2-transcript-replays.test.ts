@@ -3166,4 +3166,26 @@ describe('qa-v2 transcript replays', () => {
       }),
     );
   });
+
+  it('replays direct Standard-HSA-versus-Kaiser compares back into medical from HSA/FSA context', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'compare standard hsa with kaiser please',
+          mustContain: ['Standard HSA', 'Kaiser Standard HMO'],
+          mustNotContain: ['HSA/FSA overview', 'FSA is usually the cleaner fit'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'HSA/FSA',
+        coverageTierLock: 'Employee Only',
+        lastBotMessage: 'Here is the simplest way to think about HSA versus FSA fit:',
+      }),
+    );
+  });
 });

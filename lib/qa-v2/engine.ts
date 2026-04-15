@@ -1473,6 +1473,21 @@ function buildHighPriorityIntentReply(session: Session, query: string): EngineRe
   }
 
   if (
+    isMedicalPlanComparisonOrPricingQuestion(normalizedQuery)
+    && !wantsMedicalPremiumReplay
+    && !wantsMedicalCostEstimate
+    && !isMedicalCoverageTierQuestion(normalizedQuery)
+    && !/\b(voluntary\s+term(?:\s+life)?|term\s+life|whole\s+life|basic\s+life|life\s+insurance|disability|critical\s+illness|accident(?:\/ad&d)?|ad&d)\b/i.test(lower)
+  ) {
+    clearPendingGuidance(session);
+    setTopic(session, 'Medical');
+    return {
+      answer: buildTopicReply(session, 'Medical', normalizedQuery),
+      metadata: { intercept: 'medical-compare-priority-v2', topic: 'Medical' },
+    };
+  }
+
+  if (
     (explicitTopic === 'HSA/FSA' || activeTopic === 'HSA/FSA')
     && (isDirectHsaFsaFitQuestion(normalizedQuery) || isHsaFsaCompatibilityQuestion(normalizedQuery) || isHsaFsaRuleQuestion(normalizedQuery))
   ) {

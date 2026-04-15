@@ -3724,4 +3724,26 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
       },
     ],
   },
+  {
+    id: 'V2-TX-102B',
+    category: 'hsa_context_medical_compare_pivot',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'HSA/FSA',
+      coverageTierLock: 'Employee Only',
+      lastBotMessage: 'Here is the simplest way to think about HSA versus FSA fit:',
+    },
+    turns: [
+      {
+        user: 'compare standard hsa with kaiser please',
+        mustContain: ['Standard HSA', 'Kaiser Standard HMO'],
+        mustNotContain: ['HSA/FSA overview', 'FSA is usually the cleaner fit'],
+      },
+    ],
+  },
 ];
