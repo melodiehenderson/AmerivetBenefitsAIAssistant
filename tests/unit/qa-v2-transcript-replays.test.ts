@@ -2601,6 +2601,46 @@ describe('qa-v2 transcript replays', () => {
     );
   });
 
+  it('replays vague active-topic followups into topic-aware next-step guidance instead of asking for more specificity', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'what else?',
+          mustContain: ['most useful next comparison is usually **disability**'],
+          mustNotContain: ['Please ask that one a little more specifically'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'Life Insurance',
+        lastBotMessage: 'Life insurance options:\n\n- **Unum Basic Life & AD&D**',
+      }),
+    );
+
+    await replayTranscript(
+      [
+        {
+          user: 'what else?',
+          mustContain: ['most useful next step is usually **medical**'],
+          mustNotContain: ['Please ask that one a little more specifically'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'HSA/FSA',
+        lastBotMessage: 'Here is the simplest way to think about HSA versus FSA fit:',
+      }),
+    );
+  });
+
   it('replays family-protection payoff wording into the employer split guidance after life guidance menus', async () => {
     await replayTranscript(
       [

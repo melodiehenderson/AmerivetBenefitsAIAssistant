@@ -3276,6 +3276,48 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
     ],
   },
   {
+    id: 'V2-TX-096A',
+    category: 'active_topic_contextual_fallbacks',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      lastBotMessage: 'Life insurance options:\n\n- **Unum Basic Life & AD&D**',
+    },
+    turns: [
+      {
+        user: 'what else?',
+        mustContain: ['most useful next comparison is usually **disability**'],
+        mustNotContain: ['Please ask that one a little more specifically'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-096B',
+    category: 'active_topic_contextual_fallbacks',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'HSA/FSA',
+      lastBotMessage: 'Here is the simplest way to think about HSA versus FSA fit:',
+    },
+    turns: [
+      {
+        user: 'what else?',
+        mustContain: ['most useful next step is usually **medical**'],
+        mustNotContain: ['Please ask that one a little more specifically'],
+      },
+    ],
+  },
+  {
     id: 'V2-TX-097',
     category: 'therapy_specialist_practical_costs',
     initialSession: {

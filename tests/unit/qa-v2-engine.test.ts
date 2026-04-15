@@ -3837,6 +3837,48 @@ describe('qa-v2 engine', () => {
     expect(result.answer).not.toContain('Please ask that one a little more specifically');
   });
 
+  it('uses a life-specific next comparison instead of asking for more specificity on vague active-topic followups', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Madeline',
+      hasCollectedName: true,
+      userAge: 29,
+      userState: 'CO',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      lastBotMessage: 'Life insurance options:\n\n- **Unum Basic Life & AD&D**',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'what else?',
+      session,
+    });
+
+    expect(result.answer).toContain('most useful next comparison is usually **disability**');
+    expect(result.answer).not.toContain('Please ask that one a little more specifically');
+  });
+
+  it('uses an HSA/FSA-specific next step instead of asking for more specificity on vague active-topic followups', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Madeline',
+      hasCollectedName: true,
+      userAge: 29,
+      userState: 'CO',
+      dataConfirmed: true,
+      currentTopic: 'HSA/FSA',
+      lastBotMessage: 'Here is the simplest way to think about HSA versus FSA fit:',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'what else?',
+      session,
+    });
+
+    expect(result.answer).toContain('most useful next step is usually **medical**');
+    expect(result.answer).not.toContain('Please ask that one a little more specifically');
+  });
+
   it('treats a bare "life" as a real topic pivot even from stale vision context', async () => {
     const session = makeSession({
       step: 'active_chat',

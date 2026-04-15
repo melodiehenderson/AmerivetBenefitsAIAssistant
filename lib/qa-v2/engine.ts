@@ -2835,11 +2835,13 @@ function buildTopicReply(session: Session, topic: string, query: string): string
     return categoryResponse;
   }
 
-  return `I can help with ${topic.toLowerCase()}, but I want to keep it grounded in the AmeriVet benefits package. Please ask that one a little more specifically and I’ll answer directly.`;
+  return buildContextualFallback(session, topic);
 }
 
-function buildContextualFallback(session: Session): string {
-  if (session.currentTopic === 'Medical') {
+function buildContextualFallback(session: Session, topicOverride?: string | null): string {
+  const topic = topicOverride || session.currentTopic;
+
+  if (topic === 'Medical') {
     return [
       `A useful next medical step is usually one of these:`,
       ``,
@@ -2851,7 +2853,7 @@ function buildContextualFallback(session: Session): string {
     ].join('\n');
   }
 
-  if (session.currentTopic === 'Dental') {
+  if (topic === 'Dental') {
     return [
       `A useful next dental step is usually one of these:`,
       ``,
@@ -2863,7 +2865,7 @@ function buildContextualFallback(session: Session): string {
     ].join('\n');
   }
 
-  if (session.currentTopic === 'Vision') {
+  if (topic === 'Vision') {
     return [
       `A useful next vision step is usually one of these:`,
       ``,
@@ -2874,7 +2876,7 @@ function buildContextualFallback(session: Session): string {
     ].join('\n');
   }
 
-  if (session.currentTopic === 'Life Insurance') {
+  if (topic === 'Life Insurance') {
     return [
       `A useful next life-insurance step is usually one of these:`,
       ``,
@@ -2885,7 +2887,7 @@ function buildContextualFallback(session: Session): string {
     ].join('\n');
   }
 
-  if (session.currentTopic === 'Disability') {
+  if (topic === 'Disability') {
     return [
       `A useful next disability step is usually one of these:`,
       ``,
@@ -2896,7 +2898,7 @@ function buildContextualFallback(session: Session): string {
     ].join('\n');
   }
 
-  if (session.currentTopic === 'Accident/AD&D' || session.currentTopic === 'Critical Illness') {
+  if (topic === 'Accident/AD&D' || topic === 'Critical Illness') {
     return [
       `A useful next supplemental step is usually one of these:`,
       ``,
@@ -2907,7 +2909,7 @@ function buildContextualFallback(session: Session): string {
     ].join('\n');
   }
 
-  if (session.currentTopic === 'HSA/FSA') {
+  if (topic === 'HSA/FSA') {
     return [
       `A useful next HSA/FSA question is usually one of these:`,
       ``,
@@ -2919,7 +2921,7 @@ function buildContextualFallback(session: Session): string {
     ].join('\n');
   }
 
-  return `I can help you narrow this down. The usual starting points are medical if you are choosing core coverage, dental or vision for routine care, or life and disability if family protection matters more than everyday care.`;
+  return `I can help you narrow this down. The usual starting points are medical if you are choosing core coverage, dental or vision for routine care, or disability and life if family protection matters more than everyday care.`;
 }
 
 function inferSupplementalTopicForFollowup(session: Session, query: string): 'Life Insurance' | 'Disability' | 'Critical Illness' | 'Accident/AD&D' | null {
