@@ -3290,6 +3290,52 @@ describe('qa-v2 transcript replays', () => {
     );
   });
 
+  it('replays medical-plan-prices-again wording back into medical from life context', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'what are the medical plan prices again?',
+          mustContain: ['Employee + Family coverage', 'Standard HSA'],
+          mustNotContain: ['Life insurance options:', 'Voluntary Term Life'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'Life Insurance',
+        coverageTierLock: 'Employee + Family',
+        familyDetails: { hasSpouse: true, numChildren: 2 },
+        lastBotMessage: 'Life insurance options:\n\n- Unum Basic Life & AD&D is the employer-paid base life and AD&D benefit\n- Unum Voluntary Term Life is the extra employee-paid term coverage\n- Allstate Whole Life is the permanent option with cash value',
+      }),
+    );
+  });
+
+  it('replays natural family-medical-plan cost wording back into medical from disability context', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'how much are the family medical plans?',
+          mustContain: ['Employee + Family coverage', 'Standard HSA'],
+          mustNotContain: ['Disability is really paycheck protection'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'Disability',
+        coverageTierLock: 'Employee + Family',
+        familyDetails: { hasSpouse: true, numChildren: 2 },
+        lastBotMessage: 'Disability is really paycheck protection.',
+      }),
+    );
+  });
+
   it('replays direct Standard-HSA-versus-Kaiser compares back into medical from HSA/FSA context', async () => {
     await replayTranscript(
       [

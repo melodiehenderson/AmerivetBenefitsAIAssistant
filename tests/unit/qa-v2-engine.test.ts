@@ -5048,6 +5048,80 @@ describe('qa-v2 engine', () => {
     expect(result.answer).not.toContain('FSA is usually the cleaner fit');
   });
 
+  it('treats medical-plan-prices-again wording as a medical pricing pivot even from life context', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      lastBotMessage: 'Life insurance options:\n\n- Unum Basic Life & AD&D is the employer-paid base life and AD&D benefit\n- Unum Voluntary Term Life is the extra employee-paid term coverage\n- Allstate Whole Life is the permanent option with cash value',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'what are the medical plan prices again?',
+      session,
+    });
+
+    expect(result.answer).toContain('Here are the monthly medical premiums for Employee + Family coverage');
+    expect(result.answer).toContain('Standard HSA');
+    expect(result.answer).not.toContain('Life insurance options:');
+    expect(result.answer).not.toContain('Voluntary Term Life');
+  });
+
+  it('treats natural family-medical-plan cost phrasing as a medical pricing pivot from disability context', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Disability',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      lastBotMessage: 'Disability is really paycheck protection.',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'how much are the family medical plans?',
+      session,
+    });
+
+    expect(result.answer).toContain('Here are the monthly medical premiums for Employee + Family coverage');
+    expect(result.answer).toContain('Standard HSA');
+    expect(result.answer).not.toContain('Disability is really paycheck protection');
+  });
+
+  it('treats spouse-coverage-cost wording as a medical pricing pivot even from HSA/FSA context', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'HSA/FSA',
+      coverageTierLock: 'Employee + Spouse',
+      familyDetails: { hasSpouse: true, numChildren: 0 },
+      lastBotMessage: 'Here is the simplest way to think about HSA versus FSA fit:',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'what does spouse coverage cost?',
+      session,
+    });
+
+    expect(result.answer).toContain('Here are the monthly medical premiums for Employee + Spouse coverage');
+    expect(result.answer).toContain('Standard HSA');
+    expect(result.answer).not.toContain('HSA/FSA overview');
+    expect(result.answer).not.toContain('FSA is usually the cleaner fit');
+  });
+
   it('treats direct Standard-HSA-versus-Kaiser compares as medical plan comparisons even from HSA/FSA context', async () => {
     const session = makeSession({
       step: 'active_chat',
