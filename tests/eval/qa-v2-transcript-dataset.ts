@@ -3405,6 +3405,27 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
     ],
   },
   {
+    id: 'V2-TX-097B',
+    category: 'therapy_recurring_usage_recommendation',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'TX',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      lastBotMessage: 'Here is the practical tradeoff across AmeriVet\'s medical options:',
+    },
+    turns: [
+      {
+        user: 'which plan do you recommend if i see a therapist twice a month?',
+        mustContain: ['My recommendation: Enhanced HSA', 'more than minimal usage'],
+        mustNotContain: ['Quick clarifier'],
+      },
+    ],
+  },
+  {
     id: 'V2-TX-098',
     category: 'hsa_context_declined_back_to_medical_plans',
     initialSession: {
