@@ -12,7 +12,11 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { DollarSign, AlertCircle } from 'lucide-react';
-import { amerivetBenefits2024_2025, KAISER_AVAILABLE_STATE_CODES, type BenefitTier } from '@/lib/data/amerivet';
+import {
+  AMERIVET_KAISER_AVAILABLE_STATE_CODES,
+  AMERIVET_MEDICAL_PLANS,
+} from '@/lib/data/amerivet-benefits';
+import type { BenefitTier } from '@/lib/data/amerivet';
 
 // All US states for dropdown
 const US_STATES = [
@@ -54,7 +58,7 @@ interface PlanCost {
 }
 
 export function CostCalculator() {
-  const medicalPlans = amerivetBenefits2024_2025.medicalPlans;
+  const medicalPlans = AMERIVET_MEDICAL_PLANS;
   const [plan, setPlan] = useState(medicalPlans[0]?.name || 'Standard HSA');
   const [coverage, setCoverage] = useState<CoverageTier>('Employee Only');
   const [userState, setUserState] = useState('');
@@ -134,7 +138,12 @@ export function CostCalculator() {
               <select className="mt-1 w-full rounded border p-2" value={userState} onChange={(e) => {
                 setUserState(e.target.value);
                 // Reset plan if Kaiser selected but not available in new state
-                if (/kaiser/i.test(plan) && !KAISER_AVAILABLE_STATE_CODES.includes(e.target.value as typeof KAISER_AVAILABLE_STATE_CODES[number])) {
+                if (
+                  /kaiser/i.test(plan)
+                  && !AMERIVET_KAISER_AVAILABLE_STATE_CODES.includes(
+                    e.target.value as (typeof AMERIVET_KAISER_AVAILABLE_STATE_CODES)[number],
+                  )
+                ) {
                   setPlan(medicalPlans[0]?.name || 'Standard HSA');
                 }
               }}>

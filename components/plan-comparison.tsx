@@ -12,7 +12,8 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from './ui/button';
-import { amerivetBenefits2024_2025, type BenefitPlan } from '@/lib/data/amerivet';
+import { AMERIVET_BENEFITS_CATALOG } from '@/lib/data/amerivet-benefits';
+import type { BenefitPlan } from '@/lib/data/amerivet';
 
 interface Plan {
   id: string;
@@ -46,7 +47,7 @@ export function PlanComparison() {
   const [comparison, setComparison] = useState<Plan[]>([]);
 
   useEffect(() => {
-    const catalog = amerivetBenefits2024_2025;
+    const catalog = AMERIVET_BENEFITS_CATALOG;
     const plans: Plan[] = [
       ...catalog.medicalPlans.map(catalogPlanToComparisonPlan),
       catalogPlanToComparisonPlan(catalog.dentalPlan),

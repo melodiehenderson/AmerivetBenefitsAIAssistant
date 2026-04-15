@@ -11,7 +11,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { amerivetBenefits2024_2025, KAISER_AVAILABLE_STATE_CODES } from '@/lib/data/amerivet';
+import {
+  AMERIVET_KAISER_AVAILABLE_STATE_CODES,
+  AMERIVET_MEDICAL_PLANS,
+} from '@/lib/data/amerivet-benefits';
 import {
   buildCalculatorPlanPricing,
   getCalculatorPlanMonthlyPremium,
@@ -21,7 +24,7 @@ import { ArrowLeft, Calculator, DollarSign, Activity, Pill, Hospital, HeartPulse
 import { Slider } from '@/components/ui/slider';
 import { AmeriVetLogo } from '@/components/amerivet-logo';
 
-const catalogPlans = amerivetBenefits2024_2025.medicalPlans;
+const catalogPlans = AMERIVET_MEDICAL_PLANS;
 
 // US States for dropdown
 const US_STATES = [
@@ -56,7 +59,10 @@ export default function CalculatorPage() {
   const [surgeries, setSurgeries] = useState([0]);
 
   const isKaiserAvailable = Boolean(
-    userState && KAISER_AVAILABLE_STATE_CODES.includes(userState as (typeof KAISER_AVAILABLE_STATE_CODES)[number]),
+    userState
+    && AMERIVET_KAISER_AVAILABLE_STATE_CODES.includes(
+      userState as (typeof AMERIVET_KAISER_AVAILABLE_STATE_CODES)[number],
+    ),
   );
 
   useEffect(() => {
