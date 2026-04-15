@@ -74,6 +74,7 @@ export type Session = {
     | 'benefit_decision'
     | 'orthodontia_braces'
     | 'hsa_vs_fsa'
+    | 'life_sizing'
     | 'supplemental_fit'
     | 'accident_vs_critical'
     | 'life_vs_disability'

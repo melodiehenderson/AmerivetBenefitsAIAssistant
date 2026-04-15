@@ -2925,6 +2925,30 @@ describe('qa-v2 transcript replays', () => {
     );
   });
 
+  it('replays a plain think-through affirmation into the life-sizing path after a direct life amount answer', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'yes please - help me think through that',
+          mustContain: ['80% Voluntary Term Life / 20% Whole Life', 'Basic Life', 'Voluntary Term Life', 'Whole Life'],
+          mustNotContain: ['life insurance is usually worth tightening up'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'Life Insurance',
+        familyDetails: { hasSpouse: true, numChildren: 2 },
+        pendingGuidancePrompt: 'life_sizing',
+        pendingGuidanceTopic: 'Life Insurance',
+        lastBotMessage: 'The practical way I would decide how much life insurance to add is this:\n\n- treat **Basic Life** as the included starting point\n- use **Voluntary Term Life** as the first extra layer\n- use **Whole Life** only if you specifically want permanent coverage',
+      }),
+    );
+  });
+
   it('replays softer recommendation wording into the employer split guidance after life options are active', async () => {
     await replayTranscript(
       [

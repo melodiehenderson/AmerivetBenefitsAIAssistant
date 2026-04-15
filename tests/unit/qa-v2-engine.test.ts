@@ -2464,6 +2464,33 @@ describe('qa-v2 engine', () => {
     expect(result.answer).not.toContain('A supplemental benefit is usually worth considering');
   });
 
+  it('keeps followthrough inside the life-sizing path after a direct life amount answer', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      pendingGuidancePrompt: 'life_sizing',
+      pendingGuidanceTopic: 'Life Insurance',
+      lastBotMessage: 'The practical way I would decide how much life insurance to add is this:\n\n- treat **Basic Life** as the included starting point\n- use **Voluntary Term Life** as the first extra layer\n- use **Whole Life** only if you specifically want permanent coverage',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'yes please - help me think through that',
+      session,
+    });
+
+    expect(result.answer).toContain('80% Voluntary Term Life / 20% Whole Life');
+    expect(result.answer).toContain('Basic Life');
+    expect(result.answer).toContain('Voluntary Term Life');
+    expect(result.answer).toContain('Whole Life');
+    expect(result.answer).not.toContain('life insurance is usually worth tightening up');
+  });
+
   it('uses the employer guidance split for short amount followups after a prior life recommendation thread without needing family details on the current turn', async () => {
     const session = makeSession({
       step: 'active_chat',

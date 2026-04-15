@@ -22,6 +22,19 @@ function isPureVoluntaryTermAmountQuestion(queryLower: string): boolean {
     && !/\b(whole\s+life|permanent|perm)\b/i.test(queryLower);
 }
 
+function hasLifeFamilyOrIncomeContext(session: Session, query: string): boolean {
+  const combined = [
+    ...(session.messages || []).map((message) => message.content.toLowerCase()),
+    (session.lastBotMessage || '').toLowerCase(),
+    query.toLowerCase(),
+  ].join('\n');
+
+  return Boolean(session.familyDetails?.hasSpouse)
+    || Boolean((session.familyDetails?.numChildren || 0) > 0)
+    || /employee\s+\+\s+(spouse|child|family)/i.test(session.coverageTierLock || '')
+    || /\b(wife|husband|spouse|partner|kids?|children|family|dependents?|other\s+people\s+rely\s+on\s+your\s+income|family\s+relies\s+on\s+your\s+income|depend(?:s)?\s+on\s+your\s+income|income\s+replacement|base\s+benefit\s+isn'?t\s+enough)\b/i.test(combined);
+}
+
 function resolveEmployerLifeSplitGuidanceRule(query: string, session: Session) {
   const lower = query.toLowerCase();
   if (isPureVoluntaryTermAmountQuestion(lower)) return null;
@@ -548,4 +561,37 @@ export function buildNonMedicalDetailAnswer(topic: string, query: string, sessio
   }
 
   return null;
+}
+
+export function buildLifeSizingGuidance(session: Session): string {
+  const { basic, term, whole } = getLifePlans();
+  const familyOrIncomeContext = hasLifeFamilyOrIncomeContext(session, '');
+  const defaultRule = AMERIVET_EMPLOYER_GUIDANCE_RULES.find((rule) =>
+    rule.topic === 'Life Insurance' && rule.intentFamily === 'life_split_term_vs_whole',
+  );
+
+  if (familyOrIncomeContext && defaultRule) {
+    return [
+      `The practical life-sizing question is not whether to buy every life product. It is whether the included **${basic?.name || 'Basic Life'}** would clearly be too small if your household lost your income.`,
+      ``,
+      `My default way to size it is:`,
+      `- Treat **${basic?.name || 'Basic Life'}** as the starting point, not the finished answer for a family that depends on your paycheck`,
+      `- Make **${term?.name || 'Voluntary Term Life'}** the main added layer for income replacement`,
+      `- Keep **${whole?.name || 'Whole Life'}** as the smaller permanent slice unless the cash-value / permanent-life features are part of the goal`,
+      `- In AmeriVet's default blended case, that usually means starting around **${defaultRule.recommendationLabel}**`,
+      ``,
+      `So my practical answer is: start by making sure the household has a meaningful **${term?.name || 'Voluntary Term Life'}** layer on top of the included base benefit, and only give **${whole?.name || 'Whole Life'}** a bigger role if the permanent-life features are truly part of why you are paying for more coverage.`,
+    ].join('\n');
+  }
+
+  return [
+    `The practical life-sizing question is usually whether you need more coverage than the included **${basic?.name || 'Basic Life'}** base benefit, and if so, which paid life layer should do most of the work.`,
+    ``,
+    `My default way to think about it is:`,
+    `- Keep **${basic?.name || 'Basic Life'}** as the included starting point`,
+    `- Use **${term?.name || 'Voluntary Term Life'}** first when you want the cleaner extra protection layer`,
+    `- Use **${whole?.name || 'Whole Life'}** only when permanent coverage and cash-value features are part of the goal, not just because you want more life insurance`,
+    ``,
+    `So my practical answer is: tighten up **${term?.name || 'Voluntary Term Life'}** first, and only give **${whole?.name || 'Whole Life'}** a bigger role if the permanent-life features are actually part of why you are buying more life coverage.`,
+  ].join('\n');
 }

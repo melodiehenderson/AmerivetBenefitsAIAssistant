@@ -12,7 +12,7 @@ import {
 } from '@/lib/qa/medical-helpers';
 import { buildMedicalPlanDetailAnswer } from '@/lib/qa/plan-detail-lookup';
 import { buildRoutineBenefitDetailAnswer, isRoutineBenefitDetailQuestion } from '@/lib/qa/routine-benefit-detail-lookup';
-import { buildNonMedicalDetailAnswer, isNonMedicalDetailQuestion } from '@/lib/qa/non-medical-detail-lookup';
+import { buildLifeSizingGuidance, buildNonMedicalDetailAnswer, isNonMedicalDetailQuestion } from '@/lib/qa/non-medical-detail-lookup';
 import {
   checkL1FAQ,
   detectExplicitStateCorrection,
@@ -68,6 +68,11 @@ function isAffirmativeCompareFollowup(query: string): boolean {
 function isGuidanceAdvanceAffirmation(query: string): boolean {
   const normalized = query.trim().replace(/[.!?]+$/g, '');
   return /^(yes|yes please|yeah|yep|sure|do that|do this|do it|go ahead|let'?s do that|let'?s do this|let'?s do it|show me that one|next one)$/i.test(normalized);
+}
+
+function isLifeSizingDecisionQuestion(query: string): boolean {
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  return /\b(which\s+one\s+should\s+i\s+get|which\s+ones\s+should\s+i\s+get|which\s+of\s+those\s+should\s+i\s+get|which\s+should\s+i\s+get|what\s+do\s+you\s+recommend|what\s+would\s+you\s+recommend|would\s+you\s+recommend|how\s+much\s+should\s+i\s+get|how\s+much\s+coverage\s+should\s+i\s+get|how\s+much\s+would\s+you\s+recommend|what\s+amount\s+would\s+you\s+recommend|how\s+much\s+protection\s+is\s+worth\s+paying|help\s+me\s+think\s+through\s+that|how\s+much\s+of\s+each|which\s+split\s+would\s+you\s+use|what\s+split\s+do\s+you\s+recommend)\b/i.test(lower);
 }
 
 function buildSessionContext(session: Session) {
@@ -3018,7 +3023,9 @@ function buildTopicReply(session: Session, topic: string, query: string): string
   if (topic === 'Life Insurance' || topic === 'Disability' || topic === 'Critical Illness' || topic === 'Accident/AD&D') {
     const detailedAnswer = buildNonMedicalDetailAnswer(topic, query, session);
     if (detailedAnswer) {
-      if (topic === 'Accident/AD&D' || topic === 'Critical Illness' || topic === 'Disability' || topic === 'Life Insurance') {
+      if (topic === 'Life Insurance' && isLifeSizingDecisionQuestion(query)) {
+        setPendingGuidance(session, 'life_sizing', 'Life Insurance');
+      } else if (topic === 'Accident/AD&D' || topic === 'Critical Illness' || topic === 'Disability' || topic === 'Life Insurance') {
         setPendingGuidance(session, 'supplemental_fit', topic);
       }
       return detailedAnswer;
@@ -3534,6 +3541,20 @@ function buildContinuationReply(session: Session, query: string): string | null 
     if (isGuidanceAdvanceAffirmation(normalizedQuery) || /\b(hsa|fsa|better fit|which one|long[- ]term savings|near[- ]term medical expenses)\b/i.test(lower)) {
       clearPendingGuidance(session);
       return buildHsaFitGuidance();
+    }
+  }
+
+  if (session.pendingGuidancePrompt === 'life_sizing') {
+    const detailedLifeAnswer = buildNonMedicalDetailAnswer('Life Insurance', normalizedQuery, session);
+    if (detailedLifeAnswer) {
+      setPendingGuidance(session, 'life_sizing', 'Life Insurance');
+      setTopic(session, 'Life Insurance');
+      return detailedLifeAnswer;
+    }
+    if (isGuidanceAdvanceAffirmation(normalizedQuery) || /\b(help\s+me\s+think\s+through\s+that|help\s+me\s+think\s+through\s+it|yes\s+please|go\s+ahead)\b/i.test(lower)) {
+      setPendingGuidance(session, 'life_sizing', 'Life Insurance');
+      setTopic(session, 'Life Insurance');
+      return buildLifeSizingGuidance(session);
     }
   }
 

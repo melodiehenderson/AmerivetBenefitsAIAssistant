@@ -3518,6 +3518,30 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
     ],
   },
   {
+    id: 'V2-TX-096C3',
+    category: 'life_employer_guidance_sizing_followthrough',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      pendingGuidancePrompt: 'life_sizing',
+      pendingGuidanceTopic: 'Life Insurance',
+      lastBotMessage: 'The practical way I would decide how much life insurance to add is this:\n\n- treat **Basic Life** as the included starting point\n- use **Voluntary Term Life** as the first extra layer\n- use **Whole Life** only if you specifically want permanent coverage',
+    },
+    turns: [
+      {
+        user: 'yes please - help me think through that',
+        mustContain: ['80% Voluntary Term Life / 20% Whole Life', 'Basic Life', 'Voluntary Term Life', 'Whole Life'],
+        mustNotContain: ['life insurance is usually worth tightening up'],
+      },
+    ],
+  },
+  {
     id: 'V2-TX-096D',
     category: 'life_employer_guidance_split_adjustment_followups',
     initialSession: {
