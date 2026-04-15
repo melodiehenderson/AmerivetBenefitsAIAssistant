@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { getAmerivetPackageCopySnapshot } from '@/lib/data/amerivet-package-copy';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -14,6 +15,9 @@ interface Message {
   timestamp: Date;
 }
 
+const ACTIVE_AMERIVET_COPY = getAmerivetPackageCopySnapshot();
+const MEDICAL_PLAN_LIST = ACTIVE_AMERIVET_COPY.medicalPlanNames.join(', ');
+
 const DEMO_SCENARIOS = [
   {
     id: 'hsa-analysis',
@@ -24,10 +28,10 @@ const DEMO_SCENARIOS = [
   },
   {
     id: 'kaiser-comparison',
-    title: 'Kaiser Plan Comparison',
-    description: 'Compare Standard vs Enhanced Kaiser HMO plans',
+    title: 'Medical Plan Comparison',
+    description: 'Compare the available medical plan options',
     icon: <Heart className="h-5 w-5" />,
-    message: 'I need help comparing Kaiser Standard vs Enhanced plans. I have a family of 4 with two young children. We visit the doctor about 6-8 times per year and my wife takes regular medications.'
+    message: `I need help comparing the available medical plans: ${MEDICAL_PLAN_LIST}. I have a family of 4 with two young children. We visit the doctor about 6-8 times per year and my wife takes regular medications.`
   },
   {
     id: 'document-analysis',
@@ -351,4 +355,3 @@ export default function DemoPage() {
     </div>
   );
 }
-

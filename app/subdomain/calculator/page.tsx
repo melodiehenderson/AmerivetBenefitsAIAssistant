@@ -15,6 +15,7 @@ import {
   AMERIVET_KAISER_AVAILABLE_STATE_CODES,
   AMERIVET_MEDICAL_PLANS,
 } from '@/lib/data/amerivet-benefits';
+import { getAmerivetPackageCopySnapshot } from '@/lib/data/amerivet-package-copy';
 import {
   buildCalculatorPlanPricing,
   getCalculatorPlanMonthlyPremium,
@@ -25,6 +26,8 @@ import { Slider } from '@/components/ui/slider';
 import { AmeriVetLogo } from '@/components/amerivet-logo';
 
 const catalogPlans = AMERIVET_MEDICAL_PLANS;
+const ACTIVE_AMERIVET_COPY = getAmerivetPackageCopySnapshot();
+const KAISER_PLAN_NAME = ACTIVE_AMERIVET_COPY.medicalPlanNames.find((name) => /kaiser/i.test(name)) ?? 'Kaiser plan';
 
 // US States for dropdown
 const US_STATES = [
@@ -175,7 +178,7 @@ export default function CalculatorPage() {
                 {userState && !isKaiserAvailable && (
                   <div className="flex items-center gap-1 text-xs text-amber-600">
                     <AlertCircle className="w-3 h-3" />
-                    Kaiser HMO not available in {US_STATES.find(s => s.code === userState)?.name}
+                    {KAISER_PLAN_NAME} not available in {US_STATES.find(s => s.code === userState)?.name}
                   </div>
                 )}
               </div>

@@ -16,6 +16,7 @@ import {
   AMERIVET_KAISER_AVAILABLE_STATE_CODES,
   AMERIVET_MEDICAL_PLANS,
 } from '@/lib/data/amerivet-benefits';
+import { getAmerivetPackageCopySnapshot } from '@/lib/data/amerivet-package-copy';
 import type { BenefitTier } from '@/lib/data/amerivet';
 
 // All US states for dropdown
@@ -47,6 +48,9 @@ const coverageTierToBenefitTier: Record<CoverageTier, BenefitTier> = {
 };
 
 type CoverageTier = 'Employee Only' | 'Employee + Spouse' | 'Employee + Child(ren)' | 'Employee + Family';
+
+const ACTIVE_AMERIVET_COPY = getAmerivetPackageCopySnapshot();
+const KAISER_PLAN_NAME = ACTIVE_AMERIVET_COPY.medicalPlanNames.find((name) => /kaiser/i.test(name)) ?? 'Kaiser plan';
 
 interface PlanCost {
   name: string;
@@ -168,7 +172,7 @@ export function CostCalculator() {
               {userState && !isKaiserAvailable && (
                 <div className="flex items-center gap-1 mt-1 text-xs text-amber-600">
                   <AlertCircle className="size-3" />
-                  Kaiser HMO is not available in {US_STATES.find(s => s.code === userState)?.name || userState}
+                  {KAISER_PLAN_NAME} is not available in {US_STATES.find(s => s.code === userState)?.name || userState}
                 </div>
               )}
             </div>

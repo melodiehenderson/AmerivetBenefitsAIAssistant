@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { logger } from '@/lib/logger';
+import { getAmerivetPackageCopySnapshot } from '@/lib/data/amerivet-package-copy';
 import { Calculator, Users, MapPin, CheckCircle, XCircle, DollarSign } from 'lucide-react';
 
 interface BenefitPlan {
@@ -46,6 +47,8 @@ interface PremiumCalculation {
   employeeContribution: number;
   employerContribution: number;
 }
+
+const ACTIVE_AMERIVET_COPY = getAmerivetPackageCopySnapshot();
 
 export function BenefitsDemo() {
   const [plans, setPlans] = useState<BenefitPlan[]>([]);
@@ -181,7 +184,7 @@ export function BenefitsDemo() {
       <div className="text-center space-y-2">
         <h1 className="text-3xl font-bold">AmeriVet Benefits Assistant</h1>
         <p className="text-muted-foreground">
-          Explore your 2024-2025 benefits options with AI-powered assistance
+          Explore your {ACTIVE_AMERIVET_COPY.openEnrollment.year} benefits options with AI-powered assistance
         </p>
       </div>
 

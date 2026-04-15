@@ -7,6 +7,7 @@ import ReactMarkdown from 'react-markdown';
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import remarkGfm from 'remark-gfm';
+import { getAmerivetPackageCopySnapshot } from '@/lib/data/amerivet-package-copy';
 import { AmeriVetLogo } from '@/components/amerivet-logo';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -42,6 +43,9 @@ interface Scenario {
   action?: 'upload' | 'calculator' | 'chat';
 }
 
+const ACTIVE_AMERIVET_COPY = getAmerivetPackageCopySnapshot();
+const MEDICAL_PLAN_LIST = ACTIVE_AMERIVET_COPY.medicalPlanNames.join(', ');
+
 const SUGGESTED_SCENARIOS: Scenario[] = [
   {
     id: 'hsa-analysis',
@@ -53,10 +57,10 @@ const SUGGESTED_SCENARIOS: Scenario[] = [
   },
   {
     id: 'kaiser-comparison',
-    title: 'Kaiser Plan Comparison',
-    description: 'Compare Standard vs Enhanced Kaiser HMO plans',
+    title: 'Medical Plan Comparison',
+    description: 'Compare the available medical plan options',
     icon: <Heart className="h-5 w-5" />,
-    message: "Help me compare Kaiser Standard vs Enhanced plans. I have a family of 4 with two young children.",
+    message: `Help me compare the available medical plans: ${MEDICAL_PLAN_LIST}. I have a family of 4 with two young children.`,
     action: 'chat'
   },
   {

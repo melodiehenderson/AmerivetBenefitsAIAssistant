@@ -49,6 +49,7 @@ import {
   Eye,
   Download,
 } from 'lucide-react';
+import { getAmerivetBenefitsPackage } from '@/lib/data/amerivet-package';
 
 interface AnalyticsData {
   totalMessages: number;
@@ -109,6 +110,13 @@ interface AnalyticsDashboardProps {
   tenantId: string;
   companyName?: string;
 }
+
+const ACTIVE_AMERIVET_PACKAGE = getAmerivetBenefitsPackage();
+const MOCK_PLAN_COMPARISONS = ACTIVE_AMERIVET_PACKAGE.catalog.medicalPlans.map((plan, index) => ({
+  plan: plan.name,
+  comparisons: [45, 32, 15, 12][index] ?? Math.max(8, 12 - index),
+  cost: plan.premiums.employee.monthly,
+}));
 
 export function AnalyticsDashboard({
   tenantId,
@@ -176,13 +184,7 @@ export function AnalyticsDashboard({
         { month: 'Nov', messages: 390, users: 91, cost: 147.20 },
         { month: 'Dec', messages: 450, users: 98, cost: 169.80 },
       ],
-      planComparisons: [
-        { plan: 'BCBSTX Standard HSA', comparisons: 45, cost: 86.84 },
-        { plan: 'BCBSTX Enhanced HSA', comparisons: 32, cost: 160.36 },
-        { plan: 'BCBSTX PPO', comparisons: 28, cost: 267.42 },
-        { plan: 'Kaiser Standard HMO', comparisons: 15, cost: 196.30 },
-        { plan: 'Kaiser Enhanced HMO', comparisons: 12, cost: 379.26 },
-      ],
+      planComparisons: MOCK_PLAN_COMPARISONS,
       userEngagement: [
         { day: 'Mon', activeUsers: 45, messages: 89 },
         { day: 'Tue', activeUsers: 52, messages: 102 },

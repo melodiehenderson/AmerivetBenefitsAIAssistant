@@ -20,6 +20,7 @@ import type { Session } from '@/lib/rag/session-store';
 import { extractUserSlots, extractAndMapEntities } from '@/lib/rag/query-understanding';
 import { cityToStateMap } from '@/lib/schemas/onboarding';
 import { getAmerivetBenefitsPackage, getAmerivetCatalogForPrompt } from '@/lib/data/amerivet-package';
+import { getAmerivetPackageCopySnapshot } from '@/lib/data/amerivet-package-copy';
 import {
   checkL1FAQ,
   detectExplicitStateCorrection,
@@ -41,6 +42,7 @@ import { tryCache, writeCache } from '@/lib/services/cache-router';
 import { calculateSTDBenefit, formatSTDBenefit } from '@/lib/utils/pricing';
 
 const ACTIVE_AMERIVET_PACKAGE = getAmerivetBenefitsPackage();
+const ACTIVE_AMERIVET_COPY = getAmerivetPackageCopySnapshot(ACTIVE_AMERIVET_PACKAGE);
 const KAISER_ELIGIBLE_STATES = new Set<string>(ACTIVE_AMERIVET_PACKAGE.kaiserAvailableStateCodes);
 
 // Validation schema for chat request
@@ -128,6 +130,28 @@ function stripPricingForComparisonMode(text: string): string {
     .join('\n')
     .replace(/\n{3,}/g, '\n\n');
   return cleaned.trim();
+}
+
+function getMedicalLineupForState(stateCode?: string | null): string {
+  return ACTIVE_AMERIVET_COPY.medicalPlanNames
+    .filter((name) => {
+      if (!/kaiser/i.test(name)) {
+        return true;
+      }
+
+      return !!stateCode && KAISER_ELIGIBLE_STATES.has(stateCode);
+    })
+    .join(', ');
+}
+
+function getCatalogScopeCopy(stateCode?: string | null): string {
+  return [
+    `Medical (${getMedicalLineupForState(stateCode)})`,
+    `Dental (${ACTIVE_AMERIVET_COPY.dentalPlanName})`,
+    `Vision (${ACTIVE_AMERIVET_COPY.visionPlanName})`,
+    'Life insurance & disability',
+    'special accounts (HSA / FSA / Commuter)',
+  ].join(', ');
 }
 
 function isSupportOnlyIntent(normalizedMessage: string): boolean {
@@ -596,10 +620,10 @@ export const POST = withAuth(undefined, [PERMISSIONS.CHAT_WITH_AI])(async (reque
 • Department: ${trimmedDivision}
 
         ${ageContext} may be eligible for health, dental, vision, and retirement benefits in ${metadata.state}.\n\nI'm here to keep things simple, friendly, and useful so you feel confident in your choices.\n\n**What would you like to look at first?**
-• Medical plans (Standard HSA, Enhanced HSA${metadata.state && KAISER_ELIGIBLE_STATES.has(metadata.state) ? ', Kaiser HMO' : ''})
-• Dental (BCBSTX PPO) & Vision (VSP)
+• Medical plans (${getMedicalLineupForState(metadata.state)})
+• ${ACTIVE_AMERIVET_COPY.dentalPlanName} & ${ACTIVE_AMERIVET_COPY.visionPlanName}
 • Critical Illness, Accident, or Hospital Indemnity
-• Life Insurance & Disability (Unum)
+• Life Insurance & Disability
 • Retirement (401k) options${enrollmentCta}`
         );
       }
@@ -785,9 +809,7 @@ Which of these would you like to learn about next?`
     if (mapped.isAboutBenefitNotInCatalog) {
       return sendAssistantMessage(
         `I'm sorry, but that benefit isn't part of the AmeriVet benefits package. ` +
-        `AmeriVet offers: Medical (BCBSTX HSA plans + Kaiser HMO in CA/GA/OR/WA), ` +
-        `Dental (BCBSTX PPO), Vision (VSP Plus), Life & Disability (Unum), ` +
-        `and special accounts (HSA / FSA / Commuter). ` +
+        `AmeriVet offers: ${getCatalogScopeCopy(conversation.metadata?.state)}. ` +
         `Which of these would you like to explore?`
       );
     }
