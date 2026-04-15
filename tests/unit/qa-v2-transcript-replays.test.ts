@@ -1914,6 +1914,35 @@ describe('qa-v2 transcript replays', () => {
     );
   });
 
+  it('replays next-dollar wording into decisive life-versus-disability guidance', async () => {
+    await replayTranscript(
+      [
+        {
+          user: "what benefit should i pay attention to first if i'm mostly worried about protecting my family?",
+          mustContain: ['protecting your family'],
+        },
+        {
+          user: 'which protection gets the next dollar first: life insurance or disability?',
+          mustContain: ['next dollar', 'disability first'],
+          mustNotContain: ['Tell me which area you want to focus on next'],
+        },
+        {
+          user: 'if my spouse and kids would need support if i die, which protection gets the next dollar first?',
+          mustContain: ['next dollar', 'life insurance first'],
+          mustNotContain: ['Tell me which area you want to focus on next'],
+        },
+      ],
+      makeSession({
+        userName: 'Sarah',
+        hasCollectedName: true,
+        userAge: 42,
+        userState: 'FL',
+        dataConfirmed: true,
+        coverageTierLock: 'Employee + Family',
+      }),
+    );
+  });
+
   it('replays "why not vision first?" after routine-care comparison guidance', async () => {
     await replayTranscript(
       [

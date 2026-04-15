@@ -3325,6 +3325,48 @@ describe('qa-v2 engine', () => {
     expect(result.answer).not.toContain('disability first when the household depends on your paycheck');
   });
 
+  it('answers next-dollar life-versus-disability questions with disability first when paycheck protection is the concern', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Sarah',
+      hasCollectedName: true,
+      userAge: 42,
+      userState: 'FL',
+      dataConfirmed: true,
+      coverageTierLock: 'Employee + Family',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'if my household depends on my paycheck, which protection gets the next dollar first: life insurance or disability?',
+      session,
+    });
+
+    expect(result.answer).toContain('next protection dollar');
+    expect(result.answer).toContain('disability first');
+    expect(result.answer).not.toContain('Life insurance options:');
+  });
+
+  it('answers next-dollar life-versus-disability questions with life first when survivor protection is the concern', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Sarah',
+      hasCollectedName: true,
+      userAge: 42,
+      userState: 'FL',
+      dataConfirmed: true,
+      coverageTierLock: 'Employee + Family',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'if my spouse and kids would need support if i die, which protection gets the next dollar first: life insurance or disability?',
+      session,
+    });
+
+    expect(result.answer).toContain('next protection dollar');
+    expect(result.answer).toContain('life insurance first');
+    expect(result.answer).not.toContain('disability first when the household depends on your paycheck');
+  });
+
   it('answers "why not life first?" after life-versus-disability comparison when survivor protection is the concern', async () => {
     const session = makeSession({
       step: 'active_chat',

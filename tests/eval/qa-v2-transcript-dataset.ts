@@ -1127,6 +1127,35 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
     ],
   },
   {
+    id: 'V2-TX-042A',
+    category: 'family_protection_next_dollar',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Sarah',
+      hasCollectedName: true,
+      userAge: 42,
+      userState: 'FL',
+      dataConfirmed: true,
+      coverageTierLock: 'Employee + Family',
+    },
+    turns: [
+      {
+        user: "what benefit should i pay attention to first if i'm mostly worried about protecting my family?",
+        mustContain: ['protecting your family'],
+      },
+      {
+        user: 'which protection gets the next dollar first: life insurance or disability?',
+        mustContain: ['next dollar', 'disability first'],
+        mustNotContain: ['Tell me which area you want to focus on next'],
+      },
+      {
+        user: 'if my spouse and kids would need support if i die, which protection gets the next dollar first?',
+        mustContain: ['next dollar', 'life insurance first'],
+        mustNotContain: ['Tell me which area you want to focus on next'],
+      },
+    ],
+  },
+  {
     id: 'V2-TX-043',
     category: 'medical_detail_source_backed',
     initialSession: {
