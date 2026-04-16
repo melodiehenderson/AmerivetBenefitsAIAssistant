@@ -2343,6 +2343,51 @@ describe('qa-v2 engine', () => {
     expect(result.answer).not.toContain('life insurance is usually worth tightening up');
   });
 
+  it('uses the employer guidance split for shorthand perm-versus-vol-term wording', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+    });
+
+    const result = await runQaV2Engine({
+      query: 'how should i split perm vs vol term?',
+      session,
+    });
+
+    expect(result.answer).toContain('80% Voluntary Term Life / 20% Whole Life');
+    expect(result.answer).toContain('Voluntary Term Life');
+    expect(result.answer).toContain('Whole Life');
+    expect(result.answer).not.toContain('life insurance is usually worth tightening up');
+  });
+
+  it('uses the employer guidance split for fresh shorthand perm-versus-vol-term wording without an active life topic', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+    });
+
+    const result = await runQaV2Engine({
+      query: 'should i do perm or vol term?',
+      session,
+    });
+
+    expect(result.answer).toContain('80% Voluntary Term Life / 20% Whole Life');
+    expect(result.answer).toContain('Voluntary Term Life');
+    expect(result.answer).toContain('Whole Life');
+    expect(result.answer).not.toContain('life insurance is usually worth tightening up');
+  });
+
   it('uses the employer guidance split for broader family-protection life decisions after life options are already in play', async () => {
     const session = makeSession({
       step: 'active_chat',

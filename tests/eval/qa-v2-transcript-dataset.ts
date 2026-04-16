@@ -3807,6 +3807,26 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
     ],
   },
   {
+    id: 'V2-TX-096DB',
+    category: 'life_employer_guidance_shorthand_wording',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+    },
+    turns: [
+      {
+        user: 'should i do perm or vol term?',
+        mustContain: ['80% Voluntary Term Life / 20% Whole Life', 'Voluntary Term Life', 'Whole Life'],
+        mustNotContain: ['life insurance is usually worth tightening up'],
+      },
+    ],
+  },
+  {
     id: 'V2-TX-096E',
     category: 'life_employer_guidance_split_both_wording',
     initialSession: {

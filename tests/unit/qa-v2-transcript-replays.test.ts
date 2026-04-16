@@ -2858,6 +2858,26 @@ describe('qa-v2 transcript replays', () => {
     );
   });
 
+  it('replays fresh shorthand life wording into the employer split guidance even before life is the active topic', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'should i do perm or vol term?',
+          mustContain: ['80% Voluntary Term Life / 20% Whole Life', 'Voluntary Term Life', 'Whole Life'],
+          mustNotContain: ['life insurance is usually worth tightening up'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'WA',
+        dataConfirmed: true,
+        familyDetails: { hasSpouse: true, numChildren: 2 },
+      }),
+    );
+  });
+
   it('replays softer life-worth-it wording into the life sizing framework instead of the generic life-worth-it scaffold', async () => {
     await replayTranscript(
       [

@@ -735,7 +735,7 @@ function shouldIgnoreSelectedPlanBias(query: string): boolean {
 
 function isLifeFamilyCoverageQuestion(query: string): boolean {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
-  return /\b(life(?:\s+insurance)?|term life|whole life|basic life).*\b(wife|husband|spouse|partner|kids|children|family|dependents?|cover|coverage|benefits?|qualify|portable|guaranteed issue|cash value|how much)\b|\b(wife|husband|spouse|partner|kids|children|family|dependents?|cover|coverage|benefits?|qualify|portable|guaranteed issue|cash value|how much)\b.*\b(life(?:\s+insurance)?|term life|whole life|basic life)\b/i.test(lower);
+  return /\b(life(?:\s+insurance)?|term life|vol(?:untary)?\s+term(?:\s+life)?|vol(?:untary)?\s+life|whole life|basic life|perm(?:anent)?(?:\s+life)?).*\b(wife|husband|spouse|partner|kids|children|family|dependents?|cover|coverage|benefits?|qualify|portable|guaranteed issue|cash value|how much)\b|\b(wife|husband|spouse|partner|kids|children|family|dependents?|cover|coverage|benefits?|qualify|portable|guaranteed issue|cash value|how much)\b.*\b(life(?:\s+insurance)?|term life|vol(?:untary)?\s+term(?:\s+life)?|vol(?:untary)?\s+life|whole life|basic life|perm(?:anent)?(?:\s+life)?)\b/i.test(lower);
 }
 
 function isMedicalPlanComparisonOrPricingQuestion(query: string): boolean {
@@ -817,7 +817,7 @@ function isShortTopicPivot(query: string, topic: string): boolean {
     Medical: /^(medical|health|medical plans?|medical options?|kaiser|hsa plans?)(?:\s+next)?(?:\s+please)?$/,
     Dental: /^dental(?:\s+next)?(?:\s+please)?$/,
     Vision: /^(vision|eye|glasses|contacts)(?:\s+next)?(?:\s+please)?$/,
-    'Life Insurance': /^(life|life insurance|life ins|term life|voluntary term|whole life|basic life)(?:\s+next)?(?:\s+please)?$/,
+    'Life Insurance': /^(life|life insurance|life ins|term life|vol(?:untary)? term|vol(?:untary)? life|whole life|basic life|perm|permanent(?: life)?)(?:\s+next)?(?:\s+please)?$/,
     Disability: /^(disability|std|ltd)(?:\s+next)?(?:\s+please)?$/,
     'Critical Illness': /^(critical illness|illness|ci|ci insurance)(?:\s+next)?(?:\s+please)?$/,
     'Accident/AD&D': /^(accident|ad&d|ad d|ad\/d)(?:\s+next)?(?:\s+please)?$/,
@@ -830,7 +830,7 @@ function isShortTopicPivot(query: string, topic: string): boolean {
     Medical: /^(?:show me|tell me about|let s do|lets do|do|look at|move to|move on to)\s+(?:my\s+)?(?:medical|health|medical plans?|medical options?|kaiser|hsa plans?)(?:\s+next)?(?:\s+please)?$/,
     Dental: /^(?:show me|tell me about|let s do|lets do|do|look at|move to|move on to)\s+(?:my\s+)?dental(?:\s+next)?(?:\s+please)?$/,
     Vision: /^(?:show me|tell me about|let s do|lets do|do|look at|move to|move on to)\s+(?:my\s+)?(?:vision|eye|glasses|contacts)(?:\s+next)?(?:\s+please)?$/,
-    'Life Insurance': /^(?:show me|tell me about|let s do|lets do|do|look at|move to|move on to)\s+(?:my\s+)?(?:life|life insurance|life ins|term life|whole life|basic life)(?:\s+next)?(?:\s+please)?$/,
+    'Life Insurance': /^(?:show me|tell me about|let s do|lets do|do|look at|move to|move on to)\s+(?:my\s+)?(?:life|life insurance|life ins|term life|vol(?:untary)? term|vol(?:untary)? life|whole life|basic life|perm|permanent(?: life)?)(?:\s+next)?(?:\s+please)?$/,
     Disability: /^(?:show me|tell me about|let s do|lets do|do|look at|move to|move on to)\s+(?:my\s+)?(?:disability|std|ltd)(?:\s+next)?(?:\s+please)?$/,
     'Critical Illness': /^(?:show me|tell me about|let s do|lets do|do|look at|move to|move on to)\s+(?:my\s+)?(?:critical illness|illness|ci|ci insurance)(?:\s+next)?(?:\s+please)?$/,
     'Accident/AD&D': /^(?:show me|tell me about|let s do|lets do|do|look at|move to|move on to)\s+(?:my\s+)?(?:accident|ad&d|ad d|ad\/d)(?:\s+next)?(?:\s+please)?$/,
@@ -1414,7 +1414,7 @@ function medicalInviteFollowupQuery(lastBotMessage: string): string | null {
 function countSupplementalTopicsMentioned(query: string): number {
   const lower = query.toLowerCase();
   let count = 0;
-  if (/\b(life(?:\s+insurance)?|term life|voluntary term(?:\s+life)?|whole life|basic life)\b/i.test(lower)) count += 1;
+  if (/\b(life(?:\s+insurance)?|term life|vol(?:untary)?\s+term(?:\s+life)?|vol(?:untary)?\s+life|whole life|basic life|perm(?:anent)?(?:\s+life)?)\b/i.test(lower)) count += 1;
   if (/\b(disability|std|ltd|short[- ]?term|long[- ]?term)\b/i.test(lower)) count += 1;
   if (/\bcritical(?:\s+illness)?\b/i.test(lower)) count += 1;
   if (/\b(accident|ad&d|ad\/d)\b/i.test(lower)) count += 1;
@@ -1466,7 +1466,7 @@ function buildSupplementalNarrowingReply(session: Session, query: string): strin
   const lifeProtectionFocus = detectLifeProtectionFocus(householdText);
   const nextDollarQuestion = isNextDollarDecisionQuestion(query);
   const priorityFirstQuestion = isProtectionPriorityQuestion(query);
-  const mentionsLife = /\b(life(?:\s+insurance)?|term life|voluntary term(?:\s+life)?|whole life|basic life|25k)\b/i.test(lower);
+  const mentionsLife = /\b(life(?:\s+insurance)?|term life|vol(?:untary)?\s+term(?:\s+life)?|vol(?:untary)?\s+life|whole life|basic life|perm(?:anent)?(?:\s+life)?|25k)\b/i.test(lower);
   const mentionsDisability = /\b(disability|std|ltd|short[- ]?term|long[- ]?term)\b/i.test(lower);
   const mentionsCritical = /\bcritical(?:\s+illness)?\b/i.test(lower);
   const mentionsAccident = /\b(accident|ad&d|ad\/d)\b/i.test(lower);
@@ -2756,11 +2756,11 @@ function benefitTopicFromQuery(query: string): string | null {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
   const declinedDental = isDeclinedRoutineTopic(lower, 'dental');
   const declinedVision = isDeclinedRoutineTopic(lower, 'vision');
-  const declinedLife = isExcludedTopicMention(lower, '(?:life(?:\\s+insurance)?|term\\s+life|whole\\s+life|basic\\s+life)');
+  const declinedLife = isExcludedTopicMention(lower, '(?:life(?:\\s+insurance)?|term\\s+life|vol(?:untary)?\\s+term(?:\\s+life)?|vol(?:untary)?\\s+life|whole\\s+life|basic\\s+life|perm(?:anent)?(?:\\s+life)?)');
   if (countSupplementalTopicsMentioned(lower) >= 2) return null;
   if (isMedicalPlanComparisonOrPricingQuestion(query)) return 'Medical';
   if (/\b(all\s+benefits|benefits\s+overview|what\s+are\s+all\s+the\s+benefits|what\s+benefits\s+do\s+i\s+have|other\s+types?\s+of\s+coverage|what\s+other\s+coverage|other\s+coverage\s+available|what\s+else\s+is\s+available)\b/i.test(lower)) return 'Benefits Overview';
-  if (!declinedLife && /\b(life(?:\s+insurance)?|term\s+life|whole\s+life|basic\s+life)\b/i.test(lower)) return 'Life Insurance';
+  if (!declinedLife && /\b(life(?:\s+insurance)?|term\s+life|vol(?:untary)?\s+term(?:\s+life)?|vol(?:untary)?\s+life|whole\s+life|basic\s+life|perm(?:anent)?(?:\s+life)?)\b/i.test(lower)) return 'Life Insurance';
   if (/\b(disability|std|ltd|short[- ]?term|long[- ]?term)\b/i.test(lower)) return 'Disability';
   if (/\b(?:critical(?:\s+illness)?|ci(?:\s+insurance)?)\b/i.test(lower)) return 'Critical Illness';
   if (/\b(accident|ad&d|ad\/d)\b/i.test(lower)) return 'Accident/AD&D';
