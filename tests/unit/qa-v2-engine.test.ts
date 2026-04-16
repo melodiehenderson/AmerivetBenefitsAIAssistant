@@ -1221,6 +1221,33 @@ describe('qa-v2 engine', () => {
     expect(result.answer).toMatch(/not yet|not make critical illness the first extra add-on|only after/i);
   });
 
+  it('answers family-protection priority wording inside critical illness with disability first and life after that', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Mandy',
+      hasCollectedName: true,
+      userAge: 27,
+      userState: 'CT',
+      dataConfirmed: true,
+      currentTopic: 'Critical Illness',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      messages: [
+        { role: 'user', content: "i'm the only income for my family" },
+      ],
+      lastBotMessage: 'Critical illness coverage is a supplemental benefit that can pay a lump-sum cash benefit if you are diagnosed with a covered serious condition.',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'so what should i tighten up first for my family?',
+      session,
+    });
+
+    expect(result.answer).toContain('disability first');
+    expect(result.answer).toContain('life right after that');
+    expect(result.answer).toContain('critical illness only after');
+  });
+
   it('answers active-topic supplemental worth-it questions directly instead of falling back to generic supplemental scaffolding', async () => {
     const session = makeSession({
       step: 'active_chat',
@@ -1240,6 +1267,33 @@ describe('qa-v2 engine', () => {
 
     expect(result.answer).toContain('Accident/AD&D');
     expect(result.answer).not.toContain('We can stay with supplemental protection');
+  });
+
+  it('answers family-protection priority wording inside accident/ad&d with disability and life before the smaller add-on', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Mandy',
+      hasCollectedName: true,
+      userAge: 27,
+      userState: 'CT',
+      dataConfirmed: true,
+      currentTopic: 'Accident/AD&D',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      messages: [
+        { role: 'user', content: 'my family depends on my paycheck' },
+      ],
+      lastBotMessage: 'Accident/AD&D coverage is another supplemental option. It generally pays benefits after covered accidental injuries.',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'what protection should i add first?',
+      session,
+    });
+
+    expect(result.answer).toContain('disability first');
+    expect(result.answer).toContain('life right after that');
+    expect(result.answer).toContain('Accident/AD&D only after');
   });
 
   it('keeps critical-illness recommendation ownership for broader "what would you recommend?" follow-ups', async () => {
@@ -3207,6 +3261,33 @@ describe('qa-v2 engine', () => {
     expect(result.answer).toContain('simplest way to separate life insurance from disability');
     expect(result.answer).toContain('paycheck-protection decision');
     expect(result.answer).not.toContain('Disability is usually worth considering if missing part of your paycheck');
+  });
+
+  it('answers protection-priority wording inside disability with disability first and life right after that', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Sarah',
+      hasCollectedName: true,
+      userAge: 42,
+      userState: 'FL',
+      dataConfirmed: true,
+      currentTopic: 'Disability',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      coverageTierLock: 'Employee + Family',
+      messages: [
+        { role: 'user', content: "my family depends on my paycheck" },
+      ],
+      lastBotMessage: 'Disability coverage is meant to protect part of your income if you cannot work because of illness or injury.',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'what should i tighten up first for my family?',
+      session,
+    });
+
+    expect(result.answer).toContain('disability first');
+    expect(result.answer).toContain('life right after that');
+    expect(result.answer).toContain('smaller supplemental cash benefits');
   });
 
   it('primes a direct critical-illness recommendation so a plain yes opens the accident-versus-critical comparison', async () => {

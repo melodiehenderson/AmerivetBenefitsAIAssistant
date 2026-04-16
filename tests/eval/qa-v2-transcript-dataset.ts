@@ -4495,4 +4495,82 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
       },
     ],
   },
+  {
+    id: 'V2-TX-102E',
+    category: 'critical_illness_family_protection_priority',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 34,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Critical Illness',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      messages: [
+        { role: 'user', content: 'my family depends on my paycheck' },
+      ],
+      lastBotMessage: 'Critical illness coverage is a supplemental benefit that can pay a lump-sum cash benefit if you are diagnosed with a covered serious condition.',
+    },
+    turns: [
+      {
+        user: 'so what should i tighten up first for my family?',
+        mustContain: ['disability first', 'life right after that', 'critical illness only after'],
+        mustNotContain: ['Critical illness coverage is a supplemental benefit'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-102F',
+    category: 'accident_family_protection_priority',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 34,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Accident/AD&D',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      messages: [
+        { role: 'user', content: 'my family depends on my paycheck' },
+      ],
+      lastBotMessage: 'Accident/AD&D coverage is another supplemental option. It generally pays benefits after covered accidental injuries.',
+    },
+    turns: [
+      {
+        user: 'what protection should i add first?',
+        mustContain: ['disability first', 'life right after that', 'Accident/AD&D only after'],
+        mustNotContain: ['Accident/AD&D coverage is another supplemental option'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-102G',
+    category: 'disability_family_protection_priority',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 34,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Disability',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      messages: [
+        { role: 'user', content: 'my family depends on my paycheck' },
+      ],
+      lastBotMessage: 'Disability coverage is meant to protect part of your income if you cannot work because of illness or injury.',
+    },
+    turns: [
+      {
+        user: 'what should i tighten up first for my family?',
+        mustContain: ['disability first', 'life right after that', 'smaller supplemental cash benefits'],
+        mustNotContain: ['Disability coverage is meant to protect part of your income'],
+      },
+    ],
+  },
 ];

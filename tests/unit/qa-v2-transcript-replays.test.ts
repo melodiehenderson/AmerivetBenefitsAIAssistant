@@ -3936,4 +3936,82 @@ describe('qa-v2 transcript replays', () => {
       }),
     );
   });
+
+  it('replays family-protection priority wording inside critical illness with disability and life ahead of the smaller add-on', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'so what should i tighten up first for my family?',
+          mustContain: ['disability first', 'life right after that', 'critical illness only after'],
+          mustNotContain: ['Critical illness coverage is a supplemental benefit'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 34,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'Critical Illness',
+        coverageTierLock: 'Employee + Family',
+        familyDetails: { hasSpouse: true, numChildren: 2 },
+        messages: [
+          { role: 'user', content: 'my family depends on my paycheck' },
+        ],
+        lastBotMessage: 'Critical illness coverage is a supplemental benefit that can pay a lump-sum cash benefit if you are diagnosed with a covered serious condition.',
+      }),
+    );
+  });
+
+  it('replays family-protection priority wording inside accident/ad&d with disability and life ahead of the smaller add-on', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'what protection should i add first?',
+          mustContain: ['disability first', 'life right after that', 'Accident/AD&D only after'],
+          mustNotContain: ['Accident/AD&D coverage is another supplemental option'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 34,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'Accident/AD&D',
+        coverageTierLock: 'Employee + Family',
+        familyDetails: { hasSpouse: true, numChildren: 2 },
+        messages: [
+          { role: 'user', content: 'my family depends on my paycheck' },
+        ],
+        lastBotMessage: 'Accident/AD&D coverage is another supplemental option. It generally pays benefits after covered accidental injuries.',
+      }),
+    );
+  });
+
+  it('replays family-protection priority wording inside disability with disability first and life right after that', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'what should i tighten up first for my family?',
+          mustContain: ['disability first', 'life right after that', 'smaller supplemental cash benefits'],
+          mustNotContain: ['Disability coverage is meant to protect part of your income'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 34,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'Disability',
+        coverageTierLock: 'Employee + Family',
+        familyDetails: { hasSpouse: true, numChildren: 2 },
+        messages: [
+          { role: 'user', content: 'my family depends on my paycheck' },
+        ],
+        lastBotMessage: 'Disability coverage is meant to protect part of your income if you cannot work because of illness or injury.',
+      }),
+    );
+  });
 });

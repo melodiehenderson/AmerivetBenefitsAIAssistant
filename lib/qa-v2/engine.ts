@@ -1450,6 +1450,8 @@ function isProtectionPriorityQuestion(text: string): boolean {
   return /\b(what|which)\s+(?:protection|coverage|benefit)\s+should\s+i\s+(?:add|get|prioriti[sz]e|focus\s+on)\s+(?:first|next)\b/i.test(lower)
     || (/\bwhat\s+should\s+i\s+(?:add|get|prioriti[sz]e|focus\s+on)\s+first\b/i.test(lower)
       && /\b(protection|after\s+medical|once\s+medical|when\s+medical|breadwinner|family|household|spouse|kids?|children|income)\b/i.test(lower))
+    || (/\bwhat\s+should\s+i\s+tighten\s+up\s+first\b/i.test(lower)
+      && /\b(family|household|spouse|kids?|children|income|breadwinner|protection)\b/i.test(lower))
     || (/\b(after|once|when)\s+medical\b/i.test(lower)
       && /\b(first|next)\b/i.test(lower)
       && /\b(protection|benefit|coverage|add|get|prioriti[sz]e|focus\s+on)\b/i.test(lower));
@@ -3464,8 +3466,26 @@ function buildSupplementalRecommendationReply(topic: string, session: Session, q
   const soleBreadwinner = /\b(sole\s+bread\s*winner|breadwinner|only\s+income|sole\s+provider|only\s+provider|husband\s+doesn\s*t\s+work|spouse\s+doesn\s*t\s+work|family\s+relies\s+on\s+my\s+income|rely\s+on\s+my\s+income)\b/i.test(normalizedCombined);
   const familyContext = /\b(spouse|partner|kids?|children|family|household)\b/i.test(combined);
   const standardPlanContext = /\bstandard hsa|standard plan\b/i.test(combined) || /Standard HSA/i.test(session.selectedPlan || '');
+  const nextDollarQuestion = isNextDollarDecisionQuestion(query);
+  const priorityFirstQuestion = isProtectionPriorityQuestion(query);
+  const protectionPriorityAsk = nextDollarQuestion || priorityFirstQuestion;
+  const supplementalComparisonFocus = detectSupplementalComparisonFocus(query);
 
   if (topic === 'Critical Illness') {
+    if (protectionPriorityAsk && (soleBreadwinner || familyContext)) {
+      return [
+        `**My practical take:** if you are really asking where the next protection dollar should go for this household, I would usually **not** put it into critical illness first.`,
+        ``,
+        `Why:`,
+        `- I would still settle the core medical choice first`,
+        `- If the household depends on your income, I would usually tighten **disability** before smaller supplemental cash benefits`,
+        `- I would usually tighten **life insurance** after that if the household would still need more survivor protection than the employer-paid basic life benefit`,
+        `- I would only move to **critical illness** after those bigger protection questions are covered and you still want diagnosis-triggered cash support on top`,
+        ``,
+        `So if you are asking me to rank it: **disability first, life right after that, critical illness only after those are in place**.`,
+      ].join('\n');
+    }
+
     if (soleBreadwinner) {
       return [
         `**My practical take:** I would usually **not** make critical illness the first extra add-on if you are the sole breadwinner.`,
@@ -3508,6 +3528,34 @@ function buildSupplementalRecommendationReply(topic: string, session: Session, q
   }
 
   if (topic === 'Accident/AD&D') {
+    if (protectionPriorityAsk && (familyContext || soleBreadwinner)) {
+      if (supplementalComparisonFocus === 'injury_risk') {
+        return [
+          `**My practical take:** even when injury risk is what you are picturing, I would usually still settle the bigger family-protection questions before I spend the next dollar on Accident/AD&D.`,
+          ``,
+          `Why:`,
+          `- I would still keep the core medical decision first`,
+          `- If the household depends on your paycheck, I would usually tighten **disability** before the smaller supplemental cash benefits`,
+          `- If the household would need more survivor protection than AmeriVet's employer-paid basic life benefit, I would usually tighten **life insurance** right after that`,
+          `- Then I would look at **Accident/AD&D** if the household is active and you still want extra accident-specific cash support`,
+          ``,
+          `So if you are asking me to rank it: **disability first, life right after that if the household still needs it, then Accident/AD&D if injury risk is still the concern**.`,
+        ].join('\n');
+      }
+
+      return [
+        `**My practical take:** I would usually **not** spend the next protection dollar on Accident/AD&D first when the bigger household question is still income protection.`,
+        ``,
+        `Why:`,
+        `- Accident/AD&D is a smaller accident-triggered cash layer, not the main income-protection decision`,
+        `- I would usually settle **disability** first if the household depends on your paycheck`,
+        `- I would usually tighten **life insurance** after that if the household would still need more survivor protection than the employer-paid basic life benefit`,
+        `- I would only move to **Accident/AD&D** once those bigger protection gaps are covered and injury risk is still what feels exposed`,
+        ``,
+        `So if you are asking me to rank it: **disability first, life right after that, Accident/AD&D only after the bigger family-protection questions are settled**.`,
+      ].join('\n');
+    }
+
     return [
       `**My practical take:** I would only add Accident/AD&D if the household feels meaningfully exposed to injury risk and you want extra cash support after a covered accident.`,
       ``,
@@ -3520,6 +3568,19 @@ function buildSupplementalRecommendationReply(topic: string, session: Session, q
   }
 
   if (topic === 'Disability') {
+    if (protectionPriorityAsk && (familyContext || soleBreadwinner)) {
+      return [
+        `**My practical take:** if the household depends on your paycheck, I would usually spend the next protection dollar on **disability first**.`,
+        ``,
+        `Why:`,
+        `- A work-stopping illness or injury can create pressure long before anyone is thinking about a life-insurance payout`,
+        `- AmeriVet already gives you an employer-paid basic life benefit, so the first extra gap is often paycheck protection, not survivor protection`,
+        `- After that, I would usually tighten **life insurance** if the household would still need more long-term income replacement than the included base life benefit provides`,
+        ``,
+        `So if you are asking me to rank it: **disability first, life right after that, and only then the smaller supplemental cash benefits**.`,
+      ].join('\n');
+    }
+
     return [
       `**My practical take:** disability is often worth adding sooner than people expect if your household depends on your paycheck.`,
       ``,
