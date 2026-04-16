@@ -2071,6 +2071,31 @@ describe('qa-v2 transcript replays', () => {
     );
   });
 
+  it('replays softer post-medical protection-priority wording into decisive life-versus-disability guidance', async () => {
+    await replayTranscript(
+      [
+        {
+          user: "after medical, what protection should i add first if i'm the breadwinner?",
+          mustContain: ['disability first', 'household depends on your income'],
+          mustNotContain: ['Tell me which area you want to focus on next'],
+        },
+        {
+          user: 'after medical, what protection should i add first if my spouse and kids would need support if i die?',
+          mustContain: ['life first', 'something happened to you'],
+          mustNotContain: ['Tell me which area you want to focus on next'],
+        },
+      ],
+      makeSession({
+        userName: 'Sarah',
+        hasCollectedName: true,
+        userAge: 42,
+        userState: 'FL',
+        dataConfirmed: true,
+        coverageTierLock: 'Employee + Family',
+      }),
+    );
+  });
+
   it('replays "why not vision first?" after routine-care comparison guidance', async () => {
     await replayTranscript(
       [

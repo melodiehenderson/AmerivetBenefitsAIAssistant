@@ -1445,6 +1445,16 @@ function isNextDollarDecisionQuestion(text: string): boolean {
   return /\b(next\s+(?:dollar|premium\s+dollar|protection\s+dollar|coverage\s+dollar)|gets?\s+the\s+next\s+(?:dollar|premium\s+dollar|protection\s+dollar|coverage\s+dollar)|deserves?\s+the\s+next\s+(?:dollar|premium\s+dollar|protection\s+dollar|coverage\s+dollar)|what\s+gets\s+the\s+next\s+(?:dollar|premium\s+dollar|protection\s+dollar|coverage\s+dollar)|what\s+deserves\s+the\s+next\s+(?:dollar|premium\s+dollar|protection\s+dollar|coverage\s+dollar))\b/i.test(lower);
 }
 
+function isProtectionPriorityQuestion(text: string): boolean {
+  const lower = stripAffirmationLeadIn(text.trim()).toLowerCase();
+  return /\b(what|which)\s+(?:protection|coverage|benefit)\s+should\s+i\s+(?:add|get|prioriti[sz]e|focus\s+on)\s+(?:first|next)\b/i.test(lower)
+    || (/\bwhat\s+should\s+i\s+(?:add|get|prioriti[sz]e|focus\s+on)\s+first\b/i.test(lower)
+      && /\b(protection|after\s+medical|once\s+medical|when\s+medical|breadwinner|family|household|spouse|kids?|children|income)\b/i.test(lower))
+    || (/\b(after|once|when)\s+medical\b/i.test(lower)
+      && /\b(first|next)\b/i.test(lower)
+      && /\b(protection|benefit|coverage|add|get|prioriti[sz]e|focus\s+on)\b/i.test(lower));
+}
+
 function buildSupplementalNarrowingReply(session: Session, query: string): string {
   const lower = query.toLowerCase();
   const householdText = `${(session.messages || [])
@@ -1455,6 +1465,7 @@ function buildSupplementalNarrowingReply(session: Session, query: string): strin
   const householdDependsOnIncome = soleBreadwinner || /\b(spouse|wife|husband|partner|kids?|children|family|household)\b/i.test(householdText);
   const lifeProtectionFocus = detectLifeProtectionFocus(householdText);
   const nextDollarQuestion = isNextDollarDecisionQuestion(query);
+  const priorityFirstQuestion = isProtectionPriorityQuestion(query);
   const mentionsLife = /\b(life(?:\s+insurance)?|term life|voluntary term(?:\s+life)?|whole life|basic life|25k)\b/i.test(lower);
   const mentionsDisability = /\b(disability|std|ltd|short[- ]?term|long[- ]?term)\b/i.test(lower);
   const mentionsCritical = /\bcritical(?:\s+illness)?\b/i.test(lower);
@@ -1481,7 +1492,7 @@ function buildSupplementalNarrowingReply(session: Session, query: string): strin
   if (mentionsLife && mentionsDisability) {
     if (lifeProtectionFocus === 'survivor_protection') {
       return [
-        nextDollarQuestion
+        nextDollarQuestion || priorityFirstQuestion
           ? `If you are really asking where the **next protection dollar** should go because your household would need support **if something happened to you**, I would usually put that dollar into **life insurance first**.`
           : `If you are choosing between more life insurance and disability because your household would need support **if something happened to you**, I would usually tighten up **life insurance first**.`,
         ``,
@@ -1490,7 +1501,7 @@ function buildSupplementalNarrowingReply(session: Session, query: string): strin
         `- **Disability** is the paycheck-protection decision if you are alive but unable to work`,
         `- If the fear is survivor protection more than paycheck interruption, the bigger immediate gap is usually whether the employer-paid basic life benefit would actually be enough`,
         ``,
-        nextDollarQuestion
+        nextDollarQuestion || priorityFirstQuestion
           ? `So if you want the shortest answer, I would usually let the **next dollar go to life insurance first**, then tighten up **disability** right after that if the household also depends heavily on your ongoing paycheck.`
           : `So if you are asking me to lead the decision, I would usually do **life insurance first**, then tighten up **disability** right after that if the household also depends heavily on your ongoing paycheck.`,
       ].join('\n');
@@ -1498,7 +1509,7 @@ function buildSupplementalNarrowingReply(session: Session, query: string): strin
 
     return [
       householdDependsOnIncome || lifeProtectionFocus === 'paycheck_protection'
-        ? nextDollarQuestion
+        ? nextDollarQuestion || priorityFirstQuestion
           ? `If you are really asking where the **next protection dollar** should go when the household depends on your paycheck, I would usually put that dollar into **disability first**.`
           : `If you are choosing between more life insurance and disability, I would usually tighten up **disability first** when the household depends on your paycheck.`
         : `If you are choosing between more life insurance and disability, the practical split is paycheck protection versus long-term survivor protection.`,
@@ -1509,7 +1520,7 @@ function buildSupplementalNarrowingReply(session: Session, query: string): strin
       `- AmeriVet already gives you a basic employer-paid life benefit, so the extra gap is often disability first when missing income would hurt immediately`,
       ``,
       householdDependsOnIncome || lifeProtectionFocus === 'paycheck_protection'
-        ? nextDollarQuestion
+        ? nextDollarQuestion || priorityFirstQuestion
           ? `So if you want the shortest answer, I would usually let the **next dollar go to disability first**, then add more **life insurance** if the household still needs more survivor protection than the employer-paid basic benefit.`
           : `So if you are asking me to lead the decision, I would usually do **disability first**, then add more **life insurance** if the household still needs more survivor protection than the employer-paid basic benefit.`
         : `So if you are asking me to lead the decision, I would usually choose the one that covers the bigger real-world gap first: paycheck interruption or survivor protection.`,
@@ -2188,6 +2199,7 @@ function buildAccidentVsCriticalComparison(): string {
 function buildLifeVsDisabilityComparison(query = ''): string {
   const lifeProtectionFocus = detectLifeProtectionFocus(query);
   const nextDollarQuestion = isNextDollarDecisionQuestion(query);
+  const priorityFirstQuestion = isProtectionPriorityQuestion(query);
 
   if (lifeProtectionFocus === 'survivor_protection') {
     return [
@@ -2198,7 +2210,7 @@ function buildLifeVsDisabilityComparison(query = ''): string {
       `- If your bigger fear is what happens to your spouse, kids, or household **after your death**, life insurance usually becomes the first thing I would tighten up`,
       `- Disability still matters right after that if the household also depends heavily on your ongoing paycheck`,
       ``,
-      nextDollarQuestion
+      nextDollarQuestion || priorityFirstQuestion
         ? `So when the question is really about **survivor protection**, I would usually let the **next dollar go to life insurance first**, then disability right after that.`
         : `So when the question is really about **survivor protection**, I would usually do **life insurance first**, then disability right after that.`,
     ].join('\n');
@@ -2212,7 +2224,7 @@ function buildLifeVsDisabilityComparison(query = ''): string {
     `- If people rely on your paycheck, disability often matters sooner than people expect`,
     `- If people rely on your long-term income and would need support after your death, life insurance is essential too`,
     ``,
-    nextDollarQuestion
+    nextDollarQuestion || priorityFirstQuestion
       ? `For many working families, both matter, but I would usually let the **next dollar go to disability first** because paycheck interruption tends to create the more immediate pressure while life is the household-replacement decision.`
       : `For many working families, disability and life are both important, but disability is often the more immediate paycheck-protection decision while life is the household-replacement decision.`,
   ].join('\n');
@@ -2462,6 +2474,7 @@ function buildComparisonFamilyReply(
   const childFocused = /\bkids?\b|\bchildren\b/i.test(lower);
   const lifeProtectionFocus = detectLifeProtectionFocus(query);
   const nextDollarQuestion = isNextDollarDecisionQuestion(query);
+  const priorityFirstQuestion = isProtectionPriorityQuestion(query);
 
   if (kind === 'life_vs_disability') {
     if (lifeProtectionFocus === 'survivor_protection') {
@@ -2476,7 +2489,7 @@ function buildComparisonFamilyReply(
         `- Disability still matters, but that is the paycheck-protection decision while you are alive`,
         `- So if the main fear is survivor support rather than paycheck interruption, life usually deserves the first extra attention`,
         ``,
-        nextDollarQuestion
+        nextDollarQuestion || priorityFirstQuestion
           ? `So if you are really asking where the **next dollar** should go, I would usually put it into **life first**, then **disability** right after that if the household also depends on your paycheck.`
           : `So my practical order is usually **life first**, then **disability** right after that if the household also depends on your paycheck.`,
       ].join('\n');
@@ -2494,14 +2507,14 @@ function buildComparisonFamilyReply(
       `- For many families, disability matters sooner than people expect because an interrupted paycheck can create stress before anyone is thinking about a death benefit`,
       ``,
       childFocused
-        ? nextDollarQuestion
+        ? nextDollarQuestion || priorityFirstQuestion
           ? `So if your kids depend on your income and you are asking where the **next dollar** should go, I would usually put it into **disability first**, then tighten up **life** before I worry about smaller supplemental add-ons.`
           : `So if your kids depend on your income, I would usually tighten up disability and life before I worry about smaller supplemental add-ons.`
         : spouseFocused
-          ? nextDollarQuestion
+          ? nextDollarQuestion || priorityFirstQuestion
             ? `So if your spouse depends on your income and you are asking where the **next dollar** should go, I would usually put it into **disability first**, then tighten up **life** before I worry about smaller supplemental add-ons.`
             : `So if your spouse depends on your income, I would usually tighten up disability and life before I worry about smaller supplemental add-ons.`
-          : nextDollarQuestion
+          : nextDollarQuestion || priorityFirstQuestion
             ? `So if your household depends on your income and you are asking where the **next dollar** should go, I would usually put it into **disability first**, then tighten up **life** before I worry about smaller supplemental add-ons.`
             : `So if your household depends on your income, I would usually tighten up disability and life before I worry about smaller supplemental add-ons.`,
     ].join('\n');
@@ -3850,9 +3863,14 @@ function buildContinuationReply(session: Session, query: string): string | null 
       setPendingGuidance(session, 'life_vs_disability', 'Life Insurance');
       return whyNotReply;
     }
+    if (isProtectionPriorityQuestion(normalizedQuery)) {
+      setPendingGuidance(session, 'life_vs_disability', 'Life Insurance');
+      return buildComparisonFamilyReply('life_vs_disability', normalizedQuery);
+    }
     if (
       isAffirmativeCompareFollowup(normalizedQuery)
       || isNextDollarDecisionQuestion(normalizedQuery)
+      || isProtectionPriorityQuestion(normalizedQuery)
       || Boolean(lifeProtectionFocus)
       || /\b(which\s+protection|which\s+one\s+matters\s+more|which\s+one\s+first|which\s+should\s+i\s+get|which\s+ones\s+should\s+i\s+get)\b/i.test(lower)
     ) {
@@ -4530,6 +4548,14 @@ export async function runQaV2Engine(params: {
     session.lastBotMessage = answer;
     session.messages.push({ role: 'assistant', content: answer });
     return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'life-family-coverage-v2', topic: 'Life Insurance' } };
+  }
+
+  if (isProtectionPriorityQuestion(query)) {
+    setPendingGuidance(session, 'life_vs_disability', 'Life Insurance');
+    const answer = buildComparisonFamilyReply('life_vs_disability', query);
+    session.lastBotMessage = answer;
+    session.messages.push({ role: 'assistant', content: answer });
+    return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'life-vs-disability-priority-v2' } };
   }
 
   if (isBenefitDecisionGuidanceRequest(query)) {

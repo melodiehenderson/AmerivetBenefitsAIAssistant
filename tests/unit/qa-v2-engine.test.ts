@@ -3654,6 +3654,48 @@ describe('qa-v2 engine', () => {
     expect(result.answer).not.toContain('disability first when the household depends on your paycheck');
   });
 
+  it('answers softer post-medical protection-priority wording with disability first for breadwinner framing', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Sarah',
+      hasCollectedName: true,
+      userAge: 42,
+      userState: 'FL',
+      dataConfirmed: true,
+      coverageTierLock: 'Employee + Family',
+    });
+
+    const result = await runQaV2Engine({
+      query: "after medical, what protection should i add first if i'm the breadwinner?",
+      session,
+    });
+
+    expect(result.answer).toContain('disability first');
+    expect(result.answer).toContain('household depends on your income');
+    expect(result.answer).not.toContain('Tell me which area you want to focus on next');
+  });
+
+  it('answers softer post-medical protection-priority wording with life first for survivor-protection framing', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Sarah',
+      hasCollectedName: true,
+      userAge: 42,
+      userState: 'FL',
+      dataConfirmed: true,
+      coverageTierLock: 'Employee + Family',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'after medical, what protection should i add first if my spouse and kids would need support if i die?',
+      session,
+    });
+
+    expect(result.answer).toContain('life first');
+    expect(result.answer).toContain('something happened to you');
+    expect(result.answer).not.toContain('Tell me which area you want to focus on next');
+  });
+
   it('answers "why not life first?" after life-versus-disability comparison when survivor protection is the concern', async () => {
     const session = makeSession({
       step: 'active_chat',

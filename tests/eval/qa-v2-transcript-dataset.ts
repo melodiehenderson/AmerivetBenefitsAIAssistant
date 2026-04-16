@@ -1202,6 +1202,31 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
     ],
   },
   {
+    id: 'V2-TX-042B',
+    category: 'life_vs_disability_post_medical_priority',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Sarah',
+      hasCollectedName: true,
+      userAge: 42,
+      userState: 'FL',
+      dataConfirmed: true,
+      coverageTierLock: 'Employee + Family',
+    },
+    turns: [
+      {
+        user: "after medical, what protection should i add first if i'm the breadwinner?",
+        mustContain: ['disability first', 'household depends on your income'],
+        mustNotContain: ['Tell me which area you want to focus on next'],
+      },
+      {
+        user: 'after medical, what protection should i add first if my spouse and kids would need support if i die?',
+        mustContain: ['life first', 'something happened to you'],
+        mustNotContain: ['Tell me which area you want to focus on next'],
+      },
+    ],
+  },
+  {
     id: 'V2-TX-043',
     category: 'medical_detail_source_backed',
     initialSession: {
