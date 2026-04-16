@@ -5335,6 +5335,56 @@ describe('qa-v2 engine', () => {
     expect(result.answer).not.toContain('Voluntary Term Life');
   });
 
+  it('treats negative critical-illness pivots into "just show me the plans" as direct medical pivots', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Critical Illness',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      lastBotMessage: 'Critical illness coverage can pay a lump-sum cash benefit after a covered serious diagnosis.',
+    });
+
+    const result = await runQaV2Engine({
+      query: "i don't really care about critical illness right now. just show me the plans",
+      session,
+    });
+
+    expect(result.answer).toMatch(/(?:Here are the monthly medical premiums|Medical plan options|Here is a side-by-side comparison|Here is the practical tradeoff across AmeriVet's medical options)/);
+    expect(result.answer).toContain('Standard HSA');
+    expect(result.answer).not.toContain('Critical illness coverage can pay');
+    expect(result.answer).not.toContain('What critical illness is not');
+  });
+
+  it('treats negative accident pivots into "just show me the plans" as direct medical pivots', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Accident/AD&D',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      lastBotMessage: 'Accident/AD&D coverage is another supplemental option. It generally pays benefits after covered accidental injuries.',
+    });
+
+    const result = await runQaV2Engine({
+      query: "i don't really care about accident coverage right now. just show me the plans",
+      session,
+    });
+
+    expect(result.answer).toMatch(/(?:Here are the monthly medical premiums|Medical plan options|Here is a side-by-side comparison|Here is the practical tradeoff across AmeriVet's medical options)/);
+    expect(result.answer).toContain('Standard HSA');
+    expect(result.answer).not.toContain('Accident/AD&D coverage is another supplemental option');
+    expect(result.answer).not.toContain('Accident coverage and AD&D travel together');
+  });
+
   it('lets plan-pricing pivots override rx self-service detours and return to core medical premiums', async () => {
     const session = makeSession({
       step: 'active_chat',

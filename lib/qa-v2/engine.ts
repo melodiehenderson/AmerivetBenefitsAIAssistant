@@ -879,6 +879,16 @@ function isReturnToMedicalIntent(query: string): boolean {
   return /\b(go\s+back\s+to\s+(?:my\s+)?medical|back\s+to\s+(?:my\s+)?medical|back\s+to\s+(?:my\s+)?medical\s+plan\s+options|done\s+with\s+hsa\/fsa|done\s+with\s+hsa|done\s+with\s+fsa|medical\s+plan\s+options|show\s+me\s+(?:my\s+)?medical\s+plan\s+options|show\s+me\s+(?:my\s+)?medical\s+options|show\s+me\s+my\s+options|show\s+me\s+the\s+plans|plans\s+side\s+by\s+side|side\s+by\s+side|compare\s+the\s+plans|just\s+want\s+to\s+see\s+(?:the\s+)?plans?|just\s+wanna\s+see\s+(?:the\s+)?plans?|breakdown\s+of\s+(?:(?:each\s+of\s+)?(?:those|these)\s+plans?|each\s+plan)|just\s+plan\s+pricing)\b/i.test(lower);
 }
 
+function isNegativeSupplementalToMedicalPivot(query: string): boolean {
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  if (!isReturnToMedicalIntent(query)) return false;
+
+  const declineSignal = /\b(don'?t\s+really\s+care\s+about|do\s+not\s+really\s+care\s+about|don'?t\s+care\s+about|do\s+not\s+care\s+about|done\s+with|skip|other\s+than|not\s+focused\s+on|not\s+worrying\s+about|not\s+thinking\s+about)\b/i.test(lower);
+  const supplementalTopicSignal = /\b(life(?:\s+insurance)?|term\s+life|whole\s+life|basic\s+life|disability|critical(?:\s+illness)?|ci|accident(?:\/ad&d)?|ad&d|ad\/d|hsa|fsa|hsa\/fsa)\b/i.test(lower);
+
+  return declineSignal && supplementalTopicSignal;
+}
+
 function isMedicalRecommendationClarificationQuestion(query: string): boolean {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
   return /\b(what\s+do\s+you\s+mean\s+by\s+richer|what\s+do\s+you\s+mean\s+by\s+leaner|by\s+richer|by\s+leaner|what\s+do\s+you\s+mean\s+by\s+higher[- ]cost|more\s+expensive\s+is\s+that\s+right|do\s+you\s+mean\s+more\s+expensive|do\s+you\s+mean\s+cheaper|is\s+that\s+just\s+more\s+expensive)\b/i.test(lower);
@@ -1613,6 +1623,7 @@ function buildHighPriorityIntentReply(session: Session, query: string): EngineRe
     && (
       activeTopic === 'HSA/FSA'
       || activeTopic === 'Medical'
+      || isNegativeSupplementalToMedicalPivot(normalizedQuery)
       || /hsa\/fsa overview|health savings account|flexible spending account|medical plan options|standard hsa|enhanced hsa|kaiser standard hmo/i.test(session.lastBotMessage || '')
     )
   ) {

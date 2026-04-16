@@ -3535,6 +3535,52 @@ describe('qa-v2 transcript replays', () => {
     );
   });
 
+  it('replays negative critical-illness pivots into "just show me the plans" as direct medical pivots', async () => {
+    await replayTranscript(
+      [
+        {
+          user: "i don't really care about critical illness right now. just show me the plans",
+          mustContain: ['Standard HSA'],
+          mustNotContain: ['Critical illness coverage can pay', 'What critical illness is not'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'Critical Illness',
+        coverageTierLock: 'Employee + Family',
+        familyDetails: { hasSpouse: true, numChildren: 2 },
+        lastBotMessage: 'Critical illness coverage can pay a lump-sum cash benefit after a covered serious diagnosis.',
+      }),
+    );
+  });
+
+  it('replays negative accident pivots into "just show me the plans" as direct medical pivots', async () => {
+    await replayTranscript(
+      [
+        {
+          user: "i don't really care about accident coverage right now. just show me the plans",
+          mustContain: ['Standard HSA'],
+          mustNotContain: ['Accident/AD&D coverage is another supplemental option', 'Accident coverage and AD&D travel together'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'Accident/AD&D',
+        coverageTierLock: 'Employee + Family',
+        familyDetails: { hasSpouse: true, numChildren: 2 },
+        lastBotMessage: 'Accident/AD&D coverage is another supplemental option. It generally pays benefits after covered accidental injuries.',
+      }),
+    );
+  });
+
   it('replays employee-plus-spouse premium asks back into medical from HSA/FSA context', async () => {
     await replayTranscript(
       [

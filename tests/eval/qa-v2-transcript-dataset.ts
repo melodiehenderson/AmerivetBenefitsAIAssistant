@@ -4094,6 +4094,52 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
     ],
   },
   {
+    id: 'V2-TX-100A',
+    category: 'critical_illness_context_negative_pivot_back_to_medical',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Critical Illness',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      lastBotMessage: 'Critical illness coverage can pay a lump-sum cash benefit after a covered serious diagnosis.',
+    },
+    turns: [
+      {
+        user: "i don't really care about critical illness right now. just show me the plans",
+        mustContain: ['Standard HSA'],
+        mustNotContain: ['Critical illness coverage can pay', 'What critical illness is not'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-100B',
+    category: 'accident_context_negative_pivot_back_to_medical',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Accident/AD&D',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      lastBotMessage: 'Accident/AD&D coverage is another supplemental option. It generally pays benefits after covered accidental injuries.',
+    },
+    turns: [
+      {
+        user: "i don't really care about accident coverage right now. just show me the plans",
+        mustContain: ['Standard HSA'],
+        mustNotContain: ['Accident/AD&D coverage is another supplemental option', 'Accident coverage and AD&D travel together'],
+      },
+    ],
+  },
+  {
     id: 'V2-TX-101',
     category: 'hsa_context_employee_spouse_pricing_pivot',
     initialSession: {
