@@ -1244,13 +1244,21 @@ function buildQleTimingReply(session: Session, query: string): string {
 
 function isMedicalPremiumReplayQuestion(query: string): boolean {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
-  return /\b(show\s+me\s+the\s+numbers(?:\s+again)?|show\s+me\s+the\s+monthly\s+numbers|show\s+me\s+how\s+much\s+i\s+have\s+to\s+pay\s+each\s+month|monthly\s+premiums?|per\s+month\s+on\s+each\s+plan|how\s+much\s+will\s+my\s+premium\s+be|how\s+much\s+(?:the\s+)?premiums?\s+are|what\s+are\s+the\s+premiums?|what\s+are\s+the\s+medical\s+plan\s+prices?|what\s+are\s+the\s+prices?\s+again|what\s+are\s+the\s+medical\s+plan\s+prices?\s+again|what\s+would\s+the\s+premium\s+be|what\s+would\s+(?:i|we)\s+pay|what\s+would\s+it\s+cost|how\s+much\s+would\s+it\s+cost|how\s+much\s+are\s+the\s+family\s+medical\s+plans?|how\s+much\s+are\s+the\s+medical\s+plans?|what\s+does\s+(?:spouse|family|medical)\s+coverage\s+cost|cost\s+to\s+cover|show\s+me\s+.*pricing|pricing\s+for\s+employee|show\s+me\s+the\s+employee\s*\+|show\s+me\s+the\s+employee\s*\+\s*(?:family|spouse|child(?:ren)?)\s+(?:premiums|prices)|employee\s*\+\s*(?:family|spouse|child(?:ren)?)\s+pricing|employee\s*\+\s*(?:family|spouse|child(?:ren)?)\s+premiums|employee\s*\+\s*(?:family|spouse|child(?:ren)?)\s+prices|just\s+plan\s+pricing|what\s+about\s+just\s+plan\s+pricing|whole\s+family\s+pricing|show\s+me\s+the\s+family\s+prices|show\s+me\s+family\s+prices|family\s+prices|show\s+me\s+the\s+spouse\s+prices|spouse\s+prices|prices?\s+for\s+premiums?|show\s+me\s+the\s+prices|show\s+me\s+the\s+premiums|show\s+me\s+the\s+breakdown\s+of\s+(?:(?:each\s+of\s+)?(?:those|these)\s+plans?|each\s+plan)|breakdown\s+of\s+(?:(?:each\s+of\s+)?(?:those|these)\s+plans?|each\s+plan)|just\s+wanna\s+see\s+(?:the\s+)?plans?)\b/i.test(lower)
+  return /\b(show\s+me\s+the\s+numbers(?:\s+again)?|show\s+me\s+the\s+monthly\s+numbers|show\s+me\s+how\s+much\s+i\s+have\s+to\s+pay\s+each\s+month|monthly\s+premiums?|per\s+month\s+on\s+each\s+plan|how\s+much\s+will\s+my\s+premium\s+be|how\s+much\s+(?:the\s+)?premiums?\s+are|what\s+are\s+the\s+premiums?|what\s+are\s+the\s+medical\s+plan\s+prices?|what\s+are\s+the\s+prices?\s+again|what\s+are\s+the\s+medical\s+plan\s+prices?\s+again|what\s+are\s+those\s+(?:medical\s+)?(?:plan\s+)?(?:prices?|premiums?)\s+again|what\s+about\s+those\s+(?:medical\s+)?(?:plan\s+)?(?:prices?|premiums?)\s+again|show\s+me\s+those\s+(?:plan\s+)?(?:prices?|premiums?)\s+again|show\s+me\s+those\s+plan\s+numbers\s+again|can\s+i\s+just\s+see\s+those\s+(?:plan\s+)?(?:prices?|premiums?)\s+again|what\s+would\s+the\s+premium\s+be|what\s+would\s+(?:i|we)\s+pay|what\s+would\s+it\s+cost|how\s+much\s+would\s+it\s+cost|how\s+much\s+are\s+the\s+family\s+medical\s+plans?|how\s+much\s+are\s+the\s+medical\s+plans?|what\s+does\s+(?:spouse|family|medical)\s+coverage\s+cost|cost\s+to\s+cover|show\s+me\s+.*pricing|pricing\s+for\s+employee|show\s+me\s+the\s+employee\s*\+|show\s+me\s+the\s+employee\s*\+\s*(?:family|spouse|child(?:ren)?)\s+(?:premiums|prices)|employee\s*\+\s*(?:family|spouse|child(?:ren)?)\s+pricing|employee\s*\+\s*(?:family|spouse|child(?:ren)?)\s+premiums|employee\s*\+\s*(?:family|spouse|child(?:ren)?)\s+prices|just\s+plan\s+pricing|what\s+about\s+just\s+plan\s+pricing|whole\s+family\s+pricing|show\s+me\s+the\s+family\s+prices|show\s+me\s+family\s+prices|family\s+prices|show\s+me\s+the\s+spouse\s+prices|spouse\s+prices|prices?\s+for\s+premiums?|show\s+me\s+the\s+prices|show\s+me\s+the\s+premiums|show\s+me\s+the\s+breakdown\s+of\s+(?:(?:each\s+of\s+)?(?:those|these)\s+plans?|each\s+plan)|breakdown\s+of\s+(?:(?:each\s+of\s+)?(?:those|these)\s+plans?|each\s+plan)|just\s+wanna\s+see\s+(?:the\s+)?plans?)\b/i.test(lower)
     || (
       /\bcover\s+(?:me|myself)\b/i.test(lower)
       && /\b(wife|husband|spouse|partner)\b/i.test(lower)
       && /\b(kids?|children|family)\b/i.test(lower)
       && /\b(price|prices|pricing|premium|premiums|per month|monthly|show me|what would (?:i|we) pay|what would it cost|how much would it cost)\b/i.test(lower)
     );
+}
+
+function recentAssistantHistory(session: Session, limit = 4): string {
+  return (session.messages || [])
+    .filter((message) => message.role === 'assistant')
+    .slice(-limit)
+    .map((message) => message.content.toLowerCase())
+    .join('\n');
 }
 
 function contextualMedicalPricingReplayQuery(session: Session, query: string): string | null {
@@ -1263,15 +1271,17 @@ function contextualMedicalPricingReplayQuery(session: Session, query: string): s
     return null;
   }
 
-  const hasShortPricingSignal = /\b(what\s+will\s+that\s+cost|what\s+would\s+that\s+cost|how\s+much\s+would\s+that\s+be|how\s+much\s+would\s+that\s+cost|what\s+about\s+that\s+price|what\s+about\s+that\s+cost|what\s+about\s+the\s+family\s+price|what\s+about\s+family\s+pricing|what\s+about\s+spouse\s+pricing|how\s+much\s+would\s+that\s+be\s+for\s+my\s+spouse|how\s+much\s+would\s+that\s+be\s+for\s+my\s+family|and\s+what\s+about\s+the\s+price|and\s+what\s+would\s+that\s+be)\b/i.test(lower);
+  const hasShortPricingSignal = /\b(what\s+will\s+that\s+cost|what\s+would\s+that\s+cost|how\s+much\s+would\s+that\s+be|how\s+much\s+would\s+that\s+cost|what\s+about\s+that\s+price|what\s+about\s+that\s+cost|what\s+about\s+the\s+family\s+price|what\s+about\s+family\s+pricing|what\s+about\s+spouse\s+pricing|how\s+much\s+would\s+that\s+be\s+for\s+my\s+spouse|how\s+much\s+would\s+that\s+be\s+for\s+my\s+family|and\s+what\s+about\s+the\s+price|and\s+what\s+would\s+that\s+be|what\s+are\s+those\s+(?:prices?|premiums?)\s+again|what\s+about\s+those\s+(?:prices?|premiums?)\s+again|show\s+me\s+those\s+(?:prices?|premiums?)\s+again|can\s+i\s+just\s+see\s+those\s+(?:prices?|premiums?)\s+again)\b/i.test(lower);
   if (!hasShortPricingSignal) {
     return null;
   }
 
   const lastBot = (session.lastBotMessage || '').toLowerCase();
+  const assistantHistory = recentAssistantHistory(session);
   const activeTopic = session.currentTopic || inferTopicFromLastBotMessage(session.lastBotMessage);
   const hasEstablishedMedicalPricingContext = activeTopic === 'Medical'
-    || /medical plan options|monthly medical premiums|side-by-side comparison for .* coverage|practical tradeoff across amerivet's medical options|want to compare plans or switch coverage tiers/i.test(lastBot);
+    || /medical plan options|monthly medical premiums|side-by-side comparison for .* coverage|practical tradeoff across amerivet's medical options|want to compare plans or switch coverage tiers/i.test(lastBot)
+    || /medical plan options|monthly medical premiums|side-by-side comparison for .* coverage|practical tradeoff across amerivet's medical options|want to compare plans or switch coverage tiers/i.test(assistantHistory);
 
   if (!hasEstablishedMedicalPricingContext) {
     return null;
@@ -1310,9 +1320,11 @@ function contextualMedicalPlanReplayQuery(session: Session, query: string): stri
   }
 
   const lastBot = (session.lastBotMessage || '').toLowerCase();
+  const assistantHistory = recentAssistantHistory(session);
   const activeTopic = session.currentTopic || inferTopicFromLastBotMessage(session.lastBotMessage);
   const hasEstablishedMedicalPlanContext = activeTopic === 'Medical'
-    || /medical plan options|monthly medical premiums|side-by-side comparison for .* coverage|practical tradeoff across amerivet's medical options|want to compare plans or switch coverage tiers/i.test(lastBot);
+    || /medical plan options|monthly medical premiums|side-by-side comparison for .* coverage|practical tradeoff across amerivet's medical options|want to compare plans or switch coverage tiers/i.test(lastBot)
+    || /medical plan options|monthly medical premiums|side-by-side comparison for .* coverage|practical tradeoff across amerivet's medical options|want to compare plans or switch coverage tiers/i.test(assistantHistory);
 
   if (!hasEstablishedMedicalPlanContext) {
     return null;

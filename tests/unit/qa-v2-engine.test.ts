@@ -5456,6 +5456,63 @@ describe('qa-v2 engine', () => {
     expect(result.answer).not.toContain('FSA is usually the cleaner fit');
   });
 
+  it('treats "what are those medical premiums again" wording as a direct medical pricing pivot even from life context', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      messages: [
+        { role: 'assistant', content: 'Medical plan options (Employee + Family):\n\n- Standard HSA (BCBSTX): $321.45/month\n- Enhanced HSA (BCBSTX): $412.37/month\n\nWant to compare plans or switch coverage tiers?' },
+        { role: 'user', content: 'can you tell me about life insurance?' },
+      ],
+      lastBotMessage: 'Life insurance options:\n\n- Unum Basic Life & AD&D is the employer-paid base life and AD&D benefit\n- Unum Voluntary Term Life is the extra employee-paid term coverage\n- Allstate Whole Life is the permanent option with cash value',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'what are those medical premiums again?',
+      session,
+    });
+
+    expect(result.answer).toContain('Here are the monthly medical premiums for Employee + Family coverage');
+    expect(result.answer).toContain('Standard HSA');
+    expect(result.answer).not.toContain('Life insurance options:');
+    expect(result.answer).not.toContain('Voluntary Term Life');
+  });
+
+  it('replays short deictic plan-price wording back into medical from disability when recent assistant history already established medical pricing', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Disability',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      messages: [
+        { role: 'assistant', content: 'Medical plan options (Employee + Family):\n\n- Standard HSA (BCBSTX): $321.45/month\n- Enhanced HSA (BCBSTX): $412.37/month\n\nWant to compare plans or switch coverage tiers?' },
+        { role: 'user', content: 'what about disability?' },
+      ],
+      lastBotMessage: 'Disability is really paycheck protection.',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'can i just see those plan prices again?',
+      session,
+    });
+
+    expect(result.answer).toContain('Here are the monthly medical premiums for Employee + Family coverage');
+    expect(result.answer).toContain('Standard HSA');
+    expect(result.answer).not.toContain('Disability is really paycheck protection');
+  });
+
   it('replays short "show me that breakdown again" wording back into medical from disability when the prior bot message already established a medical tradeoff view', async () => {
     const session = makeSession({
       step: 'active_chat',

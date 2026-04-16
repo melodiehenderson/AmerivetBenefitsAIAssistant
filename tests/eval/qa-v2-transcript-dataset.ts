@@ -4118,6 +4118,60 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
     ],
   },
   {
+    id: 'V2-TX-102AE',
+    category: 'life_context_deictic_medical_pricing_replay',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      messages: [
+        { role: 'assistant', content: 'Medical plan options (Employee + Family):\n\n- Standard HSA (BCBSTX): $321.45/month\n- Enhanced HSA (BCBSTX): $412.37/month\n\nWant to compare plans or switch coverage tiers?' },
+        { role: 'user', content: 'can you tell me about life insurance?' },
+      ],
+      lastBotMessage: 'Life insurance options:\n\n- Unum Basic Life & AD&D is the employer-paid base life and AD&D benefit\n- Unum Voluntary Term Life is the extra employee-paid term coverage\n- Allstate Whole Life is the permanent option with cash value',
+    },
+    turns: [
+      {
+        user: 'what are those medical premiums again?',
+        mustContain: ['Employee + Family coverage', 'Standard HSA'],
+        mustNotContain: ['Life insurance options:', 'Voluntary Term Life'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-102AF',
+    category: 'disability_context_history_based_plan_price_replay',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Disability',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      messages: [
+        { role: 'assistant', content: 'Medical plan options (Employee + Family):\n\n- Standard HSA (BCBSTX): $321.45/month\n- Enhanced HSA (BCBSTX): $412.37/month\n\nWant to compare plans or switch coverage tiers?' },
+        { role: 'user', content: 'what about disability?' },
+      ],
+      lastBotMessage: 'Disability is really paycheck protection.',
+    },
+    turns: [
+      {
+        user: 'can i just see those plan prices again?',
+        mustContain: ['Employee + Family coverage', 'Standard HSA'],
+        mustNotContain: ['Disability is really paycheck protection'],
+      },
+    ],
+  },
+  {
     id: 'V2-TX-102A',
     category: 'hsa_context_natural_family_pricing_pivot',
     initialSession: {
