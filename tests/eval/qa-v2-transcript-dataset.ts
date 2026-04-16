@@ -2439,7 +2439,7 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
     turns: [
       {
         user: 'what would you do if you were me with these benefits?',
-        mustContain: ['Based on what you have told me', '**disability**', '**HSA/FSA**', '**Enhanced HSA**'],
+        mustContain: ['Based on what you have told me', '**disability**', '**HSA/FSA**', '**Enhanced HSA**', '80% Voluntary Term Life / 20% Whole Life', 'Basic Life'],
         mustNotContain: ['We can stay with life insurance'],
       },
     ],
@@ -3385,6 +3385,28 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
       },
       {
         user: 'how much should i get?',
+        mustContain: ['Basic Life', 'Voluntary Term Life', 'Whole Life'],
+        mustNotContain: ['life insurance is usually worth tightening up'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-093AA',
+    category: 'life_soft_worth_it_framework',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      lastBotMessage: 'Life insurance options:\n\n- Unum Basic Life & AD&D is the employer-paid base life and AD&D benefit\n- Unum Voluntary Term Life is the extra employee-paid term coverage\n- Allstate Whole Life is the permanent option with cash value',
+    },
+    turns: [
+      {
+        user: 'is life insurance right for me?',
         mustContain: ['Basic Life', 'Voluntary Term Life', 'Whole Life'],
         mustNotContain: ['life insurance is usually worth tightening up'],
       },

@@ -2685,9 +2685,35 @@ describe('qa-v2 engine', () => {
 
     expect(result.answer).toContain('Based on what you have told me, I would usually prioritize your benefits in this order');
     expect(result.answer).toContain('keep **medical** as the anchor');
+    expect(result.answer).toContain('80% Voluntary Term Life / 20% Whole Life');
+    expect(result.answer).toContain('Basic Life');
     expect(result.answer).toContain('Voluntary Term Life');
     expect(result.answer).toContain('Whole Life');
     expect(result.answer).toContain('disability');
+  });
+
+  it('uses the life sizing framework for softer life-worth-it recommendation wording instead of the older generic scaffold', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      lastBotMessage: 'Life insurance options:\n\n- Unum Basic Life & AD&D is the employer-paid base life and AD&D benefit\n- Unum Voluntary Term Life is the extra employee-paid term coverage\n- Allstate Whole Life is the permanent option with cash value',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'is life insurance right for me?',
+      session,
+    });
+
+    expect(result.answer).toContain('Basic Life');
+    expect(result.answer).toContain('Voluntary Term Life');
+    expect(result.answer).toContain('Whole Life');
+    expect(result.answer).not.toContain('life insurance is usually worth tightening up');
   });
 
   it('answers broader household wording like "the kids" after a medical recommendation', async () => {
@@ -4539,6 +4565,8 @@ describe('qa-v2 engine', () => {
     expect(result.answer).toContain('**disability**');
     expect(result.answer).toContain('**HSA/FSA**');
     expect(result.answer).toContain('**Enhanced HSA**');
+    expect(result.answer).toContain('80% Voluntary Term Life / 20% Whole Life');
+    expect(result.answer).toContain('Basic Life');
     expect(result.answer).not.toContain('We can stay with life insurance');
   });
 

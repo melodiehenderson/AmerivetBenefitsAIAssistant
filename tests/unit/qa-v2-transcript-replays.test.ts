@@ -2315,7 +2315,7 @@ describe('qa-v2 transcript replays', () => {
       [
         {
           user: 'what would you do if you were me with these benefits?',
-          mustContain: ['Based on what you have told me', '**disability**', '**HSA/FSA**', '**Enhanced HSA**'],
+          mustContain: ['Based on what you have told me', '**disability**', '**HSA/FSA**', '**Enhanced HSA**', '80% Voluntary Term Life / 20% Whole Life', 'Basic Life'],
           mustNotContain: ['We can stay with life insurance'],
         },
       ],
@@ -2762,6 +2762,28 @@ describe('qa-v2 transcript replays', () => {
         userState: 'WA',
         dataConfirmed: true,
         currentTopic: 'Life Insurance',
+      }),
+    );
+  });
+
+  it('replays softer life-worth-it wording into the life sizing framework instead of the generic life-worth-it scaffold', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'is life insurance right for me?',
+          mustContain: ['Basic Life', 'Voluntary Term Life', 'Whole Life'],
+          mustNotContain: ['life insurance is usually worth tightening up'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'Life Insurance',
+        familyDetails: { hasSpouse: true, numChildren: 2 },
+        lastBotMessage: 'Life insurance options:\n\n- Unum Basic Life & AD&D is the employer-paid base life and AD&D benefit\n- Unum Voluntary Term Life is the extra employee-paid term coverage\n- Allstate Whole Life is the permanent option with cash value',
       }),
     );
   });

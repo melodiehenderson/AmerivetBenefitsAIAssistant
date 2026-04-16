@@ -1,5 +1,6 @@
 import { getAmerivetBenefitsPackage } from '@/lib/data/amerivet-package';
 import { getAmerivetPackageCopySnapshot } from '@/lib/data/amerivet-package-copy';
+import { AMERIVET_EMPLOYER_GUIDANCE_RULES } from '@/lib/data/amerivet-employer-guidance';
 import type { Session } from '@/lib/rag/session-store';
 import { extractName } from '@/lib/session-logic';
 import pricingUtils from '@/lib/rag/pricing-utils';
@@ -29,6 +30,12 @@ const ENROLLMENT_PORTAL_URL = process.env.ENROLLMENT_PORTAL_URL || 'https://wd5.
 const HR_PHONE = process.env.HR_PHONE_NUMBER || '888-217-4728';
 const ACTIVE_AMERIVET_PACKAGE = getAmerivetBenefitsPackage();
 const ACTIVE_AMERIVET_COPY = getAmerivetPackageCopySnapshot(ACTIVE_AMERIVET_PACKAGE);
+const ACTIVE_BASIC_LIFE_NAME = ACTIVE_AMERIVET_COPY.lifePlanNames.find((name) => /basic life/i.test(name)) || 'Basic Life';
+const ACTIVE_TERM_LIFE_NAME = ACTIVE_AMERIVET_COPY.lifePlanNames.find((name) => /term life/i.test(name)) || 'Voluntary Term Life';
+const ACTIVE_WHOLE_LIFE_NAME = ACTIVE_AMERIVET_COPY.lifePlanNames.find((name) => /whole life/i.test(name)) || 'Whole Life';
+const ACTIVE_LIFE_SPLIT_RULE = AMERIVET_EMPLOYER_GUIDANCE_RULES.find((rule) =>
+  rule.topic === 'Life Insurance' && rule.intentFamily === 'life_split_term_vs_whole',
+) || null;
 
 const TOPIC_ORDER = ['Medical', 'Dental', 'Vision', 'Life Insurance', 'Disability', 'Critical Illness', 'Accident/AD&D', 'HSA/FSA'] as const;
 
@@ -1146,7 +1153,7 @@ function buildPackageRecommendationReply(session: Session, query: string): strin
     lines.push(`- **Disability next**, because protecting the paycheck usually matters before smaller supplemental add-ons when other people depend on your income`);
     lines.push(`- **Life insurance after that**, especially if you want more protection than AmeriVet's employer-paid basic life benefit`);
     if (lifeAlreadyInMotion) {
-      lines.push(`- **If extra life coverage is already clearly in play**, I would usually treat **Voluntary Term Life** as the main added layer and **Whole Life** as the smaller permanent layer`);
+      lines.push(`- **If extra life coverage is already clearly in play**, AmeriVet's default starting split is usually **${ACTIVE_LIFE_SPLIT_RULE?.recommendationLabel || `80% ${ACTIVE_TERM_LIFE_NAME} / 20% ${ACTIVE_WHOLE_LIFE_NAME}` }** — keep **${ACTIVE_TERM_LIFE_NAME}** as the main added protection layer on top of **${ACTIVE_BASIC_LIFE_NAME}** and use **${ACTIVE_WHOLE_LIFE_NAME}** as the smaller permanent layer`);
     }
   } else {
     setPendingGuidance(session, 'dental_vs_vision', 'Dental');
@@ -1164,8 +1171,8 @@ function buildPackageRecommendationReply(session: Session, query: string): strin
   if (protectionPriority && lifeAlreadyInMotion) {
     lines.push(
       hsaQualifiedPath
-        ? `So if you want the shortest version: keep **medical** as the anchor, use **disability/life** as the next real protection decision, line up **HSA/FSA** with **${hsaPlanLabel}**, and if you already know you want extra life coverage I would usually start with **Voluntary Term Life** before adding much **Whole Life**.`
-        : `So if you want the shortest version: keep **medical** as the anchor, then use **disability/life** as the next real decision, and if you already know you want extra life coverage I would usually start with **Voluntary Term Life** before adding much **Whole Life**.`,
+        ? `So if you want the shortest version: keep **medical** as the anchor, use **disability/life** as the next real protection decision, line up **HSA/FSA** with **${hsaPlanLabel}**, and if you already know you want extra life coverage I would usually start with **${ACTIVE_LIFE_SPLIT_RULE?.recommendationLabel || `80% ${ACTIVE_TERM_LIFE_NAME} / 20% ${ACTIVE_WHOLE_LIFE_NAME}` }** — make **${ACTIVE_TERM_LIFE_NAME}** do most of the income-protection job on top of **${ACTIVE_BASIC_LIFE_NAME}**, and keep **${ACTIVE_WHOLE_LIFE_NAME}** as the smaller permanent layer.`
+        : `So if you want the shortest version: keep **medical** as the anchor, then use **disability/life** as the next real decision, and if you already know you want extra life coverage I would usually start with **${ACTIVE_LIFE_SPLIT_RULE?.recommendationLabel || `80% ${ACTIVE_TERM_LIFE_NAME} / 20% ${ACTIVE_WHOLE_LIFE_NAME}` }** — make **${ACTIVE_TERM_LIFE_NAME}** do most of the income-protection job on top of **${ACTIVE_BASIC_LIFE_NAME}**, and keep **${ACTIVE_WHOLE_LIFE_NAME}** as the smaller permanent layer.`,
     );
     lines.push(
       hsaQualifiedPath
@@ -3489,14 +3496,7 @@ function buildSupplementalRecommendationReply(topic: string, session: Session, q
   }
 
   if (topic === 'Life Insurance') {
-    return [
-      `**My practical take:** life insurance is usually worth tightening up if other people rely on your income and would need support if something happened to you.`,
-      ``,
-      `Why:`,
-      `- I would usually treat that as a more important household-protection decision than smaller supplemental add-ons`,
-      ``,
-      `So if you are asking me directly, my answer is usually **yes** when other people depend on your income.`,
-    ].join('\n');
+    return buildLifeSizingGuidance(session);
   }
 
   return null;
@@ -3718,7 +3718,7 @@ function buildContinuationReply(session: Session, query: string): string | null 
       isGuidanceAdvanceAffirmation(normalizedQuery)
       || /\b(help\s+me\s+think\s+through\s+that|help\s+me\s+think\s+through\s+this|help\s+me\s+think\s+through\s+it)\b/i.test(lower)
     )
-    && /life insurance is usually worth tightening up|people rely on your income|household would need support if something happened to you/i.test(lastBotMessage)
+    && /life insurance is usually worth tightening up|people rely on your income|household would need support if something happened to you|practical life-sizing question|included base benefit is not enough|included starting point|main added layer for income replacement|80%\s+voluntary term life\s*\/\s*20%\s+whole life/i.test(lastBotMessage)
   ) {
     setPendingGuidance(session, 'life_sizing', 'Life Insurance');
     setTopic(session, 'Life Insurance');
