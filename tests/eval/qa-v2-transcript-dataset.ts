@@ -4074,6 +4074,34 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
   },
   {
     id: 'V2-TX-099',
+    category: 'hsa_context_medical_detail_pivot',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'HSA/FSA',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      lastBotMessage: 'Here is the simplest way to think about HSA versus FSA fit:',
+    },
+    turns: [
+      {
+        user: 'show me the copays for therapy on standard hsa versus enhanced hsa',
+        mustContain: ['Therapy / specialist care', 'Standard HSA', 'Enhanced HSA'],
+        mustNotContain: ['HSA/FSA overview', 'FSA is usually the cleaner fit'],
+      },
+      {
+        user: 'is a therapist a specialist?',
+        mustContain: ['Usually yes', 'specialist'],
+        mustNotContain: ['HSA/FSA overview', 'FSA is usually the cleaner fit'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-100',
     category: 'life_context_pricing_pivot_back_to_medical',
     initialSession: {
       step: 'active_chat',
@@ -4096,7 +4124,7 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
     ],
   },
   {
-    id: 'V2-TX-100',
+    id: 'V2-TX-102',
     category: 'rx_context_pricing_pivot_back_to_medical',
     initialSession: {
       step: 'active_chat',
@@ -4188,7 +4216,7 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
     ],
   },
   {
-    id: 'V2-TX-102',
+    id: 'V2-TX-103',
     category: 'disability_context_family_pricing_pivot',
     initialSession: {
       step: 'active_chat',

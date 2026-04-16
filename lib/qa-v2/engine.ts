@@ -1921,6 +1921,13 @@ function isDirectHsaFsaRecommendationAsk(query: string): boolean {
   return /\b(which\s+would\s+you\s+recommend|what\s+would\s+you\s+recommend|what\s+do\s+you\s+recommend(?:\s+(?:for|to)\s+me)?|which\s+do\s+you\s+recommend|recommend\s+(?:for|to)\s+me)\b/i.test(lower);
 }
 
+function isHsaFsaSpecificQuestion(query: string): boolean {
+  return isDirectHsaFsaRecommendationAsk(query)
+    || isDirectHsaFsaFitQuestion(query)
+    || isHsaFsaRuleQuestion(query)
+    || isHsaFsaCompatibilityQuestion(query);
+}
+
 function buildHsaFsaRecommendationReply(session: Session): string {
   const currentPlan = session.selectedPlan || '';
 
@@ -3687,9 +3694,8 @@ function buildContinuationReply(session: Session, query: string): string | null 
   }
 
   if (
-    activeTopic !== 'HSA/FSA'
-    && explicitTopic !== 'HSA/FSA'
-    && 
+    !isHsaFsaSpecificQuestion(normalizedQuery)
+    &&
     isDirectMedicalContinuationQuestion(normalizedQuery)
     && /\b(plan|medical|copay|copays|deductible|coinsurance|out[- ]of[- ]pocket|maternity|pregnan|baby|birth|delivery|prenatal|postnatal|kaiser|hsa|hmo|tier|tradeoff|prescription|network)\b/i.test(lower)
   ) {

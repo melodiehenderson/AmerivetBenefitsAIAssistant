@@ -3514,6 +3514,34 @@ describe('qa-v2 transcript replays', () => {
     );
   });
 
+  it('replays therapy-copay asks back into medical from stale hsa/fsa context', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'show me the copays for therapy on standard hsa versus enhanced hsa',
+          mustContain: ['Therapy / specialist care', 'Standard HSA', 'Enhanced HSA'],
+          mustNotContain: ['HSA/FSA overview', 'FSA is usually the cleaner fit'],
+        },
+        {
+          user: 'is a therapist a specialist?',
+          mustContain: ['Usually yes', 'specialist'],
+          mustNotContain: ['HSA/FSA overview', 'FSA is usually the cleaner fit'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'HSA/FSA',
+        coverageTierLock: 'Employee + Family',
+        familyDetails: { hasSpouse: true, numChildren: 2 },
+        lastBotMessage: 'Here is the simplest way to think about HSA versus FSA fit:',
+      }),
+    );
+  });
+
   it('replays just-plan-pricing pivots back into medical even from life-insurance context', async () => {
     await replayTranscript(
       [
