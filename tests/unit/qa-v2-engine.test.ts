@@ -4942,6 +4942,56 @@ describe('qa-v2 engine', () => {
     expect(result.answer).not.toContain('Quick clarifier');
   });
 
+  it('treats natural spouse recurring-care "what should we pick" wording as a direct medical recommendation from hsa/fsa context', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'TX',
+      dataConfirmed: true,
+      currentTopic: 'HSA/FSA',
+      coverageTierLock: 'Employee + Spouse',
+      familyDetails: { hasSpouse: true, numChildren: 0 },
+      lastBotMessage: 'Here is the simplest way to think about HSA versus FSA fit:',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'what should we pick if my wife sees a specialist every month?',
+      session,
+    });
+
+    expect(result.answer).toContain('My recommendation: Enhanced HSA');
+    expect(result.answer).toContain("your spouse's recurring care");
+    expect(result.answer).not.toContain('HSA/FSA overview');
+    expect(result.answer).not.toContain('Quick clarifier');
+  });
+
+  it('treats natural child recurring-care "makes the most sense" wording as a direct medical recommendation from life context', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'TX',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      lastBotMessage: 'Life insurance options:\n\n- Unum Basic Life & AD&D is the employer-paid base life and AD&D benefit\n- Unum Voluntary Term Life is the extra employee-paid term coverage\n- Allstate Whole Life is the permanent option with cash value',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'which medical plan makes the most sense if my son does therapy every week?',
+      session,
+    });
+
+    expect(result.answer).toContain('My recommendation: Enhanced HSA');
+    expect(result.answer).toContain('recurring care for a child');
+    expect(result.answer).not.toContain('Life insurance options:');
+    expect(result.answer).not.toContain('Quick clarifier');
+  });
+
   it('treats recurring-care cost estimates as direct medical pivots even from hsa/fsa context', async () => {
     const session = makeSession({
       step: 'active_chat',

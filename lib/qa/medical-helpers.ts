@@ -355,7 +355,7 @@ export function buildRecommendationOverview(
   if (/\b(calculate|estimate|project(?:ed)?|model)\b.*\b(cost|costs|expense|expenses)\b|\bhealthcare\s+costs?\b.*\b(next\s+year|\d{4}|estimate|project)\b/.test(lower)) {
     return null;
   }
-  const recommendationSignal = /\b(recommendation|recommend|suggest|best\s+plan|best\s+option|which\s+plan|what\s+plan|what\s+do\s+you\s+recommend|what[’']?s\s+best\s+for\s+me|how\s+do\s+i\s+decide(?:\s+which\s+one)?|help\s+me\s+choose|which\s+one\s+is\s+best|which\s+one\s+is\s+better|make\s+the\s+case\s+for|sell\s+me\s+on|talk\s+me\s+into|should\s+(?:we|i)\s+switch|is\s+(?:enhanced|standard|kaiser)\s+worth)\b/i.test(lower);
+  const canonicalRecommendationSignal = /\b(recommendation|recommend|suggest|best\s+plan|best\s+option|which\s+plan|what\s+plan|what\s+do\s+you\s+recommend|what[’']?s\s+best\s+for\s+me|how\s+do\s+i\s+decide(?:\s+which\s+one)?|help\s+me\s+choose|which\s+one\s+is\s+best|which\s+one\s+is\s+better|make\s+the\s+case\s+for|sell\s+me\s+on|talk\s+me\s+into|should\s+(?:we|i)\s+switch|is\s+(?:enhanced|standard|kaiser)\s+worth)\b/i.test(lower);
   const healthySignal = /\b(healthy|low\s+utilization|low\s+use|low\s+usage|rarely\s+(?:go|use))\b/i.test(lower);
   const singleSignal = /\b(single|individual|just\s+me|only\s+me|no\s+dependents|no\s+kids|no\s+children)\b/i.test(lower);
   const savingsSignal = /\b(save\s+money|low\s+cost|cheapest|lowest\s+premium|save\s+on\s+premiums|budget|keep\s+premiums?\s+lower|lower\s+premiums?\s+matter\s+more|premium\s+first|budget\s+first)\b/i.test(lower);
@@ -373,6 +373,17 @@ export function buildRecommendationOverview(
     || recurringPrescriptionSignal
     || /\b(high\s+usage|high\s+utilization|frequent\s+(?:doctor|specialist|care|visits?)|regular\s+(?:care|visits?)|ongoing\s+care|chronic|ongoing\s+prescriptions?|a\s+lot\s+of\s+care|expect(?:ing)?\s+a\s+lot\s+of\s+care|more\s+medical\s+use|heavy\s+usage|more\s+(?:doctor|specialist)\s+visits?|specialist\s+visits?|more\s+care|more\s+medical\s+care)\b/i.test(lower);
   const moderateUsageSignal = /\b(moderate\s+usage|some\s+medical\s+use|occasional\s+(?:care|visits?)|a\s+few\s+visits?)\b/i.test(lower);
+  const naturalRecurringCareRecommendationSignal =
+    /\b(which\s+(?:medical\s+)?(?:plan|option)\s+makes\s+the\s+most\s+sense|which\s+(?:medical\s+)?(?:plan|option)\s+should\s+(?:we|i)\s+lean\s+toward|what\s+should\s+(?:we|i)\s+(?:pick|lean\s+toward))\b/i.test(lower)
+    && (
+      higherUsageSignal
+      || moderateUsageSignal
+      || deductibleProtectionSignal
+      || riskToleranceSignal
+      || lowestOutOfPocketSignal
+      || /\b(expect|care|specialist|therapy|therapist|prescription|usage|visit|visits|wife|husband|spouse|partner|kids?|children|son|daughter|family)\b/i.test(lower)
+    );
+  const recommendationSignal = canonicalRecommendationSignal || naturalRecurringCareRecommendationSignal;
   const explicitNonMedicalCategory = /\b(dental|vision|life(?:\s+insurance)?|disability|critical(?:\s+illness)?|accident|hospital\s+indemnity|hsa\/fsa|fsa)\b/i.test(lower);
   const spouseUsageContext = /\b(wife|husband|spouse|partner)\b/i.test(lower) && (recurringTherapySignal || recurringSpecialistSignal || recurringPrescriptionSignal);
   const childUsageContext = /\b(kids?|children|son|daughter)\b/i.test(lower) && (recurringTherapySignal || recurringSpecialistSignal || recurringPrescriptionSignal);

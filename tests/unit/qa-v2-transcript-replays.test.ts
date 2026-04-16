@@ -3308,6 +3308,52 @@ describe('qa-v2 transcript replays', () => {
     );
   });
 
+  it('replays natural spouse recurring-care recommendation wording into enhanced medical guidance even from hsa/fsa context', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'what should we pick if my wife sees a specialist every month?',
+          mustContain: ['My recommendation: Enhanced HSA', "your spouse's recurring care"],
+          mustNotContain: ['HSA/FSA overview', 'Quick clarifier'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'TX',
+        dataConfirmed: true,
+        currentTopic: 'HSA/FSA',
+        coverageTierLock: 'Employee + Spouse',
+        familyDetails: { hasSpouse: true, numChildren: 0 },
+        lastBotMessage: 'Here is the simplest way to think about HSA versus FSA fit:',
+      }),
+    );
+  });
+
+  it('replays natural child recurring-care "makes the most sense" wording into enhanced medical guidance even from life context', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'which medical plan makes the most sense if my son does therapy every week?',
+          mustContain: ['My recommendation: Enhanced HSA', 'recurring care for a child'],
+          mustNotContain: ['Life insurance options:', 'Quick clarifier'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'TX',
+        dataConfirmed: true,
+        currentTopic: 'Life Insurance',
+        coverageTierLock: 'Employee + Family',
+        familyDetails: { hasSpouse: true, numChildren: 2 },
+        lastBotMessage: 'Life insurance options:\n\n- Unum Basic Life & AD&D is the employer-paid base life and AD&D benefit\n- Unum Voluntary Term Life is the extra employee-paid term coverage\n- Allstate Whole Life is the permanent option with cash value',
+      }),
+    );
+  });
+
   it('replays just-wanna-see-the-plans phrasing back into medical from stale hsa/fsa context', async () => {
     await replayTranscript(
       [

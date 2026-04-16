@@ -3867,6 +3867,52 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
     ],
   },
   {
+    id: 'V2-TX-097EA',
+    category: 'spouse_specialist_natural_recommendation_wording',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'TX',
+      dataConfirmed: true,
+      currentTopic: 'HSA/FSA',
+      coverageTierLock: 'Employee + Spouse',
+      familyDetails: { hasSpouse: true, numChildren: 0 },
+      lastBotMessage: 'Here is the simplest way to think about HSA versus FSA fit:',
+    },
+    turns: [
+      {
+        user: 'what should we pick if my wife sees a specialist every month?',
+        mustContain: ['My recommendation: Enhanced HSA', "your spouse's recurring care"],
+        mustNotContain: ['HSA/FSA overview', 'Quick clarifier'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-097EB',
+    category: 'child_therapy_natural_recommendation_wording',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'TX',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      lastBotMessage: 'Life insurance options:\n\n- Unum Basic Life & AD&D is the employer-paid base life and AD&D benefit\n- Unum Voluntary Term Life is the extra employee-paid term coverage\n- Allstate Whole Life is the permanent option with cash value',
+    },
+    turns: [
+      {
+        user: 'which medical plan makes the most sense if my son does therapy every week?',
+        mustContain: ['My recommendation: Enhanced HSA', 'recurring care for a child'],
+        mustNotContain: ['Life insurance options:', 'Quick clarifier'],
+      },
+    ],
+  },
+  {
     id: 'V2-TX-098',
     category: 'hsa_context_declined_back_to_medical_plans',
     initialSession: {
