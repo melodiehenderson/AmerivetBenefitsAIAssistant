@@ -383,7 +383,13 @@ export function buildRecommendationOverview(
       || lowestOutOfPocketSignal
       || /\b(expect|care|specialist|therapy|therapist|prescription|usage|visit|visits|wife|husband|spouse|partner|kids?|children|son|daughter|family)\b/i.test(lower)
     );
-  const recommendationSignal = canonicalRecommendationSignal || naturalRecurringCareRecommendationSignal;
+  const naturalFamilyPlanRecommendationSignal =
+    /\b(which|what)\s+(?:medical\s+)?(?:plan|option)\s+(?:makes\s+the\s+most\s+sense|should\s+(?:we|i)\s+(?:choose|go\s+with)|fits\s+best)\b/i.test(lower)
+    && /\b(family|wife|husband|spouse|partner|kids?|children|us)\b/i.test(lower);
+  const recommendationSignal =
+    canonicalRecommendationSignal
+    || naturalRecurringCareRecommendationSignal
+    || naturalFamilyPlanRecommendationSignal;
   const explicitNonMedicalCategory = /\b(dental|vision|life(?:\s+insurance)?|disability|critical(?:\s+illness)?|accident|hospital\s+indemnity|hsa\/fsa|fsa)\b/i.test(lower);
   const spouseUsageContext = /\b(wife|husband|spouse|partner)\b/i.test(lower) && (recurringTherapySignal || recurringSpecialistSignal || recurringPrescriptionSignal);
   const childUsageContext = /\b(kids?|children|son|daughter)\b/i.test(lower) && (recurringTherapySignal || recurringSpecialistSignal || recurringPrescriptionSignal);

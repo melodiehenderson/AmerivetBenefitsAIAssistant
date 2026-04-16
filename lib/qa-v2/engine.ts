@@ -707,7 +707,10 @@ function isDirectMedicalRecommendationQuestion(query: string): boolean {
   const naturalRecurringCareRecommendationSignal =
     /\b(which\s+(?:medical\s+)?(?:plan|option)\s+makes\s+the\s+most\s+sense|which\s+(?:medical\s+)?(?:plan|option)\s+should\s+(?:we|i)\s+lean\s+toward|what\s+should\s+(?:we|i)\s+(?:pick|lean\s+toward))\b/i.test(lower)
     && /\b(expect|care|specialist|therapy|therapist|prescription|usage|visit|visits|wife|husband|spouse|partner|kids?|children|son|daughter|family)\b/i.test(lower);
-  return canonicalRecommendationSignal || naturalRecurringCareRecommendationSignal;
+  const naturalFamilyPlanRecommendationSignal =
+    /\b(which|what)\s+(?:medical\s+)?(?:plan|option)\s+(?:makes\s+the\s+most\s+sense|should\s+(?:we|i)\s+(?:choose|go\s+with)|fits\s+best)\b/i.test(lower)
+    && /\b(family|wife|husband|spouse|partner|kids?|children|us)\b/i.test(lower);
+  return canonicalRecommendationSignal || naturalRecurringCareRecommendationSignal || naturalFamilyPlanRecommendationSignal;
 }
 
 function isMedicalRecommendationPreferenceFollowup(query: string): boolean {
@@ -840,6 +843,7 @@ function isShortTopicPivot(query: string, topic: string): boolean {
 function canonicalTopicQuery(topic: string, query: string): string {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
   if (topic === 'Medical') {
+    if (isDirectMedicalRecommendationQuestion(query)) return query;
     if (/\b(compare|comparison|tradeoff|side\s+by\s+side)\b/i.test(lower)) return 'compare the plan tradeoffs';
     if (/\b(cost|costs|out[- ]of[- ]pocket|oop)\b/i.test(lower)) return 'estimate likely costs';
     return 'medical options';

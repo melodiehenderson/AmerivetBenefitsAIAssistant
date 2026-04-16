@@ -900,6 +900,52 @@ describe('qa-v2 transcript replays', () => {
     );
   });
 
+  it('replays natural family "makes the most sense" wording as a direct medical recommendation from hsa/fsa context', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'which medical plan makes the most sense for my family?',
+          mustContain: ['My recommendation', 'Standard HSA'],
+          mustNotContain: ['HSA/FSA overview', 'FSA is usually the cleaner fit'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 34,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'HSA/FSA',
+        coverageTierLock: 'Employee + Family',
+        familyDetails: { hasSpouse: true, numChildren: 2 },
+        lastBotMessage: 'Here is the simplest way to think about HSA versus FSA fit:',
+      }),
+    );
+  });
+
+  it('replays natural family "should we choose" wording as a direct medical recommendation from life context', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'what medical plan should we choose for our family?',
+          mustContain: ['My recommendation', 'Standard HSA'],
+          mustNotContain: ['Life insurance options:', 'Voluntary Term Life'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 34,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'Life Insurance',
+        coverageTierLock: 'Employee + Family',
+        familyDetails: { hasSpouse: true, numChildren: 2 },
+        lastBotMessage: 'Life insurance options:\n\n- Unum Basic Life & AD&D is the employer-paid base life and AD&D benefit\n- Unum Voluntary Term Life is the extra employee-paid term coverage\n- Allstate Whole Life is the permanent option with cash value',
+      }),
+    );
+  });
+
   it('replays direct supplemental overview questions from a stale routine-care topic without getting trapped there', async () => {
     await replayTranscript(
       [

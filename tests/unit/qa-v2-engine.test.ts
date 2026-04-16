@@ -1488,6 +1488,56 @@ describe('qa-v2 engine', () => {
     expect(result.answer).not.toContain('We can stay with vision');
   });
 
+  it('treats natural family "makes the most sense" wording as a direct medical recommendation even from hsa/fsa context', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 34,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'HSA/FSA',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      lastBotMessage: 'Here is the simplest way to think about HSA versus FSA fit:',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'which medical plan makes the most sense for my family?',
+      session,
+    });
+
+    expect(result.answer).toMatch(/My recommendation|I can recommend one/i);
+    expect(result.answer).toContain('Standard HSA');
+    expect(result.answer).not.toContain('HSA/FSA overview');
+    expect(result.answer).not.toContain('FSA is usually the cleaner fit');
+  });
+
+  it('treats natural family "should we choose" wording as a direct medical recommendation even from life context', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 34,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      lastBotMessage: 'Life insurance options:\n\n- Unum Basic Life & AD&D is the employer-paid base life and AD&D benefit\n- Unum Voluntary Term Life is the extra employee-paid term coverage\n- Allstate Whole Life is the permanent option with cash value',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'what medical plan should we choose for our family?',
+      session,
+    });
+
+    expect(result.answer).toMatch(/My recommendation|I can recommend one/i);
+    expect(result.answer).toContain('Standard HSA');
+    expect(result.answer).not.toContain('Life insurance options:');
+    expect(result.answer).not.toContain('Voluntary Term Life');
+  });
+
   it('recovers critical illness from an organic illness reference after package guidance', async () => {
     const session = makeSession({
       step: 'active_chat',
