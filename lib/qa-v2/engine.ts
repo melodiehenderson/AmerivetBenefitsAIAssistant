@@ -428,6 +428,7 @@ function buildPackageGuidance(session: Session, topic?: string | null): string {
       ].join('\n');
     case 'Life Insurance':
       if (!completed.has('Disability')) {
+        setPendingGuidance(session, 'life_vs_disability', 'Life Insurance');
         setPendingTopicSuggestion(session, 'Disability');
         return [
           `If you want to keep going after life insurance, the most useful next comparison is usually **disability**.`,
@@ -484,6 +485,7 @@ function buildPackageGuidance(session: Session, topic?: string | null): string {
       ].join('\n');
     case 'Disability':
       if (!completed.has('Life Insurance')) {
+        setPendingGuidance(session, 'life_vs_disability', 'Life Insurance');
         setPendingTopicSuggestion(session, 'Life Insurance');
         return [
           `If you want to keep going after disability, the most useful companion benefit is usually **life insurance**.`,

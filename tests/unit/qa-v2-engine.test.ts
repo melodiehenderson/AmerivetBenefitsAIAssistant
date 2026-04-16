@@ -3232,6 +3232,64 @@ describe('qa-v2 engine', () => {
     expect(result.answer).toContain('Unum Basic Life & AD&D');
   });
 
+  it('supports a bare "yes, do that" after package guidance points life insurance toward the life-versus-disability comparison', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Sarah',
+      hasCollectedName: true,
+      userAge: 42,
+      userState: 'FL',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      completedTopics: ['Medical', 'Life Insurance'],
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      selectedPlan: 'Enhanced HSA',
+    });
+
+    await runQaV2Engine({
+      query: 'what else should i consider?',
+      session,
+    });
+
+    const result = await runQaV2Engine({
+      query: 'yes, do that',
+      session,
+    });
+
+    expect(result.answer).toContain('simplest way to separate life insurance from disability');
+    expect(result.answer).not.toContain('Disability coverage is meant to protect part of your income');
+  });
+
+  it('supports a bare "yes, do that" after package guidance points disability toward the life-versus-disability comparison', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Sarah',
+      hasCollectedName: true,
+      userAge: 42,
+      userState: 'FL',
+      dataConfirmed: true,
+      currentTopic: 'Disability',
+      completedTopics: ['Medical', 'Disability'],
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      selectedPlan: 'Enhanced HSA',
+    });
+
+    await runQaV2Engine({
+      query: 'what else should i consider?',
+      session,
+    });
+
+    const result = await runQaV2Engine({
+      query: 'yes, do that',
+      session,
+    });
+
+    expect(result.answer).toContain('simplest way to separate life insurance from disability');
+    expect(result.answer).not.toContain('Life insurance options:');
+  });
+
   it('keeps HSA/FSA visible after life guidance when disability still comes first', async () => {
     const session = makeSession({
       step: 'active_chat',

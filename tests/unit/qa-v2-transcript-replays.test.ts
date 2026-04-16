@@ -482,6 +482,62 @@ describe('qa-v2 transcript replays', () => {
     );
   });
 
+  it('replays a bare "yes, do that" after life package guidance into the life-versus-disability comparison', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'what else should i consider?',
+          mustContain: ['most useful next comparison is usually **disability**'],
+        },
+        {
+          user: 'yes, do that',
+          mustContain: ['simplest way to separate life insurance from disability'],
+          mustNotContain: ['Disability coverage is meant to protect part of your income'],
+        },
+      ],
+      makeSession({
+        userName: 'Sarah',
+        hasCollectedName: true,
+        userAge: 33,
+        userState: 'GA',
+        dataConfirmed: true,
+        currentTopic: 'Life Insurance',
+        completedTopics: ['Medical', 'Life Insurance'],
+        coverageTierLock: 'Employee + Family',
+        familyDetails: { hasSpouse: true, numChildren: 2 },
+        selectedPlan: 'Enhanced HSA',
+      }),
+    );
+  });
+
+  it('replays a bare "yes, do that" after disability package guidance into the life-versus-disability comparison', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'what else should i consider?',
+          mustContain: ['most useful companion benefit is usually **life insurance**'],
+        },
+        {
+          user: 'yes, do that',
+          mustContain: ['simplest way to separate life insurance from disability'],
+          mustNotContain: ['Life insurance options:'],
+        },
+      ],
+      makeSession({
+        userName: 'Sarah',
+        hasCollectedName: true,
+        userAge: 33,
+        userState: 'GA',
+        dataConfirmed: true,
+        currentTopic: 'Disability',
+        completedTopics: ['Medical', 'Disability'],
+        coverageTierLock: 'Employee + Family',
+        familyDetails: { hasSpouse: true, numChildren: 2 },
+        selectedPlan: 'Enhanced HSA',
+      }),
+    );
+  });
+
   it('replays direct HSA/FSA fit questions as grounded practical answers', async () => {
     await replayTranscript(
       [

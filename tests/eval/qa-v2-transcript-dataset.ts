@@ -2790,6 +2790,62 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
     ],
   },
   {
+    id: 'V2-TX-078FA',
+    category: 'package_guidance_affirmation_into_life_disability_compare_from_life',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      completedTopics: ['Medical', 'Life Insurance'],
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      selectedPlan: 'Enhanced HSA',
+    },
+    turns: [
+      {
+        user: 'what else should i consider?',
+        mustContain: ['most useful next comparison is usually **disability**'],
+      },
+      {
+        user: 'yes, do that',
+        mustContain: ['simplest way to separate life insurance from disability'],
+        mustNotContain: ['Disability coverage is meant to protect part of your income'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-078FB',
+    category: 'package_guidance_affirmation_into_life_disability_compare_from_disability',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Disability',
+      completedTopics: ['Medical', 'Disability'],
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      selectedPlan: 'Enhanced HSA',
+    },
+    turns: [
+      {
+        user: 'what else should i consider?',
+        mustContain: ['most useful companion benefit is usually **life insurance**'],
+      },
+      {
+        user: 'yes, do that',
+        mustContain: ['simplest way to separate life insurance from disability'],
+        mustNotContain: ['Life insurance options:'],
+      },
+    ],
+  },
+  {
     id: 'V2-TX-078G',
     category: 'medical_rx_self_service_lookup',
     initialSession: {
