@@ -5381,6 +5381,55 @@ describe('qa-v2 engine', () => {
     expect(result.answer).not.toContain('FSA is usually the cleaner fit');
   });
 
+  it('replays short "show me those plans again" wording back into medical from HSA/FSA when the prior bot message already established medical plan options', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'HSA/FSA',
+      coverageTierLock: 'Employee + Spouse',
+      familyDetails: { hasSpouse: true, numChildren: 0 },
+      lastBotMessage: 'Medical plan options (Employee + Spouse):\n\n- Standard HSA (BCBSTX): $190.31/month\n- Enhanced HSA (BCBSTX): $275.10/month\n\nWant to compare plans or switch coverage tiers?',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'show me those plans again',
+      session,
+    });
+
+    expect(result.answer).toContain('Medical plan options (Employee + Spouse)');
+    expect(result.answer).toContain('Standard HSA');
+    expect(result.answer).not.toContain('HSA/FSA overview');
+    expect(result.answer).not.toContain('FSA is usually the cleaner fit');
+  });
+
+  it('replays short "show me that breakdown again" wording back into medical from disability when the prior bot message already established a medical tradeoff view', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Disability',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      lastBotMessage: 'Here is the practical tradeoff across AmeriVet\'s medical options.',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'show me that breakdown again',
+      session,
+    });
+
+    expect(result.answer).toContain("Here is the practical tradeoff across AmeriVet's medical options");
+    expect(result.answer).toContain('Standard HSA');
+    expect(result.answer).not.toContain('Disability is really paycheck protection');
+  });
+
   it('treats direct Standard-HSA-versus-Kaiser compares as medical plan comparisons even from HSA/FSA context', async () => {
     const session = makeSession({
       step: 'active_chat',

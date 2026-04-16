@@ -1288,6 +1288,39 @@ function contextualMedicalPricingReplayQuery(session: Session, query: string): s
   return 'what are the medical plan prices again?';
 }
 
+function contextualMedicalPlanReplayQuery(session: Session, query: string): string | null {
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  if (
+    !lower
+    || isMedicalPlanComparisonOrPricingQuestion(query)
+    || isMedicalPremiumReplayQuestion(query)
+    || isCostModelRequest(query)
+    || isMedicalDetailQuestion(query)
+  ) {
+    return null;
+  }
+
+  const hasShortPlanReplaySignal = /\b(show\s+me\s+those\s+plans(?:\s+again)?|show\s+me\s+those\s+options(?:\s+again)?|show\s+me\s+that\s+breakdown(?:\s+again)?|show\s+me\s+that\s+comparison(?:\s+again)?|can\s+you\s+show\s+me\s+those\s+plans(?:\s+again)?|can\s+you\s+show\s+me\s+those\s+options(?:\s+again)?|can\s+you\s+show\s+me\s+that\s+breakdown(?:\s+again)?|can\s+you\s+show\s+me\s+that\s+comparison(?:\s+again)?)\b/i.test(lower);
+  if (!hasShortPlanReplaySignal) {
+    return null;
+  }
+
+  const lastBot = (session.lastBotMessage || '').toLowerCase();
+  const activeTopic = session.currentTopic || inferTopicFromLastBotMessage(session.lastBotMessage);
+  const hasEstablishedMedicalPlanContext = activeTopic === 'Medical'
+    || /medical plan options|monthly medical premiums|side-by-side comparison for .* coverage|practical tradeoff across amerivet's medical options|want to compare plans or switch coverage tiers/i.test(lastBot);
+
+  if (!hasEstablishedMedicalPlanContext) {
+    return null;
+  }
+
+  if (/\b(breakdown|comparison)\b/i.test(lower) || /side-by-side comparison|practical tradeoff across amerivet's medical options/i.test(lastBot)) {
+    return 'compare the plan tradeoffs';
+  }
+
+  return 'medical options';
+}
+
 function buildMedicalPremiumReplayReply(session: Session, query: string): string {
   const coverageTier = getCoverageTierForQuery(query, session);
   const rows = getFilteredMedicalPricingRowsForTier(session, coverageTier);
@@ -1531,6 +1564,7 @@ function buildHighPriorityIntentReply(session: Session, query: string): EngineRe
   const isBareBenefitPriorityFocus = /^(\s*(healthcare costs|family protection|routine care)\s*)$/i.test(normalizedQuery);
   const wantsMedicalPremiumReplay = isMedicalPremiumReplayQuestion(normalizedQuery);
   const contextualPricingReplayQuery = contextualMedicalPricingReplayQuery(session, normalizedQuery);
+  const contextualPlanReplayQuery = contextualMedicalPlanReplayQuery(session, normalizedQuery);
   const wantsMedicalCostEstimate = isCostModelRequest(normalizedQuery)
     || /\b(what\s+are\s+the\s+costs?|what\s+would\s+the\s+costs?\s+be|estimate\s+the\s+likely\s+costs?|estimate\s+likely\s+costs?|projected\s+costs?|show\s+me\s+the\s+costs?|what\s+would\s+i\s+pay)\b/i.test(lower);
 
@@ -1573,6 +1607,15 @@ function buildHighPriorityIntentReply(session: Session, query: string): EngineRe
     return {
       answer: buildMedicalPremiumReplayReply(session, contextualPricingReplayQuery),
       metadata: { intercept: 'medical-pricing-contextual-replay-v2', topic: 'Medical' },
+    };
+  }
+
+  if (contextualPlanReplayQuery) {
+    clearPendingGuidance(session);
+    setTopic(session, 'Medical');
+    return {
+      answer: buildTopicReply(session, 'Medical', contextualPlanReplayQuery),
+      metadata: { intercept: 'medical-plan-contextual-replay-v2', topic: 'Medical' },
     };
   }
 

@@ -4026,6 +4026,52 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
     ],
   },
   {
+    id: 'V2-TX-102AC',
+    category: 'hsa_context_deictic_plan_replay',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'HSA/FSA',
+      coverageTierLock: 'Employee + Spouse',
+      familyDetails: { hasSpouse: true, numChildren: 0 },
+      lastBotMessage: 'Medical plan options (Employee + Spouse):\n\n- Standard HSA (BCBSTX): $190.31/month\n- Enhanced HSA (BCBSTX): $275.10/month\n\nWant to compare plans or switch coverage tiers?',
+    },
+    turns: [
+      {
+        user: 'show me those plans again',
+        mustContain: ['Medical plan options (Employee + Spouse)', 'Standard HSA'],
+        mustNotContain: ['HSA/FSA overview', 'FSA is usually the cleaner fit'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-102AD',
+    category: 'disability_context_deictic_medical_breakdown_replay',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Disability',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      lastBotMessage: 'Here is the practical tradeoff across AmeriVet\'s medical options.',
+    },
+    turns: [
+      {
+        user: 'show me that breakdown again',
+        mustContain: ["Here is the practical tradeoff across AmeriVet's medical options", 'Standard HSA'],
+        mustNotContain: ['Disability is really paycheck protection'],
+      },
+    ],
+  },
+  {
     id: 'V2-TX-102A',
     category: 'hsa_context_natural_family_pricing_pivot',
     initialSession: {

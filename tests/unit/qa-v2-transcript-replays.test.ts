@@ -3467,6 +3467,52 @@ describe('qa-v2 transcript replays', () => {
     );
   });
 
+  it('replays short "show me those plans again" wording back into medical from HSA/FSA when the prior bot message already established medical plan options', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'show me those plans again',
+          mustContain: ['Medical plan options (Employee + Spouse)', 'Standard HSA'],
+          mustNotContain: ['HSA/FSA overview', 'FSA is usually the cleaner fit'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'HSA/FSA',
+        coverageTierLock: 'Employee + Spouse',
+        familyDetails: { hasSpouse: true, numChildren: 0 },
+        lastBotMessage: 'Medical plan options (Employee + Spouse):\n\n- Standard HSA (BCBSTX): $190.31/month\n- Enhanced HSA (BCBSTX): $275.10/month\n\nWant to compare plans or switch coverage tiers?',
+      }),
+    );
+  });
+
+  it('replays short "show me that breakdown again" wording back into medical from disability when the prior bot message already established a medical tradeoff view', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'show me that breakdown again',
+          mustContain: ["Here is the practical tradeoff across AmeriVet's medical options", 'Standard HSA'],
+          mustNotContain: ['Disability is really paycheck protection'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'Disability',
+        coverageTierLock: 'Employee + Family',
+        familyDetails: { hasSpouse: true, numChildren: 2 },
+        lastBotMessage: 'Here is the practical tradeoff across AmeriVet\'s medical options.',
+      }),
+    );
+  });
+
   it('replays natural spouse-and-kids premium asks back into medical from HSA/FSA context', async () => {
     await replayTranscript(
       [
