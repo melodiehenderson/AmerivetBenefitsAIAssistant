@@ -2766,6 +2766,27 @@ describe('qa-v2 transcript replays', () => {
     );
   });
 
+  it('replays prioritize-first life wording into the employer split guidance', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'which should i prioritize first: voluntary term life or whole life?',
+          mustContain: ['80% Voluntary Term Life / 20% Whole Life', 'Voluntary Term Life', 'Whole Life'],
+          mustNotContain: ['life insurance is usually worth tightening up'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'Life Insurance',
+        familyDetails: { hasSpouse: true, numChildren: 2 },
+      }),
+    );
+  });
+
   it('replays softer life-worth-it wording into the life sizing framework instead of the generic life-worth-it scaffold', async () => {
     await replayTranscript(
       [
@@ -3158,6 +3179,11 @@ describe('qa-v2 transcript replays', () => {
         {
           user: 'when would i want more whole life?',
           mustContain: ['of the mix toward', 'Whole Life', 'cash-value'],
+          mustNotContain: ['life insurance is usually worth tightening up'],
+        },
+        {
+          user: 'how should i split that?',
+          mustContain: ['80% Voluntary Term Life / 20% Whole Life', 'more Unum Voluntary Term Life', 'more Allstate Whole Life'],
           mustNotContain: ['life insurance is usually worth tightening up'],
         },
       ],

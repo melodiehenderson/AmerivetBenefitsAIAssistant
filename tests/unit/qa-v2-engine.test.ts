@@ -2270,6 +2270,29 @@ describe('qa-v2 engine', () => {
     expect(result.answer).not.toContain('life insurance is usually worth tightening up');
   });
 
+  it('uses the employer guidance split when the user asks which life option to prioritize first', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+    });
+
+    const result = await runQaV2Engine({
+      query: 'which should i prioritize first: voluntary term life or whole life?',
+      session,
+    });
+
+    expect(result.answer).toContain('80% Voluntary Term Life / 20% Whole Life');
+    expect(result.answer).toContain('Voluntary Term Life');
+    expect(result.answer).toContain('Whole Life');
+    expect(result.answer).not.toContain('life insurance is usually worth tightening up');
+  });
+
   it('uses the employer guidance split for broader family-protection life decisions after life options are already in play', async () => {
     const session = makeSession({
       step: 'active_chat',
@@ -2405,6 +2428,33 @@ describe('qa-v2 engine', () => {
     expect(result.answer).toContain('80% Voluntary Term Life / 20% Whole Life');
     expect(result.answer).toContain('Basic Life');
     expect(result.answer).toContain('Voluntary Term Life');
+    expect(result.answer).not.toContain('life insurance is usually worth tightening up');
+  });
+
+  it('answers natural split wording with the practical split-adjustment framework after employer guidance is already active', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Charlie',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'IA',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      messages: [
+        { role: 'user', content: 'what split do you recommend between whole life and voluntary term life?' },
+        { role: 'assistant', content: "If you want a blended default between permanent coverage and extra term coverage, AmeriVet's current employer guidance is **80% Voluntary Term Life / 20% Whole Life**." },
+      ],
+      lastBotMessage: "If you want a blended default between permanent coverage and extra term coverage, AmeriVet's current employer guidance is **80% Voluntary Term Life / 20% Whole Life**.",
+    });
+
+    const result = await runQaV2Engine({
+      query: 'how should i split that?',
+      session,
+    });
+
+    expect(result.answer).toContain('80% Voluntary Term Life / 20% Whole Life');
+    expect(result.answer).toContain('more Unum Voluntary Term Life');
+    expect(result.answer).toContain('more Allstate Whole Life');
     expect(result.answer).not.toContain('life insurance is usually worth tightening up');
   });
 

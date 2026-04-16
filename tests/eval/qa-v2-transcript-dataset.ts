@@ -3707,6 +3707,32 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
         mustContain: ['of the mix toward', 'Whole Life', 'cash-value'],
         mustNotContain: ['life insurance is usually worth tightening up'],
       },
+      {
+        user: 'how should i split that?',
+        mustContain: ['80% Voluntary Term Life / 20% Whole Life', 'more Unum Voluntary Term Life', 'more Allstate Whole Life'],
+        mustNotContain: ['life insurance is usually worth tightening up'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-096DA',
+    category: 'life_employer_guidance_prioritize_first_wording',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Ted',
+      hasCollectedName: true,
+      userAge: 28,
+      userState: 'WA',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+    },
+    turns: [
+      {
+        user: 'which should i prioritize first: voluntary term life or whole life?',
+        mustContain: ['80% Voluntary Term Life / 20% Whole Life', 'Voluntary Term Life', 'Whole Life'],
+        mustNotContain: ['life insurance is usually worth tightening up'],
+      },
     ],
   },
   {

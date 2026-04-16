@@ -4256,6 +4256,28 @@ function buildContinuationReply(session: Session, query: string): string | null 
     }
   }
 
+  if (activeTopic === 'Life Insurance' || activeTopic === 'Disability' || activeTopic === 'Critical Illness' || activeTopic === 'Accident/AD&D') {
+    const detailedAnswer = buildNonMedicalDetailAnswer(activeTopic, normalizedQuery, session);
+    if (detailedAnswer) {
+      if (activeTopic === 'Life Insurance' && isLifeSizingDecisionQuestion(normalizedQuery)) {
+        setPendingGuidance(session, 'life_sizing', 'Life Insurance');
+      } else if (isSupplementalRecommendationQuestion(normalizedQuery)) {
+        primeSupplementalRecommendationFollowup(session, activeTopic);
+      } else {
+        setPendingGuidance(session, 'supplemental_fit', activeTopic);
+      }
+      return detailedAnswer;
+    }
+
+    if (isSupplementalRecommendationQuestion(normalizedQuery)) {
+      const recommendation = buildSupplementalRecommendationReply(activeTopic, session, normalizedQuery);
+      if (recommendation) {
+        primeSupplementalRecommendationFollowup(session, activeTopic);
+        return recommendation;
+      }
+    }
+  }
+
   if (isGuidanceAdvanceAffirmation(normalizedQuery)) {
     return buildPackageGuidance(session, session.currentTopic);
   }
