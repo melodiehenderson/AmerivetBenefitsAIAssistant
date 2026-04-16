@@ -3150,6 +3150,26 @@ describe('qa-v2 transcript replays', () => {
     );
   });
 
+  it('replays broader both-or-one life wording into the employer split guidance when the user asks whether they need both term and whole life', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'do i need both voluntary term life and whole life?',
+          mustContain: ['80% Voluntary Term Life / 20% Whole Life', 'Basic Life', 'Voluntary Term Life', 'Whole Life'],
+          mustNotContain: ['life insurance is usually worth tightening up'],
+        },
+      ],
+      makeSession({
+        userName: 'Ted',
+        hasCollectedName: true,
+        userAge: 28,
+        userState: 'WA',
+        dataConfirmed: true,
+        currentTopic: 'Life Insurance',
+      }),
+    );
+  });
+
   it('replays therapist-cost questions into grounded medical comparison instead of generic medical menus', async () => {
     await replayTranscript(
       [

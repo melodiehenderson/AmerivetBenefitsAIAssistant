@@ -195,12 +195,17 @@ describe('amerivet package versioning seam', () => {
       'Life Insurance',
       'What split do you recommend between whole life and voluntary term life?',
     );
+    const bothMatch = findAmerivetEmployerGuidanceRule(
+      'Life Insurance',
+      'Do I need both voluntary term life and whole life?',
+    );
     const noMatch = findAmerivetEmployerGuidanceRule(
       'Life Insurance',
       'What life insurance options do I have?',
     );
 
     expect(match?.id).toBe('life-default-term-whole-split');
+    expect(bothMatch?.id).toBe('life-default-term-whole-split');
     expect(noMatch).toBeNull();
   });
 });

@@ -45,6 +45,7 @@ export const AMERIVET_EMPLOYER_GUIDANCE_RULES: readonly AmerivetEmployerGuidance
 const WHOLE_LIFE_PATTERN = /\b(whole life|permanent(?:\s+life)?|perm)\b/i;
 const TERM_LIFE_PATTERN = /\b(voluntary term(?:\s+life)?|voluntary life|term life|vol life)\b/i;
 const SPLIT_PATTERN = /\b(split|mix|ratio|allocate|allocation|divide|percent|80\s*\/\s*20|20\s*\/\s*80|part of each|blend)\b/i;
+const BOTH_LIFE_PATTERN = /\b(do\s+i\s+need\s+both|do\s+we\s+need\s+both|should\s+i\s+do\s+both|should\s+we\s+do\s+both|should\s+i\s+carry\s+both|should\s+we\s+carry\s+both|both\s+of\s+those)\b/i;
 const LIFE_DECISION_PATTERN = /\b(what\s+do\s+you\s+recommend|would\s+you\s+recommend|how\s+much\s+would\s+you\s+recommend|what\s+amount\s+would\s+you\s+recommend|how\s+much\s+of\s+each\s+would\s+you\s+recommend|which\s+one\s+should\s+i\s+get|which\s+ones\s+should\s+i\s+get|which\s+of\s+those\s+should\s+i\s+get|which\s+should\s+i\s+get|help\s+me\s+decide|help\s+me\s+with\s+that|what\s+should\s+i\s+think\s+about|which\s+fits\s+better|which\s+life\s+(?:option|coverage)\s+fits|how\s+much\s+should\s+i\s+get|how\s+much\s+coverage\s+should\s+i\s+get|how\s+much\s+protection\s+is\s+worth\s+paying|how\s+do\s+i\s+know\s+how\s+much\s+of\s+each\s+to\s+get)\b/i;
 const EXTRA_LIFE_CONTEXT_PATTERN = /\b(more\s+than\s+just\s+(?:the\s+)?basic|beyond\s+(?:the\s+)?basic|extra\s+life|additional\s+life|want\s+life\s+insurance|also\s+want\s+(?:voluntary\s+)?term(?:\s+life)?|want\s+(?:voluntary\s+)?term(?:\s+life)?|base\s+benefit\s+isn'?t\s+enough|not\s+enough\s+by\s+itself)\b/i;
 const FAMILY_PROTECTION_PATTERN = /\b(wife|husband|spouse|partner|kids?|children|family|dependents?)\b/i;
@@ -65,6 +66,7 @@ export function inferAmerivetEmployerGuidanceIntentFamily(
 
   if (
     (mentionsWhole && mentionsTerm)
+    || (BOTH_LIFE_PATTERN.test(lower) && /\b(life|insurance|coverage|benefit)\b/i.test(lower) && (mentionsWhole || mentionsTerm || hasExtraLifeContext))
     || ((mentionsWhole || mentionsTerm) && mentionsSplit && /\b(life|insurance|coverage)\b/i.test(lower))
     || (mentionsWhole && mentionsTerm && asksRecommendation)
     || ((mentionsWhole || mentionsTerm) && asksLifeDecision && /\b(life|insurance|coverage|benefit)\b/i.test(lower))
