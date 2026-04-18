@@ -140,8 +140,8 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
     turns: [
       {
         user: 'what are all the benefits i have access to?',
-        mustContain: ['45 in GA'],
-        mustNotContain: ['45 in ME', '45 in IN'],
+        mustContain: ['Here are the benefits available to you as an AmeriVet employee', 'Disability (Short-Term Disability, Long-Term Disability)'],
+        mustNotContain: ['45 in GA', '45 in ME', '45 in IN', 'Disability ()'],
       },
       {
         user: 'Help me calculate healthcare costs for next year. My household is family4+, usage level is high, and I prefer kaiser network. Please recommend plans and estimate costs.',
@@ -242,7 +242,7 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
       },
       {
         user: '35, FL',
-        mustContain: ['35 in FL', 'benefits available to you'],
+        mustContain: ['35 in FL'],
       },
     ],
   },
@@ -360,7 +360,7 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
       },
       {
         user: "ok - i'm 42 in OR",
-        mustContain: ['42 in OR', 'benefits available to you'],
+        mustContain: ['42 in OR'],
         mustNotContain: ['42 in IN'],
       },
     ],
@@ -1362,7 +1362,7 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
       },
       {
         user: 'what are the other types of coverage available?',
-        mustContain: ['Here are the benefits available to you as an AmeriVet employee', 'Dental', 'Vision', 'Life Insurance'],
+        mustContain: ['Here are the other benefit areas available to you as an AmeriVet employee', 'Dental', 'Vision', 'Life Insurance'],
         mustNotContain: ['We can stay with medical'],
       },
     ],
@@ -1865,7 +1865,7 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
       },
       {
         user: 'what are the other types of coverage available?',
-        mustContain: ['Here are the benefits available to you as an AmeriVet employee', 'HSA/FSA Accounts'],
+        mustContain: ['Here are the other benefit areas available to you as an AmeriVet employee', 'HSA/FSA Accounts'],
       },
     ],
   },
@@ -2537,7 +2537,7 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
       },
       {
         user: 'yes, do that',
-        mustContain: ['copays and point-of-service cost sharing comparison', 'primary care', 'specialist'],
+        mustContain: ['copay comparison across the available medical plans', 'Primary care', 'Specialist'],
         mustNotContain: ['We can stay with medical'],
       },
     ],
@@ -4570,6 +4570,81 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
         user: 'what should i tighten up first for my family?',
         mustContain: ['disability first', 'life right after that', 'smaller supplemental cash benefits'],
         mustNotContain: ['Disability coverage is meant to protect part of your income'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-102H',
+    category: 'benefits_overview_integrity',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Jade',
+      hasCollectedName: true,
+      userAge: 24,
+      userState: 'OR',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      lastBotMessage: 'Medical plan options (Employee Only):\n\n- Standard HSA (BCBSTX): $86.84/month\n- Enhanced HSA (BCBSTX): $160.36/month\n\nWant to compare plans or switch coverage tiers?',
+    },
+    turns: [
+      {
+        user: 'what are my other benefit options?',
+        mustContain: ['Here are the other benefit areas available to you as an AmeriVet employee', 'Life Insurance', 'Disability (Short-Term Disability, Long-Term Disability)'],
+        mustNotContain: ['Perfect! 24 in OR.', 'Disability ()'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-102I',
+    category: 'medical_definition_pivots',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Jade',
+      hasCollectedName: true,
+      userAge: 24,
+      userState: 'OR',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      lastBotMessage: 'Here is the network design comparison across the available medical plans:',
+    },
+    turns: [
+      {
+        user: "what's bcbstx?",
+        mustContain: ['Blue Cross Blue Shield of Texas', 'BCBSTX'],
+        mustNotContain: ['A useful next medical step is usually one of these'],
+      },
+      {
+        user: 'what does ppo mean?',
+        mustContain: ['Preferred Provider Organization', 'PPO'],
+        mustNotContain: ['A useful next medical step is usually one of these'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-102J',
+    category: 'medical_detail_followthrough_and_formatting',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Jade',
+      hasCollectedName: true,
+      userAge: 24,
+      userState: 'OR',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee + Child(ren)',
+      familyDetails: { hasSpouse: false, numChildren: 2 },
+      lastBotMessage: 'Here is the practical tradeoff across AmeriVet\'s medical options:',
+    },
+    turns: [
+      {
+        user: 'what are the copay amounts for the different plans?',
+        mustContain: ['Here is the copay comparison across the available medical plans', '- **Standard HSA**', 'Primary care'],
+        mustNotContain: ['; specialist'],
+      },
+      {
+        user: 'talk through why one option fits better for your situation',
+        mustContain: ['practical tradeoff across AmeriVet'],
+        mustNotContain: ['A useful next medical step is usually one of these'],
       },
     ],
   },

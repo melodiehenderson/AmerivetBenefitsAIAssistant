@@ -170,6 +170,8 @@ function buildCoverageTierExplanation(query: string, session: Session): string {
 function buildMedicalTermExplanation(
   term:
     | 'copay'
+    | 'ppo'
+    | 'bcbstx'
     | 'deductible'
     | 'coinsurance'
     | 'out_of_pocket_max'
@@ -180,6 +182,28 @@ function buildMedicalTermExplanation(
     | 'emergency_room'
     | 'prescriptions',
 ): string {
+  if (term === 'ppo') {
+    return [
+      `PPO stands for **Preferred Provider Organization**.`,
+      ``,
+      `In AmeriVet's package, the BCBSTX medical options use a PPO-style network, which usually means you can use a broader network of doctors and facilities outside the Kaiser integrated model.`,
+      ``,
+      `The practical question is whether you want that broader-network PPO setup or the tighter Kaiser HMO structure.`,
+      `If you want, I can compare the BCBSTX PPO options against Kaiser next.`,
+    ].join('\n');
+  }
+
+  if (term === 'bcbstx') {
+    return [
+      `BCBSTX stands for **Blue Cross Blue Shield of Texas**.`,
+      ``,
+      `In AmeriVet's package, BCBSTX is the carrier behind the Standard HSA and Enhanced HSA medical plans.`,
+      ``,
+      `So when you see BCBSTX in the plan list, that is the PPO carrier side of AmeriVet's medical package rather than the Kaiser option.`,
+      `If you want, I can compare the BCBSTX plans against Kaiser next.`,
+    ].join('\n');
+  }
+
   if (term === 'copay') {
     return [
       `A copay is the flat dollar amount you pay at the time of a covered service, before you even start talking about bigger deductible or coinsurance math.`,
@@ -330,6 +354,23 @@ function buildServiceComparison(
     lines.push(`- **${plan.displayName}**: ${accessor(plan) || 'I do not have that line item in the current summary, so I do not want to guess.'}`);
   }
   return lines.join('\n');
+}
+
+function buildCopayComparison(plans: MedicalPlanSummary[]): string {
+  const lines = ['Here is the copay comparison across the available medical plans:', ''];
+  for (const plan of plans) {
+    lines.push(`- **${plan.displayName}**`);
+    lines.push(`  - Primary care: ${plan.primaryCare || 'I do not have that line item in the current summary, so I do not want to guess.'}`);
+    lines.push(`  - Specialist: ${plan.specialist || 'I do not have that line item in the current summary, so I do not want to guess.'}`);
+    if (plan.urgentCare) {
+      lines.push(`  - Urgent care: ${plan.urgentCare}`);
+    }
+    if (plan.emergencyRoom) {
+      lines.push(`  - Emergency room: ${plan.emergencyRoom}`);
+    }
+    lines.push('');
+  }
+  return lines.join('\n').trimEnd();
 }
 
 function hasRecurringTherapyUsage(queryLower: string): boolean {
@@ -572,6 +613,14 @@ export function buildMedicalPlanDetailAnswer(
     return buildMedicalTermExplanation('copay');
   }
 
+  if (/\b(what\s+does\s+ppo\s+mean|what'?s\s+(?:a\s+)?ppo|what\s+is\s+(?:a\s+)?ppo|define\s+ppo)\b/i.test(queryLower)) {
+    return buildMedicalTermExplanation('ppo');
+  }
+
+  if (/\b(what'?s\s+bcbstx|what\s+is\s+bcbstx|what\s+does\s+bcbstx\s+mean|define\s+bcbstx|what\s+is\s+blue\s+cross\s+blue\s+shield\s+of\s+texas)\b/i.test(queryLower)) {
+    return buildMedicalTermExplanation('bcbstx');
+  }
+
   if (/\b(what\s+does\s+primary\s+care\s+mean|what\s+is\s+primary\s+care|what\s+is\s+a\s+pcp|what\s+does\s+pcp\s+mean)\b/i.test(queryLower)) {
     return buildMedicalTermExplanation('primary_care');
   }
@@ -620,7 +669,7 @@ export function buildMedicalPlanDetailAnswer(
     return buildMedicalTermExplanation('prescriptions');
   }
 
-  if (/\b(compare(?:\s+the)?\s+plan\s+tradeoffs?|plan\s+tradeoffs?|tradeoffs?|differences?\s+between\s+the\s+plans|compare\s+the\s+plans)\b/i.test(queryLower)) {
+  if (/\b(compare(?:\s+the)?\s+plan\s+tradeoffs?|plan\s+tradeoffs?|tradeoffs?|differences?\s+between\s+the\s+plans|compare\s+the\s+plans|talk\s+through\s+why\s+one\s+option\s+fits\s+better|which\s+option\s+fits\s+better)\b/i.test(queryLower)) {
     return buildTradeoffComparison(query, session);
   }
 
@@ -687,9 +736,7 @@ export function buildMedicalPlanDetailAnswer(
     if (/\b(emergency\s+room|er)\b/i.test(queryLower)) {
       return buildServiceComparison(summaries, 'Emergency room care', (plan) => plan.emergencyRoom);
     }
-    return buildServiceComparison(summaries, 'Copays and point-of-service cost sharing', (plan) =>
-      `primary care ${plan.primaryCare}; specialist ${plan.specialist}${plan.urgentCare ? `; urgent care ${plan.urgentCare}` : ''}${plan.emergencyRoom ? `; emergency room ${plan.emergencyRoom}` : ''}`,
-    );
+    return buildCopayComparison(summaries);
   }
 
   if (/\b(in[- ]network|in network)\b/i.test(queryLower) && /\b(out[- ]of[- ]network|out of network)\b/i.test(queryLower) && plansFromQuery.length !== 1) {

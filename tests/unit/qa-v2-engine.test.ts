@@ -1880,8 +1880,11 @@ describe('qa-v2 engine', () => {
       session,
     });
 
-    expect(benefits.answer).toContain('45 in GA');
+    expect(benefits.answer).toContain('Here are the benefits available to you as an AmeriVet employee');
+    expect(benefits.answer).toContain('Life Insurance');
+    expect(benefits.answer).not.toContain('Perfect! 45 in GA.');
     expect(benefits.answer).not.toContain('45 in ME');
+    expect(benefits.answer).not.toContain('Disability ()');
 
     const stateMention = await runQaV2Engine({
       query: "i'm in GA",
@@ -2070,6 +2073,120 @@ describe('qa-v2 engine', () => {
     expect(result.answer).toContain('other benefit areas available to you');
     expect(result.answer).toContain('Life Insurance');
     expect(result.answer).not.toContain('We can stay with medical');
+  });
+
+  it('renders a clean full benefits overview without restating demographics after confirmation', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Jade',
+      hasCollectedName: true,
+      userAge: 24,
+      userState: 'OR',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      lastBotMessage: 'Medical plan options (Employee Only):\n\n- Standard HSA (BCBSTX): $86.84/month\n- Enhanced HSA (BCBSTX): $160.36/month\n\nWant to compare plans or switch coverage tiers?',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'what are my other benefit options?',
+      session,
+    });
+
+    expect(result.answer).toContain('Here are the other benefit areas available to you as an AmeriVet employee');
+    expect(result.answer).toContain('Life Insurance');
+    expect(result.answer).toContain('Disability (Short-Term Disability, Long-Term Disability)');
+    expect(result.answer).not.toContain('Perfect! 24 in OR.');
+    expect(result.answer).not.toContain('Disability ()');
+  });
+
+  it('answers what BCBSTX means directly instead of falling back to the generic medical menu', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Jade',
+      hasCollectedName: true,
+      userAge: 24,
+      userState: 'OR',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      lastBotMessage: 'Here is the network design comparison across the available medical plans:',
+    });
+
+    const result = await runQaV2Engine({
+      query: "what's bcbstx?",
+      session,
+    });
+
+    expect(result.answer).toContain('Blue Cross Blue Shield of Texas');
+    expect(result.answer).toContain('BCBSTX');
+    expect(result.answer).not.toContain('A useful next medical step is usually one of these');
+  });
+
+  it('answers what PPO means directly instead of falling back to the generic medical menu', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Jade',
+      hasCollectedName: true,
+      userAge: 24,
+      userState: 'OR',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      lastBotMessage: 'Here is the network design comparison across the available medical plans:',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'what does ppo mean?',
+      session,
+    });
+
+    expect(result.answer).toContain('Preferred Provider Organization');
+    expect(result.answer).toContain('PPO');
+    expect(result.answer).not.toContain('A useful next medical step is usually one of these');
+  });
+
+  it('answers direct why-one-fits-better followups instead of repeating the generic medical menu', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Jade',
+      hasCollectedName: true,
+      userAge: 24,
+      userState: 'OR',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      lastBotMessage: 'A useful next medical step is usually one of these:\n\n- Compare the plan tradeoff\n- Estimate likely costs\n- Talk through why one option fits better for your situation\n\nPick one and I’ll take you straight into it.',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'talk through why one option fits better for your situation',
+      session,
+    });
+
+    expect(result.answer).toContain('practical tradeoff across AmeriVet');
+    expect(result.answer).not.toContain('A useful next medical step is usually one of these');
+  });
+
+  it('defaults copay comparisons to a structured list format instead of a dense inline block', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Jade',
+      hasCollectedName: true,
+      userAge: 24,
+      userState: 'OR',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee + Child(ren)',
+      familyDetails: { hasSpouse: false, numChildren: 2 },
+    });
+
+    const result = await runQaV2Engine({
+      query: 'what are the copay amounts for the different plans?',
+      session,
+    });
+
+    expect(result.answer).toContain('Here is the copay comparison across the available medical plans');
+    expect(result.answer).toContain('- **Standard HSA**');
+    expect(result.answer).toContain('Primary care');
+    expect(result.answer).toContain('Specialist');
+    expect(result.answer).not.toContain('; specialist');
   });
 
   it('pivots from vision to supplemental overview when the user asks for supplemental protection', async () => {
@@ -4985,9 +5102,9 @@ describe('qa-v2 engine', () => {
       session,
     });
 
-    expect(result.answer).toContain('copays and point-of-service cost sharing comparison');
-    expect(result.answer).toContain('primary care');
-    expect(result.answer).toContain('specialist');
+    expect(result.answer).toContain('copay comparison across the available medical plans');
+    expect(result.answer).toContain('Primary care');
+    expect(result.answer).toContain('Specialist');
     expect(result.answer).not.toContain('We can stay with medical');
   });
 

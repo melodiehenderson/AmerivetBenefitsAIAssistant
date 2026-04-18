@@ -54,7 +54,7 @@ type HsaFitFocus = 'long_term_savings' | 'near_term_expenses';
 
 function isMedicalDetailQuestion(query: string): boolean {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
-  return /\b(coverage\s+tier|coverage\s+tiers|copay|copays|coinsurance|deductible|out[- ]of[- ]pocket|oop\s*max|primary\s+care|pcp|specialist|urgent\s+care|emergency\s+room|er|network|in[- ]network|out[- ]of[- ]network|ppo|hmo|prescriptions?|drugs?|generic|brand|specialty|maternity|pregnan\w*|delivery|prenatal|postnatal|therapy|therapist|physical\s+therapy|mental\s+health|virtual\s+visits?|telehealth(?:\s+visits?)?|telemedicine|tradeoffs?|differences?\s+between\s+the\s+plans|compare\s+the\s+plans|compare\s+the\s+plan\s+tradeoffs?)\b/i.test(lower)
+  return /\b(coverage\s+tier|coverage\s+tiers|copay|copays|coinsurance|deductible|out[- ]of[- ]pocket|oop\s*max|primary\s+care|pcp|specialist|urgent\s+care|emergency\s+room|er|network|in[- ]network|out[- ]of[- ]network|ppo|hmo|bcbstx|blue\s+cross\s+blue\s+shield|prescriptions?|drugs?|generic|brand|specialty|maternity|pregnan\w*|delivery|prenatal|postnatal|therapy|therapist|physical\s+therapy|mental\s+health|virtual\s+visits?|telehealth(?:\s+visits?)?|telemedicine|tradeoffs?|differences?\s+between\s+the\s+plans|compare\s+the\s+plans|compare\s+the\s+plan\s+tradeoffs?)\b/i.test(lower)
     || (/\b(cost|costs|what\s+would\s+i\s+pay|what\s+are\s+my\s+costs|if\s+i\s+use)\b/i.test(lower) && /\b(standard|standard hsa|enhanced|enhanced hsa|kaiser|kaiser hmo)\b/i.test(lower));
 }
 
@@ -175,8 +175,6 @@ function buildAllBenefitsMenu(): string {
   const disabilityLine = ACTIVE_AMERIVET_COPY.disabilityPlanNames.join(', ');
 
   return [
-    'Here are the benefits available to you as an AmeriVet employee:',
-    '',
     `- Medical (${medicalLine})`,
     `- Dental (${ACTIVE_AMERIVET_COPY.dentalPlanName})`,
     `- Vision (${ACTIVE_AMERIVET_COPY.visionPlanName})`,
@@ -768,7 +766,7 @@ function isDirectMedicalContinuationQuestion(query: string): boolean {
     || isMedicalRecommendationPreferenceFollowup(query)
     || isMedicalDetailQuestion(query)
     || isMedicalPlanComparisonOrPricingQuestion(query)
-    || /\b(which\s+plan\s+is\s+best\s+for\s+my\s+family|which\s+plan\s+is\s+best|which\s+plan\s+is\s+better|which\s+one\s+do\s+you\s+recommend|best\s+choice\s+for\s+my\s+family|what\s+plan\s+will\s+give\s+us\s+the\s+lowest|other\s+standard\s+plan|other\s+plan|plan\s+tradeoffs?|medical\s+options|medical\s+plan\s+options|show\s+me\s+(?:my\s+)?(?:medical\s+)?options|show\s+me\s+the\s+plans|plans\s+side\s+by\s+side|side\s+by\s+side|let'?s\s+talk\s+(?:thru|through)\s+which\s+plan|talk\s+(?:thru|through)\s+which\s+plan|talk\s+me\s+through\s+which\s+plan|talk\s+through\s+which\s+option\s+fits\s+better|which\s+option\s+fits\s+better|best\s+choice\s+for\s+my\s+family|best\s+for\s+my\s+family|better\s+for\s+me|better\s+for\s+us)\b/i.test(lower);
+    || /\b(which\s+plan\s+is\s+best\s+for\s+my\s+family|which\s+plan\s+is\s+best|which\s+plan\s+is\s+better|which\s+one\s+do\s+you\s+recommend|best\s+choice\s+for\s+my\s+family|what\s+plan\s+will\s+give\s+us\s+the\s+lowest|other\s+standard\s+plan|other\s+plan|plan\s+tradeoffs?|medical\s+options|medical\s+plan\s+options|show\s+me\s+(?:my\s+)?(?:medical\s+)?options|show\s+me\s+the\s+plans|plans\s+side\s+by\s+side|side\s+by\s+side|let'?s\s+talk\s+(?:thru|through)\s+which\s+plan|talk\s+(?:thru|through)\s+which\s+plan|talk\s+me\s+through\s+which\s+plan|talk\s+through\s+which\s+option\s+fits\s+better|talk\s+through\s+why\s+one\s+option\s+fits\s+better|which\s+option\s+fits\s+better|best\s+choice\s+for\s+my\s+family|best\s+for\s+my\s+family|better\s+for\s+me|better\s+for\s+us)\b/i.test(lower);
 }
 
 function isMedicalWorthPremiumQuestion(query: string): boolean {
@@ -1610,7 +1608,7 @@ function buildHighPriorityIntentReply(session: Session, query: string): EngineRe
   const medicalContext = activeTopic === 'Medical'
     || explicitTopic === 'Medical'
     || /\b(plan|plans|medical|kaiser|hsa|hmo|ppo|coverage|premium|premiums|employee\s*\+|spouse|family|kids?|children|household)\b/i.test(lower);
-  const hasDirectMedicalSignal = /\b(plan|plans|medical|kaiser|hsa|hmo|ppo|coverage|coverage\s+tier|deductible|premium|premiums|copay|copays|coinsurance|out[- ]of[- ]pocket|oop|max|therapy|therapist|mental\s+health|specialist|prescriptions?|rx|drugs?|maternity|pregnan\w*|delivery|network|routine\s+care|doctor|visit|visits|wife|husband|spouse|partner|kids?|children|family|household)\b/i.test(lower);
+  const hasDirectMedicalSignal = /\b(plan|plans|medical|kaiser|hsa|hmo|ppo|bcbstx|blue\s+cross\s+blue\s+shield|coverage|coverage\s+tier|deductible|premium|premiums|copay|copays|coinsurance|out[- ]of[- ]pocket|oop|max|therapy|therapist|mental\s+health|specialist|prescriptions?|rx|drugs?|maternity|pregnan\w*|delivery|network|routine\s+care|doctor|visit|visits|wife|husband|spouse|partner|kids?|children|family|household)\b/i.test(lower);
   const isBareBenefitPriorityFocus = /^(\s*(healthcare costs|family protection|routine care)\s*)$/i.test(normalizedQuery);
   const wantsMedicalPremiumReplay = isMedicalPremiumReplayQuestion(normalizedQuery);
   const contextualPricingReplayQuery = contextualMedicalPricingReplayQuery(session, normalizedQuery);
@@ -3119,7 +3117,7 @@ function buildBenefitsOverviewReply(session: Session, options?: { contextual?: b
       ? `Perfect! ${session.userAge} in ${session.userState}.`
       : contextual
       ? `Here are the other benefit areas available to you as an AmeriVet employee:`
-      : `Perfect! ${session.userAge} in ${session.userState}.`
+      : `Here are the benefits available to you as an AmeriVet employee:`
     : 'Here is the AmeriVet benefits lineup:';
   return `${intro}\n\n${buildAllBenefitsMenu()}\n\nWhat would you like to explore first?`;
 }

@@ -227,8 +227,8 @@ describe('qa-v2 transcript replays', () => {
       [
         {
           user: 'what are all the benefits i have access to?',
-          mustContain: ['45 in GA'],
-          mustNotContain: ['45 in ME', '45 in IN'],
+          mustContain: ['Here are the benefits available to you as an AmeriVet employee', 'Disability (Short-Term Disability, Long-Term Disability)'],
+          mustNotContain: ['45 in GA', '45 in ME', '45 in IN', 'Disability ()'],
         },
         {
           user: 'Help me calculate healthcare costs for next year. My household is family4+, usage level is high, and I prefer kaiser network. Please recommend plans and estimate costs.',
@@ -1421,7 +1421,7 @@ describe('qa-v2 transcript replays', () => {
         },
         {
           user: 'what are the other types of coverage available?',
-          mustContain: ['Here are the benefits available to you as an AmeriVet employee', 'Dental', 'Vision', 'Life Insurance'],
+          mustContain: ['Here are the other benefit areas available to you as an AmeriVet employee', 'Dental', 'Vision', 'Life Insurance'],
           mustNotContain: ['We can stay with medical'],
         },
       ],
@@ -1430,6 +1430,65 @@ describe('qa-v2 transcript replays', () => {
         hasCollectedName: true,
         userAge: 49,
         userState: 'IA',
+        dataConfirmed: true,
+        currentTopic: 'Medical',
+      }),
+    );
+  });
+
+  it('replays screenshot-style overview and definition pivots without stale-menu fallback', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'medical',
+          mustContain: ['Medical plan options (Employee Only)'],
+        },
+        {
+          user: 'what are my other benefit options?',
+          mustContain: ['Here are the other benefit areas available to you as an AmeriVet employee', 'Life Insurance', 'Disability (Short-Term Disability, Long-Term Disability)'],
+          mustNotContain: ['Perfect! 24 in OR.', 'Disability ()'],
+        },
+        {
+          user: "what's bcbstx?",
+          mustContain: ['Blue Cross Blue Shield of Texas', 'BCBSTX'],
+          mustNotContain: ['A useful next medical step is usually one of these'],
+        },
+        {
+          user: 'what does ppo mean?',
+          mustContain: ['Preferred Provider Organization', 'PPO'],
+          mustNotContain: ['A useful next medical step is usually one of these'],
+        },
+      ],
+      makeSession({
+        userName: 'Jade',
+        hasCollectedName: true,
+        userAge: 24,
+        userState: 'OR',
+        dataConfirmed: true,
+        currentTopic: 'Medical',
+      }),
+    );
+  });
+
+  it('replays screenshot-style medical-detail followups without looping back to the generic medical menu', async () => {
+    await replayTranscript(
+      [
+        {
+          user: 'what are the copay amounts for the different plans?',
+          mustContain: ['Here is the copay comparison across the available medical plans', '- **Standard HSA**', 'Primary care'],
+          mustNotContain: ['; specialist'],
+        },
+        {
+          user: 'talk through why one option fits better for your situation',
+          mustContain: ['practical tradeoff across AmeriVet'],
+          mustNotContain: ['A useful next medical step is usually one of these'],
+        },
+      ],
+      makeSession({
+        userName: 'Jade',
+        hasCollectedName: true,
+        userAge: 24,
+        userState: 'OR',
         dataConfirmed: true,
         currentTopic: 'Medical',
       }),
@@ -2415,7 +2474,7 @@ describe('qa-v2 transcript replays', () => {
         },
         {
           user: 'yes, do that',
-          mustContain: ['copays and point-of-service cost sharing comparison', 'primary care', 'specialist'],
+          mustContain: ['copay comparison across the available medical plans', 'Primary care', 'Specialist'],
           mustNotContain: ['We can stay with medical'],
         },
       ],

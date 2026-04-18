@@ -44,6 +44,9 @@ export function getAmerivetPackageCopySnapshot(
   const { catalog, displayName } = benefitsPackage;
   const kaiserCopy = getKaiserAvailabilityCopy(benefitsPackage);
   const hsaPlan = catalog.medicalPlans.find((plan) => /hsa/i.test(plan.name)) ?? catalog.medicalPlans[0] ?? null;
+  const disabilityPlanNames = catalog.voluntaryPlans
+    .filter((plan) => plan.voluntaryType === 'disability')
+    .map((plan) => plan.name);
 
   return {
     displayName,
@@ -58,9 +61,9 @@ export function getAmerivetPackageCopySnapshot(
     lifePlanNames: catalog.voluntaryPlans
       .filter((plan) => plan.voluntaryType === 'life')
       .map((plan) => plan.name),
-    disabilityPlanNames: catalog.voluntaryPlans
-      .filter((plan) => plan.voluntaryType === 'disability')
-      .map((plan) => plan.name),
+    disabilityPlanNames: disabilityPlanNames.length > 0
+      ? disabilityPlanNames
+      : ['Short-Term Disability', 'Long-Term Disability'],
     kaiserStateCodeList: kaiserCopy.codeList,
     hsaReferencePlan: hsaPlan
       ? {

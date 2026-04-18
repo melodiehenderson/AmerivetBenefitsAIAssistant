@@ -276,7 +276,7 @@ export function buildMedicalPlanFallback(
   options?: MedicalHelperOptions,
 ): string | null {
   const lower = query.toLowerCase();
-  const wantsCompare = /compare|comparison|difference|vs\.?|versus|side\s*by\s*side|both\s+plans|two\s+plans/i.test(lower);
+  const wantsCompare = /compare|comparison|difference|vs\.?|versus|side\s*by\s*side|both\s+plans|two\s+plans|talk\s+through\s+why\s+one\s+option\s+fits\s+better|which\s+option\s+fits\s+better/i.test(lower);
   const mentionsStandard = /standard\s*hsa/.test(lower);
   const mentionsEnhanced = /enhanced\s*hsa/.test(lower);
   const mentionsKaiser = /kaiser|hmo/.test(lower);
