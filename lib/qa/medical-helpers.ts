@@ -132,7 +132,15 @@ function getUserConversationText(session: Session): string {
     .join('\n');
 }
 
+export function hasExplicitNoPregnancyOverride(query: string): boolean {
+  const lower = query.toLowerCase();
+  return /\b(won't\s+be\s+pregnan\w*|will\s+not\s+be\s+pregnan\w*|not\s+pregnan\w*|don't\s+need\s+maternity|do\s+not\s+need\s+maternity|without\s+maternity|no\s+maternity|not\s+having\s+a\s+baby|won't\s+be\s+expecting|will\s+not\s+be\s+expecting)\b/i.test(lower);
+}
+
 export function sessionHasPregnancySignal(session: Session, query: string): boolean {
+  if (hasExplicitNoPregnancyOverride(query)) {
+    return false;
+  }
   const conversation = `${getUserConversationText(session)}\n${query.toLowerCase()}`;
   return /\b(pregnan|expecting|having\s+a\s+baby|maternity|prenatal|postnatal|delivery|birth)\b/i.test(conversation)
     || (session.lifeEvents || []).includes('pregnancy');

@@ -2028,6 +2028,74 @@ describe('qa-v2 engine', () => {
     expect(result.answer).not.toContain('payroll');
   });
 
+  it('turns multi-factor pregnancy recommendation asks into an actual recommendation instead of replaying maternity detail', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Misha',
+      hasCollectedName: true,
+      userAge: 42,
+      userState: 'OR',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee + Child(ren)',
+      familyDetails: { numChildren: 1 },
+      lifeEvents: ['pregnancy'],
+      lastBotMessage: 'Here is the maternity coverage comparison across the available medical plans:',
+      messages: [
+        { role: 'user', content: 'what about maternity coverage?' },
+        { role: 'assistant', content: 'Here is the maternity coverage comparison across the available medical plans:' },
+      ],
+    });
+
+    const result = await runQaV2Engine({
+      query: 'so i want to spend as little out of pocket as possible, and i am pregnant. my daughter sees a therapist 1x per month, and i have 3 regular prescriptions. which plan would you recommend?',
+      session,
+    });
+
+    expect(result.answer).toContain('My recommendation:');
+    expect(result.answer).toContain('Kaiser Standard HMO');
+    expect(result.answer).not.toContain('Here is the maternity coverage comparison');
+  });
+
+  it('treats explicit no-maternity next-year framing as a scenario override instead of replaying maternity detail', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Misha',
+      hasCollectedName: true,
+      userAge: 42,
+      userState: 'OR',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee + Child(ren)',
+      familyDetails: { numChildren: 1 },
+      lifeEvents: ['pregnancy'],
+      lastBotMessage: 'Recommendation for Employee + Child(ren) coverage:\n\n**My recommendation: Kaiser Standard HMO.**',
+      messages: [
+        { role: 'user', content: 'so i want to spend as little out of pocket as possible, and i am pregnant. my daughter sees a therapist 1x per month, and i have 3 regular prescriptions. which plan would you recommend?' },
+        { role: 'assistant', content: 'Recommendation for Employee + Child(ren) coverage:\n\n**My recommendation: Kaiser Standard HMO.**' },
+      ],
+    });
+
+    const nextYear = await runQaV2Engine({
+      query: "ok. and how about for next year? next year i won't be pregnant, but my daughter will still see her therapist, and i'll still need my 3 prescriptions.",
+      session,
+    });
+
+    expect(nextYear.answer).toContain('My recommendation:');
+    expect(nextYear.answer).not.toContain('Here is the maternity coverage comparison');
+    expect(nextYear.answer).not.toContain('lowest likely maternity-related out-of-pocket exposure');
+    expect(nextYear.answer).not.toContain('Because pregnancy is already part of the picture');
+
+    const noMaternity = await runQaV2Engine({
+      query: "no - like, what if i don't need maternity?",
+      session,
+    });
+
+    expect(noMaternity.answer).toContain('My recommendation:');
+    expect(noMaternity.answer).not.toContain('Here is the maternity coverage comparison');
+    expect(noMaternity.answer).not.toContain('lowest likely maternity-related out-of-pocket exposure');
+  });
+
   it('answers medical coverage-tier timing directly even when the stale topic is disability', async () => {
     const session = makeSession({
       step: 'active_chat',
@@ -2119,6 +2187,28 @@ describe('qa-v2 engine', () => {
     expect(result.answer).toContain('Blue Cross Blue Shield of Texas');
     expect(result.answer).toContain('BCBSTX');
     expect(result.answer).not.toContain('A useful next medical step is usually one of these');
+  });
+
+  it('answers what BCBSTX means directly even from dental context instead of falling back to a dental menu', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Jade',
+      hasCollectedName: true,
+      userAge: 24,
+      userState: 'OR',
+      dataConfirmed: true,
+      currentTopic: 'Dental',
+      lastBotMessage: 'Dental coverage: BCBSTX Dental PPO (BCBSTX).',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'what does bcbstx stand for?',
+      session,
+    });
+
+    expect(result.answer).toContain('Blue Cross Blue Shield of Texas');
+    expect(result.answer).toContain('BCBSTX');
+    expect(result.answer).not.toContain('A useful next dental step is usually one of these');
   });
 
   it('answers what PPO means directly instead of falling back to the generic medical menu', async () => {
@@ -5546,6 +5636,32 @@ describe('qa-v2 engine', () => {
     expect(result.answer).not.toContain('We can stay with medical');
     expect(session.coverageTierLock).toBe('Employee + Child(ren)');
     expect(session.familyDetails).toEqual({ numChildren: 2 });
+  });
+
+  it('refreshes the medical view when the user updates the household with natural "myself and my kids" wording', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Misha',
+      hasCollectedName: true,
+      userAge: 42,
+      userState: 'OR',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee Only',
+      familyDetails: {},
+      lastBotMessage: 'A coverage tier is just the level of people you are enrolling.',
+    });
+
+    const result = await runQaV2Engine({
+      query: "oh! okay, i'm looking for myself and my 5 kids.",
+      session,
+    });
+
+    expect(result.answer).toContain('updated the household to **Employee + Child(ren)** coverage');
+    expect(result.answer).toContain('Medical plan options (Employee + Child(ren))');
+    expect(result.answer).not.toContain('A useful next medical step is usually one of these');
+    expect(session.coverageTierLock).toBe('Employee + Child(ren)');
+    expect(session.familyDetails).toEqual({ numChildren: 5 });
   });
 
   it('routes compare-standard-hsa-versus-kaiser asks back into medical comparison even from active hsa/fsa context', async () => {

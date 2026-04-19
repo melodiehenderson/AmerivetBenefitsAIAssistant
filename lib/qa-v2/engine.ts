@@ -9,6 +9,7 @@ import {
   buildMedicalPlanFallback,
   buildRecommendationOverview,
   getCoverageTierForQuery,
+  hasExplicitNoPregnancyOverride,
   isKaiserEligibleState,
 } from '@/lib/qa/medical-helpers';
 import { buildMedicalPlanDetailAnswer } from '@/lib/qa/plan-detail-lookup';
@@ -56,6 +57,21 @@ function isMedicalDetailQuestion(query: string): boolean {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
   return /\b(coverage\s+tier|coverage\s+tiers|copay|copays|coinsurance|deductible|out[- ]of[- ]pocket|oop\s*max|primary\s+care|pcp|specialist|urgent\s+care|emergency\s+room|er|network|in[- ]network|out[- ]of[- ]network|ppo|hmo|bcbstx|blue\s+cross\s+blue\s+shield|prescriptions?|drugs?|generic|brand|specialty|maternity|pregnan\w*|delivery|prenatal|postnatal|therapy|therapist|physical\s+therapy|mental\s+health|virtual\s+visits?|telehealth(?:\s+visits?)?|telemedicine|tradeoffs?|differences?\s+between\s+the\s+plans|compare\s+the\s+plans|compare\s+the\s+plan\s+tradeoffs?)\b/i.test(lower)
     || (/\b(cost|costs|what\s+would\s+i\s+pay|what\s+are\s+my\s+costs|if\s+i\s+use)\b/i.test(lower) && /\b(standard|standard hsa|enhanced|enhanced hsa|kaiser|kaiser hmo)\b/i.test(lower));
+}
+
+function isGlobalMedicalDefinitionQuestion(query: string): boolean {
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  return /\b(what\s+does\s+ppo\s+(?:mean|stand\s+for)|what'?s\s+(?:a\s+)?ppo|what\s+is\s+(?:a\s+)?ppo|define\s+ppo|what'?s\s+bcbstx|what\s+is\s+bcbstx|what\s+does\s+bcbstx\s+(?:mean|stand\s+for)|define\s+bcbstx|what\s+is\s+blue\s+cross\s+blue\s+shield\s+of\s+texas)\b/i.test(lower);
+}
+
+function buildMedicalScenarioOverrideQuery(session: Session, query: string): string {
+  const recentUserContext = (session.messages || [])
+    .filter((message) => message.role === 'user')
+    .slice(-6)
+    .map((message) => message.content)
+    .join('\n');
+
+  return recentUserContext ? `${recentUserContext}\n${query}` : query;
 }
 
 function isMedicalAccumulatorComparisonQuestion(query: string): boolean {
@@ -701,7 +717,7 @@ function buildSupplementalBenefitsOverviewReply(): string {
 
 function isDirectMedicalRecommendationQuestion(query: string): boolean {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
-  const canonicalRecommendationSignal = /\b(which\s+plan\s+is\s+best|which\s+plan\s+is\s+better|which\s+plan\s+do\s+you\s+recommend|what\s+plan\s+do\s+you\s+recommend|best\s+(medical\s+)?plan|which\s+medical\s+plan|which\s+one\s+do\s+you\s+recommend|what\s+do\s+you\s+recommend\s+for\s+me|which\s+one\s+do\s+i\s+pick|which\s+one\s+should\s+i\s+pick|what\s+should\s+i\s+pick|which\s+option\s+should\s+i\s+pick|which\s+one\s+would\s+you\s+pick|which\s+plan\s+is\s+right\s+for\s+me|lowest\s+out[- ]of[- ]pocket|lowest\s+oop|lowest\s+bills|best\s+choice\s+for\s+my\s+family|plan\s+is\s+best\s+for\s+my\s+family|best\s+for\s+my\s+family|better\s+for\s+me|better\s+for\s+us|which\s+plan\s+will\s+give\s+us\s+the\s+lowest|let'?s\s+talk\s+(?:thru|through)\s+which\s+plan\s+is\s+best|talk\s+me\s+through\s+which\s+plan\s+is\s+best|should\s+(?:we|i)\s+switch\b|switch\s+from\s+(?:the\s+)?(?:standard|enhanced|kaiser)|make\s+the\s+case\s+for\s+(?:the\s+)?(?:standard|enhanced|kaiser)|sell\s+me\s+on\s+(?:the\s+)?(?:standard|enhanced|kaiser)|talk\s+me\s+into\s+(?:the\s+)?(?:standard|enhanced|kaiser)|i\s+know\s+i\s+said\s+(?:standard|enhanced|kaiser)|which\s+one\s+is\s+better\b[^.?!]{0,60}\b(expect|care|specialist|prescription|usage)|is\s+(?:enhanced|standard|kaiser)\s+worth\b)\b/i.test(lower);
+  const canonicalRecommendationSignal = /\b(which\s+plan\s+is\s+best|which\s+plan\s+is\s+better|which\s+plan\s+(?:do|would)\s+you\s+recommend|what\s+plan\s+(?:do|would)\s+you\s+recommend|which\s+(?:option|medical\s+option)\s+would\s+you\s+recommend|best\s+(medical\s+)?plan|which\s+medical\s+plan|which\s+one\s+do\s+you\s+recommend|what\s+do\s+you\s+recommend\s+for\s+me|which\s+one\s+do\s+i\s+pick|which\s+one\s+should\s+i\s+pick|what\s+should\s+i\s+pick|which\s+option\s+should\s+i\s+pick|which\s+one\s+would\s+you\s+pick|which\s+plan\s+is\s+right\s+for\s+me|lowest\s+out[- ]of[- ]pocket|lowest\s+oop|lowest\s+bills|best\s+choice\s+for\s+my\s+family|plan\s+is\s+best\s+for\s+my\s+family|best\s+for\s+my\s+family|better\s+for\s+me|better\s+for\s+us|which\s+plan\s+will\s+give\s+us\s+the\s+lowest|let'?s\s+talk\s+(?:thru|through)\s+which\s+plan\s+is\s+best|talk\s+me\s+through\s+which\s+plan\s+is\s+best|should\s+(?:we|i)\s+switch\b|switch\s+from\s+(?:the\s+)?(?:standard|enhanced|kaiser)|make\s+the\s+case\s+for\s+(?:the\s+)?(?:standard|enhanced|kaiser)|sell\s+me\s+on\s+(?:the\s+)?(?:standard|enhanced|kaiser)|talk\s+me\s+into\s+(?:the\s+)?(?:standard|enhanced|kaiser)|i\s+know\s+i\s+said\s+(?:standard|enhanced|kaiser)|which\s+one\s+is\s+better\b[^.?!]{0,60}\b(expect|care|specialist|prescription|usage)|is\s+(?:enhanced|standard|kaiser)\s+worth\b)\b/i.test(lower);
   const naturalRecurringCareRecommendationSignal =
     /\b(which\s+(?:medical\s+)?(?:plan|option)\s+makes\s+the\s+most\s+sense|which\s+(?:medical\s+)?(?:plan|option)\s+should\s+(?:we|i)\s+lean\s+toward|what\s+should\s+(?:we|i)\s+(?:pick|lean\s+toward))\b/i.test(lower)
     && /\b(expect|care|specialist|therapy|therapist|prescription|usage|visit|visits|wife|husband|spouse|partner|kids?|children|son|daughter|family)\b/i.test(lower);
@@ -1624,6 +1640,17 @@ function buildHighPriorityIntentReply(session: Session, query: string): EngineRe
   // 5. Fresh explicit topic pivots.
   // 6. Only then let stale-topic continuation and pending-guidance scaffolding try to carry the conversation.
 
+  if (isGlobalMedicalDefinitionQuestion(normalizedQuery)) {
+    const detailedAnswer = buildMedicalPlanDetailAnswer(normalizedQuery, session);
+    if (detailedAnswer) {
+      clearPendingGuidance(session);
+      return {
+        answer: detailedAnswer,
+        metadata: { intercept: 'medical-definition-priority-v2' },
+      };
+    }
+  }
+
   if (isPackageRecommendationQuestion(normalizedQuery)) {
     clearPendingGuidance(session);
     return { answer: buildPackageRecommendationReply(session, normalizedQuery), metadata: { intercept: 'package-recommendation-v2' } };
@@ -1681,6 +1708,21 @@ function buildHighPriorityIntentReply(session: Session, query: string): EngineRe
       answer: buildTopicReply(session, 'Medical', normalizedQuery),
       metadata: { intercept: 'medical-compare-priority-v2', topic: 'Medical' },
     };
+  }
+
+  if ((activeTopic === 'Medical' || explicitTopic === 'Medical') && hasExplicitNoPregnancyOverride(normalizedQuery)) {
+    const scenarioOverrideRecommendation = buildRecommendationOverview(
+      buildMedicalScenarioOverrideQuery(session, normalizedQuery),
+      session,
+    );
+    if (scenarioOverrideRecommendation) {
+      clearPendingGuidance(session);
+      setTopic(session, 'Medical');
+      return {
+        answer: scenarioOverrideRecommendation,
+        metadata: { intercept: 'medical-scenario-override-recommendation-v2', topic: 'Medical' },
+      };
+    }
   }
 
   if (
@@ -2980,7 +3022,7 @@ function isHouseholdOnlyMessage(query: string): boolean {
     return false;
   }
 
-  return /^(?:i\s+have|we\s+have|it'?s|it\s+is|just\s+me|me\s+and|only\s+me|my\s+household|our\s+household|my\s+family|our\s+family|no\s+(?:kids?|children|spouse|partner|dependents?))\b/i.test(lower)
+  return /^(?:i\s+have|we\s+have|it'?s|it\s+is|just\s+me|me\s+and|only\s+me|my\s+household|our\s+household|my\s+family|our\s+family|i'?m\s+looking\s+for\s+myself|i\s+am\s+looking\s+for\s+myself|looking\s+for\s+myself|no\s+(?:kids?|children|spouse|partner|dependents?))\b/i.test(lower)
     || /\b(?:now|not\s+anymore|instead|turned\s+out)\b/i.test(lower);
 }
 
@@ -3066,6 +3108,7 @@ function isCostModelRequest(query: string): boolean {
 
 function isMedicalPregnancySignal(query: string): boolean {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  if (hasExplicitNoPregnancyOverride(lower)) return false;
   return /\b(my wife is pregnant|i'?m pregnant|we(?:'re| are) expecting|pregnant|maternity|prenatal|postnatal|delivery|baby|birth)\b/i.test(lower);
 }
 

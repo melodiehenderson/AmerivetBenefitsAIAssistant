@@ -4648,4 +4648,67 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
       },
     ],
   },
+  {
+    id: 'V2-TX-102K',
+    category: 'medical_household_and_maternity_override',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Misha',
+      hasCollectedName: true,
+      userAge: 42,
+      userState: 'OR',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee Only',
+      familyDetails: {},
+      lastBotMessage: 'A coverage tier is just the level of people you are enrolling.',
+    },
+    turns: [
+      {
+        user: "what's a coverage tier?",
+        mustContain: ['A coverage tier is just the level of people you are enrolling', 'Employee Only'],
+      },
+      {
+        user: "oh! okay, i'm looking for myself and my 5 kids.",
+        mustContain: ['updated the household to **Employee + Child(ren)** coverage', 'Medical plan options (Employee + Child(ren))'],
+        mustNotContain: ['A useful next medical step is usually one of these'],
+      },
+      {
+        user: 'so i want to spend as little out of pocket as possible, and i am pregnant. my daughter sees a therapist 1x per month, and i have 3 regular prescriptions. which plan would you recommend?',
+        mustContain: ['My recommendation:', 'Kaiser Standard HMO'],
+        mustNotContain: ['Here is the maternity coverage comparison'],
+      },
+      {
+        user: "ok. and how about for next year? next year i won't be pregnant, but my daughter will still see her therapist, and i'll still need my 3 prescriptions.",
+        mustContain: ['My recommendation:'],
+        mustNotContain: ['Here is the maternity coverage comparison', 'lowest likely maternity-related out-of-pocket exposure'],
+      },
+      {
+        user: "no - like, what if i don't need maternity?",
+        mustContain: ['My recommendation:'],
+        mustNotContain: ['Here is the maternity coverage comparison', 'lowest likely maternity-related out-of-pocket exposure'],
+      },
+    ],
+  },
+  {
+    id: 'V2-TX-102L',
+    category: 'dental_context_bcbstx_definition',
+    initialSession: {
+      step: 'active_chat',
+      userName: 'Jade',
+      hasCollectedName: true,
+      userAge: 24,
+      userState: 'OR',
+      dataConfirmed: true,
+      currentTopic: 'Dental',
+      lastBotMessage: 'Dental coverage: BCBSTX Dental PPO (BCBSTX).',
+    },
+    turns: [
+      {
+        user: 'what does bcbstx stand for?',
+        mustContain: ['Blue Cross Blue Shield of Texas', 'BCBSTX'],
+        mustNotContain: ['A useful next dental step is usually one of these'],
+      },
+    ],
+  },
 ];

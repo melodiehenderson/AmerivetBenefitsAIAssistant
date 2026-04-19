@@ -13,7 +13,7 @@ import {
   getAmerivetPlanById,
   type AmerivetBenefitsPackage,
 } from '@/lib/data/amerivet-package';
-import { getCoverageTierForQuery, isKaiserEligibleState, sessionHasPregnancySignal } from '@/lib/qa/medical-helpers';
+import { getCoverageTierForQuery, hasExplicitNoPregnancyOverride, isKaiserEligibleState, sessionHasPregnancySignal } from '@/lib/qa/medical-helpers';
 import pricingUtils from '@/lib/rag/pricing-utils';
 
 function availableMedicalSummaries(session: Session): MedicalPlanSummary[] {
@@ -504,8 +504,10 @@ function buildLowestOutOfPocketAnswer(queryLower: string, session: Session): str
       .filter((message) => message.role === 'assistant')
       .map((message) => message.content || ''),
   ].join('\n');
-  const pregnancySignal = sessionHasPregnancySignal(session, queryLower)
-    || /\b(maternity\s+coverage\s+comparison|pregnancy\s+is\s+already\s+expected|maternity\s+cost\s+comparison|prenatal|postnatal|delivery)\b/i.test(assistantMaternityContext);
+  const pregnancySignal = !hasExplicitNoPregnancyOverride(queryLower) && (
+    sessionHasPregnancySignal(session, queryLower)
+    || /\b(maternity\s+coverage\s+comparison|pregnancy\s+is\s+already\s+expected|maternity\s+cost\s+comparison|prenatal|postnatal|delivery)\b/i.test(assistantMaternityContext)
+  );
 
   if (pregnancySignal && kaiser && session.userState && isKaiserEligibleState(session.userState)) {
     return [
@@ -599,6 +601,7 @@ export function buildMedicalPlanDetailAnswer(
   options?: { benefitsPackage?: AmerivetBenefitsPackage },
 ): string | null {
   const queryLower = query.toLowerCase();
+  const noPregnancyOverride = hasExplicitNoPregnancyOverride(queryLower);
   const benefitsPackage = options?.benefitsPackage ?? getAmerivetBenefitsPackage();
   const summaries = availableMedicalSummaries(session);
   const plansFromQuery = inferPlansFromQuery(queryLower, session);
@@ -613,11 +616,11 @@ export function buildMedicalPlanDetailAnswer(
     return buildMedicalTermExplanation('copay');
   }
 
-  if (/\b(what\s+does\s+ppo\s+mean|what'?s\s+(?:a\s+)?ppo|what\s+is\s+(?:a\s+)?ppo|define\s+ppo)\b/i.test(queryLower)) {
+  if (/\b(what\s+does\s+ppo\s+(?:mean|stand\s+for)|what'?s\s+(?:a\s+)?ppo|what\s+is\s+(?:a\s+)?ppo|define\s+ppo)\b/i.test(queryLower)) {
     return buildMedicalTermExplanation('ppo');
   }
 
-  if (/\b(what'?s\s+bcbstx|what\s+is\s+bcbstx|what\s+does\s+bcbstx\s+mean|define\s+bcbstx|what\s+is\s+blue\s+cross\s+blue\s+shield\s+of\s+texas)\b/i.test(queryLower)) {
+  if (/\b(what'?s\s+bcbstx|what\s+is\s+bcbstx|what\s+does\s+bcbstx\s+(?:mean|stand\s+for)|define\s+bcbstx|what\s+is\s+blue\s+cross\s+blue\s+shield\s+of\s+texas)\b/i.test(queryLower)) {
     return buildMedicalTermExplanation('bcbstx');
   }
 
@@ -694,7 +697,7 @@ export function buildMedicalPlanDetailAnswer(
     return buildLowestOutOfPocketAnswer(queryLower, session);
   }
 
-  if (/\b(my wife is pregnant|i'?m pregnant|we(?:'re| are) expecting)\b/i.test(queryLower) && plansFromQuery.length !== 1) {
+  if (!noPregnancyOverride && /\b(my wife is pregnant|i'?m pregnant|we(?:'re| are) expecting)\b/i.test(queryLower) && plansFromQuery.length !== 1) {
     return [
       `If pregnancy is already expected, maternity coverage and overall medical cost exposure deserve closer attention than they would for a routine low-use year.`,
       ``,
@@ -704,7 +707,7 @@ export function buildMedicalPlanDetailAnswer(
     ].join('\n');
   }
 
-  if (/\b(maternity|pregnan\w*|delivery|prenatal|postnatal|baby|birth)\b/i.test(queryLower) && plansFromQuery.length !== 1) {
+  if (!noPregnancyOverride && /\b(maternity|pregnan\w*|delivery|prenatal|postnatal|baby|birth)\b/i.test(queryLower) && plansFromQuery.length !== 1) {
     return [
       buildServiceComparison(summaries, 'Maternity coverage', (plan) => plan.maternity),
       '',
