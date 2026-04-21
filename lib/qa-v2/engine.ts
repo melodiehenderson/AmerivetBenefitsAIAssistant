@@ -27,6 +27,7 @@ import {
   stripAffirmationLeadIn,
 } from '@/lib/qa/routing-helpers';
 import { buildLiveSupportMessage, buildQleFilingOrderMessage } from '@/lib/qa/policy-response-builders';
+import { IRS_2026 } from '@/lib/data/irs-limits-2026';
 
 const ENROLLMENT_PORTAL_URL = process.env.ENROLLMENT_PORTAL_URL || 'https://wd5.myworkday.com/amerivet/login.html';
 const HR_PHONE = process.env.HR_PHONE_NUMBER || '888-217-4728';
@@ -182,6 +183,112 @@ function buildRephraseEscalationReply(session: Session): string {
     `- Or rephrase in plain terms — "is this worth it for my family?", "how many plans are there?", "what would you pick?" — and I will try to give you a direct yes/no or recommendation rather than another menu.`,
     ``,
     `If you would rather skip the bot and talk to a person, AmeriVet HR is at **${HR_PHONE}**, and the Workday enrollment portal is [here](${ENROLLMENT_PORTAL_URL}).`,
+  ].join('\n');
+}
+
+// Apr 21 Step 4 Layer 1: procedural intent family.
+// Three factual, mechanics-flavored question shapes users ask that the old
+// engine used to drop into a next-step menu:
+// 1. HSA/FSA funding mechanics — "does it come out of my paycheck?",
+//    "does AmeriVet contribute to the HSA?", "how much can I contribute?"
+// 2. Enrollment timing — "when is open enrollment?", "when does coverage
+//    start?", "am I enrolled yet?"
+// 3. Waiting periods — "is there a waiting period?", "how long until dental
+//    kicks in?", "waiting period for major services?"
+// Each has a deterministic answer from the package data, and should be
+// answered directly before any fallback can fire.
+
+function isHsaFsaFundingQuestion(query: string): boolean {
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  const mentionsAccount = /\b(hsa|fsa|health\s+savings\s+account|flexible\s+spending\s+account)\b/i.test(lower);
+  if (!mentionsAccount) return false;
+  return /\b(come\s+out\s+of\s+my\s+paycheck|out\s+of\s+my\s+paycheck|paycheck\s+deduction|payroll\s+deduction|pre[-\s]?tax|pretax|tax[-\s]?free\s+contribution|how\s+(?:do|can)\s+i\s+(?:fund|contribute(?:\s+to)?)|employer\s+(?:contribute|contribution|match|put|pay|add)|amerivet\s+(?:contribute|contribution|match|put|pay|add|kick\s+in)|company\s+(?:contribute|contribution|match|put|pay|add|kick\s+in)|does\s+(?:amerivet|the\s+company|my\s+employer)\s+(?:contribute|match|put|pay|add)|does\s+(?:my\s+employer|amerivet|the\s+company)\s+(?:chip|kick)\s+in|employer\s+(?:kicks?|chips?)\s+in|how\s+much\s+(?:can|does)\s+(?:i|amerivet|the\s+company|my\s+employer)\s+(?:contribute|put|add|match|kick\s+in)|contribution\s+limits?|max(?:imum)?\s+contribution|irs\s+limit|fund\s+(?:an?\s+)?(?:hsa|fsa))\b/i.test(lower);
+}
+
+function buildHsaFsaFundingReply(session: Session): string {
+  const hsa = ACTIVE_AMERIVET_PACKAGE.catalog.specialCoverage?.hsa;
+  const rawContribs = hsa?.employerContribution;
+  const contribsByTier: Record<string, number> =
+    typeof rawContribs === 'number'
+      ? { 'Employee Only': rawContribs }
+      : (rawContribs as Record<string, number> | undefined) || {};
+  const lines: string[] = [];
+  lines.push(`How HSA funding works at AmeriVet:`);
+  lines.push(``);
+  lines.push(`- **Your contributions** come out of your paycheck **pre-tax**, spread across the plan year (so you do not fund the whole annual amount up front).`);
+  lines.push(`- **AmeriVet's employer contribution** is added to your HSA on top of what you put in — it is free money, not a match you have to earn:`);
+  const tierOrder = ['Employee Only', 'Employee + Spouse', 'Employee + Child(ren)', 'Employee + Family'] as const;
+  for (const tier of tierOrder) {
+    const amount = contribsByTier[tier];
+    if (typeof amount === 'number') {
+      lines.push(`  - ${tier}: **$${amount.toLocaleString()}/year**`);
+    }
+  }
+  lines.push(``);
+  lines.push(`- **IRS annual contribution limits (2026)** — the combined employee + employer total cannot exceed:`);
+  lines.push(`  - Self-only coverage: **$${IRS_2026.HSA_SELF_ONLY.toLocaleString()}**`);
+  lines.push(`  - Family coverage: **$${IRS_2026.HSA_FAMILY.toLocaleString()}**`);
+  lines.push(`  - Age 55+ catch-up: **+$${IRS_2026.HSA_CATCHUP_ADDITIONAL.toLocaleString()}**`);
+  lines.push(``);
+  lines.push(`FSA contributions also come out of your paycheck pre-tax. The 2026 general-purpose FSA max is **$${IRS_2026.FSA_GENERAL_MAX.toLocaleString()}**. Unlike the HSA, AmeriVet does not add an employer contribution to the FSA.`);
+  lines.push(``);
+  lines.push(`If you want the exact payroll cadence (which paycheck starts the deduction, whether it is split evenly, etc.), that is a Workday/HR lookup — the portal is [here](${ENROLLMENT_PORTAL_URL}) and HR is at **${HR_PHONE}**.`);
+  return lines.join('\n');
+}
+
+function isEnrollmentTimingQuestion(query: string): boolean {
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  return /\b(when\s+is\s+(?:open\s+)?enrollment|when\s+does\s+(?:open\s+)?enrollment|enrollment\s+window|enrollment\s+dates?|enrollment\s+deadline|enrollment\s+period|open\s+enrollment\s+(?:start|end|dates?|period)|when\s+do\s+i\s+enroll|when\s+can\s+i\s+enroll|deadline\s+to\s+enroll|when\s+does\s+(?:my\s+|the\s+)?coverage\s+(?:start|begin|take\s+effect|kick\s+in)|when\s+will\s+(?:my\s+|the\s+)?coverage\s+(?:start|begin)|coverage\s+effective\s+date|effective\s+date\s+of\s+(?:my\s+)?coverage|first\s+day\s+of\s+coverage|new\s+hire\s+(?:enrollment|window|waiting)|how\s+long\s+(?:after|until|till|\u2019til)\s+(?:i|my|new\s+hire).{0,30}(?:coverage|enrolled|benefits))\b/i.test(lower);
+}
+
+function buildEnrollmentTimingReply(): string {
+  const oe = ACTIVE_AMERIVET_PACKAGE.catalog.openEnrollment;
+  const elig = ACTIVE_AMERIVET_PACKAGE.catalog.eligibility;
+  const formatDate = (iso: string) => {
+    const d = new Date(iso + 'T00:00:00Z');
+    return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+  };
+  return [
+    `Enrollment timing for AmeriVet (${oe.year}):`,
+    ``,
+    `- **Open enrollment window:** ${formatDate(oe.startDate)} \u2013 ${formatDate(oe.endDate)}`,
+    `- **Coverage effective date** (elections made during open enrollment): ${formatDate(oe.effectiveDate)}`,
+    `- **New hires:** ${elig.coverageEffective}`,
+    `- **Eligibility:** full-time at ${elig.fullTimeHours}+ hours/week; part-time at ${elig.partTimeHours}+ hours/week (plan-specific).`,
+    ``,
+    `Outside of open enrollment, you can only change elections if you have a qualifying life event (marriage, birth, loss of other coverage, etc.).`,
+    ``,
+    `Your actual enrollment status and paycheck deduction start date live in Workday \u2014 [portal here](${ENROLLMENT_PORTAL_URL}). HR can confirm anything specific: **${HR_PHONE}**.`,
+  ].join('\n');
+}
+
+function isWaitingPeriodQuestion(query: string): boolean {
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  return /\b(waiting\s+period|wait\s+period|how\s+long\s+(?:do\s+i\s+)?(?:have\s+to\s+)?wait|do\s+i\s+have\s+to\s+wait|is\s+there\s+a\s+wait|any\s+wait\s+before|cover(?:age|ed)\s+kick(?:s)?\s+in)\b/i.test(lower);
+}
+
+function buildWaitingPeriodReply(session: Session): string {
+  const topic = session.currentTopic;
+  const dentalWait = `Dental **major services** (crowns, bridges, oral surgery) have a **6-month waiting period** for new enrollees. Preventive and basic services are covered right away.`;
+  const genericWait = `Coverage generally begins on the first of the month following 30 days of employment for new hires; existing employees who elect during open enrollment have coverage effective ${ACTIVE_AMERIVET_PACKAGE.catalog.openEnrollment.effectiveDate}. Most plans do not have additional waiting periods beyond that.`;
+  if (topic === 'Dental') {
+    return [
+      dentalWait,
+      ``,
+      `Everything else on the dental side (cleanings, exams, fillings) has no waiting period — it is covered from your coverage start date.`,
+      ``,
+      `If you need the exact date your dental kicks in, that is a Workday lookup — [portal here](${ENROLLMENT_PORTAL_URL}), HR at **${HR_PHONE}**.`,
+    ].join('\n');
+  }
+  return [
+    `Short answer on waiting periods in AmeriVet's package:`,
+    ``,
+    `- **Medical, Vision, HSA, FSA, Life, Disability, Accident/AD&D, Critical Illness:** no waiting period beyond the standard coverage-effective-date rule.`,
+    `- **Dental:** ${dentalWait.replace(/^Dental\s+/, '')}`,
+    ``,
+    genericWait,
+    ``,
+    `Your exact effective date lives in Workday — [portal here](${ENROLLMENT_PORTAL_URL}). HR can confirm: **${HR_PHONE}**.`,
   ].join('\n');
 }
 
@@ -1838,6 +1945,35 @@ function buildHighPriorityIntentReply(session: Session, query: string): EngineRe
         intercept: 'deictic-tier-reference-v2',
         tier: session.coverageTierLock || coverageTierFromConversation(session) || null,
       },
+    };
+  }
+
+  // Apr 21 Step 4 Layer 1: procedural intent family.
+  // HSA/FSA funding mechanics, enrollment timing, and waiting-period asks all
+  // have deterministic answers from the package data and should be answered
+  // directly before any topic-pivot or fallback can route them into a menu.
+  if (isHsaFsaFundingQuestion(normalizedQuery)) {
+    clearPendingGuidance(session);
+    setTopic(session, 'HSA/FSA');
+    return {
+      answer: buildHsaFsaFundingReply(session),
+      metadata: { intercept: 'hsa-fsa-funding-v2', topic: 'HSA/FSA' },
+    };
+  }
+
+  if (isEnrollmentTimingQuestion(normalizedQuery)) {
+    clearPendingGuidance(session);
+    return {
+      answer: buildEnrollmentTimingReply(),
+      metadata: { intercept: 'enrollment-timing-v2' },
+    };
+  }
+
+  if (isWaitingPeriodQuestion(normalizedQuery)) {
+    clearPendingGuidance(session);
+    return {
+      answer: buildWaitingPeriodReply(session),
+      metadata: { intercept: 'waiting-period-v2', topic: session.currentTopic || null },
     };
   }
 

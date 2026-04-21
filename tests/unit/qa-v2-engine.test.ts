@@ -978,7 +978,12 @@ describe('qa-v2 engine', () => {
       session,
     });
 
-    expect(result.answer).toContain('Waiting period for major services is 6 months');
+    // Apr 21 Step 4 Layer 1: the procedural intent family now answers
+    // waiting-period asks directly. The fact — 6-month wait on dental major
+    // services — is still what we regression-lock; the wording is the newer,
+    // more helpful counselor phrasing.
+    expect(result.answer).toMatch(/6-month waiting period/i);
+    expect(result.answer).toMatch(/major services/i);
     expect(result.answer).not.toContain('We can stay with dental');
   });
 
@@ -4410,6 +4415,109 @@ describe('qa-v2 engine', () => {
     expect(result.answer).toMatch(/\*\*My recommendation:\s+[A-Za-z ]+\.\*\*/);
     expect(result.answer).not.toMatch(/Quick clarifier: would you say your expected usage/i);
     expect(session.lastRecommendation?.plan).toBeTruthy();
+  });
+
+  it('Apr 21 Step 4 Layer 1: answers HSA paycheck/pre-tax funding asks directly with employer contribution amounts', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Maggie',
+      hasCollectedName: true,
+      userAge: 29,
+      userState: 'CA',
+      dataConfirmed: true,
+      currentTopic: 'HSA/FSA',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'does the HSA come out of my paycheck pre-tax?',
+      session,
+    });
+
+    expect(result.answer).toMatch(/pre-tax/i);
+    expect(result.answer).toMatch(/Employee Only.*\$750/);
+    expect(result.answer).toMatch(/Employee \+ Family.*\$1,250/);
+    expect(result.metadata?.intercept).toBe('hsa-fsa-funding-v2');
+  });
+
+  it('Apr 21 Step 4 Layer 1: answers "does AmeriVet contribute to the HSA?" with employer-contribution amounts', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Maggie',
+      hasCollectedName: true,
+      userAge: 29,
+      userState: 'CA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'does amerivet contribute to the hsa?',
+      session,
+    });
+
+    expect(result.answer).toMatch(/employer contribution/i);
+    expect(result.answer).toMatch(/\$750/);
+    expect(result.metadata?.intercept).toBe('hsa-fsa-funding-v2');
+  });
+
+  it('Apr 21 Step 4 Layer 1: answers enrollment timing directly with concrete dates', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Maggie',
+      hasCollectedName: true,
+      userAge: 29,
+      userState: 'CA',
+      dataConfirmed: true,
+    });
+
+    const result = await runQaV2Engine({
+      query: 'when is open enrollment?',
+      session,
+    });
+
+    expect(result.answer).toMatch(/September 15, 2024/);
+    expect(result.answer).toMatch(/September 30, 2024/);
+    expect(result.answer).toMatch(/October 1, 2024/);
+    expect(result.metadata?.intercept).toBe('enrollment-timing-v2');
+  });
+
+  it('Apr 21 Step 4 Layer 1: answers "when does my coverage start?" directly with the new-hire rule', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Maggie',
+      hasCollectedName: true,
+      userAge: 29,
+      userState: 'CA',
+      dataConfirmed: true,
+    });
+
+    const result = await runQaV2Engine({
+      query: 'when does my coverage start?',
+      session,
+    });
+
+    expect(result.answer).toMatch(/first of the month following 30 days/i);
+    expect(result.metadata?.intercept).toBe('enrollment-timing-v2');
+  });
+
+  it('Apr 21 Step 4 Layer 1: answers waiting period asks directly, calling out the 6-month dental major-services wait', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Maggie',
+      hasCollectedName: true,
+      userAge: 29,
+      userState: 'CA',
+      dataConfirmed: true,
+    });
+
+    const result = await runQaV2Engine({
+      query: 'is there a waiting period on any of the plans?',
+      session,
+    });
+
+    expect(result.answer).toMatch(/6-month waiting period/i);
+    expect(result.answer).toMatch(/major services/i);
+    expect(result.metadata?.intercept).toBe('waiting-period-v2');
   });
 
   it('Apr 21 Step 8: treats "is there another plan to compare this to?" in Vision context as an only-option question', async () => {
