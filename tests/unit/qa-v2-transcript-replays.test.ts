@@ -4610,6 +4610,40 @@ describe('qa-v2 transcript replays', () => {
     expect(result.answer).toMatch(/HMO stands for \*\*Health Maintenance Organization\*\*/i);
   });
 
+  it('answers "can I buy more than the included $25K base life?" with a direct yes (Apr 20 v2 yes-no regression)', async () => {
+    const session = makeSession({
+      userName: 'Susan',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'GA',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+    });
+
+    const result = await runQaV2Engine({ query: 'can I buy more than the included $25K base life?', session });
+    expect(result.answer).toMatch(/^Yes\b|\byes,?\s/i);
+    expect(result.answer).toMatch(/Voluntary Term Life|Whole Life|beyond the basic|on top of (?:the\s+)?basic/i);
+  });
+
+  it('answers "does the dental plan cover orthodontia?" with a direct yes and the rider detail (Apr 20 v2 yes-no regression)', async () => {
+    const session = makeSession({
+      userName: 'Susan',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'GA',
+      dataConfirmed: true,
+      currentTopic: 'Dental',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+    });
+
+    const result = await runQaV2Engine({ query: 'does the dental plan cover orthodontia?', session });
+    expect(result.answer).toMatch(/^Yes\b|\byes,?\s/i);
+    expect(result.answer).toMatch(/orthodontia|braces|rider|lifetime max|\$1,?000|\$1,?500|\$2,?000/i);
+  });
+
   it('answers "how much is covered for orthodontia?" with dental facts instead of a medical next-step menu (Apr 20 v2 direct-ask regression)', async () => {
     const session = makeSession({
       userName: 'Susan',
@@ -4625,5 +4659,81 @@ describe('qa-v2 transcript replays', () => {
     const result = await runQaV2Engine({ query: 'how much is covered for orthodontia?', session });
     expect(result.answer).not.toMatch(/A useful next medical step is usually one of these/i);
     expect(result.answer).toMatch(/orthodontia|braces|\$500|\$1,?000|\$1,?500|\$2,?000|50%/i);
+  });
+
+  // Apr 20 v2 full-transcript replay (Susan, 49, GA).
+  // End-to-end regression gate: after Steps 1-6, the bot should walk through a
+  // Susan/49/GA session without leaking family-member ages into userAge,
+  // without losing fresh direct asks to the fallback menu, without forcing
+  // FSA knowledge questions through the Kaiser-pairing groove, while
+  // answering HMO/PPO definitions, pivoting topics cleanly, and giving a
+  // direct yes to package-fact questions.
+  it('replays the Apr 20 v2 Susan/49/GA transcript end-to-end across all six regression families', async () => {
+    const session = makeSession();
+
+    await replayTranscript(
+      [
+        { user: 'Susan' },
+        {
+          user: '49, GA',
+          mustContain: ['49', 'GA'],
+        },
+        // Step 1 (family A): family-member age mentions must not overwrite userAge.
+        {
+          user: 'my oldest kid is 21',
+          mustNotContain: ['updated your age to 21', 'your age to 21'],
+        },
+        {
+          user: 'my wife is 38',
+          mustNotContain: ['updated your age to 38', 'your age to 38'],
+        },
+        // Medical topic entry + Step 2 (family B): direct recommendation ask
+        // should not fall into the generic next-step menu.
+        { user: 'medical' },
+        {
+          user: 'what do you recommend?',
+          mustNotContain: ['A useful next medical step is usually one of these'],
+        },
+        // Step 4 (family D): HMO definition parity.
+        {
+          user: 'what is an HMO?',
+          mustContain: ['Health Maintenance Organization'],
+        },
+        // Step 5 (family E): Medical → Dental pivot stays clean.
+        { user: "let's look at dental" },
+        // Step 6 (family F, dental leg): direct yes on orthodontia coverage.
+        {
+          user: 'does the dental plan cover orthodontia?',
+          mustContain: ['Yes'],
+          mustNotContain: ['A useful next dental step is usually one of these'],
+        },
+        // Step 5 (family E): Dental → Vision pivot.
+        {
+          user: 'show me the vision plan',
+          mustNotContain: ['dental plan cover'],
+        },
+        // Step 3 (family C): FSA knowledge ask must NOT be forced through the
+        // Kaiser-pairing groove even later in the conversation.
+        {
+          user: 'what is an FSA?',
+          mustContain: ['Flexible Spending Account'],
+        },
+        // Step 6 (family F, life leg): direct yes on adding more life coverage.
+        { user: 'what about life insurance?' },
+        {
+          user: 'can I buy more than the included $25K base life?',
+          mustContain: ['Yes'],
+          mustNotContain: ['A useful next life-insurance step is usually one of these'],
+        },
+      ],
+      session,
+    );
+
+    // After the full walk, userAge must still be the intake value (49),
+    // not 21 (oldest kid) or 38 (wife). This is the strongest signal
+    // that Step 1's intake-shape extractor held across every turn.
+    expect(session.userAge).toBe(49);
+    expect(session.userState).toBe('GA');
+    expect(session.userName).toBe('Susan');
   });
 });

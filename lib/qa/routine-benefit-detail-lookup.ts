@@ -67,9 +67,15 @@ export function buildRoutineBenefitDetailAnswer(
     const orthoCopay = dental.coverage?.copays?.orthodontia;
     const premium = dental.tiers[tierKey];
 
-    if (/\b(orthodont|braces)\b/i.test(lower)) {
+    if (/\borthodont(?:ia|ic|ics)?\b|\bbraces\b/i.test(lower)) {
+      const isAffirmativeAsk = /^\s*(?:do(?:es)?|is|are|can|will)\b/i.test(lower)
+        || /\bcover(?:s|ed)?\b/i.test(lower)
+        || /\b(?:included|include)\b/i.test(lower);
+      const leadIn = isAffirmativeAsk
+        ? `Yes — orthodontia is covered on AmeriVet's dental plan. Here's what to know:`
+        : `For braces, the practical question is not just whether orthodontia exists on the plan, but how much of the cost the plan actually helps with.`;
       return [
-        `For braces, the practical question is not just whether orthodontia exists on the plan, but how much of the cost the plan actually helps with.`,
+        leadIn,
         ``,
         `${dental.name}: orthodontia is included rather than excluded outright.`,
         '',

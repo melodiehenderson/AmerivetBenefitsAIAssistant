@@ -235,8 +235,12 @@ export function isNonMedicalDetailQuestion(topic: string, query: string): boolea
   const costQuestion = /\b(how\s+much|cost|costs|price|prices|rate|rates|premium|premiums)\b/i.test(lower);
 
   if (topic === 'Life Insurance') {
+    const buyMorePattern = /\b(buy\s+more|add\s+more\s+life|additional\s+life|extra\s+life|more\s+life\s+coverage|beyond\s+(?:the\s+)?basic|more\s+than\s+(?:the\s+)?basic|more\s+than\s+(?:the\s+)?(?:included|default)|top\s+off|top\s+up|layer\s+on|stack\s+on)\b/i;
+    const baseAmountPattern = /\$?\s*25[,\s]?000\b|\b25k\b|\$25k\b/i;
     return /\b(portable|guaranteed issue|cash value|whole life|term life|voluntary term(?:\s+life)?|voluntary life|vol\s+term|vol\s+life|basic life|perm\b|permanent\b|age[- ]banded|rates? locked|coverage amount|how much life insurance|how much can i get|how much should i get|how much coverage should i get|help me decide how much|help me determine how much|help me figure out how much|decide how much|determine how much|figure out how much|if i do nothing|what life insurance do i get|included life|included coverage|default life|automatic coverage|automatically enrolled|already included|included by default|get automatically|without having to pay more|without paying more|without extra cost|1x|5x salary|spouse coverage|partner coverage|dependent child coverage|family coverage|cover my spouse|cover my partner|cover my wife|cover my husband|cover my family|cover my kids|cover my children|cover my dependents|which one should i get|which ones should i get|which should i get|should i pay for more|what should i think about)\b/i.test(lower)
-      || costQuestion;
+      || costQuestion
+      || buyMorePattern.test(lower)
+      || baseAmountPattern.test(lower);
   }
 
   if (topic === 'Disability') {
@@ -289,6 +293,26 @@ export function buildNonMedicalDetailAnswer(topic: string, query: string, sessio
     const lifeDecisionFramework = buildLifeDecisionFrameworkReply(query, session);
     if (lifeDecisionFramework) {
       return lifeDecisionFramework;
+    }
+
+    // Apr 20 v2 yes-no regression fix: "can I buy more than the included $25K
+    // base life?" / "can I add more life coverage?" deserves a direct "Yes"
+    // with the Voluntary Term Life / Whole Life layering facts, not a
+    // generic next-step menu.
+    const buyMoreAffirmative = /^(?:\s*(?:so|and|but|also|okay|ok|well)[\s,.\-]+)?\s*(?:can|could|may|am\s+i\s+able\s+to|is\s+it\s+possible\s+to|is\s+there\s+a\s+way\s+to|do\s+i\s+(?:get|have)\s+to|should\s+i)\b/i.test(lower)
+      && /\b(buy\s+more|add(?:\s+more)?(?:\s+life)?|get\s+more(?:\s+life)?|increase|layer\s+on|top\s+off|top\s+up|stack\s+on|go\s+beyond|beyond\s+(?:the\s+)?basic|more\s+than\s+(?:the\s+)?(?:basic|included|default|\$?\s*25[,\s]?000|25k))\b/i.test(lower);
+    const buyMoreImplicit = /\b(buy\s+more\s+(?:life|coverage|insurance)|add\s+more\s+life|additional\s+life\s+coverage|extra\s+life\s+coverage|more\s+life\s+coverage|beyond\s+(?:the\s+)?basic\s+life|more\s+than\s+(?:the\s+)?basic\s+life|more\s+than\s+(?:the\s+)?included\s+(?:life|\$?\s*25[,\s]?000|25k)|more\s+than\s+(?:the\s+)?\$?\s*25[,\s]?000|more\s+than\s+25k)\b/i.test(lower);
+    if (buyMoreAffirmative || buyMoreImplicit) {
+      return [
+        `Yes. You can add more life insurance on top of the employer-paid base.`,
+        ``,
+        `Here is the practical layering in AmeriVet's package:`,
+        `- **${basic?.name || 'Basic Life & AD&D'}** is the included $25,000 employer-paid base — everyone eligible gets that automatically`,
+        `- **${term?.name || 'Voluntary Term Life'}** is the main way to buy more coverage — the current summary lists it at 1x to 5x annual salary up to $500,000, employee-paid and age-banded, with guaranteed issue up to $150,000 during open enrollment`,
+        `- **${whole?.name || 'Whole Life'}** is the permanent cash-value option you can layer on top as well, with rates locked at your enrollment age`,
+        ``,
+        `So the short version is: the **$25,000** base is only the starting point — if that feels too small, voluntary term life is usually the cleaner first layer, and whole life is worth adding only if permanent coverage plus cash value is part of the goal.`,
+      ].join('\n');
     }
 
     if ((/\b(if i do nothing|what life insurance do i get|included life|included coverage|default life|automatic coverage|automatically enrolled|already included|included by default|get automatically|without having to pay more|without paying more|without extra cost)\b/i.test(lower) && /\b(life|coverage|insurance|plans?)\b/i.test(lower)) || /\bemployer-paid basic life\b/i.test(lower)) {
