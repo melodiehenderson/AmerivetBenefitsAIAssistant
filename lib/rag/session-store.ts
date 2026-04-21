@@ -102,6 +102,21 @@ export type Session = {
   loopCount?: number;                 // How many times we've asked same thing
   userSalary?: number;                // Monthly salary — persisted so STD math works across session turns
 
+  // Apr 21 Step 5: recommendation state awareness.
+  // Once we emit a recommendation clarifier (e.g. "would you say your expected
+  // usage is low, moderate, or high?"), record the turn. If the user asks for
+  // a recommendation again shortly after without answering, we commit to a
+  // default recommendation instead of looping through the same clarifier.
+  recommendationClarifierShownAt?: number;
+  // Last medical recommendation we actually committed to, so we can replay
+  // or acknowledge it when the user re-asks instead of starting from scratch.
+  lastRecommendation?: {
+    plan: string;
+    topic: string;
+    coverageTier?: string;
+    turn: number;
+  };
+
   // NEW: Lightweight memory for lifecycle/event reasoning
   lifeEvents?: string[];              // e.g., ['marriage', 'job-change', 'pregnancy']
   lastDetectedLocationChange?: {

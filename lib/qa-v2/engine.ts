@@ -879,6 +879,16 @@ function isShortRecommendationAsk(query: string): boolean {
   return /^(?:what'?s\s+your\s+recommendation|what\s+is\s+your\s+recommendation|what\s+do\s+you\s+recommend|give\s+me\s+your\s+recommendation|your\s+recommendation|which\s+(?:one|plan|option)\s+(?:will\s+be|is\s+going\s+to\s+be|would\s+be|ends\s+up(?:\s+being)?|is)\s+(?:the\s+)?(?:cheapest|lowest|least\s+expensive|most\s+affordable|cheaper)|which\s+(?:one|plan|option)\s+is\s+cheapest|(?:cheapest|least\s+expensive|most\s+affordable)\s+(?:plan|option|one))\s*\??\s*$/i.test(stripped);
 }
 
+// Apr 21 Step 5: detects "just pick one / just give me the answer / skip the
+// clarifier" phrasings. When this fires alongside a recommendation ask, we
+// tell `buildRecommendationOverview` to commit rather than route through the
+// low/moderate/high clarifier. This is the direct fix for "I already got the
+// considerations, just give me a recommendation."
+function isJustCommitRecommendationAsk(query: string): boolean {
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  return /\b(just\s+(?:pick|tell|give|commit|recommend|choose)|pick\s+one(?:\s+already)?|give\s+me\s+(?:a|an|the|your)\s+(?:direct\s+)?answer|give\s+me\s+an?\s+answer|skip\s+the\s+(?:clarifier|questions?)|i\s+(?:just\s+)?want\s+(?:a|an|the|your)\s+(?:direct\s+)?(?:answer|recommendation|rec)|i\s+(?:already\s+)?(?:saw|got|have)\s+(?:the\s+)?considerations?|you\s+already\s+gave\s+me\s+(?:the\s+)?considerations?|jump\s+(?:right\s+)?to\s+(?:what\s+)?you(?:'d|\s+would)?\s+recommend|what\s+would\s+you\s+pick|what\s+would\s+you\s+choose|just\s+(?:an?\s+)?answer\s+(?:please|already))\b/i.test(lower);
+}
+
 function isMedicalRecommendationPreferenceFollowup(query: string): boolean {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
   return /\b(more\s+predictable\s+costs?|predictable\s+costs?|less\s+deductible\s+risk|lower\s+deductible\s+risk|stronger\s+deductible\s+protection|stronger\s+cost\s+protection|can\s+handle\s+more\s+risk|comfortable\s+with\s+more\s+risk|okay\s+with\s+more\s+risk|willing\s+to\s+take\s+more\s+risk|keep\s+premiums?\s+lower|lower\s+premiums?\s+matter\s+more|premium\s+first|budget\s+first)\b/i.test(lower);
@@ -3535,8 +3545,12 @@ function buildTopicReply(session: Session, topic: string, query: string): string
     if (isMedicalWorthPremiumQuestion(query)) {
       return buildMedicalWorthExtraPremiumReply(session);
     }
+    // Apr 21 Step 5: honor explicit just-commit asks so the clarifier branch
+    // is bypassed even on the first turn. The helper also auto-bypasses when
+    // the clarifier has been shown in the last couple of turns.
+    const forceCommit = isJustCommitRecommendationAsk(query);
     if (isDirectMedicalRecommendationQuestion(query)) {
-      const recommendation = buildRecommendationOverview(query, session);
+      const recommendation = buildRecommendationOverview(query, session, forceCommit ? { forceCommit: true } : undefined);
       if (recommendation) return recommendation;
     }
     const detailedAnswer = buildMedicalPlanDetailAnswer(query, session);
@@ -3544,7 +3558,7 @@ function buildTopicReply(session: Session, topic: string, query: string): string
     const medicalFallback = buildMedicalPlanFallback(query, session);
     if (medicalFallback) return medicalFallback;
 
-    const recommendation = buildRecommendationOverview(query, session);
+    const recommendation = buildRecommendationOverview(query, session, forceCommit ? { forceCommit: true } : undefined);
     if (recommendation) return recommendation;
   }
 

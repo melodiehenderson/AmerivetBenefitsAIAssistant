@@ -4336,6 +4336,82 @@ describe('qa-v2 engine', () => {
     expect(result.answer).not.toMatch(/A useful next vision step is usually one of these/);
   });
 
+  it('Apr 21 Step 5: asks the usage clarifier the first time a bare medical recommendation ask comes in', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Maggie',
+      hasCollectedName: true,
+      userAge: 29,
+      userState: 'CA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'which plan do you recommend?',
+      session,
+    });
+
+    // First ask: clarifier is still appropriate.
+    expect(result.answer).toMatch(/low,\s*moderate,\s*or\s*high|would you say your expected usage/i);
+    // And the session should now remember that we asked the clarifier, so
+    // the NEXT turn can short-circuit to a commit.
+    expect(typeof session.recommendationClarifierShownAt).toBe('number');
+  });
+
+  it('Apr 21 Step 5: commits to a medical recommendation on a repeat ask after the clarifier instead of looping', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Maggie',
+      hasCollectedName: true,
+      userAge: 29,
+      userState: 'CA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+    });
+
+    // Turn 1: bare ask → clarifier.
+    const first = await runQaV2Engine({
+      query: 'which plan do you recommend?',
+      session,
+    });
+    expect(first.answer).toMatch(/low,\s*moderate,\s*or\s*high|would you say your expected usage/i);
+
+    // Turn 2: user rephrases the same ask without pinning down usage. The
+    // engine should commit instead of emitting the same clarifier again.
+    const second = await runQaV2Engine({
+      query: 'so which plan do you recommend for me?',
+      session,
+    });
+
+    expect(second.answer).toMatch(/\*\*My recommendation:\s+[A-Za-z ]+\.\*\*/);
+    expect(second.answer).not.toMatch(/Quick clarifier: would you say your expected usage/i);
+    // And the committed recommendation should be remembered on the session.
+    expect(session.lastRecommendation?.plan).toMatch(/Standard HSA|Enhanced HSA|Kaiser Standard HMO/);
+    expect(session.lastRecommendation?.topic).toBe('Medical');
+  });
+
+  it('Apr 21 Step 5: honors an explicit "just pick one" on the first turn and skips the clarifier', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Maggie',
+      hasCollectedName: true,
+      userAge: 29,
+      userState: 'CA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'just pick one medical plan for me please',
+      session,
+    });
+
+    expect(result.answer).toMatch(/\*\*My recommendation:\s+[A-Za-z ]+\.\*\*/);
+    expect(result.answer).not.toMatch(/Quick clarifier: would you say your expected usage/i);
+    expect(session.lastRecommendation?.plan).toBeTruthy();
+  });
+
   it('treats "is there only one vision plan available?" as an only-option question instead of reopening the full plan card', async () => {
     const session = makeSession({
       step: 'active_chat',

@@ -11,6 +11,13 @@ import {
 type KaiserUnavailableVariant = 'compare' | 'pricing' | 'redirect';
 type MedicalHelperOptions = {
   benefitsPackage?: AmerivetBenefitsPackage;
+  // Apr 21 Step 5: when true, `buildRecommendationOverview` skips the
+  // low/moderate/high clarifier and commits to the best-guess recommendation
+  // using whatever signals are available. Used when the user has made it
+  // clear they want a direct answer ("just pick one", "I already saw the
+  // considerations"), or when the engine has detected a repeat rec ask
+  // after a prior clarifier.
+  forceCommit?: boolean;
 };
 
 const CHILD_NUMBER_WORDS: Record<string, number> = {
@@ -373,7 +380,7 @@ export function buildRecommendationOverview(
   if (/\b(calculate|estimate|project(?:ed)?|model)\b.*\b(cost|costs|expense|expenses)\b|\bhealthcare\s+costs?\b.*\b(next\s+year|\d{4}|estimate|project)\b/.test(lower)) {
     return null;
   }
-  const canonicalRecommendationSignal = /\b(recommendation|recommend|suggest|best\s+plan|best\s+option|which\s+plan|what\s+plan|what\s+do\s+you\s+recommend|what[’']?s\s+best\s+for\s+me|how\s+do\s+i\s+decide(?:\s+which\s+one)?|help\s+me\s+choose|which\s+one\s+is\s+best|which\s+one\s+is\s+better|make\s+the\s+case\s+for|sell\s+me\s+on|talk\s+me\s+into|should\s+(?:we|i)\s+switch|is\s+(?:enhanced|standard|kaiser)\s+worth)\b/i.test(lower);
+  const canonicalRecommendationSignal = /\b(recommendation|recommend|suggest|best\s+plan|best\s+option|which\s+plan|what\s+plan|what\s+do\s+you\s+recommend|what[’']?s\s+best\s+for\s+me|how\s+do\s+i\s+decide(?:\s+which\s+one)?|help\s+me\s+choose|which\s+one\s+is\s+best|which\s+one\s+is\s+better|make\s+the\s+case\s+for|sell\s+me\s+on|talk\s+me\s+into|should\s+(?:we|i)\s+switch|is\s+(?:enhanced|standard|kaiser)\s+worth|just\s+(?:pick|tell|give|commit|choose)|pick\s+one(?:\s+already)?|give\s+me\s+an?\s+answer|what\s+would\s+you\s+pick|what\s+would\s+you\s+choose)\b/i.test(lower);
   const healthySignal = /\b(healthy|low\s+utilization|low\s+use|low\s+usage|rarely\s+(?:go|use))\b/i.test(lower);
   const singleSignal = /\b(single|individual|just\s+me|only\s+me|no\s+dependents|no\s+kids|no\s+children)\b/i.test(lower);
   const savingsSignal = /\b(save\s+money|low\s+cost|cheapest|lowest\s+premium|save\s+on\s+premiums|budget|keep\s+premiums?\s+lower|lower\s+premiums?\s+matter\s+more|premium\s+first|budget\s+first)\b/i.test(lower);
@@ -446,7 +453,27 @@ export function buildRecommendationOverview(
 
   const decidingBetweenShownPlans = /\b(which\s+one|which\s+plan|best\s+for\s+me|what[’']?s\s+best\s+for\s+me|how\s+do\s+i\s+decide|help\s+me\s+choose|what\s+do\s+you\s+recommend)\b/i.test(lower);
 
-  if (decidingBetweenShownPlans && !usageBand && !singleSignal && !deductibleProtectionSignal && !riskToleranceSignal && !mentionsIntegratedNetworkPreference && !pregnancySignal && !selectedPlan) {
+  // Apr 21 Step 5: if we have already shown this clarifier in the last couple
+  // of turns (or the caller has explicitly asked us to commit), skip the
+  // clarifier loop and commit to the best-guess recommendation. This is the
+  // fix for "I already got the considerations, just give me the answer."
+  const clarifierAskedRecently =
+    typeof session.recommendationClarifierShownAt === 'number'
+    && typeof session.turn === 'number'
+    && session.turn - session.recommendationClarifierShownAt <= 2;
+  const skipClarifier = options?.forceCommit === true || clarifierAskedRecently;
+
+  if (
+    decidingBetweenShownPlans
+    && !usageBand
+    && !singleSignal
+    && !deductibleProtectionSignal
+    && !riskToleranceSignal
+    && !mentionsIntegratedNetworkPreference
+    && !pregnancySignal
+    && !selectedPlan
+    && !skipClarifier
+  ) {
     let clarifier = `I can recommend one — the biggest factor is how much care you expect to use.\n\n`;
     clarifier += `If you expect low medical use, I usually lean **Standard HSA** for the lower premium. `;
     clarifier += `If you expect frequent visits, ongoing prescriptions, or want a lower deductible, I usually lean **Enhanced HSA**.`;
@@ -454,6 +481,10 @@ export function buildRecommendationOverview(
       clarifier += ` If you specifically want an integrated HMO-style network in ${session.userState}, **Kaiser Standard HMO** can also make sense.`;
     }
     clarifier += `\n\nQuick clarifier: would you say your expected usage is **low, moderate, or high**?`;
+    // Remember we asked so a repeat ask short-circuits to a commit next turn.
+    if (typeof session.turn === 'number') {
+      session.recommendationClarifierShownAt = session.turn;
+    }
     return clarifier.trim();
   }
 
@@ -511,6 +542,14 @@ export function buildRecommendationOverview(
   }
 
   let msg = `Recommendation for ${coverageTier} coverage:\n\n`;
+  // Apr 21 Step 5: if the user is asking again after we asked the clarifier,
+  // lead with a short acknowledgement so they know we are committing rather
+  // than looping. This matches "you already gave me the considerations — I
+  // just want the answer."
+  const committingAfterClarifier = skipClarifier && !usageBand && !singleSignal && !deductibleProtectionSignal && !riskToleranceSignal && !mentionsIntegratedNetworkPreference && !pregnancySignal && !selectedPlan;
+  if (committingAfterClarifier) {
+    msg = `Since you have not pinned down usage and you want a direct answer, I will commit to the best-guess pick based on what I have.\n\n` + msg;
+  }
   if (!session.noPricingMode) {
     for (const r of filtered) {
       msg += `- ${r.plan}: $${pricingUtils.formatMoney(r.perMonth)}/month ($${pricingUtils.formatMoney(r.perPaycheck)} per paycheck)\n`;
@@ -560,5 +599,17 @@ export function buildRecommendationOverview(
   }
 
   msg += `\n\nIf you want, I can compare the likely total annual cost for **Standard HSA** versus **Enhanced HSA** based on your expected usage.`;
+
+  // Apr 21 Step 5: record the recommendation so repeat asks can replay/ack
+  // instead of re-deriving or clarifier-looping.
+  session.lastRecommendation = {
+    plan: recommendationPlan,
+    topic: 'Medical',
+    coverageTier,
+    turn: typeof session.turn === 'number' ? session.turn : 0,
+  };
+  // Clear the "clarifier pending" marker now that we have committed.
+  session.recommendationClarifierShownAt = undefined;
+
   return msg.trim();
 }
