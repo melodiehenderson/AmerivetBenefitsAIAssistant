@@ -1335,7 +1335,7 @@ describe('qa-v2 transcript replays', () => {
         },
         {
           user: 'how can i tell which one matters more?',
-          mustContain: ['deciding between dental and vision as the next add-on'],
+          mustContain: ['separate add-or-not decisions'],
           mustNotContain: ['Vision coverage: **VSP Vision Plus**'],
         },
       ],
@@ -1857,11 +1857,11 @@ describe('qa-v2 transcript replays', () => {
         },
         {
           user: 'yes, do that',
-          mustContain: ['deciding between dental and vision as the next add-on'],
+          mustContain: ['separate add-or-not decisions'],
         },
         {
           user: 'why would i pick that?',
-          mustContain: ['My practical take is to choose dental first'],
+          mustContain: ['two separate yes/no decisions'],
           mustNotContain: ['Tell me which area you want to focus on next'],
         },
       ],
@@ -1885,7 +1885,7 @@ describe('qa-v2 transcript replays', () => {
         },
         {
           user: 'is that more important than vision?',
-          mustContain: ['deciding between dental and vision as the next add-on'],
+          mustContain: ['separate add-or-not decisions'],
           mustNotContain: ['Vision coverage: **VSP Vision Plus**'],
         },
       ],
@@ -2168,11 +2168,11 @@ describe('qa-v2 transcript replays', () => {
         },
         {
           user: 'yes, do that',
-          mustContain: ['deciding between dental and vision as the next add-on'],
+          mustContain: ['separate add-or-not decisions'],
         },
         {
           user: 'why not vision first?',
-          mustContain: ['Vision can absolutely come first'],
+          mustContain: ['neither has to go first'],
           mustNotContain: ['Tell me which area you want to focus on next'],
         },
       ],

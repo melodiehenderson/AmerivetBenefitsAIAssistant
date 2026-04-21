@@ -1692,7 +1692,7 @@ describe('qa-v2 engine', () => {
       session,
     });
 
-    expect(result.answer).toContain('deciding between dental and vision as the next add-on');
+    expect(result.answer).toContain('separate add-or-not decisions');
     expect(result.answer).not.toContain('Vision coverage: **VSP Vision Plus**');
   });
 
@@ -3574,8 +3574,9 @@ describe('qa-v2 engine', () => {
       session,
     });
 
-    expect(result.answer).toContain('deciding between dental and vision as the next add-on');
-    expect(result.answer).toContain('Choose dental first');
+    expect(result.answer).toContain('separate add-or-not decisions');
+    expect(result.answer).toContain('Dental — is it worth adding?');
+    expect(result.answer).toContain('Vision — is it worth adding?');
   });
 
   it('supports a bare "let’s do that" after dental suggests vision next', async () => {
@@ -4059,7 +4060,7 @@ describe('qa-v2 engine', () => {
       userState: 'FL',
       dataConfirmed: true,
       currentTopic: 'Dental',
-      lastBotMessage: 'If you are deciding between dental and vision as the next add-on, I would usually frame it this way:',
+      lastBotMessage: 'If you want, I can help you think through whether each of dental and vision is worth adding for your household — they are independent decisions, so either one, both, or neither can make sense depending on your use.',
     });
 
     const result = await runQaV2Engine({
@@ -4067,8 +4068,8 @@ describe('qa-v2 engine', () => {
       session,
     });
 
-    expect(result.answer).toContain('thinking about your kids specifically');
-    expect(result.answer).toContain('dental usually becomes the first add-on');
+    expect(result.answer).toContain('thinking about your kids specifically, dental and vision are two separate add-or-not decisions');
+    expect(result.answer).toContain('plenty of families with kids add both');
   });
 
   it('treats "why would i pick that?" after dental-versus-vision comparison as a practical take request', async () => {
@@ -4080,7 +4081,7 @@ describe('qa-v2 engine', () => {
       userState: 'FL',
       dataConfirmed: true,
       currentTopic: 'Dental',
-      lastBotMessage: 'If you are deciding between dental and vision as the next add-on, I would usually frame it this way:',
+      lastBotMessage: 'If you want, I can help you think through whether each of dental and vision is worth adding for your household — they are independent decisions, so either one, both, or neither can make sense depending on your use.',
     });
 
     const result = await runQaV2Engine({
@@ -4088,7 +4089,7 @@ describe('qa-v2 engine', () => {
       session,
     });
 
-    expect(result.answer).toContain('My practical take is to choose dental first');
+    expect(result.answer).toContain('two separate yes/no decisions');
   });
 
   it('answers "why not vision first?" after dental-versus-vision comparison', async () => {
@@ -4100,7 +4101,7 @@ describe('qa-v2 engine', () => {
       userState: 'FL',
       dataConfirmed: true,
       currentTopic: 'Dental',
-      lastBotMessage: 'If you are deciding between dental and vision as the next add-on, I would usually frame it this way:',
+      lastBotMessage: 'If you want, I can help you think through whether each of dental and vision is worth adding for your household — they are independent decisions, so either one, both, or neither can make sense depending on your use.',
     });
 
     const result = await runQaV2Engine({
@@ -4108,8 +4109,154 @@ describe('qa-v2 engine', () => {
       session,
     });
 
-    expect(result.answer).toContain('Vision can absolutely come first');
-    expect(result.answer).toContain('vision use is already obvious');
+    expect(result.answer).toContain('neither has to go first');
+    expect(result.answer).toContain('vision use is obvious');
+  });
+
+  it('keeps a Vision-anchored user in-topic when they ask a generic "compare the plans"', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Molly',
+      hasCollectedName: true,
+      userAge: 35,
+      userState: 'CA',
+      dataConfirmed: true,
+      currentTopic: 'Vision',
+      lastBotMessage: 'Vision coverage: **VSP Vision Plus**.',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'compare the plans',
+      session,
+    });
+
+    expect(result.answer).not.toContain("practical tradeoff across AmeriVet's medical options");
+    expect(result.metadata?.topic).not.toBe('Medical');
+  });
+
+  it('keeps a Dental-anchored user in-topic when they ask generic "which one should I pick?"', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Molly',
+      hasCollectedName: true,
+      userAge: 35,
+      userState: 'CA',
+      dataConfirmed: true,
+      currentTopic: 'Dental',
+      lastBotMessage: 'Dental coverage: **BCBSTX Dental PPO**.',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'which one should i pick?',
+      session,
+    });
+
+    expect(result.answer).not.toMatch(/My recommendation: (Standard HSA|Enhanced HSA|Kaiser)/i);
+    expect(result.metadata?.topic).not.toBe('Medical');
+  });
+
+  it('still pivots to Medical when the query names an explicit medical disambiguator even from Vision topic', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Molly',
+      hasCollectedName: true,
+      userAge: 35,
+      userState: 'CA',
+      dataConfirmed: true,
+      currentTopic: 'Vision',
+      lastBotMessage: 'Vision coverage: **VSP Vision Plus**.',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'compare the medical plans',
+      session,
+    });
+
+    expect(result.metadata?.topic).toBe('Medical');
+  });
+
+  it('answers "what\'s VSP?" with the vision-carrier definition from the package term registry', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Molly',
+      hasCollectedName: true,
+      userAge: 35,
+      userState: 'CA',
+      dataConfirmed: true,
+      currentTopic: 'Vision',
+    });
+
+    const result = await runQaV2Engine({
+      query: "what's vsp?",
+      session,
+    });
+
+    expect(result.answer).toContain('Vision Service Plan');
+    expect(result.answer).toContain('VSP Vision Plus');
+    expect(result.metadata?.intercept).toBe('term-registry-priority-v2');
+  });
+
+  it('answers "what\'s Unum?" topic-aware from Life Insurance context', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Molly',
+      hasCollectedName: true,
+      userAge: 35,
+      userState: 'CA',
+      dataConfirmed: true,
+      currentTopic: 'Life Insurance',
+    });
+
+    const result = await runQaV2Engine({
+      query: "what's unum?",
+      session,
+    });
+
+    expect(result.answer).toContain('Unum is an insurance carrier');
+    expect(result.answer).toContain('life insurance options');
+    expect(result.metadata?.intercept).toBe('term-registry-priority-v2');
+  });
+
+  it('answers "what\'s Unum?" topic-aware from Disability context', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Molly',
+      hasCollectedName: true,
+      userAge: 35,
+      userState: 'CA',
+      dataConfirmed: true,
+      currentTopic: 'Disability',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'what is unum?',
+      session,
+    });
+
+    expect(result.answer).toContain('Unum is an insurance carrier');
+    expect(result.answer).toContain('disability options');
+    expect(result.metadata?.intercept).toBe('term-registry-priority-v2');
+  });
+
+  it('answers "what\'s BCBSTX?" topic-aware from Dental context with dental-flavored framing', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Molly',
+      hasCollectedName: true,
+      userAge: 35,
+      userState: 'CA',
+      dataConfirmed: true,
+      currentTopic: 'Dental',
+    });
+
+    const result = await runQaV2Engine({
+      query: "what's bcbstx?",
+      session,
+    });
+
+    expect(result.answer).toContain('Blue Cross Blue Shield of Texas');
+    expect(result.answer).toContain('BCBSTX Dental PPO');
+    expect(result.metadata?.intercept).toBe('term-registry-priority-v2');
   });
 
   it('treats "is there only one vision plan available?" as an only-option question instead of reopening the full plan card', async () => {
@@ -4406,7 +4553,7 @@ describe('qa-v2 engine', () => {
       session,
     });
 
-    expect(result.answer).toContain('deciding between dental and vision as the next add-on');
+    expect(result.answer).toContain('separate add-or-not decisions');
     expect(result.answer).not.toContain('Vision coverage: **VSP Vision Plus**');
   });
 

@@ -509,7 +509,7 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
       },
       {
         user: 'yes, do that',
-        mustContain: ['deciding between dental and vision as the next add-on', 'Choose dental first', 'Choose vision first'],
+        mustContain: ['separate add-or-not decisions', 'Dental — is it worth adding?', 'Vision — is it worth adding?'],
         mustNotContain: ['Tell me which area you want to focus on next'],
       },
     ],
@@ -734,11 +734,11 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
       },
       {
         user: 'yes, do that',
-        mustContain: ['deciding between dental and vision as the next add-on'],
+        mustContain: ['separate add-or-not decisions'],
       },
       {
         user: 'why would i pick that?',
-        mustContain: ['My practical take is to choose dental first'],
+        mustContain: ['two separate yes/no decisions'],
         mustNotContain: ['Tell me which area you want to focus on next'],
       },
     ],
@@ -836,7 +836,7 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
       },
       {
         user: 'is that more important than vision?',
-        mustContain: ['deciding between dental and vision as the next add-on'],
+        mustContain: ['separate add-or-not decisions'],
         mustNotContain: ['Vision coverage: **VSP Vision Plus**', 'Tell me which area you want to focus on next'],
       },
     ],
@@ -1163,11 +1163,11 @@ export const qaV2TranscriptDataset: QaV2TranscriptCase[] = [
       },
       {
         user: 'yes, do that',
-        mustContain: ['deciding between dental and vision as the next add-on'],
+        mustContain: ['separate add-or-not decisions'],
       },
       {
         user: 'why not vision first?',
-        mustContain: ['Vision can absolutely come first'],
+        mustContain: ['neither has to go first'],
         mustNotContain: ['Tell me which area you want to focus on next'],
       },
     ],

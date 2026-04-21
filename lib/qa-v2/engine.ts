@@ -13,6 +13,7 @@ import {
   isKaiserEligibleState,
 } from '@/lib/qa/medical-helpers';
 import { buildMedicalPlanDetailAnswer } from '@/lib/qa/plan-detail-lookup';
+import { matchShortDefinitionAsk, lookupPackageTerm } from '@/lib/qa/package-term-registry';
 import { buildRoutineBenefitDetailAnswer, isRoutineBenefitDetailQuestion } from '@/lib/qa/routine-benefit-detail-lookup';
 import { buildLifeSizingGuidance, buildNonMedicalDetailAnswer, isNonMedicalDetailQuestion } from '@/lib/qa/non-medical-detail-lookup';
 import {
@@ -52,6 +53,28 @@ type EngineResult = {
 type BenefitPriorityFocus = 'healthcare_costs' | 'family_protection' | 'routine_care';
 type SupplementalComparisonFocus = 'injury_risk' | 'diagnosis_risk';
 type HsaFitFocus = 'long_term_savings' | 'near_term_expenses';
+
+// Apr 21 regression fix: generic comparison/recommendation/definition shapes
+// ("compare the plans", "which should I pick?", "what's bcbstx?") were firing
+// Medical fast-paths even when the user was anchored inside a non-Medical
+// topic like Vision, Dental, Life Insurance, etc. The rule: only pivot back
+// to Medical if the query carries an unambiguous Medical disambiguator —
+// otherwise honor the active topic.
+function isLockedToNonMedicalTopic(session: Session): boolean {
+  const topic = session.currentTopic;
+  if (!topic) return false;
+  if (topic === 'Medical' || topic === 'Benefits Overview' || topic === 'HSA/FSA') return false;
+  return true;
+}
+
+function hasExplicitMedicalDisambiguator(query: string): boolean {
+  const lower = query.toLowerCase();
+  // Tokens and phrases that are meaningfully medical-coded, even if the
+  // query is otherwise generic-sounding. Includes family-medical rec asks
+  // like "best for my family" which only make sense against medical plans
+  // (dental/vision have single plans — no "best for my family" tradeoff).
+  return /\b(medical\s+plan|medical\s+plans|medical\s+premium|medical\s+premiums|medical\s+coverage|medical\s+deductible|medical\s+pricing|hmo|kaiser|standard\s+hsa|enhanced\s+hsa|hdhp|copay|copays|coinsurance|out[- ]of[- ]pocket|oop|prescriptions?|\brx\b|office\s+visit|primary\s+care|\bpcp\b|urgent\s+care|emergency\s+room|telehealth|telemedicine|maternity|pregnan\w*|\bdelivery\b|prenatal|postnatal|therapy|therapist|mental\s+health|specialist|best\s+for\s+my\s+family|best\s+for\s+my\s+household|plan\s+is\s+best\s+for\s+my\s+family|best\s+choice\s+for\s+my\s+family|plan\s+tradeoffs?|coverage\s+tier|coverage\s+tiers)\b/i.test(lower);
+}
 
 function isMedicalDetailQuestion(query: string): boolean {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
@@ -1660,6 +1683,28 @@ function buildHighPriorityIntentReply(session: Session, query: string): EngineRe
   // 5. Fresh explicit topic pivots.
   // 6. Only then let stale-topic continuation and pending-guidance scaffolding try to carry the conversation.
 
+  // Apr 21 Step 3: centralized package-term registry.
+  // Short-definition shapes ("what's VSP?", "what's Unum?", "what's BCBSTX?")
+  // should answer topic-aware. We match the registry BEFORE the medical
+  // definition fast-path so a Dental-anchored user asking "what's BCBSTX?"
+  // gets the dental-flavored definition, and so terms like VSP/Unum/AD&D
+  // are handled centrally instead of falling into generic menus.
+  const termAskMatch = matchShortDefinitionAsk(normalizedQuery);
+  if (termAskMatch) {
+    const termDefinition = lookupPackageTerm(termAskMatch.alias, session.currentTopic || null);
+    if (termDefinition) {
+      clearPendingGuidance(session);
+      return {
+        answer: termDefinition,
+        metadata: {
+          intercept: 'term-registry-priority-v2',
+          term: termAskMatch.alias,
+          topic: session.currentTopic || null,
+        },
+      };
+    }
+  }
+
   if (isGlobalMedicalDefinitionQuestion(normalizedQuery)) {
     const detailedAnswer = buildMedicalPlanDetailAnswer(normalizedQuery, session);
     if (detailedAnswer) {
@@ -1721,6 +1766,7 @@ function buildHighPriorityIntentReply(session: Session, query: string): EngineRe
     && !wantsMedicalCostEstimate
     && !isMedicalCoverageTierQuestion(normalizedQuery)
     && !/\b(voluntary\s+term(?:\s+life)?|term\s+life|whole\s+life|basic\s+life|life\s+insurance|disability|critical\s+illness|accident(?:\/ad&d)?|ad&d)\b/i.test(lower)
+    && !(isLockedToNonMedicalTopic(session) && !hasExplicitMedicalDisambiguator(normalizedQuery))
   ) {
     clearPendingGuidance(session);
     setTopic(session, 'Medical');
@@ -1765,7 +1811,11 @@ function buildHighPriorityIntentReply(session: Session, query: string): EngineRe
     };
   }
 
-  if (isDirectMedicalRecommendationQuestion(normalizedQuery) && hasDirectMedicalSignal) {
+  if (
+    isDirectMedicalRecommendationQuestion(normalizedQuery)
+    && hasDirectMedicalSignal
+    && !(isLockedToNonMedicalTopic(session) && !hasExplicitMedicalDisambiguator(normalizedQuery))
+  ) {
     clearPendingGuidance(session);
     setTopic(session, 'Medical');
     return {
@@ -1785,7 +1835,14 @@ function buildHighPriorityIntentReply(session: Session, query: string): EngineRe
 
   if (explicitTopic && explicitTopic !== 'Benefits Overview') {
     const normalizedExplicitTopic = normalizeBenefitCategory(explicitTopic);
-    if (isExplicitTopicDirectQuestion(normalizedExplicitTopic, normalizedQuery)) {
+    // Apr 21 regression fix: don't let a generic Medical-inferred query
+    // (e.g. "compare the plans") pivot a user who is anchored in a
+    // non-Medical topic unless they name a Medical disambiguator.
+    const wouldBlindlyPivotToMedical =
+      normalizedExplicitTopic === 'Medical'
+      && isLockedToNonMedicalTopic(session)
+      && !hasExplicitMedicalDisambiguator(normalizedQuery);
+    if (isExplicitTopicDirectQuestion(normalizedExplicitTopic, normalizedQuery) && !wouldBlindlyPivotToMedical) {
       const topicQuery =
         isTopicOverviewQuestion(normalizedQuery) || isShortTopicPivot(normalizedQuery, normalizedExplicitTopic)
           ? canonicalTopicQuery(normalizedExplicitTopic, normalizedQuery)
@@ -1803,6 +1860,7 @@ function buildHighPriorityIntentReply(session: Session, query: string): EngineRe
     && (isDirectMedicalContinuationQuestion(normalizedQuery)
       || isMedicalPregnancySignal(normalizedQuery)
       || isMedicalAccumulatorComparisonQuestion(normalizedQuery))
+    && !(isLockedToNonMedicalTopic(session) && !hasExplicitMedicalDisambiguator(normalizedQuery))
   ) {
     clearPendingGuidance(session);
     setTopic(session, 'Medical');
@@ -2175,7 +2233,7 @@ function buildBenefitDecisionGuidance(session: Session, focus?: BenefitPriorityF
       `- Look at vision after that if you expect eye exams, glasses, or contacts`,
       `- Leave life, disability, and supplemental plans for after your everyday care decisions are settled`,
       ``,
-      `If you want, I can help you decide whether dental or vision is more worth adding first based on what your household actually uses.`,
+      `If you want, I can help you think through whether each of dental and vision is worth adding for your household — they are independent decisions, so either one, both, or neither can make sense depending on your use.`,
     ].join('\n');
   }
 
@@ -2189,7 +2247,7 @@ function buildBenefitDecisionGuidance(session: Session, focus?: BenefitPriorityF
       `- Consider dental and vision after that only if you know your household will actually use them enough to justify the extra payroll deduction`,
       `- Leave supplemental plans for later unless you already know you want extra cash-protection coverage`,
       ``,
-      `If you want, I can compare the medical tradeoff first and then help you decide whether dental or vision is worth adding on top.`,
+      `If you want, I can compare the medical tradeoff first and then walk through whether each of dental and vision is worth adding on top — they are independent add-or-not decisions.`,
     ].join('\n');
   }
 
@@ -2301,14 +2359,19 @@ function buildLifeVsDisabilityComparison(query = ''): string {
 
 function buildDentalVsVisionDecision(): string {
   return [
-    `If you are deciding between dental and vision as the next add-on, I would usually frame it this way:`,
+    `Dental and vision are separate add-or-not decisions, so it is not really dental **versus** vision — it is dental **and** vision, each evaluated on its own. Plenty of households add both, some add one, some add neither.`,
     ``,
-    `- Choose dental first if your household expects cleanings, fillings, crowns, or orthodontic use`,
-    `- Choose vision first if you expect regular eye exams, glasses, or contacts`,
-    `- Dental usually has the bigger upside when there is known procedure use`,
-    `- Vision is usually easier to justify when you know the household uses exams and eyewear every year`,
+    `Here is how I would think through each:`,
     ``,
-    `So the better add-on depends less on theory and more on what your household already knows it will use.`,
+    `**Dental — is it worth adding?**`,
+    `- Yes if your household expects cleanings, fillings, crowns, or orthodontic use`,
+    `- Harder to justify if you do not expect much dental use at all`,
+    ``,
+    `**Vision — is it worth adding?**`,
+    `- Yes if someone in the household gets regular eye exams and uses glasses or contacts`,
+    `- Harder to justify if no one really uses exams or eyewear`,
+    ``,
+    `So the real question isn't which one to pick — it is whether each one matches how your household actually uses care.`,
   ].join('\n');
 }
 
@@ -2590,18 +2653,24 @@ function buildComparisonFamilyReply(
   }
 
   if (kind === 'dental_vs_vision') {
+    // Dental and vision are independent add-or-not decisions, not an either/or.
+    // Plenty of households add both.
     return [
       childFocused
-        ? `If you are thinking about your kids specifically, dental usually becomes the first add-on more often than vision.`
+        ? `If you are thinking about your kids specifically, dental and vision are two separate add-or-not decisions — plenty of families with kids add both, some add one, some add neither.`
         : spouseFocused
-          ? `If you are thinking about your spouse specifically, the better add-on depends on whether the household expects dental work or regular eyewear use first.`
-          : `If you are thinking about your household specifically, dental usually becomes the first add-on more often than vision unless regular eyewear use is already obvious.`,
+          ? `If you are thinking about your spouse specifically, dental and vision are two separate add-or-not decisions — either one, both, or neither can make sense depending on what you actually expect to use.`
+          : `Dental and vision are two separate add-or-not decisions — plenty of households add both, some add one, some add neither. It is not really a "pick one" question.`,
       ``,
-      `- Dental is usually easier to justify if the household will use cleanings, fillings, or orthodontic care`,
-      `- Vision becomes easier to justify when you already know the kids need regular eye exams, glasses, or contacts`,
-      `- If you do not already expect eyewear use, dental usually has the bigger family upside`,
+      `**Dental — is it worth adding?**`,
+      `- Yes if the household will use cleanings, fillings, crowns, or orthodontic care`,
+      `- Harder to justify if dental use is genuinely rare`,
       ``,
-      `So for many households with kids, dental is the first routine-care add-on unless vision use is already obvious.`,
+      `**Vision — is it worth adding?**`,
+      `- Yes if anyone in the household gets regular eye exams, glasses, or contacts`,
+      `- Harder to justify if nobody uses eyewear`,
+      ``,
+      `So the better question isn't which one first — it is whether each one matches how your household actually uses care.`,
     ].join('\n');
   }
 
@@ -2617,11 +2686,15 @@ function buildWhyNotOtherFirstReply(kind: 'accident_vs_critical' | 'life_vs_disa
   const lifeProtectionFocus = detectLifeProtectionFocus(query);
 
   if (kind === 'dental_vs_vision' && /\bwhy not vision first\b/i.test(lower)) {
+    // "Why not vision first?" reframed — neither has to go first.
+    // Each is a standalone add-or-not decision.
     return [
-      `Vision can absolutely come first if your household already knows it will use regular eye exams, glasses, or contacts.`,
+      `Fair question — and the honest answer is that neither has to go first. Vision and dental are independent add-or-not decisions, so plenty of households just add both.`,
       ``,
-      `I only lean dental first by default when procedure use like cleanings, fillings, or orthodontia feels more certain than eyewear use.`,
-      `So "why not vision first?" really comes down to whether vision use is already obvious in your household.`,
+      `Vision can absolutely make sense on its own if someone in the household already uses regular eye exams, glasses, or contacts.`,
+      `Dental can make sense on its own if you expect cleanings, fillings, crowns, or orthodontia.`,
+      ``,
+      `So if vision use is obvious for your household, start there. If dental use is obvious, start there. If both are obvious, add both — they are not competing for the same slot.`,
     ].join('\n');
   }
 
@@ -2752,11 +2825,13 @@ function buildVisionWorthAddingReply(): string {
     `Vision is usually worth adding when your household already expects to use eye exams, glasses, or contacts.`,
     ``,
     `A simple way to think about it is:`,
-    `- If someone in the household gets routine eye exams and uses glasses or contacts, vision is easier to justify`,
+    `- If someone in the household gets routine eye exams and uses glasses or contacts, vision is easy to justify`,
     `- If no one really uses exams or eyewear, it is harder to justify as a must-have add-on`,
     `- In AmeriVet's package, vision is a routine-care add-on, not a replacement for medical coverage`,
     ``,
     `AmeriVet currently offers one vision plan, so the real decision is usually whether it is worth adding at all, not which vision plan to choose.`,
+    ``,
+    `Vision and dental are separate add-or-not decisions — either one can make sense on its own, and plenty of households add both. If you want, I can also walk through whether dental is worth adding for your household.`,
   ].join('\n');
 }
 
@@ -2775,11 +2850,11 @@ function buildDentalWorthAddingReply(): string {
     `Dental is usually worth adding when your household expects regular cleanings, fillings, crowns, or orthodontic use.`,
     ``,
     `A simple way to think about it is:`,
-    `- If you expect routine dental visits or known dental work, dental is often easier to justify than vision`,
+    `- If you expect routine dental visits or known dental work, dental is usually easy to justify`,
     `- If you do not expect much use at all, then it becomes more of a judgment call rather than an automatic add-on`,
     `- In AmeriVet's package, there is one dental plan, so the decision is usually whether to add it, not which dental plan to choose`,
     ``,
-    `If you want, I can also help you decide whether dental or vision is the more useful routine-care add-on for your household.`,
+    `Dental and vision are separate add-or-not decisions — either one can make sense on its own, and plenty of households add both. If you want, I can also walk through whether vision is worth adding for your household.`,
   ].join('\n');
 }
 
@@ -3460,9 +3535,9 @@ function buildContextualFallback(session: Session, topicOverride?: string | null
     return [
       `A useful next dental step is usually one of these:`,
       ``,
-      `- Whether the plan is worth adding`,
+      `- Whether the dental plan is worth adding for your household`,
       `- What orthodontia means in practice`,
-      `- Whether dental matters more than vision for your household`,
+      `- Whether vision is also worth adding (separate decision — plenty of households add both)`,
       ``,
       `Pick one and I’ll walk through it with you.`,
     ].join('\n');
@@ -3472,8 +3547,8 @@ function buildContextualFallback(session: Session, topicOverride?: string | null
     return [
       `A useful next vision step is usually one of these:`,
       ``,
-      `- Whether it is worth adding for your household`,
-      `- Whether vision matters more than dental based on expected use`,
+      `- Whether the vision plan is worth adding for your household`,
+      `- Whether dental is also worth adding (separate decision — plenty of households add both)`,
       ``,
       `Pick one and I’ll walk through it with you.`,
     ].join('\n');
@@ -3524,7 +3599,7 @@ function buildContextualFallback(session: Session, topicOverride?: string | null
     ].join('\n');
   }
 
-  return `I can help you narrow this down. The usual starting points are medical if you are choosing core coverage, dental or vision for routine care, or disability and life if family protection matters more than everyday care.`;
+  return `I can help you narrow this down. The usual starting points are medical if you are choosing core coverage, dental and vision for routine care (each a separate add-or-not decision), or disability and life if family protection matters more than everyday care.`;
 }
 
 function inferSupplementalTopicForFollowup(session: Session, query: string): 'Life Insurance' | 'Disability' | 'Critical Illness' | 'Accident/AD&D' | null {
@@ -3800,6 +3875,7 @@ function buildContinuationReply(session: Session, query: string): string | null 
   if (
     isMedicalPlanComparisonOrPricingQuestion(normalizedQuery)
     && !/\b(voluntary\s+term(?:\s+life)?|term\s+life|whole\s+life|basic\s+life|life\s+insurance|disability|critical\s+illness|accident(?:\/ad&d)?|ad&d)\b/i.test(lower)
+    && !(isLockedToNonMedicalTopic(session) && !hasExplicitMedicalDisambiguator(normalizedQuery))
   ) {
     setTopic(session, 'Medical');
     return buildTopicReply(session, 'Medical', normalizedQuery);
@@ -3842,6 +3918,12 @@ function buildContinuationReply(session: Session, query: string): string | null 
     && explicitTopic !== activeTopic
   ) {
     const normalizedExplicitTopic = normalizeBenefitCategory(explicitTopic);
+    // Apr 21 regression fix: same topic-lock rule here — don't let a generic
+    // Medical-inferred query pivot away from a non-Medical active topic.
+    const wouldBlindlyPivotToMedical =
+      normalizedExplicitTopic === 'Medical'
+      && isLockedToNonMedicalTopic(session)
+      && !hasExplicitMedicalDisambiguator(normalizedQuery);
     const directTopicQuestion =
       normalizedExplicitTopic === 'Medical'
         ? (isDirectMedicalContinuationQuestion(normalizedQuery) || isMedicalPregnancySignal(normalizedQuery))
@@ -3855,7 +3937,7 @@ function buildContinuationReply(session: Session, query: string): string | null 
               || isWorthAddingFollowup(normalizedQuery)
             );
 
-    if (directTopicQuestion) {
+    if (directTopicQuestion && !wouldBlindlyPivotToMedical) {
       setTopic(session, normalizedExplicitTopic);
       return buildTopicReply(session, normalizedExplicitTopic, normalizedQuery);
     }
@@ -3882,6 +3964,7 @@ function buildContinuationReply(session: Session, query: string): string | null 
     &&
     isDirectMedicalContinuationQuestion(normalizedQuery)
     && /\b(plan|medical|copay|copays|deductible|coinsurance|out[- ]of[- ]pocket|maternity|pregnan|baby|birth|delivery|prenatal|postnatal|kaiser|hsa|hmo|tier|tradeoff|prescription|network)\b/i.test(lower)
+    && !(isLockedToNonMedicalTopic(session) && !hasExplicitMedicalDisambiguator(normalizedQuery))
   ) {
     setTopic(session, 'Medical');
     return buildTopicReply(session, 'Medical', normalizedQuery);
@@ -4319,7 +4402,8 @@ function buildContinuationReply(session: Session, query: string): string | null 
   if (
     /plain-language difference between Accident\/AD&D and Critical Illness/i.test(lastBotMessage)
     || /simplest way to separate life insurance from disability/i.test(lastBotMessage)
-    || /deciding between dental and vision as the next add-on/i.test(lastBotMessage)
+    || /each of dental and vision is worth adding/i.test(lastBotMessage)
+    || /dental and vision are separate add-or-not decisions/i.test(lastBotMessage)
   ) {
     if (/Accident\/AD&D and Critical Illness/i.test(lastBotMessage)) {
       const reply = buildWhyNotOtherFirstReply('accident_vs_critical', normalizedQuery);
@@ -4329,7 +4413,7 @@ function buildContinuationReply(session: Session, query: string): string | null 
       const reply = buildWhyNotOtherFirstReply('life_vs_disability', normalizedQuery);
       if (reply) return reply;
     }
-    if (/dental and vision as the next add-on/i.test(lastBotMessage)) {
+    if (/each of dental and vision is worth adding|dental and vision are separate add-or-not decisions/i.test(lastBotMessage)) {
       const reply = buildWhyNotOtherFirstReply('dental_vs_vision', normalizedQuery);
       if (reply) return reply;
     }
@@ -4349,8 +4433,9 @@ function buildContinuationReply(session: Session, query: string): string | null 
       if (/life insurance from disability/i.test(lastBotMessage)) {
         return buildSupplementalPracticalTake(lifeProtectionFocus === 'survivor_protection' ? 'Life Insurance' : 'Disability');
       }
-      if (/dental and vision as the next add-on/i.test(lastBotMessage)) {
-        return `My practical take is to choose dental first if you already expect fillings, crowns, or orthodontic use, and vision first if the household already knows it will use exams, glasses, or contacts every year. If you do not already know the household will use vision, dental usually has the bigger upside.`;
+      if (/separate add-or-not decisions|dental and vision are two separate|each of dental and vision is worth adding/i.test(lastBotMessage)) {
+        // Dental/vision are parallel decisions, not an either/or ranking.
+        return `My practical take is that dental and vision are two separate yes/no decisions, not a ranking. If your household already expects cleanings, fillings, or orthodontia, add dental. If anyone uses regular exams, glasses, or contacts, add vision. If both are true, add both — they do not compete for the same slot.`;
       }
     }
     if (wantsFamilySpecific) {
@@ -4360,7 +4445,7 @@ function buildContinuationReply(session: Session, query: string): string | null 
       if (/life insurance from disability/i.test(lastBotMessage)) {
         return buildComparisonFamilyReply('life_vs_disability', normalizedQuery);
       }
-      if (/dental and vision as the next add-on/i.test(lastBotMessage)) {
+      if (/each of dental and vision is worth adding|dental and vision are separate add-or-not decisions/i.test(lastBotMessage)) {
         return buildComparisonFamilyReply('dental_vs_vision', normalizedQuery);
       }
     }
@@ -4374,7 +4459,7 @@ function buildContinuationReply(session: Session, query: string): string | null 
     if (/walk you through life versus disability|walk you through disability versus extra life/i.test(lastBotMessage)) {
       return buildLifeVsDisabilityComparison(normalizedQuery);
     }
-    if (/decide whether dental or vision is more worth adding first/i.test(lastBotMessage)) {
+    if (/whether each of dental and vision is worth adding for your household|walk through whether each of dental and vision is worth adding/i.test(lastBotMessage)) {
       return buildDentalVsVisionDecision();
     }
     if (/I can use that tier to compare the medical plans|show how pricing changes across tiers/i.test(lastBotMessage)) {
@@ -4418,8 +4503,17 @@ function buildContinuationReply(session: Session, query: string): string | null 
 
   const pivotTopic = benefitTopicFromQuery(normalizedQuery);
   if (pivotTopic && pivotTopic !== 'Benefits Overview' && pivotTopic !== session.currentTopic) {
-    setTopic(session, pivotTopic);
-    return buildTopicReply(session, pivotTopic, normalizedQuery);
+    // Apr 21 regression fix: same topic-lock rule — a generic
+    // Medical-inferred query (e.g. "compare the plans") should not
+    // yank the user out of a non-Medical active topic.
+    const wouldBlindlyPivotToMedical =
+      pivotTopic === 'Medical'
+      && isLockedToNonMedicalTopic(session)
+      && !hasExplicitMedicalDisambiguator(normalizedQuery);
+    if (!wouldBlindlyPivotToMedical) {
+      setTopic(session, pivotTopic);
+      return buildTopicReply(session, pivotTopic, normalizedQuery);
+    }
   }
 
   if (!pivotTopic && session.currentTopic !== 'Critical Illness' && /\billness\b/i.test(lower) && /critical\s+illness/i.test(lastBotMessage)) {
@@ -4700,7 +4794,10 @@ export async function runQaV2Engine(params: {
     return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'cost-model-v2', topic: 'Medical' } };
   }
 
-  if (isDirectMedicalRecommendationQuestion(query)) {
+  if (
+    isDirectMedicalRecommendationQuestion(query)
+    && !(isLockedToNonMedicalTopic(session) && !hasExplicitMedicalDisambiguator(query))
+  ) {
     setTopic(session, 'Medical');
     const answer = buildTopicReply(session, 'Medical', query);
     session.lastBotMessage = answer;
@@ -4766,7 +4863,12 @@ export async function runQaV2Engine(params: {
     return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'benefits-overview-v2' } };
   }
 
-  if ((detectedTopic === 'Medical' || session.currentTopic === 'Medical') && isMedicalDetailQuestion(query) && !isCostModelRequest(query)) {
+  if (
+    (detectedTopic === 'Medical' || session.currentTopic === 'Medical')
+    && isMedicalDetailQuestion(query)
+    && !isCostModelRequest(query)
+    && !(isLockedToNonMedicalTopic(session) && !hasExplicitMedicalDisambiguator(query))
+  ) {
     setTopic(session, 'Medical');
     const answer = buildTopicReply(session, 'Medical', query);
     session.lastBotMessage = answer;
@@ -4809,7 +4911,15 @@ export async function runQaV2Engine(params: {
     ? normalizeBenefitCategory(detectedTopic)
     : detectedTopic;
 
-  if (normalizedTopic) {
+  // Apr 21 regression fix: if the query was only inferred as Medical through
+  // generic comparison/pricing shape but the user is already anchored in a
+  // non-Medical topic, don't blindly pivot to Medical.
+  const normalizedTopicWouldBlindlyPivot =
+    normalizedTopic === 'Medical'
+    && isLockedToNonMedicalTopic(session)
+    && !hasExplicitMedicalDisambiguator(query);
+
+  if (normalizedTopic && !normalizedTopicWouldBlindlyPivot) {
     if (normalizedTopic !== 'Benefits Overview') setTopic(session, normalizedTopic);
     const answer = buildTopicReply(session, normalizedTopic, query);
     session.lastBotMessage = answer;
