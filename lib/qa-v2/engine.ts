@@ -76,6 +76,115 @@ function hasExplicitMedicalDisambiguator(query: string): boolean {
   return /\b(medical\s+plan|medical\s+plans|medical\s+premium|medical\s+premiums|medical\s+coverage|medical\s+deductible|medical\s+pricing|hmo|kaiser|standard\s+hsa|enhanced\s+hsa|hdhp|copay|copays|coinsurance|out[- ]of[- ]pocket|oop|prescriptions?|\brx\b|office\s+visit|primary\s+care|\bpcp\b|urgent\s+care|emergency\s+room|telehealth|telemedicine|maternity|pregnan\w*|\bdelivery\b|prenatal|postnatal|therapy|therapist|mental\s+health|specialist|best\s+for\s+my\s+family|best\s+for\s+my\s+household|plan\s+is\s+best\s+for\s+my\s+family|best\s+choice\s+for\s+my\s+family|plan\s+tradeoffs?|coverage\s+tier|coverage\s+tiers)\b/i.test(lower);
 }
 
+// Apr 21 Step 7a: deictic tier reference.
+// User has just been shown pricing/comparison and asks "what coverage tier is
+// that for?" / "is that the family tier?" / "which tier was that?". The old
+// engine matched on the lexical token "coverage tier" and fired the definition
+// handler ("A coverage tier is the level of people you are enrolling..."). The
+// rule here is: if the query is a short reference-ask pointing at the prior
+// bot message, echo the tier on record rather than defining the concept.
+function isDeicticTierReference(query: string, session: Session): boolean {
+  const lower = query.trim().toLowerCase();
+  if (lower.length > 80) return false;
+  const hasTierNoun = /\b(tier|coverage|pricing|price|premium|premiums|plan\s+price|that\s+one)\b/i.test(lower);
+  if (!hasTierNoun) return false;
+  const hasDeicticMarker = /\b(that|this|those|these|it|above)\b/i.test(lower);
+  if (!hasDeicticMarker) return false;
+  // Must be shaped like a question-about-reference, not a fresh ask.
+  const hasReferenceShape =
+    /\b(what|which)\b[^.?!]{0,30}\b(coverage\s+)?(tier|pricing|price|premium|premiums)\b[^.?!]{0,30}\b(that|this|those|these|it|above)\b/i.test(lower)
+    || /\b(is|was|are|were)\s+(that|this|those|these|it)\b[^.?!]{0,30}\b(for\s+)?(employee|family|spouse|kids?|children|child(?:ren)?|the\s+family|the\s+spouse)\b/i.test(lower)
+    || /\b(that|this|those)\s+(pricing|price|premium|premiums|tier|one)\s+(for|above|from)\b/i.test(lower)
+    || /\b(what|which)\s+(coverage\s+)?tier\s+(is|was|are|were)\s+(that|this|those|these|it|above)\b/i.test(lower);
+  if (!hasReferenceShape) return false;
+  // Guard: only fire if the last bot message actually showed pricing/tier info.
+  const lastBot = (session.lastBotMessage || '').toLowerCase();
+  return /employee\s*\+\s*(spouse|child|family)|employee\s+only|\$\d|per paycheck|\/month|monthly\s+premium|coverage\s+tier|coverage\s+tiers|medical\s+premium|practical\s+tradeoff|here\s+(is|are)\s+the\s+(practical|monthly|actual)/i.test(lastBot);
+}
+
+function buildDeicticTierReferenceReply(session: Session): string {
+  const tier = session.coverageTierLock
+    || coverageTierFromConversation(session)
+    || coverageTierFromHousehold(session.familyDetails || undefined)
+    || 'Employee Only';
+  return [
+    `That was for **${tier}** coverage — the tier I inferred from what you have shared about your household so far.`,
+    ``,
+    `If the household on the plan is different, tell me who needs to be covered (for example "just me and my spouse" or "me, spouse, and 2 kids") and I will re-run the pricing for the right tier.`,
+  ].join('\n');
+}
+
+// Apr 21 Step 7b: menu-reply loop detection.
+// When the last two bot messages are "useful next step" menus and the user's
+// last two queries are semantically similar, the engine is stuck retrying the
+// same fallback instead of answering. Escalate: name the stuck state honestly
+// and offer both a concrete rephrase nudge and the human-support path.
+function isMenuReply(message: string | undefined): boolean {
+  if (!message) return false;
+  return /useful\s+next\s+[a-z-]*\s*step\s+is\s+usually\s+one\s+of\s+these/i.test(message)
+    || /pick\s+one\s+and\s+i['’]ll\s+(take\s+you\s+(straight\s+)?into\s+it|walk\s+through\s+it|walk\s+you\s+through)/i.test(message);
+}
+
+function contentWordOverlapRatio(a: string, b: string): number {
+  const stopwords = new Set([
+    'a','an','the','is','are','was','were','be','been','being','to','of','in','for','with','on','at',
+    'from','by','as','it','this','that','and','or','but','if','do','does','did','have','has','had',
+    'i','you','my','your','we','our','us','me','yes','no','ok','okay','so','just','also','please',
+    'then','than','more','less','same','one','two','too','very','really','actually','maybe',
+    'would','could','should','can','will','what','which','when','how','why','here','there','tell','let','help','about',
+  ]);
+  // Light stem — strip trailing 's' on words longer than 3 chars so plans/plan
+  // and options/option collapse to the same key.
+  const stem = (w: string) => (w.length > 3 && w.endsWith('s') ? w.slice(0, -1) : w);
+  const tokens = (s: string) => new Set(
+    s.toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter((w) => w.length >= 3 && !stopwords.has(w))
+      .map(stem),
+  );
+  const setA = tokens(a);
+  const setB = tokens(b);
+  if (setA.size === 0 || setB.size === 0) return 0;
+  let overlap = 0;
+  for (const w of setA) if (setB.has(w)) overlap++;
+  return overlap / Math.min(setA.size, setB.size);
+}
+
+function detectRepeatRephraseLoop(session: Session, currentQuery: string): boolean {
+  const messages = session.messages || [];
+  if (messages.length < 3) return false;
+  // Look at the last two assistant messages: both must be menus.
+  const assistantHistory = messages.filter((m) => m.role === 'assistant');
+  if (assistantHistory.length < 2) return false;
+  const lastBot = assistantHistory[assistantHistory.length - 1]?.content || '';
+  const prevBot = assistantHistory[assistantHistory.length - 2]?.content || '';
+  if (!isMenuReply(lastBot) || !isMenuReply(prevBot)) return false;
+  // Prior user query = the most recent user message before the current one.
+  const userHistory = messages.filter((m) => m.role === 'user');
+  // The current query has already been pushed into session.messages by runQaV2Engine,
+  // so the prior user query is the second-to-last user message.
+  if (userHistory.length < 2) return false;
+  const priorUserQuery = userHistory[userHistory.length - 2]?.content || '';
+  if (!priorUserQuery) return false;
+  return contentWordOverlapRatio(priorUserQuery, currentQuery) >= 0.34;
+}
+
+function buildRephraseEscalationReply(session: Session): string {
+  const topic = session.currentTopic;
+  const topicLabel = topic ? ` about **${topic}**` : '';
+  const name = session.userName ? `, ${session.userName}` : '';
+  return [
+    `I notice I have been bouncing you back to the same menu${topicLabel} instead of answering your question directly${name} — I am sorry about that.`,
+    ``,
+    `A couple of things that usually help me land a better answer:`,
+    `- Tell me the specific fact that should drive the call (for example "my daughter already wears glasses" or "nobody in the house uses the dentist"). I will use that to tip the recommendation one way or the other.`,
+    `- Or rephrase in plain terms — "is this worth it for my family?", "how many plans are there?", "what would you pick?" — and I will try to give you a direct yes/no or recommendation rather than another menu.`,
+    ``,
+    `If you would rather skip the bot and talk to a person, AmeriVet HR is at **${HR_PHONE}**, and the Workday enrollment portal is [here](${ENROLLMENT_PORTAL_URL}).`,
+  ].join('\n');
+}
+
 function isMedicalDetailQuestion(query: string): boolean {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
   return /\b(coverage\s+tier|coverage\s+tiers|copay|copays|coinsurance|deductible|out[- ]of[- ]pocket|oop\s*max|primary\s+care|pcp|specialist|urgent\s+care|emergency\s+room|er|network|in[- ]network|out[- ]of[- ]network|ppo|hmo|bcbstx|blue\s+cross\s+blue\s+shield|prescriptions?|drugs?|generic|brand|specialty|maternity|pregnan\w*|delivery|prenatal|postnatal|therapy|therapist|physical\s+therapy|mental\s+health|virtual\s+visits?|telehealth(?:\s+visits?)?|telemedicine|tradeoffs?|differences?\s+between\s+the\s+plans|compare\s+the\s+plans|compare\s+the\s+plan\s+tradeoffs?)\b/i.test(lower)
@@ -1703,6 +1812,23 @@ function buildHighPriorityIntentReply(session: Session, query: string): EngineRe
         },
       };
     }
+  }
+
+  // Apr 21 Step 7a: deictic tier reference ("what coverage tier is that for?",
+  // "is that for family?") must fire BEFORE any topic-pivot path — otherwise
+  // the presence of "coverage tier" routes through fresh-topic-direct or the
+  // tier definition handler. The rule is: if the user is pointing at the
+  // immediately preceding bot message asking which tier it applied to, echo
+  // the locked tier instead of redefining tiers from scratch.
+  if (isDeicticTierReference(normalizedQuery, session)) {
+    clearPendingGuidance(session);
+    return {
+      answer: buildDeicticTierReferenceReply(session),
+      metadata: {
+        intercept: 'deictic-tier-reference-v2',
+        tier: session.coverageTierLock || coverageTierFromConversation(session) || null,
+      },
+    };
   }
 
   if (isGlobalMedicalDefinitionQuestion(normalizedQuery)) {
@@ -3835,6 +3961,14 @@ function buildContinuationReply(session: Session, query: string): string | null 
   const contextualComparisonKind = detectContextualComparisonKind(session, normalizedQuery);
   const lifeProtectionFocus = detectLifeProtectionFocus(normalizedQuery);
 
+  // Apr 21 Step 7a: same deictic-before-lexical ordering in the continuation
+  // path so "what tier is that for?" doesn't get redirected into the tier
+  // definition when the highpriority path has already passed.
+  if (isDeicticTierReference(normalizedQuery, session)) {
+    clearPendingGuidance(session);
+    return buildDeicticTierReferenceReply(session);
+  }
+
   if (isMedicalCoverageTierQuestion(normalizedQuery)) {
     setTopic(session, 'Medical');
     return buildMedicalCoverageTierDecisionReply(session, normalizedQuery);
@@ -4768,6 +4902,24 @@ export async function runQaV2Engine(params: {
       tier: 'L1',
       sessionContext: buildSessionContext(session),
       metadata: highPriorityReply.metadata,
+    };
+  }
+
+  // Apr 21 Step 7b: if the last two bot messages were "useful next step"
+  // menus and the user is re-asking a semantically similar question, the
+  // downstream topic-reply / continuation / fallback paths will almost
+  // certainly emit a THIRD menu. Escalate honestly here instead — apologize,
+  // offer a concrete rephrase nudge, and surface HR/Workday. This must run
+  // before any topic-reply path that might loop.
+  if (detectRepeatRephraseLoop(session, query)) {
+    const escalationAnswer = buildRephraseEscalationReply(session);
+    session.lastBotMessage = escalationAnswer;
+    session.messages.push({ role: 'assistant', content: escalationAnswer });
+    return {
+      answer: escalationAnswer,
+      tier: 'L1',
+      sessionContext: buildSessionContext(session),
+      metadata: { intercept: 'rephrase-escalation-v2', topic: session.currentTopic || null },
     };
   }
 

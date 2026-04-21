@@ -4259,6 +4259,83 @@ describe('qa-v2 engine', () => {
     expect(result.metadata?.intercept).toBe('term-registry-priority-v2');
   });
 
+  it('treats "what coverage tier is that for?" after pricing as a deictic tier-reference, not a tier definition', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Maggie',
+      hasCollectedName: true,
+      userAge: 29,
+      userState: 'CA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee + Child(ren)',
+      lastBotMessage: 'Here is the practical tradeoff across AmeriVet\'s medical options:\n\nStandard HSA: $100.51/month Employee + Child(ren) premium\nEnhanced HSA: $215.10/month Employee + Child(ren) premium\nKaiser Standard HMO: $245.50/month Employee + Child(ren) premium',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'what coverage tier is that for?',
+      session,
+    });
+
+    expect(result.answer).toContain('Employee + Child(ren)');
+    expect(result.answer).not.toContain('A coverage tier is the level of people you are enrolling');
+    expect(result.metadata?.intercept).toBe('deictic-tier-reference-v2');
+  });
+
+  it('still answers the lexical "what are coverage tiers?" as a definition when it is NOT a deictic reference', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Maggie',
+      hasCollectedName: true,
+      userAge: 29,
+      userState: 'CA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'what are coverage tiers?',
+      session,
+    });
+
+    // The definition answer must still fire — the deictic detector must NOT
+    // swallow a plain "what are coverage tiers?" lexical ask.
+    expect(result.answer).toMatch(/coverage tier is .* level of people|Employee Only.*Employee \+ Spouse|Employee \+ Child\(ren\)/);
+    expect(result.metadata?.intercept).not.toBe('deictic-tier-reference-v2');
+  });
+
+  it('escalates out of a menu rephrase loop instead of re-emitting the same useful-next-step menu', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Maggie',
+      hasCollectedName: true,
+      userAge: 29,
+      userState: 'CA',
+      dataConfirmed: true,
+      currentTopic: 'Vision',
+    });
+
+    // Simulate the loop: two menus in a row, user re-asking the same shape.
+    session.messages = [
+      { role: 'assistant', content: 'Vision coverage: **VSP Vision Plus**' },
+      { role: 'user', content: 'is there another plan to compare this to?' },
+      { role: 'assistant', content: 'A useful next vision step is usually one of these:\n- Whether the vision plan is worth adding for your household\n- Whether dental is also worth adding (separate decision)\nPick one and I\u2019ll walk through it with you.' },
+      { role: 'user', content: 'are there more than one vision plans i can consider?' },
+      { role: 'assistant', content: 'A useful next vision step is usually one of these:\n- Whether the vision plan is worth adding for your household\n- Whether dental is also worth adding (separate decision)\nPick one and I\u2019ll walk through it with you.' },
+    ];
+    session.lastBotMessage = session.messages[session.messages.length - 1]?.content;
+
+    const result = await runQaV2Engine({
+      query: 'so, just one plan, then?',
+      session,
+    });
+
+    // Either the rephrase-escalation fires, or a stronger detector catches
+    // the direct only-option phrasing. Either is acceptable — the behavior
+    // we're regression-locking is that we do NOT emit a third identical menu.
+    expect(result.answer).not.toMatch(/A useful next vision step is usually one of these/);
+  });
+
   it('treats "is there only one vision plan available?" as an only-option question instead of reopening the full plan card', async () => {
     const session = makeSession({
       step: 'active_chat',
