@@ -171,6 +171,7 @@ function buildMedicalTermExplanation(
   term:
     | 'copay'
     | 'ppo'
+    | 'hmo'
     | 'bcbstx'
     | 'deductible'
     | 'coinsurance'
@@ -190,6 +191,17 @@ function buildMedicalTermExplanation(
       ``,
       `The practical question is whether you want that broader-network PPO setup or the tighter Kaiser HMO structure.`,
       `If you want, I can compare the BCBSTX PPO options against Kaiser next.`,
+    ].join('\n');
+  }
+
+  if (term === 'hmo') {
+    return [
+      `HMO stands for **Health Maintenance Organization**.`,
+      ``,
+      `In AmeriVet's package, the Kaiser Standard HMO uses an integrated-network HMO structure, which usually means you pick a primary care doctor inside Kaiser's system and get referrals for specialty care through that network.`,
+      ``,
+      `The practical tradeoff against the BCBSTX PPO-style plans is network breadth versus lower overall cost and tighter coordination inside one system.`,
+      `If you want, I can compare Kaiser Standard HMO against the BCBSTX PPO options next.`,
     ].join('\n');
   }
 
@@ -618,6 +630,10 @@ export function buildMedicalPlanDetailAnswer(
 
   if (/\b(what\s+does\s+ppo\s+(?:mean|stand\s+for)|what'?s\s+(?:a\s+)?ppo|what\s+is\s+(?:a\s+)?ppo|define\s+ppo)\b/i.test(queryLower)) {
     return buildMedicalTermExplanation('ppo');
+  }
+
+  if (/\b(what\s+does\s+hmo\s+(?:mean|stand\s+for)|what'?s\s+(?:an?\s+)?hmo|what\s+is\s+(?:an?\s+)?hmo|define\s+hmo)\b/i.test(queryLower)) {
+    return buildMedicalTermExplanation('hmo');
   }
 
   if (/\b(what'?s\s+bcbstx|what\s+is\s+bcbstx|what\s+does\s+bcbstx\s+(?:mean|stand\s+for)|define\s+bcbstx|what\s+is\s+blue\s+cross\s+blue\s+shield\s+of\s+texas)\b/i.test(queryLower)) {

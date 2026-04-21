@@ -61,7 +61,7 @@ function isMedicalDetailQuestion(query: string): boolean {
 
 function isGlobalMedicalDefinitionQuestion(query: string): boolean {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
-  return /\b(what\s+does\s+ppo\s+(?:mean|stand\s+for)|what'?s\s+(?:a\s+)?ppo|what\s+is\s+(?:a\s+)?ppo|define\s+ppo|what'?s\s+bcbstx|what\s+is\s+bcbstx|what\s+does\s+bcbstx\s+(?:mean|stand\s+for)|define\s+bcbstx|what\s+is\s+blue\s+cross\s+blue\s+shield\s+of\s+texas)\b/i.test(lower);
+  return /\b(what\s+does\s+ppo\s+(?:mean|stand\s+for)|what'?s\s+(?:a\s+)?ppo|what\s+is\s+(?:a\s+)?ppo|define\s+ppo|what\s+does\s+hmo\s+(?:mean|stand\s+for)|what'?s\s+(?:an?\s+)?hmo|what\s+is\s+(?:an?\s+)?hmo|define\s+hmo|what'?s\s+bcbstx|what\s+is\s+bcbstx|what\s+does\s+bcbstx\s+(?:mean|stand\s+for)|define\s+bcbstx|what\s+is\s+blue\s+cross\s+blue\s+shield\s+of\s+texas)\b/i.test(lower);
 }
 
 function buildMedicalScenarioOverrideQuery(session: Session, query: string): string {

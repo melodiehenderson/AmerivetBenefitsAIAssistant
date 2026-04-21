@@ -4500,6 +4500,38 @@ describe('qa-v2 transcript replays', () => {
     expect(result.answer).toMatch(/HSA stands for \*\*Health Savings Account\*\*/i);
   });
 
+  it('answers "what is an HMO?" with an HMO definition (Apr 20 v2 HMO-parity regression)', async () => {
+    const session = makeSession({
+      userName: 'Susan',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'GA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+    });
+
+    const result = await runQaV2Engine({ query: 'what is an HMO?', session });
+    expect(result.answer).toMatch(/HMO stands for \*\*Health Maintenance Organization\*\*/i);
+  });
+
+  it('answers "what does HMO stand for?" with an HMO definition (Apr 20 v2 HMO-parity regression)', async () => {
+    const session = makeSession({
+      userName: 'Susan',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'GA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+    });
+
+    const result = await runQaV2Engine({ query: 'what does HMO stand for?', session });
+    expect(result.answer).toMatch(/HMO stands for \*\*Health Maintenance Organization\*\*/i);
+  });
+
   it('answers "how much is covered for orthodontia?" with dental facts instead of a medical next-step menu (Apr 20 v2 direct-ask regression)', async () => {
     const session = makeSession({
       userName: 'Susan',
