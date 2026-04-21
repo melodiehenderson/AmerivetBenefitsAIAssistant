@@ -659,6 +659,7 @@ export const POST = withAuth(undefined, [PERMISSIONS.CHAT_WITH_AI])(async (reque
     const faqAnswer = checkL1FAQ(message, {
       enrollmentPortalUrl: WORKDAY_ENROLLMENT_URL,
       hrPhone: HR_PHONE,
+      userState: typeof conversation.metadata?.state === 'string' ? conversation.metadata.state : null,
     });
 
     // =========================================================================

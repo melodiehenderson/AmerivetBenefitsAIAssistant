@@ -2861,6 +2861,7 @@ function buildDirectSupportReply(session: Session, query: string): string | null
   return checkL1FAQ(query, {
     enrollmentPortalUrl: ENROLLMENT_PORTAL_URL,
     hrPhone: HR_PHONE,
+    userState: session.userState,
   });
 }
 
@@ -2912,29 +2913,45 @@ function extractCorrectionLead(message: string): string | null {
     ?? null;
 }
 
+const STATE_CODE_ALTERNATION = 'AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|IA|ID|IL|IN|KS|KY|LA|MA|MD|ME|MI|MN|MO|MS|MT|NC|ND|NE|NH|NJ|NM|NV|NY|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VA|VT|WA|WI|WV|WY';
+
+function stripNegatedStateClauses(message: string): string {
+  const stateNames = Object.keys(STATE_NAME_TO_CODE).join('|');
+  const negationPattern = new RegExp(
+    `\\b(?:not|never|no\\s+longer|isn'?t|aren'?t|am\\s+not|'?m\\s+not)\\s+(?:in|from|at|located\\s+in|living\\s+in)\\s+(?:${STATE_CODE_ALTERNATION}|${stateNames})\\b`,
+    'gi',
+  );
+  const bareNegationPattern = new RegExp(
+    `\\bnot\\s+(?:${STATE_CODE_ALTERNATION}|${stateNames})\\b`,
+    'gi',
+  );
+  return message.replace(negationPattern, ' ').replace(bareNegationPattern, ' ');
+}
+
 function extractState(message: string): string | null {
-  const lower = message.toLowerCase();
-  const normalized = message.trim().toLowerCase().replace(/[.!?]+$/g, '');
+  const sanitized = stripNegatedStateClauses(message);
+  const lower = sanitized.toLowerCase();
+  const normalized = sanitized.trim().toLowerCase().replace(/[.!?]+$/g, '');
 
   for (const [name, code] of Object.entries(STATE_NAME_TO_CODE).sort((a, b) => b[0].length - a[0].length)) {
     const pattern = new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
     if (pattern.test(lower)) return code;
   }
 
-  const ageThenState = message.match(/\b(1[8-9]|[2-9][0-9])\b(?:\s*,\s*|\s*\/\s*|\s*-\s*)(AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|IA|ID|IL|IN|KS|KY|LA|MA|MD|ME|MI|MN|MO|MS|MT|NC|ND|NE|NH|NJ|NM|NV|NY|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VA|VT|WA|WI|WV|WY)\b/i);
+  const ageThenState = sanitized.match(new RegExp(`\\b(1[8-9]|[2-9][0-9])\\b(?:\\s*,\\s*|\\s*\\/\\s*|\\s*-\\s*)(${STATE_CODE_ALTERNATION})\\b`, 'i'));
   if (ageThenState) return ageThenState[2].toUpperCase();
 
-  const exactAgeState = message.match(/^\s*(?:ok(?:ay)?\b[\s,-]*)?(?:i'?m\s*)?(1[8-9]|[2-9][0-9])\s+(AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|IA|ID|IL|IN|KS|KY|LA|MA|MD|ME|MI|MN|MO|MS|MT|NC|ND|NE|NH|NJ|NM|NV|NY|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VA|VT|WA|WI|WV|WY)\s*$/i);
+  const exactAgeState = sanitized.match(new RegExp(`^\\s*(?:ok(?:ay)?\\b[\\s,-]*)?(?:i'?m\\s*)?(1[8-9]|[2-9][0-9])\\s+(${STATE_CODE_ALTERNATION})\\s*$`, 'i'));
   if (exactAgeState) return exactAgeState[2].toUpperCase();
 
-  const locationCueMatch = message.match(/\b(?:in|from|live in|located in|state is|i'm in|i am in)\s+(AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|IA|ID|IL|IN|KS|KY|LA|MA|MD|ME|MI|MN|MO|MS|MT|NC|ND|NE|NH|NJ|NM|NV|NY|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VA|VT|WA|WI|WV|WY)\b/i);
+  const locationCueMatch = sanitized.match(new RegExp(`\\b(?:in|from|live in|located in|state is|i'm in|i am in)\\s+(${STATE_CODE_ALTERNATION})\\b`, 'i'));
   if (locationCueMatch) return locationCueMatch[1].toUpperCase();
 
   if (normalized === 'ok' || normalized === 'okay') {
     return null;
   }
 
-  const exactStateOnly = message.match(/^\s*(?:ok(?:ay)?\b[\s,-]*)?(AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|IA|ID|IL|IN|KS|KY|LA|MA|MD|ME|MI|MN|MO|MS|MT|NC|ND|NE|NH|NJ|NM|NV|NY|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VA|VT|WA|WI|WV|WY)\s*$/i);
+  const exactStateOnly = sanitized.match(new RegExp(`^\\s*(?:ok(?:ay)?\\b[\\s,-]*)?(${STATE_CODE_ALTERNATION})\\s*$`, 'i'));
   if (exactStateOnly) return exactStateOnly[1].toUpperCase();
 
   return null;

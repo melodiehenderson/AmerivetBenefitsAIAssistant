@@ -249,6 +249,25 @@ describe('conversation scenario regressions', () => {
     expect(detectExplicitStateCorrection('sorry, Colorado not Kansas', 'KS')).toEqual({ state: 'CO' });
   });
 
+  it('detects negation-assertion state corrections (Apr 20 regression)', () => {
+    expect(detectExplicitStateCorrection("i'm not in ME. i'm in CO", 'ME')).toEqual({ state: 'CO' });
+    expect(detectExplicitStateCorrection("i'm not in ME, i'm in Colorado", 'ME')).toEqual({ state: 'CO' });
+    expect(detectExplicitStateCorrection("not Maine, Colorado", 'ME')).toEqual({ state: 'CO' });
+    expect(detectExplicitStateCorrection("i am not in ME i am in CO", 'ME')).toEqual({ state: 'CO' });
+  });
+
+  it('detects frustration-assertion state corrections (Apr 20 regression)', () => {
+    expect(detectExplicitStateCorrection("i keep telling you i'm in Colorado", 'ME')).toEqual({ state: 'CO' });
+    expect(detectExplicitStateCorrection("i told you i'm in CO", 'ME')).toEqual({ state: 'CO' });
+    expect(detectExplicitStateCorrection("i said Colorado", 'ME')).toEqual({ state: 'CO' });
+  });
+
+  it('does not echo the negated state back as the correction (Apr 20 regression)', () => {
+    // Regression: previously returned {state: 'ME'} because the negated clause was scanned first.
+    expect(detectExplicitStateCorrection("i'm not in ME. i'm in CO", 'ME')?.state).not.toBe('ME');
+    expect(detectExplicitStateCorrection("not Maine, Colorado", 'ME')?.state).not.toBe('ME');
+  });
+
   it('treats affirmative topic pivots as category exploration instead of fallback', () => {
     expect(
       shouldUseCategoryExplorationIntercept(

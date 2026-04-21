@@ -12,6 +12,7 @@ const KAISER_COPY = getKaiserAvailabilityCopy(ACTIVE_PACKAGE);
 type L1FAQArgs = {
   enrollmentPortalUrl: string;
   hrPhone: string;
+  userState?: string | null;
 };
 
 type L1FAQEntry = {
@@ -146,10 +147,27 @@ export function detectExplicitStateCorrection(
   const trimmed = message.trim();
   if (!trimmed) return null;
 
-  const correctionLead =
+  let correctionLead: string | null =
     trimmed.match(/\b(?:actually|sorry|correction)\b[\s,:-]*(.+)$/i)?.[1] ??
     trimmed.match(/\b(?:i\s+meant|meant)\b[\s,:-]*(.+)$/i)?.[1] ??
     null;
+
+  if (!correctionLead) {
+    correctionLead =
+      trimmed.match(/\b(?:i\s+keep\s+telling\s+you|i\s+told\s+you\s+(?:already\s+)?|i\s+said|i\s+already\s+said|i\s+already\s+told\s+you)\b[\s,:-]*(.+)$/i)?.[1] ?? null;
+  }
+
+  if (!correctionLead) {
+    const negationMatch = trimmed.match(
+      /\bnot\s+(?:in\s+)?([A-Za-z]{2,}(?:\s+[A-Za-z]+)?)\b[\s.,:;!-]+(.+)$/i,
+    );
+    if (negationMatch) {
+      const negatedResolved = resolveStateFromFragment(negationMatch[1]);
+      if (negatedResolved) {
+        correctionLead = negationMatch[2];
+      }
+    }
+  }
 
   if (!correctionLead) return null;
 
@@ -283,10 +301,30 @@ export function compileSummary(
   return summary;
 }
 
+const STATE_CODE_ALTERNATION = 'AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|IA|ID|IL|IN|KS|KY|LA|MA|MD|ME|MI|MN|MO|MS|MT|NC|ND|NE|NH|NJ|NM|NV|NY|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VA|VT|WA|WI|WV|WY';
+
+function resolveQueryStateForFaq(query: string): string | undefined {
+  const cueMatch = query.match(
+    new RegExp(`\\b(?:in|from|live\\s+in|located\\s+in|state\\s+is|i'?m\\s+in|i\\s+am\\s+in|into|for)\\s+(${STATE_CODE_ALTERNATION})\\b`, 'i'),
+  );
+  if (cueMatch) return cueMatch[1].toUpperCase();
+
+  const uppercaseMatch = query.match(new RegExp(`\\b(${STATE_CODE_ALTERNATION})\\b`));
+  if (uppercaseMatch) return uppercaseMatch[1].toUpperCase();
+
+  for (const stateName of SORTED_STATE_NAMES) {
+    const pattern = new RegExp(`\\b${stateName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+    if (pattern.test(query)) return STATE_NAME_TO_CODE[stateName];
+  }
+
+  return undefined;
+}
+
 export function checkL1FAQ(query: string, args: L1FAQArgs): string | null {
   if (isKaiserAvailabilityQuestion(query)) {
-    const stateMatch = query.match(/\b(AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|IA|ID|IL|IN|KS|KY|LA|MA|MD|ME|MI|MN|MO|MS|MT|NC|ND|NE|NH|NJ|NM|NV|NY|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VA|VT|WA|WI|WV|WY)\b/i);
-    return buildKaiserAvailabilityFaqAnswer(stateMatch?.[0]?.toUpperCase());
+    const queryState = resolveQueryStateForFaq(query);
+    const fallbackState = args.userState?.trim().toUpperCase() || undefined;
+    return buildKaiserAvailabilityFaqAnswer(queryState ?? fallbackState);
   }
 
   const lower = query.toLowerCase();

@@ -1400,7 +1400,7 @@ export async function POST(req: NextRequest) {
     // Run checkL1FAQ unconditionally so Rightway, HR, portal queries are ALWAYS
     // caught before reaching any downstream logic. The L1_FAQ patterns are
     // sufficiently specific that false positives are not a concern.
-    const l1Answer = checkL1FAQ(query, { enrollmentPortalUrl: ENROLLMENT_PORTAL_URL, hrPhone: HR_PHONE });
+    const l1Answer = checkL1FAQ(query, { enrollmentPortalUrl: ENROLLMENT_PORTAL_URL, hrPhone: HR_PHONE, userState: session.userState });
     if (l1Answer) {
       logger.info(`[REQ:${reqId}][STEP-7 INTERCEPT] L1-STATIC-FAQ matched ΓåÆ returning cached answer (${l1Answer.length} chars)`);
       session.lastBotMessage = l1Answer;
@@ -2596,7 +2596,7 @@ For enrollment: ${ENROLLMENT_PORTAL_URL} | HR: ${HR_PHONE}`;
           query,
           session,
           summaryAnswer,
-          faqAnswer: checkL1FAQ(query, { enrollmentPortalUrl: ENROLLMENT_PORTAL_URL, hrPhone: HR_PHONE }),
+          faqAnswer: checkL1FAQ(query, { enrollmentPortalUrl: ENROLLMENT_PORTAL_URL, hrPhone: HR_PHONE, userState: session.userState }),
           ppoAnswerFactory: () => toPlainAssistantText(buildPpoClarificationFallback(session)),
           recommendationAnswer,
           medicalAnswer,
@@ -3189,7 +3189,7 @@ Answer directly from the IMMUTABLE CATALOG. Name the plan. State the exact figur
           session,
           interceptSuffix: '-validation',
           summaryAnswer,
-          faqAnswer: checkL1FAQ(query, { enrollmentPortalUrl: ENROLLMENT_PORTAL_URL, hrPhone: HR_PHONE }),
+          faqAnswer: checkL1FAQ(query, { enrollmentPortalUrl: ENROLLMENT_PORTAL_URL, hrPhone: HR_PHONE, userState: session.userState }),
           ppoAnswerFactory: () => toPlainAssistantText(buildPpoClarificationFallback(session)),
           medicalAnswer: medicalAnswer ? toPlainAssistantText(medicalAnswer) : null,
         });

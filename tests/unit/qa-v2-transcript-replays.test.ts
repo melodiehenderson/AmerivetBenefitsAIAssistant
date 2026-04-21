@@ -4136,4 +4136,57 @@ describe('qa-v2 transcript replays', () => {
       }),
     );
   });
+
+  it('treats "i\'m not in ME. i\'m in CO" as a correction to CO, never overwrites to ME (Apr 20 regression)', async () => {
+    const session = makeSession({
+      userName: 'Mark',
+      hasCollectedName: true,
+      userAge: 42,
+      userState: 'CO',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee + Family',
+    });
+
+    await runQaV2Engine({ query: "i'm not in ME. i'm in CO", session });
+    expect(session.userState).toBe('CO');
+
+    const kaiserResult = await runQaV2Engine({ query: 'is kaiser available to me?', session });
+    expect(session.userState).toBe('CO');
+    expect(kaiserResult.answer).not.toMatch(/\bin ME\b/);
+    expect(kaiserResult.answer).not.toMatch(/\bin Maine\b/);
+  });
+
+  it('treats "i keep telling you i\'m in Colorado" as a correction that lands CO (Apr 20 regression)', async () => {
+    const session = makeSession({
+      userName: 'Mark',
+      hasCollectedName: true,
+      userAge: 42,
+      userState: 'ME',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee + Family',
+    });
+
+    const result = await runQaV2Engine({ query: "i keep telling you i'm in Colorado", session });
+    expect(session.userState).toBe('CO');
+    expect(result.answer).not.toMatch(/\bMaine\b/);
+  });
+
+  it('never resolves ME from "is kaiser available to me?" when session state is CO (Apr 20 regression)', async () => {
+    const session = makeSession({
+      userName: 'Mark',
+      hasCollectedName: true,
+      userAge: 42,
+      userState: 'CO',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee + Family',
+    });
+
+    const result = await runQaV2Engine({ query: 'is kaiser available to me?', session });
+    expect(session.userState).toBe('CO');
+    expect(result.answer).not.toMatch(/\bin ME\b/);
+    expect(result.answer).not.toMatch(/\bin Maine\b/);
+  });
 });
