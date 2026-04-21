@@ -735,6 +735,18 @@ function isDirectMedicalRecommendationQuestion(query: string): boolean {
   return canonicalRecommendationSignal || naturalRecurringCareRecommendationSignal || naturalFamilyPlanRecommendationSignal;
 }
 
+// Apr 20 v2 regression: bare/short recommendation asks ("what's your
+// recommendation?", "what do you recommend?", "so which one will be
+// cheapest?") lost to the generic contextual-fallback menu. This helper
+// detects those topic-agnostic short asks so the caller can route them
+// based on the user's currently-active topic instead of dropping them
+// into a next-step menu.
+function isShortRecommendationAsk(query: string): boolean {
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  const stripped = lower.replace(/^(?:so|well|hmm|ok(?:ay)?|alright|right)\b[\s,.\-]*/i, '').trim();
+  return /^(?:what'?s\s+your\s+recommendation|what\s+is\s+your\s+recommendation|what\s+do\s+you\s+recommend|give\s+me\s+your\s+recommendation|your\s+recommendation|which\s+(?:one|plan|option)\s+(?:will\s+be|is\s+going\s+to\s+be|would\s+be|ends\s+up(?:\s+being)?|is)\s+(?:the\s+)?(?:cheapest|lowest|least\s+expensive|most\s+affordable|cheaper)|which\s+(?:one|plan|option)\s+is\s+cheapest|(?:cheapest|least\s+expensive|most\s+affordable)\s+(?:plan|option|one))\s*\??\s*$/i.test(stripped);
+}
+
 function isMedicalRecommendationPreferenceFollowup(query: string): boolean {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
   return /\b(more\s+predictable\s+costs?|predictable\s+costs?|less\s+deductible\s+risk|lower\s+deductible\s+risk|stronger\s+deductible\s+protection|stronger\s+cost\s+protection|can\s+handle\s+more\s+risk|comfortable\s+with\s+more\s+risk|okay\s+with\s+more\s+risk|willing\s+to\s+take\s+more\s+risk|keep\s+premiums?\s+lower|lower\s+premiums?\s+matter\s+more|premium\s+first|budget\s+first)\b/i.test(lower);
@@ -4809,6 +4821,20 @@ export async function runQaV2Engine(params: {
       session.messages.push({ role: 'assistant', content: answer });
       return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'category-exploration-v2', topic } };
     }
+  }
+
+  // Apr 20 v2 regression: route bare short recommendation asks to the
+  // user's currently-active topic reply instead of the generic menu.
+  // If there is no active topic, default to Medical (the primary
+  // decision surface) since a short "what do you recommend?" with no
+  // topic context is almost always about the medical plan choice.
+  if (isShortRecommendationAsk(query)) {
+    const activeTopic = session.currentTopic || 'Medical';
+    setTopic(session, activeTopic);
+    const answer = buildTopicReply(session, activeTopic, query);
+    session.lastBotMessage = answer;
+    session.messages.push({ role: 'assistant', content: answer });
+    return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'short-recommendation-ask-v2', topic: activeTopic } };
   }
 
   const answer = buildContextualFallback(session);

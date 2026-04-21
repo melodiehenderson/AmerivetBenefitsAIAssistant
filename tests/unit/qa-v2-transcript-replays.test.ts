@@ -4412,4 +4412,72 @@ describe('qa-v2 transcript replays', () => {
     expect(session.userAge).toBe(49);
     expect(session.userState).toBe('CA');
   });
+
+  it('answers a bare "what\'s your recommendation?" directly instead of a next-step menu (Apr 20 v2 direct-ask regression)', async () => {
+    const session = makeSession({
+      userName: 'Susan',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'GA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+    });
+
+    const result = await runQaV2Engine({ query: "what's your recommendation?", session });
+    expect(result.answer).not.toMatch(/A useful next medical step is usually one of these/i);
+    expect(result.answer).toMatch(/Standard HSA|Enhanced HSA|Kaiser|My recommendation/i);
+  });
+
+  it('answers "what do you recommend?" directly instead of a next-step menu (Apr 20 v2 direct-ask regression)', async () => {
+    const session = makeSession({
+      userName: 'Susan',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'GA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+    });
+
+    const result = await runQaV2Engine({ query: 'what do you recommend?', session });
+    expect(result.answer).not.toMatch(/A useful next medical step is usually one of these/i);
+    expect(result.answer).toMatch(/Standard HSA|Enhanced HSA|Kaiser|My recommendation/i);
+  });
+
+  it('answers "so which one will be cheapest?" directly instead of a next-step menu (Apr 20 v2 direct-ask regression)', async () => {
+    const session = makeSession({
+      userName: 'Susan',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'GA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+    });
+
+    const result = await runQaV2Engine({ query: 'so which one will be cheapest?', session });
+    expect(result.answer).not.toMatch(/A useful next medical step is usually one of these/i);
+    expect(result.answer).toMatch(/Standard HSA|Enhanced HSA|Kaiser|My recommendation|cheapest|lowest/i);
+  });
+
+  it('answers "how much is covered for orthodontia?" with dental facts instead of a medical next-step menu (Apr 20 v2 direct-ask regression)', async () => {
+    const session = makeSession({
+      userName: 'Susan',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'GA',
+      dataConfirmed: true,
+      currentTopic: 'Dental',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+    });
+
+    const result = await runQaV2Engine({ query: 'how much is covered for orthodontia?', session });
+    expect(result.answer).not.toMatch(/A useful next medical step is usually one of these/i);
+    expect(result.answer).toMatch(/orthodontia|braces|\$500|\$1,?000|\$1,?500|\$2,?000|50%/i);
+  });
 });
