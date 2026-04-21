@@ -3861,6 +3861,16 @@ function buildTopicReply(session: Session, topic: string, query: string): string
       const recommendation = buildRecommendationOverview(query, session, forceCommit ? { forceCommit: true } : undefined);
       if (recommendation) return recommendation;
     }
+    // Explicit just-commit asks like "just pick one for me please" don't
+    // carry the literal "recommend" keyword and so won't trip
+    // `isDirectMedicalRecommendationQuestion`. Route them to the
+    // recommendation path directly BEFORE the generic next-step menu,
+    // otherwise the user hits the "Pick one and I'll take you straight
+    // into it" scaffold instead of a committed plan.
+    if (forceCommit) {
+      const committed = buildRecommendationOverview(query, session, { forceCommit: true });
+      if (committed) return committed;
+    }
     const detailedAnswer = buildMedicalPlanDetailAnswer(query, session);
     if (detailedAnswer) return detailedAnswer;
     const medicalFallback = buildMedicalPlanFallback(query, session);
@@ -5417,7 +5427,13 @@ export async function runQaV2Engine(params: {
   // If there is no active topic, default to Medical (the primary
   // decision surface) since a short "what do you recommend?" with no
   // topic context is almost always about the medical plan choice.
-  if (isShortRecommendationAsk(query)) {
+  //
+  // Apr 21 Step 5: also route explicit just-commit asks ("just pick one
+  // for me please", "give me an answer", "what would you pick") through
+  // the same path. Without this, those phrasings miss the short-ask
+  // regex, fall through to `buildContextualFallback`, and re-emit the
+  // useful-next-step menu instead of committing to a recommendation.
+  if (isShortRecommendationAsk(query) || isJustCommitRecommendationAsk(query)) {
     const activeTopic = session.currentTopic || 'Medical';
     setTopic(session, activeTopic);
     const answer = buildTopicReply(session, activeTopic, query);

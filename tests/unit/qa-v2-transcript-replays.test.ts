@@ -4736,4 +4736,100 @@ describe('qa-v2 transcript replays', () => {
     expect(session.userState).toBe('GA');
     expect(session.userName).toBe('Susan');
   });
+
+  // Apr 21 Maggie transcript — validation gate.
+  //
+  // This is a single-session end-to-end replay that threads every completed
+  // Apr 21 fix through one continuous conversation. Each fix family gets
+  // exercised against the same live `session` object so we also regression-
+  // lock session continuity (topic memory, coverage-tier lock, clarifier
+  // state, dependent context) across the full flow.
+  //
+  // Fixes exercised:
+  // - Steps 1-3: topic pivots, package term registry (BCBSTX).
+  // - Step 5: recommendation clarifier then commit-on-repeat.
+  // - Step 7: deictic tier reference ("what coverage tier is that for?").
+  // - Step 4 Layer 1: HSA funding, enrollment timing.
+  // - Step 8: only-option question in Vision topic.
+  // - Step 6: dependent eligibility from package rule (spouse + adult child).
+  it('Apr 21 Maggie end-to-end replay: threads every completed fix through one session', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Maggie',
+      hasCollectedName: true,
+      userAge: 29,
+      userState: 'CA',
+      dataConfirmed: true,
+      familyDetails: { hasSpouse: true, numChildren: 1 },
+    });
+
+    await replayTranscript(
+      [
+        // Pivot into Medical — establishes the active topic for later fixes.
+        {
+          user: 'can i see the medical plan options?',
+          mustContain: ['Standard HSA'],
+        },
+        // Step 3: package term registry — BCBSTX definition.
+        {
+          user: "what's BCBSTX?",
+          mustContain: ['Blue Cross Blue Shield of Texas'],
+        },
+        // Step 5: first bare recommendation ask → clarifier (not a commit).
+        {
+          user: 'which medical plan do you recommend?',
+          mustContain: ['usage'],
+        },
+        // Step 5: repeat ask after clarifier → commits without re-asking.
+        {
+          user: 'just pick one for me please',
+          mustContain: ['My recommendation'],
+          mustNotContain: ['would you say your expected usage'],
+        },
+        // Step 7: deictic tier — "that" binds to the just-committed recommendation.
+        {
+          user: 'what coverage tier is that for?',
+          mustNotContain: ['Coverage tiers are the pricing brackets'],
+        },
+        // Step 4 Layer 1: HSA funding mechanics with employer contribution.
+        {
+          user: 'how does the HSA get funded from my paycheck?',
+          mustContain: ['pre-tax'],
+        },
+        // Step 4 Layer 1: enrollment timing with concrete dates.
+        {
+          user: 'when does my coverage start as a new hire?',
+          mustContain: ['first of the month', '30 days'],
+        },
+        // Pivot to Vision — sets the topic for Step 8.
+        {
+          user: "let's look at vision",
+          mustContain: ['VSP'],
+        },
+        // Step 8: only-option question in Vision topic (bare "another plan").
+        {
+          user: 'is there another plan to compare this to?',
+          mustContain: ['VSP Vision Plus'],
+        },
+        // Step 6: dependent eligibility — adult child age-rule answer.
+        {
+          user: 'can i cover my 28-year-old son who lives at home?',
+          mustContain: ['26'],
+        },
+        // Step 6: spouse eligibility — decisive yes without age requirement.
+        {
+          user: 'can i add my spouse?',
+          mustContain: ['spouse is eligible'],
+        },
+      ],
+      session,
+    );
+
+    // Session continuity gate: the profile anchors Maggie entered with must
+    // survive the full replay. If any turn accidentally rewrote them, this
+    // is where it surfaces.
+    expect(session.userAge).toBe(29);
+    expect(session.userState).toBe('CA');
+    expect(session.userName).toBe('Maggie');
+  });
 });
