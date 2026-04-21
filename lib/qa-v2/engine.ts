@@ -2912,6 +2912,41 @@ function extractAge(message: string): number | null {
   return match ? Number(match[1]) : null;
 }
 
+// Strict intake-shape age extractor. Only matches shapes where the user is
+// clearly stating THEIR OWN age — the bare age, "I'm 49", "49, GA", etc.
+// Does NOT match family-member age mentions like "my wife is 38" or
+// "my son is 14", which the loose extractAge would incorrectly capture
+// and write into session.userAge.
+function extractIntakeAge(message: string): number | null {
+  const trimmed = message.trim();
+  if (!trimmed) return null;
+
+  const normalized = trimmed.replace(/\$\s*\d[\d,]*/g, ' ').replace(/\s+/g, ' ').trim();
+
+  const patterns: RegExp[] = [
+    // 1. Bare age: "49", "okay 49", "49."
+    /^(?:ok(?:ay)?[\s,.\-]+)?(1[8-9]|[2-9][0-9])[.!?\s]*$/i,
+    // 2. "I'm 49", "I am 49", "I'm 49 years old", "I'm a 49 year old male"
+    /^(?:ok(?:ay)?[\s,.\-]+)?(?:i'?m|i\s+am)\s+(?:a\s+)?(1[8-9]|[2-9][0-9])(?:[\s,\-]+years?\s*old)?(?:\s+(?:male|female|man|woman|guy|gal))?[.!?\s]*$/i,
+    // 3. Age + separator + something (usually state): "49, GA", "I'm 49, CA", "49/GA", "49 - CA"
+    /^(?:ok(?:ay)?[\s,.\-]+)?(?:i'?m\s+|i\s+am\s+)?(1[8-9]|[2-9][0-9])\s*[,/\-]\s*[A-Za-z].*$/i,
+    // 3b. Age + location cue + state: "I'm 42 in OR", "42 from GA", "I'm 49 living in CA"
+    /^(?:ok(?:ay)?[\s,.\-]+)?(?:i'?m\s+|i\s+am\s+)?(1[8-9]|[2-9][0-9])\s+(?:in|from|living\s+in|located\s+in|based\s+in)\s+[A-Za-z].*$/i,
+    // 4. Age + space + 2-letter state code: "49 GA"
+    /^(?:ok(?:ay)?[\s,.\-]+)?(?:i'?m\s+|i\s+am\s+)?(1[8-9]|[2-9][0-9])\s+[A-Z]{2}[.!?\s]*$/,
+    // 5. State + separator + age: "GA, 49"
+    /^[A-Za-z]{2,}\s*[,/\-]\s*(1[8-9]|[2-9][0-9])[.!?\s]*$/i,
+    // 6. Correction lead: "actually, I'm 50" (safety net; profile-correction path usually catches this first)
+    /^(?:actually|sorry|correction|i\s+meant|meant)[\s,.:\-]+(?:i'?m\s+|i\s+am\s+)?(1[8-9]|[2-9][0-9])[.!?\s]*$/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = normalized.match(pattern);
+    if (match) return Number(match[1]);
+  }
+  return null;
+}
+
 function extractCorrectionLead(message: string): string | null {
   const trimmed = message.trim();
   if (!trimmed) return null;
@@ -2992,7 +3027,12 @@ function detectExplicitAgeCorrection(query: string, currentAge?: number | null):
 }
 
 function applyDemographics(session: Session, query: string) {
-  const age = extractAge(query);
+  // Use the strict intake-shape extractor for the write path so that
+  // family-member age mentions ("my wife is 38", "my son is 14", "the kid is 15")
+  // never overwrite session.userAge. Explicit age corrections
+  // ("actually, I'm 50") are handled upstream by buildProfileCorrectionReply
+  // but are also matched by extractIntakeAge as a safety net.
+  const age = extractIntakeAge(query);
   const state = extractState(query);
 
   if (age) session.userAge = age;

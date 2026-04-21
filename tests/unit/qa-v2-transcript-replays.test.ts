@@ -4329,4 +4329,87 @@ describe('qa-v2 transcript replays', () => {
     expect(priceResult.answer).not.toMatch(/Employee \+ Child\(ren\)/);
     expect(priceResult.answer).not.toMatch(/Employee \+ Spouse\b/);
   });
+
+  it('never reads "my oldest child is 21" as a demographics update (Apr 20 v2 age-extractor regression)', async () => {
+    const session = makeSession({
+      userName: 'Susan',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'GA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 3 },
+    });
+
+    const result = await runQaV2Engine({
+      query: 'my oldest child is 21, and will live at home. will he be covered?',
+      session,
+    });
+    expect(session.userAge).toBe(49);
+    expect(session.userState).toBe('GA');
+    expect(result.answer).not.toMatch(/^Perfect\b/);
+    expect(result.answer).not.toMatch(/\b21\s+in\s+GA\b/);
+    expect(result.answer).not.toMatch(/updated your state/i);
+  });
+
+  it('never reads "my wife is 38" as a user age update (Apr 20 v2 age-extractor regression)', async () => {
+    const session = makeSession({
+      userName: 'Susan',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'GA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee + Spouse',
+      familyDetails: { hasSpouse: true },
+    });
+
+    await runQaV2Engine({ query: 'my wife is 38', session });
+    expect(session.userAge).toBe(49);
+  });
+
+  it('never reads "my son is 14" or "the kid is 15" as a user age update (Apr 20 v2 age-extractor regression)', async () => {
+    const session = makeSession({
+      userName: 'Susan',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'GA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee + Child(ren)',
+      familyDetails: { numChildren: 1 },
+    });
+
+    await runQaV2Engine({ query: 'my son is 14, any special plan considerations?', session });
+    expect(session.userAge).toBe(49);
+
+    await runQaV2Engine({ query: 'the kid is 15', session });
+    expect(session.userAge).toBe(49);
+  });
+
+  it('still accepts "actually, I\'m 50" as a legit age correction (Apr 20 v2 age-extractor regression)', async () => {
+    const session = makeSession({
+      userName: 'Susan',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'GA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+    });
+
+    await runQaV2Engine({ query: "actually, i'm 50", session });
+    expect(session.userAge).toBe(50);
+  });
+
+  it('still completes intake from a bare "49, CA" pair (Apr 20 v2 age-extractor regression)', async () => {
+    const session = makeSession({
+      userName: 'Susan',
+      hasCollectedName: true,
+    });
+
+    await runQaV2Engine({ query: '49, CA', session });
+    expect(session.userAge).toBe(49);
+    expect(session.userState).toBe('CA');
+  });
 });
