@@ -4189,4 +4189,81 @@ describe('qa-v2 transcript replays', () => {
     expect(result.answer).not.toMatch(/\bin ME\b/);
     expect(result.answer).not.toMatch(/\bin Maine\b/);
   });
+
+  it('holds Employee + Family across a later child-only turn (Apr 20 household-drift regression)', async () => {
+    const session = makeSession({
+      userName: 'Mark',
+      hasCollectedName: true,
+      userAge: 42,
+      userState: 'CO',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee Only',
+      familyDetails: {},
+    });
+
+    // Turn: household correction after tier explanation
+    await runQaV2Engine({ query: 'oh! okay, i have a wife and 1 kid.', session });
+    expect(session.familyDetails?.hasSpouse).toBe(true);
+    expect(session.familyDetails?.numChildren).toBe(1);
+    expect(session.coverageTierLock).toBe('Employee + Family');
+
+    // Turn: rich recommendation ask that mentions only the child, not the spouse.
+    // Tier must not drift down to Employee + Child(ren).
+    const recResult = await runQaV2Engine({
+      query:
+        'so i want to spend as little out of pocket as possible, and i am pregnant. my daughter sees a therapist 1x per month, and i have 3 regular prescriptions. which plan would you recommend?',
+      session,
+    });
+    expect(session.familyDetails?.hasSpouse).toBe(true);
+    expect(session.coverageTierLock).toBe('Employee + Family');
+    expect(recResult.answer).not.toMatch(/Employee \+ Child\(ren\)/);
+  });
+
+  it('holds Employee + Family across a later spouse-only turn (Apr 20 household-drift regression)', async () => {
+    const session = makeSession({
+      userName: 'Mark',
+      hasCollectedName: true,
+      userAge: 42,
+      userState: 'CO',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 1 },
+    });
+
+    const result = await runQaV2Engine({
+      query: 'what does my wife cost on the standard hsa?',
+      session,
+    });
+    expect(session.familyDetails?.hasSpouse).toBe(true);
+    expect(session.familyDetails?.numChildren).toBe(1);
+    expect(session.coverageTierLock).toBe('Employee + Family');
+    expect(result.answer).not.toMatch(/Employee \+ Spouse\b/);
+  });
+
+  it('locks Employee + Family from an explicit "wife and 2 kids" intake (Apr 20 household-drift regression)', async () => {
+    const session = makeSession({
+      userName: 'Mark',
+      hasCollectedName: true,
+      userAge: 42,
+      userState: 'CO',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee Only',
+      familyDetails: {},
+    });
+
+    await runQaV2Engine({ query: "i've got a wife and 2 kids", session });
+    expect(session.familyDetails?.hasSpouse).toBe(true);
+    expect(session.familyDetails?.numChildren).toBe(2);
+    expect(session.coverageTierLock).toBe('Employee + Family');
+
+    // A later generic pricing ask must still render Employee + Family pricing.
+    const priceResult = await runQaV2Engine({ query: 'what will my paycheck look like?', session });
+    expect(session.coverageTierLock).toBe('Employee + Family');
+    expect(priceResult.answer).not.toMatch(/Employee Only\b/);
+    expect(priceResult.answer).not.toMatch(/Employee \+ Child\(ren\)/);
+    expect(priceResult.answer).not.toMatch(/Employee \+ Spouse\b/);
+  });
 });

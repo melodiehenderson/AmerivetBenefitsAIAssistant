@@ -3039,7 +3039,7 @@ function isHouseholdOnlyMessage(query: string): boolean {
     return false;
   }
 
-  return /^(?:i\s+have|we\s+have|it'?s|it\s+is|just\s+me|me\s+and|only\s+me|my\s+household|our\s+household|my\s+family|our\s+family|i'?m\s+looking\s+for\s+myself|i\s+am\s+looking\s+for\s+myself|looking\s+for\s+myself|no\s+(?:kids?|children|spouse|partner|dependents?))\b/i.test(lower)
+  return /^(?:i\s+have|we\s+have|i'?ve\s+got|we'?ve\s+got|i\s+got|we\s+got|it'?s|it\s+is|just\s+me|me\s+and|only\s+me|my\s+household|our\s+household|my\s+family|our\s+family|i'?m\s+looking\s+for\s+myself|i\s+am\s+looking\s+for\s+myself|looking\s+for\s+myself|there'?s|there\s+is|no\s+(?:kids?|children|spouse|partner|dependents?))\b/i.test(lower)
     || /\b(?:now|not\s+anymore|instead|turned\s+out)\b/i.test(lower);
 }
 

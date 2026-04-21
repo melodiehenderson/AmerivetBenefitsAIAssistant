@@ -95,11 +95,21 @@ function inferCoverageTierFromQuery(query: string, session: Session): string {
   const sessionTier = inferCoverageTierFromSession(session) || session.coverageTierLock || null;
   const hasGenericFamilyMention = /\bfamily\s*4\+|\bfamily4\+|\b(employee\s*\+\s*family|family\s*(?:of|plan|coverage)|for\s*(?:my|the|our)\s*family)\b/i.test(low);
 
+  // Apr 20 household-drift fix: combine session-stored household signals with
+  // current-query signals so a later turn that only mentions one side of the
+  // household (e.g. "my daughter sees a therapist") does not downgrade an
+  // established Employee + Family tier.
+  const sessionHasSpouse = Boolean(session.familyDetails?.hasSpouse)
+    || (session.lifeEvents || []).includes('marriage');
+  const sessionHasChild = (session.familyDetails?.numChildren || 0) > 0;
+  const effectiveHasSpouse = hasSpouseMention || sessionHasSpouse;
+  const effectiveHasChild = hasChildMention || sessionHasChild;
+
   if (explicitTier) {
     return explicitTier;
   }
 
-  if (hasSpouseMention && hasChildMention) {
+  if (effectiveHasSpouse && effectiveHasChild) {
     return 'Employee + Family';
   }
 
