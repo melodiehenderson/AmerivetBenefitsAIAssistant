@@ -8,11 +8,11 @@ import {
   createAmerivetBenefitsPackage,
   getAmerivetCatalogForPrompt,
   getAmerivetBenefitsPackage,
-  getAmerivetEmployerGuidanceRules,
+  getBCGEmployerGuidanceRules,
   isKaiserEligibleForState,
   listAmerivetBenefitsPackageIds,
 } from '@/lib/data/amerivet-package';
-import { findAmerivetEmployerGuidanceRule } from '@/lib/data/amerivet-employer-guidance';
+import { findBCGEmployerGuidanceRule } from '@/lib/data/bcg-employer-guidance';
 
 function makeSession(overrides: Partial<Session> = {}): Session {
   return {
@@ -181,7 +181,7 @@ describe('amerivet package versioning seam', () => {
   });
 
   it('registers structured employer guidance rules alongside the active AmeriVet package', () => {
-    const rules = getAmerivetEmployerGuidanceRules();
+    const rules = getBCGEmployerGuidanceRules();
     const splitRule = rules.find((rule) => rule.id === 'life-default-term-whole-split');
 
     expect(splitRule?.allocation.primaryPlan).toBe('voluntary_term_life');
@@ -191,15 +191,15 @@ describe('amerivet package versioning seam', () => {
   });
 
   it('matches the life split guidance rule only for term-versus-whole decision questions', () => {
-    const match = findAmerivetEmployerGuidanceRule(
+    const match = findBCGEmployerGuidanceRule(
       'Life Insurance',
       'What split do you recommend between whole life and voluntary term life?',
     );
-    const bothMatch = findAmerivetEmployerGuidanceRule(
+    const bothMatch = findBCGEmployerGuidanceRule(
       'Life Insurance',
       'Do I need both voluntary term life and whole life?',
     );
-    const noMatch = findAmerivetEmployerGuidanceRule(
+    const noMatch = findBCGEmployerGuidanceRule(
       'Life Insurance',
       'What life insurance options do I have?',
     );

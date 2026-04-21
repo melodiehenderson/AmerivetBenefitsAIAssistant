@@ -1,9 +1,9 @@
 import type { Session } from '@/lib/rag/session-store';
 import { getAmerivetBenefitsPackage } from '@/lib/data/amerivet-package';
 import {
-  AMERIVET_EMPLOYER_GUIDANCE_RULES,
-  findAmerivetEmployerGuidanceRule,
-} from '@/lib/data/amerivet-employer-guidance';
+  BCG_EMPLOYER_GUIDANCE_RULES,
+  findBCGEmployerGuidanceRule,
+} from '@/lib/data/bcg-employer-guidance';
 
 const ENROLLMENT_PORTAL_URL = process.env.ENROLLMENT_PORTAL_URL || 'https://wd5.myworkday.com/amerivet/login.html';
 
@@ -44,7 +44,7 @@ function resolveEmployerLifeSplitGuidanceRule(query: string, session: Session) {
   const lower = query.toLowerCase();
   if (isPureVoluntaryTermAmountQuestion(lower)) return null;
 
-  const explicitRule = findAmerivetEmployerGuidanceRule('Life Insurance', query);
+  const explicitRule = findBCGEmployerGuidanceRule('Life Insurance', query);
   if (explicitRule) return explicitRule;
 
   const messageHistory = (session.messages || [])
@@ -64,13 +64,13 @@ function resolveEmployerLifeSplitGuidanceRule(query: string, session: Session) {
   const incomeProtectionContext = /\b(other\s+people\s+rely\s+on\s+your\s+income|family\s+relies\s+on\s+your\s+income|depend(?:s)?\s+on\s+your\s+income|income\s+replacement|household\s+protection|more\s+than\s+just\s+(?:the\s+)?basic\s+life|base\s+benefit\s+isn'?t\s+enough)\b/i.test(combined);
 
   if ((lastBotDiscussedLifeMix || activeLifeContext) && asksDirectLifeSelection && (mentionsExtraLifeChoice || familyContext || incomeProtectionContext || lastBotDiscussedLifeMix)) {
-    return AMERIVET_EMPLOYER_GUIDANCE_RULES.find((rule) =>
+    return BCG_EMPLOYER_GUIDANCE_RULES.find((rule) =>
       rule.topic === 'Life Insurance' && rule.intentFamily === 'life_split_term_vs_whole',
     ) || null;
   }
 
   if ((lastBotDiscussedLifeMix || activeLifeContext) && asksProductDecision && (mentionsExtraLifeChoice || familyContext || incomeProtectionContext)) {
-    return AMERIVET_EMPLOYER_GUIDANCE_RULES.find((rule) =>
+    return BCG_EMPLOYER_GUIDANCE_RULES.find((rule) =>
       rule.topic === 'Life Insurance' && rule.intentFamily === 'life_split_term_vs_whole',
     ) || null;
   }
@@ -132,7 +132,7 @@ function buildEmployerLifeSplitGuidanceReply(query: string, session: Session): s
 }
 
 function buildEmployerLifeSplitAdjustmentReply(query: string, session: Session): string | null {
-  const defaultRule = AMERIVET_EMPLOYER_GUIDANCE_RULES.find((rule) =>
+  const defaultRule = BCG_EMPLOYER_GUIDANCE_RULES.find((rule) =>
     rule.topic === 'Life Insurance' && rule.intentFamily === 'life_split_term_vs_whole',
   );
   if (!defaultRule) return null;
@@ -596,7 +596,7 @@ export function buildNonMedicalDetailAnswer(topic: string, query: string, sessio
 export function buildLifeSizingGuidance(session: Session): string {
   const { basic, term, whole } = getLifePlans();
   const familyOrIncomeContext = hasLifeFamilyOrIncomeContext(session, '');
-  const defaultRule = AMERIVET_EMPLOYER_GUIDANCE_RULES.find((rule) =>
+  const defaultRule = BCG_EMPLOYER_GUIDANCE_RULES.find((rule) =>
     rule.topic === 'Life Insurance' && rule.intentFamily === 'life_split_term_vs_whole',
   );
 

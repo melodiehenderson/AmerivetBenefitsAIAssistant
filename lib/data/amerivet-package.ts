@@ -7,16 +7,16 @@ import {
   type BenefitTier,
 } from '@/lib/data/amerivet';
 import {
-  AMERIVET_EMPLOYER_GUIDANCE_RULES,
-  type AmerivetEmployerGuidanceRule,
-} from '@/lib/data/amerivet-employer-guidance';
+  BCG_EMPLOYER_GUIDANCE_RULES,
+  type BCGEmployerGuidanceRule,
+} from '@/lib/data/bcg-employer-guidance';
 
 export interface AmerivetBenefitsPackage {
   packageId: string;
   employerKey: 'amerivet';
   displayName: string;
   catalog: AmerivetBenefitsCatalog;
-  employerGuidanceRules: readonly AmerivetEmployerGuidanceRule[];
+  employerGuidanceRules: readonly BCGEmployerGuidanceRule[];
   kaiserAvailableStateCodes: readonly string[];
   stateAbbrevToName: Readonly<Record<string, string>>;
 }
@@ -28,7 +28,7 @@ const DEFAULT_AMERIVET_PACKAGE: AmerivetBenefitsPackage = {
   employerKey: 'amerivet',
   displayName: 'AmeriVet Benefits 2024-2025',
   catalog: amerivetBenefits2024_2025,
-  employerGuidanceRules: AMERIVET_EMPLOYER_GUIDANCE_RULES,
+  employerGuidanceRules: BCG_EMPLOYER_GUIDANCE_RULES,
   kaiserAvailableStateCodes: KAISER_AVAILABLE_STATE_CODES,
   stateAbbrevToName: STATE_ABBREV_TO_NAME,
 };
@@ -91,9 +91,9 @@ export function getAllAmerivetBenefitPlans(
   ];
 }
 
-export function getAmerivetEmployerGuidanceRules(
+export function getBCGEmployerGuidanceRules(
   benefitsPackage: AmerivetBenefitsPackage = getAmerivetBenefitsPackage(),
-): readonly AmerivetEmployerGuidanceRule[] {
+): readonly BCGEmployerGuidanceRule[] {
   return benefitsPackage.employerGuidanceRules;
 }
 

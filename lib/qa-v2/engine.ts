@@ -1,6 +1,6 @@
 import { getAmerivetBenefitsPackage } from '@/lib/data/amerivet-package';
 import { getAmerivetPackageCopySnapshot } from '@/lib/data/amerivet-package-copy';
-import { AMERIVET_EMPLOYER_GUIDANCE_RULES } from '@/lib/data/amerivet-employer-guidance';
+import { BCG_EMPLOYER_GUIDANCE_RULES } from '@/lib/data/bcg-employer-guidance';
 import type { Session } from '@/lib/rag/session-store';
 import { extractName } from '@/lib/session-logic';
 import pricingUtils from '@/lib/rag/pricing-utils';
@@ -37,7 +37,7 @@ const ACTIVE_AMERIVET_COPY = getAmerivetPackageCopySnapshot(ACTIVE_AMERIVET_PACK
 const ACTIVE_BASIC_LIFE_NAME = ACTIVE_AMERIVET_COPY.lifePlanNames.find((name) => /basic life/i.test(name)) || 'Basic Life';
 const ACTIVE_TERM_LIFE_NAME = ACTIVE_AMERIVET_COPY.lifePlanNames.find((name) => /term life/i.test(name)) || 'Voluntary Term Life';
 const ACTIVE_WHOLE_LIFE_NAME = ACTIVE_AMERIVET_COPY.lifePlanNames.find((name) => /whole life/i.test(name)) || 'Whole Life';
-const ACTIVE_LIFE_SPLIT_RULE = AMERIVET_EMPLOYER_GUIDANCE_RULES.find((rule) =>
+const ACTIVE_LIFE_SPLIT_RULE = BCG_EMPLOYER_GUIDANCE_RULES.find((rule) =>
   rule.topic === 'Life Insurance' && rule.intentFamily === 'life_split_term_vs_whole',
 ) || null;
 

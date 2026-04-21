@@ -1,28 +1,28 @@
-export type AmerivetEmployerGuidanceTopic = 'Life Insurance';
+export type BCGEmployerGuidanceTopic = 'Life Insurance';
 
-export type AmerivetEmployerGuidanceIntentFamily =
+export type BCGEmployerGuidanceIntentFamily =
   | 'life_split_term_vs_whole';
 
-export type AmerivetEmployerGuidancePlanKey =
+export type BCGEmployerGuidancePlanKey =
   | 'voluntary_term_life'
   | 'whole_life';
 
-export interface AmerivetEmployerGuidanceRule {
+export interface BCGEmployerGuidanceRule {
   id: string;
-  topic: AmerivetEmployerGuidanceTopic;
-  intentFamily: AmerivetEmployerGuidanceIntentFamily;
+  topic: BCGEmployerGuidanceTopic;
+  intentFamily: BCGEmployerGuidanceIntentFamily;
   title: string;
   recommendationLabel: string;
   allocation: {
-    primaryPlan: AmerivetEmployerGuidancePlanKey;
+    primaryPlan: BCGEmployerGuidancePlanKey;
     primaryPercent: number;
-    secondaryPlan: AmerivetEmployerGuidancePlanKey;
+    secondaryPlan: BCGEmployerGuidancePlanKey;
     secondaryPercent: number;
   };
   rationale: readonly string[];
 }
 
-export const AMERIVET_EMPLOYER_GUIDANCE_RULES: readonly AmerivetEmployerGuidanceRule[] = [
+export const BCG_EMPLOYER_GUIDANCE_RULES: readonly BCGEmployerGuidanceRule[] = [
   {
     id: 'life-default-term-whole-split',
     topic: 'Life Insurance',
@@ -50,10 +50,10 @@ const LIFE_DECISION_PATTERN = /\b(what\s+do\s+you\s+recommend|would\s+you\s+reco
 const EXTRA_LIFE_CONTEXT_PATTERN = /\b(more\s+than\s+just\s+(?:the\s+)?basic|beyond\s+(?:the\s+)?basic|extra\s+life|additional\s+life|want\s+life\s+insurance|also\s+want\s+(?:voluntary\s+)?term(?:\s+life)?|want\s+(?:voluntary\s+)?term(?:\s+life)?|base\s+benefit\s+isn'?t\s+enough|not\s+enough\s+by\s+itself)\b/i;
 const FAMILY_PROTECTION_PATTERN = /\b(wife|husband|spouse|partner|kids?|children|family|dependents?)\b/i;
 
-export function inferAmerivetEmployerGuidanceIntentFamily(
+export function inferBCGEmployerGuidanceIntentFamily(
   topic: string,
   query: string,
-): AmerivetEmployerGuidanceIntentFamily | null {
+): BCGEmployerGuidanceIntentFamily | null {
   if (topic !== 'Life Insurance') return null;
 
   const lower = query.toLowerCase();
@@ -79,12 +79,12 @@ export function inferAmerivetEmployerGuidanceIntentFamily(
   return null;
 }
 
-export function findAmerivetEmployerGuidanceRule(
+export function findBCGEmployerGuidanceRule(
   topic: string,
   query: string,
-  rules: readonly AmerivetEmployerGuidanceRule[] = AMERIVET_EMPLOYER_GUIDANCE_RULES,
-): AmerivetEmployerGuidanceRule | null {
-  const intentFamily = inferAmerivetEmployerGuidanceIntentFamily(topic, query);
+  rules: readonly BCGEmployerGuidanceRule[] = BCG_EMPLOYER_GUIDANCE_RULES,
+): BCGEmployerGuidanceRule | null {
+  const intentFamily = inferBCGEmployerGuidanceIntentFamily(topic, query);
   if (!intentFamily) return null;
   return rules.find((rule) => rule.topic === topic && rule.intentFamily === intentFamily) || null;
 }
