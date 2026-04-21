@@ -4242,6 +4242,69 @@ describe('qa-v2 transcript replays', () => {
     expect(result.answer).not.toMatch(/Employee \+ Spouse\b/);
   });
 
+  it('treats "so which one do you actually recommend for me?" as a direct recommendation ask (Apr 20 regression)', async () => {
+    const session = makeSession({
+      userName: 'Mark',
+      hasCollectedName: true,
+      userAge: 42,
+      userState: 'CO',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 1 },
+      lifeEvents: ['pregnancy'],
+    });
+
+    const result = await runQaV2Engine({
+      query: 'so which one do you actually recommend for me?',
+      session,
+    });
+    expect(result.answer).not.toContain('A useful next medical step is usually one of these');
+    expect(result.answer).toMatch(/My recommendation:|recommendation:/i);
+  });
+
+  it('answers "what about maternity considerations?" directly instead of showing the generic medical menu (Apr 20 regression)', async () => {
+    const session = makeSession({
+      userName: 'Mark',
+      hasCollectedName: true,
+      userAge: 42,
+      userState: 'CO',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 1 },
+      lifeEvents: ['pregnancy'],
+    });
+
+    const result = await runQaV2Engine({
+      query: 'what about maternity considerations?',
+      session,
+    });
+    expect(result.answer).not.toContain('A useful next medical step is usually one of these');
+    expect(result.answer).toMatch(/maternity|pregnan|prenatal|delivery/i);
+  });
+
+  it('treats "which one do you really recommend" as a direct recommendation ask (Apr 20 regression)', async () => {
+    const session = makeSession({
+      userName: 'Mark',
+      hasCollectedName: true,
+      userAge: 42,
+      userState: 'CO',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 1 },
+    });
+
+    const result = await runQaV2Engine({
+      query: 'which one do you really recommend?',
+      session,
+    });
+    expect(result.answer).not.toContain('A useful next medical step is usually one of these');
+    // Bot should respond directly (by plan name or explicit lean), not drop into a menu.
+    expect(result.answer).toMatch(/Standard HSA|Enhanced HSA|Kaiser|My recommendation/i);
+  });
+
   it('locks Employee + Family from an explicit "wife and 2 kids" intake (Apr 20 household-drift regression)', async () => {
     const session = makeSession({
       userName: 'Mark',
