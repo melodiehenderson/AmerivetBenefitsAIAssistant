@@ -4417,6 +4417,68 @@ describe('qa-v2 engine', () => {
     expect(session.lastRecommendation?.plan).toBeTruthy();
   });
 
+  it('Apr 21 Step 6: answers "can I cover my 28-year-old son who lives at home?" directly against the dependent-age rule', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Maggie',
+      hasCollectedName: true,
+      userAge: 29,
+      userState: 'CA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'can i cover my 28-year-old son who lives at home?',
+      session,
+    });
+
+    expect(result.answer).toMatch(/28-year-old son/i);
+    expect(result.answer).toMatch(/through age 26|age 26,? regardless of student status/i);
+    expect(result.answer).toMatch(/would not qualify|past AmeriVet's dependent-child age limit/i);
+    expect(result.metadata?.intercept).toBe('dependent-eligibility-v2');
+  });
+
+  it('Apr 21 Step 6: answers "is my 22-year-old daughter still eligible?" with a direct yes', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Maggie',
+      hasCollectedName: true,
+      userAge: 29,
+      userState: 'CA',
+      dataConfirmed: true,
+    });
+
+    const result = await runQaV2Engine({
+      query: 'is my 22-year-old daughter still eligible as a dependent?',
+      session,
+    });
+
+    expect(result.answer).toMatch(/Yes\b/);
+    expect(result.answer).toMatch(/22-year-old daughter/i);
+    expect(result.answer).toMatch(/through age 26/i);
+    expect(result.metadata?.intercept).toBe('dependent-eligibility-v2');
+  });
+
+  it('Apr 21 Step 6: answers "can i add my spouse?" with a spouse-eligibility reply', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Maggie',
+      hasCollectedName: true,
+      userAge: 29,
+      userState: 'CA',
+      dataConfirmed: true,
+    });
+
+    const result = await runQaV2Engine({
+      query: 'can i add my spouse to my medical plan?',
+      session,
+    });
+
+    expect(result.answer).toMatch(/spouse is eligible/i);
+    expect(result.metadata?.intercept).toBe('dependent-eligibility-v2');
+  });
+
   it('Apr 21 Step 4 Layer 1: answers HSA paycheck/pre-tax funding asks directly with employer contribution amounts', async () => {
     const session = makeSession({
       step: 'active_chat',

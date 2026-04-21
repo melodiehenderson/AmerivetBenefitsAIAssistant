@@ -292,6 +292,141 @@ function buildWaitingPeriodReply(session: Session): string {
   ].join('\n');
 }
 
+// Apr 21 Step 6: dependent eligibility.
+// When a user asks "can I cover my 28-year-old son who lives at home?" the
+// answer lives right in the package data (`catalog.eligibility.dependents`).
+// Before this step, that query bounced into a generic menu because none of
+// the medical-compare, pricing, or topic detectors matched. Now we extract
+// the age + relation, compare against the package's child-age cutoff, and
+// answer directly — like a counselor who knows the rule.
+
+function extractDependentContextFromQuery(query: string): { age: number | null; relation: 'son' | 'daughter' | 'child' | 'spouse' | 'domestic_partner' | null } {
+  const lower = query.toLowerCase();
+  // Age captured from phrasings like "28-year-old", "28 year old", "28yo",
+  // "my son who is 28", "he is 28", "age 28".
+  let age: number | null = null;
+  const hyphenMatch = lower.match(/\b(\d{1,2})[-\s]?years?[-\s]?old\b/);
+  const isMatch = lower.match(/\b(?:who\s+is|is)\s+(\d{1,2})(?:\s+years?\s+old)?\b/);
+  const ageMatch = lower.match(/\bage\s+(\d{1,2})\b/);
+  const yoMatch = lower.match(/\b(\d{1,2})\s*yo\b/);
+  for (const m of [hyphenMatch, isMatch, ageMatch, yoMatch]) {
+    if (m && m[1]) {
+      const n = parseInt(m[1], 10);
+      if (Number.isFinite(n) && n >= 0 && n <= 99) {
+        age = n;
+        break;
+      }
+    }
+  }
+  let relation: 'son' | 'daughter' | 'child' | 'spouse' | 'domestic_partner' | null = null;
+  if (/\bson\b/.test(lower)) relation = 'son';
+  else if (/\bdaughter\b/.test(lower)) relation = 'daughter';
+  else if (/\b(kid|child|children|dependent)\b/.test(lower)) relation = 'child';
+  else if (/\b(wife|husband|spouse)\b/.test(lower)) relation = 'spouse';
+  else if (/\bdomestic\s+partner\b/.test(lower)) relation = 'domestic_partner';
+  return { age, relation };
+}
+
+function isDependentEligibilityQuestion(query: string): boolean {
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  const { age, relation } = extractDependentContextFromQuery(lower);
+  // Anti-patterns: these queries mention a dependent but are really about
+  // something else (pricing, product scope, protection ranking, survivor
+  // hypotheticals). Exclude them up front so we don't hijack those flows.
+  // - Pricing / cost shape → belongs to the premium / pricing handlers.
+  if (/\b(pay|paid|paying|cost|costs|price|priced|pricing|premium|premiums|how\s+much)\b/.test(lower)) return false;
+  // - Product-scope shape: "would/does the [product] (also )?cover ..." — this
+  //   is asking whether the insurance product extends to a person, not whether
+  //   the person is an eligible dependent. Let topic handlers answer.
+  if (/\b(would|does|will|can|could)\s+(?:the\s+|my\s+|our\s+)?(life|disability|medical|dental|vision|accident|critical(?:\s+illness)?|hospital|coverage|policy|plan|insurance|ad&d|ad\s*and\s*d)\b[^?.]{0,40}\b(also\s+)?cover\b/.test(lower)) return false;
+  // - Protection ranking / "what should I add first" — belongs to the
+  //   life-vs-disability / supplemental-priority handlers.
+  if (/\b(what\s+(?:protection|benefit|coverage)\s+should\s+i\s+add\s+first|add\s+first|which\s+(?:protection|benefit|coverage)\s+(?:should\s+i\s+add|first))\b/.test(lower)) return false;
+  // - Survivor / hypothetical-death framing → life vs. disability reasoning.
+  if (/\b(if\s+(?:i|something)\s+(?:die|died|happened|happens)|if\s+something\s+happened\s+to\s+me)\b/.test(lower)) return false;
+  // Require an eligibility-framed verb. This keeps us from hijacking every
+  // "my 28-year-old son uses X" narrative turn.
+  const eligibilityVerb = /\b(cover|covered|covering|add|adding|enroll|enrolled|enrolling|include|including|qualif(?:y|ies)|eligible|eligibility|on\s+my\s+(?:plan|coverage)|on\s+my\s+medical|my\s+(?:dependent|dependents)|count\s+as\s+(?:a\s+)?dependent|be\s+(?:a\s+)?dependent|still\s+(?:a\s+)?dependent)\b/i.test(lower);
+  if (!eligibilityVerb) return false;
+  // Spouse / domestic partner: relation alone is enough — they have no
+  // age-dependent cutoff, so "can I add my spouse?" is decisive on its own.
+  if (relation === 'spouse' || relation === 'domestic_partner') return true;
+  // Child/son/daughter: prefer age + relation for a decisive age answer.
+  if (age !== null && relation !== null) return true;
+  // Fallback: relation + lives-with-me / adult-child signal. This covers
+  // "my adult son" or "my son who lives at home" without an explicit age.
+  if (relation && /\b(adult|lives\s+(?:at\s+home|with\s+me|with\s+us)|still\s+lives|stays\s+with\s+me|stays\s+with\s+us)\b/i.test(lower)) return true;
+  return false;
+}
+
+function buildDependentEligibilityReply(session: Session, query: string): string {
+  const { age, relation } = extractDependentContextFromQuery(query);
+  const childRule = ACTIVE_AMERIVET_PACKAGE.catalog.eligibility.dependents.children;
+  // Parse the cutoff age out of the rule string (e.g. "through age 26").
+  const cutoffMatch = /through\s+age\s+(\d{1,2})/i.exec(childRule);
+  const cutoffAge = cutoffMatch ? parseInt(cutoffMatch[1], 10) : 26;
+  const relationLabel = relation === 'son'
+    ? 'son'
+    : relation === 'daughter'
+      ? 'daughter'
+      : relation === 'child'
+        ? 'child'
+        : relation === 'spouse'
+          ? 'spouse'
+          : relation === 'domestic_partner'
+            ? 'domestic partner'
+            : 'dependent';
+  // Spouse / domestic partner path — different rules from children.
+  if (relation === 'spouse') {
+    return [
+      `Yes — your spouse is eligible as a dependent on AmeriVet's medical, dental, vision, and voluntary plans.`,
+      ``,
+      `You would just need to add them during open enrollment or within 30 days of a qualifying life event (marriage, loss of other coverage, etc.). Your coverage tier changes to **Employee + Spouse** or **Employee + Family** depending on who else is on the plan.`,
+      ``,
+      `If you want, I can show what Employee + Spouse pricing looks like on the medical plans.`,
+    ].join('\n');
+  }
+  if (relation === 'domestic_partner') {
+    return [
+      `Yes — AmeriVet's plans allow domestic partners as eligible dependents on medical, dental, and vision coverage.`,
+      ``,
+      `Enrollment works the same as adding a spouse: during open enrollment or within 30 days of a qualifying life event. Tax treatment of the premium share may differ — HR can confirm at **${HR_PHONE}**.`,
+    ].join('\n');
+  }
+  // Child path — age-based rule.
+  if (age === null) {
+    // Relation suggests a child but no age supplied. Give the rule and ask
+    // for the age so we can answer decisively.
+    return [
+      `Children qualify as dependents on AmeriVet's plans **through age ${cutoffAge}, regardless of student status**.`,
+      ``,
+      `If you can tell me the age of your ${relationLabel}, I can give you a direct yes/no on whether they are still eligible on your coverage.`,
+    ].join('\n');
+  }
+  const eligible = age <= cutoffAge;
+  if (eligible) {
+    return [
+      `Yes — a ${age}-year-old ${relationLabel} is still eligible as a dependent on AmeriVet's plans.`,
+      ``,
+      `Children qualify through age ${cutoffAge}, regardless of student status, so you can keep your ${relationLabel} on your medical, dental, and vision coverage. They age off the plan at the end of the month they turn ${cutoffAge + 1}.`,
+      ``,
+      `If you want, I can show what your coverage tier and pricing look like with your ${relationLabel} included.`,
+    ].join('\n');
+  }
+  return [
+    `A ${age}-year-old ${relationLabel} is past AmeriVet's dependent-child age limit.`,
+    ``,
+    `AmeriVet's plans cover dependent children **through age ${cutoffAge}, regardless of student status** — that is the cutoff in the eligibility rules. A ${age}-year-old is beyond that window, so your ${relationLabel} would not qualify as a dependent on your medical, dental, or vision coverage.`,
+    ``,
+    `Common next steps for an adult child in that situation:`,
+    `- **Their own employer's plan** if they are working`,
+    `- **An individual plan on HealthCare.gov** (open enrollment or a special enrollment period after losing other coverage)`,
+    `- **Medicaid** depending on income and state`,
+    ``,
+    `If anything about that situation is different — they are disabled and claimed as a tax dependent, for example — AmeriVet HR can confirm the edge-case rules at **${HR_PHONE}**.`,
+  ].join('\n');
+}
+
 function isMedicalDetailQuestion(query: string): boolean {
   const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
   return /\b(coverage\s+tier|coverage\s+tiers|copay|copays|coinsurance|deductible|out[- ]of[- ]pocket|oop\s*max|primary\s+care|pcp|specialist|urgent\s+care|emergency\s+room|er|network|in[- ]network|out[- ]of[- ]network|ppo|hmo|bcbstx|blue\s+cross\s+blue\s+shield|prescriptions?|drugs?|generic|brand|specialty|maternity|pregnan\w*|delivery|prenatal|postnatal|therapy|therapist|physical\s+therapy|mental\s+health|virtual\s+visits?|telehealth(?:\s+visits?)?|telemedicine|tradeoffs?|differences?\s+between\s+the\s+plans|compare\s+the\s+plans|compare\s+the\s+plan\s+tradeoffs?)\b/i.test(lower)
@@ -1974,6 +2109,19 @@ function buildHighPriorityIntentReply(session: Session, query: string): EngineRe
     return {
       answer: buildWaitingPeriodReply(session),
       metadata: { intercept: 'waiting-period-v2', topic: session.currentTopic || null },
+    };
+  }
+
+  // Apr 21 Step 6: dependent eligibility. Directly answer "can I cover my
+  // 28-year-old son who lives at home?"-style questions from the package's
+  // eligibility rule (children eligible through age 26, regardless of
+  // student status). Previously this bounced into a next-step menu.
+  if (isDependentEligibilityQuestion(normalizedQuery)) {
+    clearPendingGuidance(session);
+    const { age, relation } = extractDependentContextFromQuery(normalizedQuery);
+    return {
+      answer: buildDependentEligibilityReply(session, normalizedQuery),
+      metadata: { intercept: 'dependent-eligibility-v2', age, relation },
     };
   }
 
