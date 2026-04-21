@@ -231,7 +231,7 @@ export function getAmerivetCatalogForPrompt(
     '  ALLSTATE   = Group Whole Life (Permanent), Accident Insurance, Critical Illness ONLY.',
     '  BCBSTX     = Medical plans (Standard HSA, Enhanced HSA) and Dental PPO ONLY.',
     '  VSP        = Vision plan ONLY.',
-    '  KAISER     = Medical HMO — California, Oregon, Washington ONLY. NEVER mention in any other state.',
+    '  KAISER     = Medical HMO — California, Georgia, Oregon, Washington ONLY. NEVER mention in any other state.',
     '  RIGHTWAY   — NOT an AmeriVet carrier. NEVER mention Rightway in any response.',
     '',
   ];
@@ -276,14 +276,27 @@ export function getAmerivetCatalogForPrompt(
   }
 
   lines.push('── SPECIAL ACCOUNTS ────────────────────────────────────────────────────────');
-  lines.push(`HSA: Employer contributes $${catalog.specialCoverage.hsa.employerContribution}/yr`);
+  const hsaContrib = catalog.specialCoverage.hsa.employerContribution;
+  if (typeof hsaContrib === 'number') {
+    lines.push(`HSA: Employer contributes $${hsaContrib}/yr (all tiers)`);
+  } else {
+    const tierLines = Object.entries(hsaContrib)
+      .map(([tier, amt]) => `${tier}: $${amt}/yr`)
+      .join(' | ');
+    lines.push(`HSA employer contribution (per tier): ${tierLines}`);
+  }
   lines.push(`Commuter: $${catalog.specialCoverage.commuter.monthlyBenefit}/mo benefit`);
   lines.push('');
 
   lines.push('── ENROLLMENT WINDOW ───────────────────────────────────────────────────────');
   lines.push(`Open: ${catalog.openEnrollment.startDate} – ${catalog.openEnrollment.endDate} | Effective: ${catalog.openEnrollment.effectiveDate}`);
-  lines.push(`Eligibility: Full-time ≥${catalog.eligibility.fullTimeHours}h/wk. Coverage ${catalog.eligibility.coverageEffective}`);
-  lines.push(`Dependents: Spouse=${catalog.eligibility.dependents.spouse} | Children: ${catalog.eligibility.dependents.children}`);
+  lines.push(`Eligibility: Full-time ≥${catalog.eligibility.fullTimeHours}h/wk. New-hire waiting period: 30 days. Coverage ${catalog.eligibility.coverageEffective}`);
+  lines.push(`Dependents: Spouse eligible=YES | Domestic partner eligible=YES | Children: ${catalog.eligibility.dependents.children}`);
+  lines.push(`COMPLIANCE FACTS (non-negotiable — never contradict):`);
+  lines.push(`  - Dependent age cutoff: 26. A dependent who has turned 27 is NOT eligible, regardless of student status.`);
+  lines.push(`  - Kaiser HMO is ONLY available in CA, GA, OR, WA. Employees in other states cannot enroll.`);
+  lines.push(`  - Basic Life & AD&D ($25,000) is employer-paid. Employee cost = $0.`);
+  lines.push(`  - Domestic partners are eligible dependents (same rules as spouse).`);
 
   return lines.join('\n');
 }

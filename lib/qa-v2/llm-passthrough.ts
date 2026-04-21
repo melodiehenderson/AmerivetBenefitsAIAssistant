@@ -30,6 +30,7 @@ import { hybridRetrieve } from '@/lib/rag/hybrid-retrieval';
 import { logger } from '@/lib/logger';
 import type { Session, ChatMessage } from '@/lib/rag/session-store';
 import type { Chunk } from '@/types/rag';
+import { validateLlmOutput } from '@/lib/qa-v2/post-gen-validator';
 
 export type LlmPassthroughResult = {
   answer: string;
@@ -148,15 +149,31 @@ function formatTopicsRemaining(session: Session): string {
   return remaining.join(', ');
 }
 
-function buildSystemPrompt(catalog: string, retrievalBlock: string, session: Session): string {
+function buildSystemPrompt(
+  catalog: string,
+  retrievalBlock: string,
+  session: Session,
+  catalogViolations?: string[],
+): string {
   const pricingRule = session.noPricingMode
     ? `- NO PRICING MODE ACTIVE: do not include $ amounts, premiums, or cost tables.`
-    : `- When a dollar amount appears in your answer, it MUST come from the CATALOG below — never invent a number.`;
+    : `- When a dollar amount appears in your answer, it MUST come from the CATALOG below — never invent a number. If you cannot find the exact figure, say "I don't have that detail" and suggest Workday or 888-217-4728.`;
+
+  const violationWarning = catalogViolations?.length
+    ? [
+        ``,
+        `⚠ GROUNDING CORRECTION REQUIRED:`,
+        `Your previous response contained values not found in the catalog: ${catalogViolations.join(', ')}.`,
+        `Do not use those values. Answer using ONLY information in the CATALOG block below.`,
+        `If you cannot answer without those values, use the escalation line instead.`,
+      ].join('\n')
+    : '';
 
   const bcgRules = formatBcgRulesBlock(BCG_EMPLOYER_GUIDANCE_RULES);
   const topicsRemaining = formatTopicsRemaining(session);
 
   return [
+    violationWarning,
     `You are a benefits counselor talking 1:1 with an employee.`,
     ``,
     `COUNSELOR VOICE:`,
@@ -270,6 +287,47 @@ export async function runLlmPassthrough(
     if (!answer) {
       logger.warn('L2 passthrough: empty LLM response; falling through to rule-based fallback');
       return null;
+    }
+
+    // Phase 2: post-generation catalog validation.
+    const validation = validateLlmOutput(answer, session.userState ?? null);
+    if (!validation.valid) {
+      logger.warn(
+        'L2 passthrough: catalog validation failed; retrying with stricter grounding prompt',
+        { offenders: validation.offenders },
+      );
+      // Retry once with a stricter system prompt that surfaces the specific violations.
+      const strictSystemPrompt = buildSystemPrompt(catalog, retrievalBlock, session, validation.offenders);
+      const retryCompletion = await azureOpenAIService.generateChatCompletion(
+        [
+          { role: 'system', content: strictSystemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        { maxTokens: 600, temperature: 0.2, topP: 0.9 },
+      ).catch(() => null);
+      const retryAnswer = retryCompletion?.content?.trim();
+      if (!retryAnswer) {
+        logger.warn('L2 passthrough: retry also failed; falling through to escalation');
+        return null;
+      }
+      const retryValidation = validateLlmOutput(retryAnswer, session.userState ?? null);
+      if (!retryValidation.valid) {
+        logger.warn(
+          'L2 passthrough: retry still contains catalog violations; falling through to escalation',
+          { offenders: retryValidation.offenders },
+        );
+        return null;
+      }
+      return {
+        answer: retryAnswer,
+        metadata: {
+          tier: 'L2-llm',
+          retrievalChunks,
+          latencyMs: Date.now() - start,
+          usedRetrieval,
+          retried: true,
+        },
+      };
     }
 
     return {
