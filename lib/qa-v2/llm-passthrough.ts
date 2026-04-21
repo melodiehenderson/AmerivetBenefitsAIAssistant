@@ -161,12 +161,7 @@ export async function runLlmPassthrough(
 ): Promise<LlmPassthroughResult | null> {
   const flagEnabled = isLlmPassthroughEnabled();
   logger.info(`[L2] passthrough entry: flag=${flagEnabled} queryLen=${query?.length ?? 0}`);
-  if (!flagEnabled) {
-    return {
-      answer: '[L2-DIAG] Passthrough flag is OFF on this build — QA_V2_LLM_PASSTHROUGH env var is not "1".',
-      metadata: { tier: 'L2-llm', retrievalChunks: 0, latencyMs: 0, usedRetrieval: false },
-    };
-  }
+  if (!flagEnabled) return null;
   const cleanQuery = query?.trim();
   if (!cleanQuery) return null;
 
@@ -216,10 +211,7 @@ export async function runLlmPassthrough(
     const answer = completion?.content?.trim();
     if (!answer) {
       logger.warn('[L2] empty LLM response; falling through to rule-based fallback');
-      return {
-        answer: '[L2-DIAG] LLM returned empty content. Flag is ON, call completed, but response was empty.',
-        metadata: { tier: 'L2-llm', retrievalChunks, latencyMs: Date.now() - start, usedRetrieval },
-      };
+      return null;
     }
 
     logger.info(`[L2] LLM replied: chars=${answer.length} latencyMs=${Date.now() - start}`);
@@ -233,11 +225,11 @@ export async function runLlmPassthrough(
       },
     };
   } catch (error) {
-    const errMsg = (error as Error)?.message ?? 'unknown';
-    logger.warn(`[L2] LLM call failed; falling through: ${errMsg}`, {}, error as Error);
-    return {
-      answer: `[L2-DIAG] LLM call threw an error — flag is ON and we reached the LLM call, but it failed: ${errMsg}`,
-      metadata: { tier: 'L2-llm', retrievalChunks: 0, latencyMs: Date.now() - start, usedRetrieval: false },
-    };
+    logger.warn(
+      `[L2] LLM call failed; falling through: ${(error as Error)?.message ?? 'unknown'}`,
+      {},
+      error as Error,
+    );
+    return null;
   }
 }
