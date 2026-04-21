@@ -3005,7 +3005,31 @@ function buildDentalOnlyOptionReply(): string {
 }
 
 function isOnlyOptionQuestion(query: string): boolean {
-  return /\b(is\s+that\s+the\s+only\s+(?:option|one)|that'?s\s+the\s+only\s+one|only\s+option|any\s+other\s+options|is\s+there\s+only\s+one|only\s+one\s+(?:vision|dental)\s+plan|alternate\s+(?:vision|dental)\s+plan|another\s+(?:vision|dental)\s+plan|other\s+(?:vision|dental)\s+plan)\b/i.test(stripAffirmationLeadIn(query.trim()).toLowerCase());
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  return /\b(is\s+that\s+the\s+only\s+(?:option|one)|that'?s\s+the\s+only\s+one|only\s+option|any\s+other\s+options|is\s+there\s+only\s+one|only\s+one\s+(?:vision|dental)\s+plan|alternate\s+(?:vision|dental)\s+plan|another\s+(?:vision|dental)\s+plan|other\s+(?:vision|dental)\s+plan|more\s+than\s+one\s+(?:vision|dental)\s+plans?|more\s+(?:vision|dental)\s+(?:plans?|options?)|other\s+options\s+for\s+(?:vision|dental)|any\s+other\s+(?:vision|dental)\s+(?:plans?|options?))\b/i.test(lower);
+}
+
+// Apr 21 Step 8: topic-aware only-option detector. When the user is clearly
+// anchored in Vision or Dental (via active topic or the prior bot message),
+// they can ask about "another plan" or "more plans" without re-naming the
+// topic and still mean the vision/dental plan list. The topic-blind detector
+// above intentionally requires the word "vision" or "dental" to avoid false
+// positives for medical compare asks; this helper relaxes that when we have
+// clear topic context.
+function isOnlyOptionQuestionForTopic(query: string, topic: string | undefined, lastBotMessage?: string | null): boolean {
+  if (isOnlyOptionQuestion(query)) return true;
+  if (topic !== 'Vision' && topic !== 'Dental') return false;
+  const lower = stripAffirmationLeadIn(query.trim()).toLowerCase();
+  const bareOnlyOptionShape =
+    /\b(is\s+there\s+another\s+plan|another\s+plan\s+to\s+(?:compare|consider|look\s+at)|are\s+there\s+(?:more|other|any\s+other)\s+plans?|more\s+than\s+one\s+plans?|more\s+than\s+one\s+option|more\s+(?:plans?|options?)\s+(?:i|we|to)\s+can\s+(?:consider|choose|pick)|just\s+(?:one|the\s+one)\s+plan|only\s+one\s+plan|so,?\s+just\s+one\s+plan|any\s+other\s+plans?|other\s+plans?\s+(?:available|to\s+consider|i\s+can\s+consider))\b/i.test(lower);
+  if (!bareOnlyOptionShape) return false;
+  // Extra safety: if there is a lastBotMessage, confirm it mentioned the
+  // topic-specific plan name so we know the bare "plan" refers to it.
+  const last = (lastBotMessage || '').toLowerCase();
+  if (topic === 'Vision') {
+    return !last || /vsp\s+vision|vision\s+coverage|vision\s+plan|vision\s+service\s+plan/i.test(last);
+  }
+  return !last || /bcbstx\s+dental|dental\s+ppo|dental\s+coverage|dental\s+plan/i.test(last);
 }
 
 function shouldHandleSupplementalFitFollowup(query: string): boolean {
@@ -3589,7 +3613,7 @@ function buildTopicReply(session: Session, topic: string, query: string): string
   }
 
   if (topic === 'Dental' || topic === 'Vision') {
-    if (isOnlyOptionQuestion(query)) {
+    if (isOnlyOptionQuestionForTopic(query, topic, session.lastBotMessage || null)) {
       return topic === 'Vision' ? buildVisionOnlyOptionReply() : buildDentalOnlyOptionReply();
     }
     if (isWorthAddingFollowup(query)) {
@@ -4445,7 +4469,7 @@ function buildContinuationReply(session: Session, query: string): string | null 
     return buildDentalVsVisionDecision();
   }
 
-  if (activeTopic === 'Vision' && isOnlyOptionQuestion(normalizedQuery)) {
+  if (activeTopic === 'Vision' && isOnlyOptionQuestionForTopic(normalizedQuery, 'Vision', session.lastBotMessage || null)) {
     return buildVisionOnlyOptionReply();
   }
 
@@ -4453,7 +4477,7 @@ function buildContinuationReply(session: Session, query: string): string | null 
     return buildVisionWorthAddingReply();
   }
 
-  if (activeTopic === 'Dental' && isOnlyOptionQuestion(normalizedQuery)) {
+  if (activeTopic === 'Dental' && isOnlyOptionQuestionForTopic(normalizedQuery, 'Dental', session.lastBotMessage || null)) {
     return buildDentalOnlyOptionReply();
   }
 

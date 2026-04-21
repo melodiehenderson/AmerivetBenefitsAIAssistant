@@ -4412,6 +4412,68 @@ describe('qa-v2 engine', () => {
     expect(session.lastRecommendation?.plan).toBeTruthy();
   });
 
+  it('Apr 21 Step 8: treats "is there another plan to compare this to?" in Vision context as an only-option question', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Maggie',
+      hasCollectedName: true,
+      userAge: 29,
+      userState: 'CA',
+      dataConfirmed: true,
+      currentTopic: 'Vision',
+      lastBotMessage: 'Vision coverage: **VSP Vision Plus**.',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'is there another plan to compare this to?',
+      session,
+    });
+
+    expect(result.answer).toContain('AmeriVet currently offers one vision plan');
+    expect(result.answer).not.toMatch(/A useful next vision step is usually one of these/i);
+  });
+
+  it('Apr 21 Step 8: treats "are there more than one vision plans i can consider?" as an only-option question', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Maggie',
+      hasCollectedName: true,
+      userAge: 29,
+      userState: 'CA',
+      dataConfirmed: true,
+      currentTopic: 'Vision',
+      lastBotMessage: 'Vision coverage: **VSP Vision Plus**.',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'are there more than one vision plans i can consider?',
+      session,
+    });
+
+    expect(result.answer).toContain('AmeriVet currently offers one vision plan');
+  });
+
+  it('Apr 21 Step 8: treats bare "are there any other plans?" in Dental context as an only-option question', async () => {
+    const session = makeSession({
+      step: 'active_chat',
+      userName: 'Maggie',
+      hasCollectedName: true,
+      userAge: 29,
+      userState: 'CA',
+      dataConfirmed: true,
+      currentTopic: 'Dental',
+      lastBotMessage: 'Dental coverage: **BCBSTX Dental PPO**.',
+    });
+
+    const result = await runQaV2Engine({
+      query: 'are there any other plans?',
+      session,
+    });
+
+    expect(result.answer).toContain('one dental plan');
+    expect(result.answer).toContain('BCBSTX Dental PPO');
+  });
+
   it('treats "is there only one vision plan available?" as an only-option question instead of reopening the full plan card', async () => {
     const session = makeSession({
       step: 'active_chat',
