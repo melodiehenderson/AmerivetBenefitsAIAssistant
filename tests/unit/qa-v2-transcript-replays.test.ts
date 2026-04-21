@@ -4464,6 +4464,42 @@ describe('qa-v2 transcript replays', () => {
     expect(result.answer).toMatch(/Standard HSA|Enhanced HSA|Kaiser|My recommendation|cheapest|lowest/i);
   });
 
+  it('answers "what is an FSA?" with the FSA definition instead of the Kaiser-pairing groove (Apr 20 v2 hsa-fsa knowledge regression)', async () => {
+    const session = makeSession({
+      userName: 'Susan',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'GA',
+      dataConfirmed: true,
+      currentTopic: 'HSA/FSA',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      selectedPlan: 'Kaiser Standard HMO',
+    });
+
+    const result = await runQaV2Engine({ query: 'what is an FSA?', session });
+    expect(result.answer).not.toMatch(/leaning toward \*\*Kaiser/i);
+    expect(result.answer).toMatch(/FSA stands for \*\*Flexible Spending Account\*\*/i);
+  });
+
+  it('answers "what is an HSA?" with the HSA definition even when Kaiser is selected (Apr 20 v2 hsa-fsa knowledge regression)', async () => {
+    const session = makeSession({
+      userName: 'Susan',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'GA',
+      dataConfirmed: true,
+      currentTopic: 'HSA/FSA',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      selectedPlan: 'Kaiser Standard HMO',
+    });
+
+    const result = await runQaV2Engine({ query: 'what is an HSA?', session });
+    expect(result.answer).not.toMatch(/leaning toward \*\*Kaiser/i);
+    expect(result.answer).toMatch(/HSA stands for \*\*Health Savings Account\*\*/i);
+  });
+
   it('answers "how much is covered for orthodontia?" with dental facts instead of a medical next-step menu (Apr 20 v2 direct-ask regression)', async () => {
     const session = makeSession({
       userName: 'Susan',

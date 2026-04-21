@@ -3349,6 +3349,17 @@ function buildTopicReply(session: Session, topic: string, query: string): string
 
   if (topic === 'HSA/FSA') {
     const lower = query.toLowerCase();
+    // Apr 20 v2 regression fix: pure knowledge definitions must run BEFORE
+    // the practical-fit groove. Otherwise a session with selectedPlan set
+    // to "Kaiser Standard HMO" forces every HSA/FSA knowledge ask into the
+    // "leaning toward Kaiser — FSA is the cleaner fit" pairing answer,
+    // regardless of what the user actually asked.
+    if (/\bwhat\s+does\s+hsa\s+mean\b|\bwhat\s+is\s+an?\s+hsa\b|\bhow\s+does\s+(?:an?\s+)?hsa\s+work\b|\bdefine\s+hsa\b/.test(lower)) {
+      return `HSA stands for **Health Savings Account**.\n\nIt is a tax-advantaged account you can use for eligible healthcare expenses when you are enrolled in an HSA-qualified medical plan like AmeriVet's **Standard HSA** or **Enhanced HSA**.\n\nThe short version is:\n- You contribute pre-tax money\n- The money can be used for eligible medical expenses\n- Unused funds roll over year to year\n- The account stays with you`;
+    }
+    if (/\bwhat\s+does\s+fsa\s+mean\b|\bwhat\s+is\s+an?\s+fsa\b|\bhow\s+does\s+(?:an?\s+)?fsa\s+work\b|\bdefine\s+fsa\b|\bwhat\s+does\s+an?\s+fsa\s+cover\b/.test(lower)) {
+      return `FSA stands for **Flexible Spending Account**.\n\nIt lets you set aside pre-tax dollars for eligible healthcare expenses, but it follows different rollover and ownership rules than an HSA.\n\nThe short version is:\n- Contributions come out pre-tax\n- It can be used for eligible healthcare expenses\n- It is generally tied to the employer plan year\n- Unused funds usually have stricter rollover rules than an HSA`;
+    }
     const ruleReply = buildHsaFsaRuleReply(query);
     if (ruleReply) {
       return ruleReply;
@@ -3359,12 +3370,6 @@ function buildTopicReply(session: Session, topic: string, query: string): string
     }
     if (isHsaFsaCompatibilityQuestion(query)) {
       return buildHsaFsaCompatibilityReply(query);
-    }
-    if (/\bwhat\s+does\s+hsa\s+mean\b|\bwhat\s+is\s+an?\s+hsa\b/.test(lower)) {
-      return `HSA stands for **Health Savings Account**.\n\nIt is a tax-advantaged account you can use for eligible healthcare expenses when you are enrolled in an HSA-qualified medical plan like AmeriVet's **Standard HSA** or **Enhanced HSA**.\n\nThe short version is:\n- You contribute pre-tax money\n- The money can be used for eligible medical expenses\n- Unused funds roll over year to year\n- The account stays with you`;
-    }
-    if (/\bwhat\s+does\s+fsa\s+mean\b|\bwhat\s+is\s+an?\s+fsa\b/.test(lower)) {
-      return `FSA stands for **Flexible Spending Account**.\n\nIt lets you set aside pre-tax dollars for eligible healthcare expenses, but it follows different rollover and ownership rules than an HSA.\n\nThe short version is:\n- Contributions come out pre-tax\n- It can be used for eligible healthcare expenses\n- It is generally tied to the employer plan year\n- Unused funds usually have stricter rollover rules than an HSA`;
     }
   }
 
