@@ -29,6 +29,7 @@ import {
 import { buildLiveSupportMessage, buildQleFilingOrderMessage } from '@/lib/qa/policy-response-builders';
 import { IRS_2026 } from '@/lib/data/irs-limits-2026';
 import { runLlmPassthrough } from '@/lib/qa-v2/llm-passthrough';
+import { tryDeterministicIntent } from '@/lib/qa-v2/deterministic-intents';
 
 const ENROLLMENT_PORTAL_URL = process.env.ENROLLMENT_PORTAL_URL || 'https://wd5.myworkday.com/amerivet/login.html';
 const HR_PHONE = process.env.HR_PHONE_NUMBER || '888-217-4728';
@@ -5144,11 +5145,10 @@ export async function runQaV2Engine(params: {
 
   if (!session.messages) session.messages = [];
 
+  // __WELCOME__ sentinel: page-load greeting before any user input.
   if (query === '__WELCOME__') {
     const answer = `Hi there! Welcome!\n\nI'm your AmeriVet Benefits Assistant. I'm here to help you compare plans, understand your options, and make confident benefit decisions.\n\nLet's get started — what's your name?`;
-    session.lastBotMessage = answer;
-    session.messages.push({ role: 'assistant', content: answer });
-    return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'welcome-v2' } };
+    return emit(answer, 'L1', session, { intercept: 'welcome-v2' });
   }
 
   session.messages.push({ role: 'user', content: query });
@@ -5157,13 +5157,13 @@ export async function runQaV2Engine(params: {
   const priorCoverageTier = session.coverageTierLock || null;
   refreshSessionSignals(session, query);
 
+  // Profile correction ("actually, my name is X" / "I meant 35").
   const profileCorrectionReply = buildProfileCorrectionReply(session, query);
   if (profileCorrectionReply) {
-    session.lastBotMessage = profileCorrectionReply;
-    session.messages.push({ role: 'assistant', content: profileCorrectionReply });
-    return { answer: profileCorrectionReply, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'profile-correction-v2' } };
+    return emit(profileCorrectionReply, 'L1', session, { intercept: 'profile-correction-v2' });
   }
 
+  // Name capture.
   const detectedName = !session.userName && query.trim() && !extractAge(query) && !extractState(query) && !benefitTopicFromQuery(query)
     ? extractName(query)
     : null;
@@ -5171,29 +5171,24 @@ export async function runQaV2Engine(params: {
     session.userName = detectedName;
     session.hasCollectedName = true;
     const answer = `Thanks, ${session.userName}! To keep the guidance accurate, please share your age and state next. For example: "35, FL".`;
-    session.lastBotMessage = answer;
-    session.messages.push({ role: 'assistant', content: answer });
-    return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'name-capture-v2' } };
+    return emit(answer, 'L1', session, { intercept: 'name-capture-v2' });
   }
 
+  // Demographics intake (age, state).
   const { age, state } = applyDemographics(session, query);
   const detectedTopic = benefitTopicFromQuery(query);
 
   if (isStateOnlyMessage(query) && hasDemographics(session)) {
     const stateOnlyReply = buildStateOnlyReply(session, priorState, query);
     if (stateOnlyReply) {
-      session.lastBotMessage = stateOnlyReply;
-      session.messages.push({ role: 'assistant', content: stateOnlyReply });
-      return { answer: stateOnlyReply, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'state-only-v2' } };
+      return emit(stateOnlyReply, 'L1', session, { intercept: 'state-only-v2' });
     }
   }
 
   if (isHouseholdOnlyMessage(query) && hasDemographics(session)) {
     const householdOnlyReply = buildHouseholdOnlyReply(session, priorFamilyDetails, priorCoverageTier, query);
     if (householdOnlyReply) {
-      session.lastBotMessage = householdOnlyReply;
-      session.messages.push({ role: 'assistant', content: householdOnlyReply });
-      return { answer: householdOnlyReply, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'household-only-v2', topic: session.currentTopic || null } };
+      return emit(householdOnlyReply, 'L1', session, { intercept: 'household-only-v2', topic: session.currentTopic || null });
     }
   }
 
@@ -5201,9 +5196,7 @@ export async function runQaV2Engine(params: {
     session.dataConfirmed = hasDemographics(session);
     if (hasDemographics(session) && !detectedTopic) {
       const answer = buildBenefitsOverviewReply(session, { onboarding: true });
-      session.lastBotMessage = answer;
-      session.messages.push({ role: 'assistant', content: answer });
-      return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'demographics-complete-v2' } };
+      return emit(answer, 'L1', session, { intercept: 'demographics-complete-v2' });
     }
   }
 
@@ -5211,258 +5204,67 @@ export async function runQaV2Engine(params: {
     const topic = detectedTopic;
     const answer = missingDemographicsMessage(session, topic);
     if (topic) session.currentTopic = topic;
-    session.lastBotMessage = answer;
-    session.messages.push({ role: 'assistant', content: answer });
-    return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'demographic-gate-v2' } };
+    return emit(answer, 'L1', session, { intercept: 'demographic-gate-v2' });
   }
 
   refreshCoverageTierLock(session, query);
 
+  // Compliance-sensitive facts from the package (HR phone, enrollment portal,
+  // QLE timing, self-service lookups). These must be exact.
   const directSupportReply = buildDirectSupportReply(session, query);
   if (directSupportReply) {
     clearPendingGuidance(session);
-    session.lastBotMessage = directSupportReply;
-    session.messages.push({ role: 'assistant', content: directSupportReply });
-    return { answer: directSupportReply, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'direct-support-v2', topic: session.currentTopic || null } };
+    return emit(directSupportReply, 'L1', session, { intercept: 'direct-support-v2', topic: session.currentTopic || null });
   }
 
-  const highPriorityReply = buildHighPriorityIntentReply(session, query);
-  if (highPriorityReply) {
-    session.lastBotMessage = highPriorityReply.answer;
-    session.messages.push({ role: 'assistant', content: highPriorityReply.answer });
-    return {
-      answer: highPriorityReply.answer,
-      tier: 'L1',
-      sessionContext: buildSessionContext(session),
-      metadata: highPriorityReply.metadata,
-    };
-  }
-
-  // Apr 21 Step 7b: if the last two bot messages were "useful next step"
-  // menus and the user is re-asking a semantically similar question, the
-  // downstream topic-reply / continuation / fallback paths will almost
-  // certainly emit a THIRD menu. Escalate honestly here instead — apologize,
-  // offer a concrete rephrase nudge, and surface HR/Workday. This must run
-  // before any topic-reply path that might loop.
-  if (detectRepeatRephraseLoop(session, query)) {
-    const escalationAnswer = buildRephraseEscalationReply(session);
-    session.lastBotMessage = escalationAnswer;
-    session.messages.push({ role: 'assistant', content: escalationAnswer });
-    return {
-      answer: escalationAnswer,
-      tier: 'L1',
-      sessionContext: buildSessionContext(session),
-      metadata: { intercept: 'rephrase-escalation-v2', topic: session.currentTopic || null },
-    };
-  }
-
-  const standaloneFocus = detectBenefitPriorityFocus(query);
-  if (standaloneFocus && !benefitTopicFromQuery(query) && /^(\s*(healthcare costs|family protection|routine care)\s*)$/i.test(query)) {
-    const answer = buildBenefitDecisionGuidance(session, standaloneFocus);
-    session.lastBotMessage = answer;
-    session.messages.push({ role: 'assistant', content: answer });
-    return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'benefit-focus-shortcut-v2' } };
-  }
-
-  const continuationReply = buildContinuationReply(session, query);
-  if (continuationReply) {
-    session.lastBotMessage = continuationReply;
-    session.messages.push({ role: 'assistant', content: continuationReply });
-    return { answer: continuationReply, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'continuation-v2', topic: session.currentTopic || null } };
-  }
-
-  if (isCostModelRequest(query) && !detectedTopic) {
-    setTopic(session, 'Medical');
-    const answer = buildTopicReply(session, 'Medical', query);
-    session.lastBotMessage = answer;
-    session.messages.push({ role: 'assistant', content: answer });
-    return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'cost-model-v2', topic: 'Medical' } };
-  }
-
-  if (
-    isDirectMedicalRecommendationQuestion(query)
-    && !(isLockedToNonMedicalTopic(session) && !hasExplicitMedicalDisambiguator(query))
-  ) {
-    setTopic(session, 'Medical');
-    const answer = buildTopicReply(session, 'Medical', query);
-    session.lastBotMessage = answer;
-    session.messages.push({ role: 'assistant', content: answer });
-    return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'direct-medical-recommendation-v2', topic: 'Medical' } };
-  }
-
-  if (isMedicalCoverageTierQuestion(query)) {
-    setTopic(session, 'Medical');
-    const answer = buildMedicalCoverageTierDecisionReply(session, query);
-    session.lastBotMessage = answer;
-    session.messages.push({ role: 'assistant', content: answer });
-    return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'medical-coverage-tier-v2', topic: 'Medical' } };
-  }
-
-  if (isSupplementalOverviewQuestion(query)) {
-    clearPendingGuidance(session);
-    const answer = buildSupplementalBenefitsOverviewReply();
-    session.lastBotMessage = answer;
-    session.messages.push({ role: 'assistant', content: answer });
-    return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'supplemental-overview-v2' } };
-  }
-
-  if (isHsaFsaCompatibilityQuestion(query)) {
-    setTopic(session, 'HSA/FSA');
-    const answer = buildTopicReply(session, 'HSA/FSA', query);
-    session.lastBotMessage = answer;
-    session.messages.push({ role: 'assistant', content: answer });
-    return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'hsa-fsa-compatibility-v2', topic: 'HSA/FSA' } };
-  }
-
-  if (isLifeFamilyCoverageQuestion(query)) {
-    setTopic(session, 'Life Insurance');
-    const answer = buildTopicReply(session, 'Life Insurance', query);
-    session.lastBotMessage = answer;
-    session.messages.push({ role: 'assistant', content: answer });
-    return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'life-family-coverage-v2', topic: 'Life Insurance' } };
-  }
-
-  if (isProtectionPriorityQuestion(query)) {
-    setPendingGuidance(session, 'life_vs_disability', 'Life Insurance');
-    const answer = buildComparisonFamilyReply('life_vs_disability', query);
-    session.lastBotMessage = answer;
-    session.messages.push({ role: 'assistant', content: answer });
-    return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'life-vs-disability-priority-v2' } };
-  }
-
-  if (isBenefitDecisionGuidanceRequest(query)) {
-    const focus = detectBenefitPriorityFocus(query);
-    const answer = buildBenefitDecisionGuidance(session, focus);
-    if (!focus) {
-      setPendingGuidance(session, 'benefit_decision', 'general');
-    }
-    session.lastBotMessage = answer;
-    session.messages.push({ role: 'assistant', content: answer });
-    return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'benefit-decision-guidance-v2' } };
-  }
-
+  // Benefits lineup: "what are my options", "list all my benefits".
   if (isBenefitsOverviewQuestion(query)) {
     const answer = buildBenefitsOverviewReply(session, { contextual: isContextualBenefitsOverviewQuestion(query) });
-    session.lastBotMessage = answer;
-    session.messages.push({ role: 'assistant', content: answer });
-    return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'benefits-overview-v2' } };
+    return emit(answer, 'L1', session, { intercept: 'benefits-overview-v2' });
   }
 
-  if (
-    (detectedTopic === 'Medical' || session.currentTopic === 'Medical')
-    && isMedicalDetailQuestion(query)
-    && !isCostModelRequest(query)
-    && !(isLockedToNonMedicalTopic(session) && !hasExplicitMedicalDisambiguator(query))
-  ) {
-    setTopic(session, 'Medical');
-    const answer = buildTopicReply(session, 'Medical', query);
-    session.lastBotMessage = answer;
-    session.messages.push({ role: 'assistant', content: answer });
-    return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'medical-detail-v2', topic: 'Medical' } };
+  // Small deterministic allowlist: term registry, plan detail by name,
+  // topic overview/switch. Anything that isn't catalog-exact falls
+  // through to the LLM.
+  const deterministic = tryDeterministicIntent({
+    query,
+    session,
+    detectedTopic,
+    enrollmentPortalUrl: ENROLLMENT_PORTAL_URL,
+    hrPhone: HR_PHONE,
+  });
+  if (deterministic) {
+    if (deterministic.topic) setTopic(session, deterministic.topic);
+    return emit(deterministic.answer, 'L1', session, deterministic.metadata);
   }
 
-  const supplementalTopic = inferSupplementalTopicForFollowup(session, query);
-
-  if (
-    (supplementalTopic === 'Life Insurance'
-      || supplementalTopic === 'Disability'
-      || supplementalTopic === 'Critical Illness'
-      || supplementalTopic === 'Accident/AD&D')
-    && isNonMedicalDetailQuestion(supplementalTopic, query)
-    && !(detectSupplementalComparisonFocus(query) && /Accident\/AD&D and Critical Illness/i.test(session.lastBotMessage || ''))
-  ) {
-    const topic = supplementalTopic;
-    setTopic(session, topic);
-    const answer = buildTopicReply(session, topic, query);
-    session.lastBotMessage = answer;
-    session.messages.push({ role: 'assistant', content: answer });
-    return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'non-medical-detail-v2', topic } };
-  }
-
-  if (
-    ((detectedTopic === 'Dental' || session.currentTopic === 'Dental')
-      || (detectedTopic === 'Vision' || session.currentTopic === 'Vision'))
-    && isRoutineBenefitDetailQuestion(query)
-  ) {
-    const topic = detectedTopic === 'Vision' || session.currentTopic === 'Vision' ? 'Vision' : 'Dental';
-    setTopic(session, topic);
-    const answer = buildTopicReply(session, topic, query);
-    session.lastBotMessage = answer;
-    session.messages.push({ role: 'assistant', content: answer });
-    return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'routine-detail-v2', topic } };
-  }
-
-  const normalizedTopic = detectedTopic && detectedTopic !== 'Benefits Overview'
-    ? normalizeBenefitCategory(detectedTopic)
-    : detectedTopic;
-
-  // Apr 21 regression fix: if the query was only inferred as Medical through
-  // generic comparison/pricing shape but the user is already anchored in a
-  // non-Medical topic, don't blindly pivot to Medical.
-  const normalizedTopicWouldBlindlyPivot =
-    normalizedTopic === 'Medical'
-    && isLockedToNonMedicalTopic(session)
-    && !hasExplicitMedicalDisambiguator(query);
-
-  if (normalizedTopic && !normalizedTopicWouldBlindlyPivot) {
-    if (normalizedTopic !== 'Benefits Overview') setTopic(session, normalizedTopic);
-    const answer = buildTopicReply(session, normalizedTopic, query);
-    session.lastBotMessage = answer;
-    session.messages.push({ role: 'assistant', content: answer });
-    return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'topic-reply-v2', topic: normalizedTopic } };
-  }
-
-  if (shouldUseCategoryExplorationIntercept(query, query.toLowerCase(), 'general')) {
-    const topic = benefitTopicFromQuery(query);
-    if (topic) {
-      setTopic(session, topic);
-      const answer = buildTopicReply(session, topic, query);
-      session.lastBotMessage = answer;
-      session.messages.push({ role: 'assistant', content: answer });
-      return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'category-exploration-v2', topic } };
-    }
-  }
-
-  // Apr 20 v2 regression: route bare short recommendation asks to the
-  // user's currently-active topic reply instead of the generic menu.
-  // If there is no active topic, default to Medical (the primary
-  // decision surface) since a short "what do you recommend?" with no
-  // topic context is almost always about the medical plan choice.
-  //
-  // Apr 21 Step 5: also route explicit just-commit asks ("just pick one
-  // for me please", "give me an answer", "what would you pick") through
-  // the same path. Without this, those phrasings miss the short-ask
-  // regex, fall through to `buildContextualFallback`, and re-emit the
-  // useful-next-step menu instead of committing to a recommendation.
-  if (isShortRecommendationAsk(query) || isJustCommitRecommendationAsk(query)) {
-    const activeTopic = session.currentTopic || 'Medical';
-    setTopic(session, activeTopic);
-    const answer = buildTopicReply(session, activeTopic, query);
-    session.lastBotMessage = answer;
-    session.messages.push({ role: 'assistant', content: answer });
-    return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'short-recommendation-ask-v2', topic: activeTopic } };
-  }
-
-  // Step 6 Layer C: LLM passthrough grounded in the AmeriVet catalog.
-  // This is the last tier before the generic rule-based fallback. OFF by
-  // default — gated behind env `QA_V2_LLM_PASSTHROUGH=1` — so enabling it
-  // cannot regress any existing rule-based behavior (every L1 handler
-  // still fires first, and this only runs when they all miss). On any
-  // failure, returns null and we fall through to `buildContextualFallback`.
+  // LLM passthrough is the DEFAULT conversational path. On disabled or
+  // failure, the engine emits a single-line counselor escalation — never
+  // a menu.
   const l2 = await runLlmPassthrough(query, session);
   if (l2) {
-    session.lastBotMessage = l2.answer;
-    session.messages.push({ role: 'assistant', content: l2.answer });
-    return {
-      answer: l2.answer,
-      tier: 'L2',
-      sessionContext: buildSessionContext(session),
-      metadata: { ...l2.metadata, intercept: 'llm-passthrough-v2' },
-    };
+    if (detectedTopic && detectedTopic !== 'Benefits Overview') setTopic(session, detectedTopic);
+    return emit(l2.answer, 'L2', session, { ...l2.metadata, intercept: 'llm-passthrough-v2' });
   }
 
-  const answer = buildContextualFallback(session);
+  return emit(counselorEscalation(), 'L1', session, {
+    intercept: 'counselor-escalation-v2',
+    topic: session.currentTopic || null,
+  });
+}
+
+function emit(
+  answer: string,
+  tier: 'L1' | 'L2',
+  session: Session,
+  metadata: Record<string, unknown>,
+): { answer: string; tier: 'L1' | 'L2'; sessionContext: ReturnType<typeof buildSessionContext>; metadata?: Record<string, unknown> } {
   session.lastBotMessage = answer;
+  if (!session.messages) session.messages = [];
   session.messages.push({ role: 'assistant', content: answer });
-  return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'fallback-v2' } };
+  return { answer, tier, sessionContext: buildSessionContext(session), metadata };
+}
+
+function counselorEscalation(): string {
+  return `I want to make sure you get this right — a benefits counselor can walk you through this at ${HR_PHONE}, or you can open enrollment materials in Workday at ${ENROLLMENT_PORTAL_URL}.`;
 }

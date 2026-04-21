@@ -1,25 +1,31 @@
-// Step 6 Layer C: LLM passthrough grounded in the AmeriVet package.
+// LLM passthrough: the default conversational path in the Phase 1
+// architecture.
 //
-// Problem this solves: the L1 rule-based engine covers the most common and
-// highest-stakes asks deterministically, but there will always be natural
-// conversational shapes that no single regex catches. When L1 would
-// otherwise fall through to the generic "useful next step" menu, we can
-// defer to an LLM — strictly grounded in the AmeriVet catalog — so the
-// assistant produces a real answer instead of a scaffold.
+// The Phase 1 pivot inverts the engine: a tiny deterministic allowlist
+// (plan detail by name, term registry, benefits overview, topic
+// switch) handles the must-be-exact asks; everything else — natural
+// follow-ups, recommendations, "what would you do in my situation",
+// decision guidance — comes through here. The LLM has the immutable
+// AmeriVet catalog and the BCG ground-truth rules in its system
+// prompt, and is explicitly instructed to answer from them and nowhere
+// else.
 //
 // Layered for safety:
-// - OFF by default. Opt in via env `QA_V2_LLM_PASSTHROUGH=1`.
+// - ON by default. Kill switch via env `QA_V2_LLM_PASSTHROUGH=0`. If
+//   disabled, the engine emits a one-line counselor escalation rather
+//   than a scaffold menu.
 // - Grounded on the package catalog prompt builder (`getAmerivetCatalogForPrompt`)
-//   — the same immutable-catalog text used by the legacy /api/qa route.
+//   and BCG employer-guidance rules (ground-truth reasoning rules that
+//   apply even when the user's wording doesn't match).
 // - Best-effort retrieval augmentation via `hybridRetrieve` (tolerates
-//   failure — catalog alone is enough for counselor-style asks).
-// - Returns `null` on any failure path (missing creds, LLM error, empty
-//   content). The engine falls through to its existing rule-based
-//   `buildContextualFallback` menu in that case, so behavior is never
-//   worse than before.
+//   failure — catalog + rules alone are enough for counselor-style asks).
+// - Returns `null` on any failure path (disabled, missing creds, LLM
+//   error, empty content). The engine's caller emits the one-line
+//   escalation in that case.
 
 import { azureOpenAIService } from '@/lib/azure/openai';
 import { getAmerivetBenefitsPackage, getAmerivetCatalogForPrompt } from '@/lib/data/amerivet-package';
+import { BCG_EMPLOYER_GUIDANCE_RULES, type BCGEmployerGuidanceRule } from '@/lib/data/bcg-employer-guidance';
 import { hybridRetrieve } from '@/lib/rag/hybrid-retrieval';
 import { logger } from '@/lib/logger';
 import type { Session, ChatMessage } from '@/lib/rag/session-store';
@@ -38,11 +44,15 @@ export type LlmPassthroughResult = {
 const PASSTHROUGH_ENV_FLAG = 'QA_V2_LLM_PASSTHROUGH';
 
 /**
- * True iff the passthrough is enabled for this process. Checked at call
+ * True unless the kill switch is explicitly set to '0'. Checked at call
  * time (not at import time) so tests can toggle the flag per-case.
+ *
+ * Phase 1 pivot: passthrough is the default conversational path. The
+ * '0' kill switch reverts to deterministic-only mode (allowlist +
+ * one-line escalation), which stays functional — just less chatty.
  */
 export function isLlmPassthroughEnabled(): boolean {
-  return process.env[PASSTHROUGH_ENV_FLAG] === '1';
+  return process.env[PASSTHROUGH_ENV_FLAG] !== '0';
 }
 
 /**
@@ -108,32 +118,83 @@ function formatRecentMessages(messages: ChatMessage[] | undefined, limit = 6): s
   return tail.map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`).join('\n');
 }
 
+function formatBcgRulesBlock(rules: readonly BCGEmployerGuidanceRule[]): string {
+  if (!rules.length) return '(no client-level reasoning rules active)';
+  return rules
+    .map((rule) => {
+      const lines: string[] = [];
+      lines.push(`RULE ${rule.id} — ${rule.title}`);
+      lines.push(`Topic: ${rule.topic} (intent family: ${rule.intentFamily})`);
+      lines.push(`Recommendation: ${rule.recommendationLabel}.`);
+      const primaryPlan = rule.allocation.primaryPlan.replace(/_/g, ' ');
+      const secondaryPlan = rule.allocation.secondaryPlan.replace(/_/g, ' ');
+      lines.push(
+        `Allocation: ${rule.allocation.primaryPercent}% ${primaryPlan} + ${rule.allocation.secondaryPercent}% ${secondaryPlan}.`,
+      );
+      if (rule.rationale.length) {
+        lines.push(`Rationale:`);
+        for (const reason of rule.rationale) lines.push(`  - ${reason}`);
+      }
+      return lines.join('\n');
+    })
+    .join('\n\n');
+}
+
+function formatTopicsRemaining(session: Session): string {
+  const order = ['Medical', 'Dental', 'Vision', 'Life Insurance', 'Disability', 'Critical Illness', 'Accident/AD&D', 'HSA/FSA'];
+  const covered = new Set(session.completedTopics ?? []);
+  const remaining = order.filter((t) => !covered.has(t));
+  if (!remaining.length) return '(all package topics have been touched)';
+  return remaining.join(', ');
+}
+
 function buildSystemPrompt(catalog: string, retrievalBlock: string, session: Session): string {
   const pricingRule = session.noPricingMode
     ? `- NO PRICING MODE ACTIVE: do not include $ amounts, premiums, or cost tables.`
     : `- When a dollar amount appears in your answer, it MUST come from the CATALOG below — never invent a number.`;
 
+  const bcgRules = formatBcgRulesBlock(BCG_EMPLOYER_GUIDANCE_RULES);
+  const topicsRemaining = formatTopicsRemaining(session);
+
   return [
-    `You are an AmeriVet benefits counselor talking 1:1 with an employee.`,
+    `You are a benefits counselor talking 1:1 with an employee.`,
     ``,
     `COUNSELOR VOICE:`,
     `- Warm, direct, and decisive. Lead with the answer.`,
     `- Short paragraphs. No bullet-list scaffolding unless it genuinely helps.`,
     `- Never say "I'm an AI" or "Based on my training". You are the counselor.`,
     `- Never say "consult your HR representative" as your main answer — use the catalog below first, and only add an HR-contact line for truly off-catalog asks.`,
+    `- Use the employee's name occasionally, not every turn.`,
     ``,
     `GROUNDING RULES (non-negotiable):`,
-    `- Answer ONLY from the AMERIVET CATALOG block and the optional BENEFIT DOCUMENT chunks below. If the answer is not derivable from those sources, say so plainly and point to HR (888-217-4728) or the enrollment portal. Do not speculate.`,
+    `- Answer ONLY from the AMERIVET CATALOG block, the BCG REASONING RULES block, and the optional BENEFIT DOCUMENT chunks below. If the answer is not derivable from those sources, say so plainly and point to a benefits counselor (888-217-4728) or the enrollment portal. Do not speculate.`,
     `- Use plan names, carriers, and numbers verbatim from the catalog.`,
     pricingRule,
-    `- Do not re-emit a generic "useful next step" menu. Give a substantive answer or a clear escalation.`,
+    `- BCG REASONING RULES are ground truth. They apply every time their topic comes up, even when the employee's wording does not literally match the rule's wording. Never give a recommendation that contradicts a BCG rule.`,
+    `- Do not re-emit a generic "useful next step" menu. Give a substantive answer.`,
+    ``,
+    `RECOMMENDATION STYLE:`,
+    `- When you give a recommendation, include (a) the pick, (b) one sentence on why it fits this specific employee, (c) one tradeoff worth knowing. No hedging.`,
+    `- Clarifying-question budget: at most one per recommendation, and only if the answer genuinely changes. If the user's facts are thin, commit to the best-guess pick and note the assumption out loud.`,
+    ``,
+    `PROACTIVE NEXT DECISION (important):`,
+    `- When your answer closes out a topic (the employee has what they need to decide), end with a short one-sentence nudge toward the next decision they still have to make.`,
+    `- Topics still outstanding for this employee: ${topicsRemaining}.`,
+    `- Example phrasing: "That's medical settled — dental is the next decision. Want me to walk you through it?" / "Now that routine care is handled, the biggest call left is life vs disability — which matters more for your household?"`,
+    `- Skip the nudge if the employee is mid-question or the turn is clearly not a closing one.`,
+    ``,
+    `ESCALATION:`,
+    `- If you genuinely cannot answer from the catalog, rules, and docs, use this canonical line (and only this): "I want to make sure you get this right — a benefits counselor can walk you through this at 888-217-4728, or you can open enrollment materials in Workday." No bullet lists.`,
+    ``,
+    `=== BCG REASONING RULES (ground truth — always apply) ===`,
+    bcgRules,
     ``,
     `=== AMERIVET CATALOG (immutable truth) ===`,
     catalog,
     ``,
     retrievalBlock
       ? `=== ADDITIONAL BENEFIT DOCUMENTS (retrieved) ===\n${retrievalBlock}`
-      : `=== ADDITIONAL BENEFIT DOCUMENTS ===\n(none retrieved for this turn — rely on the catalog above)`,
+      : `=== ADDITIONAL BENEFIT DOCUMENTS ===\n(none retrieved for this turn — rely on the catalog and rules above)`,
   ].join('\n');
 }
 

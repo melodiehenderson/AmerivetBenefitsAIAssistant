@@ -218,6 +218,6 @@ export function buildRoutineBenefitDetailAnswer(
 }
 
 export function isRoutineBenefitDetailQuestion(query: string): boolean {
-  return /\b(what\s+does\s+(?:the\s+)?(?:dental|vision)\s+plan\s+cover|what\s+is\s+covered|copay|copays|orthodont|braces|waiting\s+period|major\s+services|basic\s+services|preventive\s+care|frame|frames|contacts?|lasik|glasses|eye exam|lenses|allowance)\b/i
+  return /\b(what\s+does\s+(?:the\s+)?(?:dental|vision)\s+plan\s+cover|what\s+is\s+covered|copay|copays|orthodont(?:ia|ic|ics)?|braces|waiting\s+period|major\s+services|basic\s+services|preventive\s+care|frame|frames|contacts?|lasik|glasses|eye exam|lenses|allowance)\b/i
     .test(query.toLowerCase());
 }

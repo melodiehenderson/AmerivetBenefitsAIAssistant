@@ -1,8 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Mock external services BEFORE importing the engine. The engine pulls in
-// `runLlmPassthrough`, which in turn imports the Azure OpenAI client — we
-// stub both so tests don't need real credentials or a live index.
+// Phase 1 pivot: LLM passthrough is the DEFAULT conversational path. The
+// allowlist of deterministic intents runs first (term registry, plan
+// detail by name, benefits overview, topic overview/switch); anything
+// that isn't catalog-exact falls through to the LLM. Kill switch is
+// `QA_V2_LLM_PASSTHROUGH=0`, which routes misses to the one-line
+// counselor escalation instead.
+
 vi.mock('@/lib/azure/openai', () => ({
   azureOpenAIService: {
     generateChatCompletion: vi.fn(),
@@ -38,11 +42,12 @@ function makeSession(overrides: Partial<Session> = {}): Session {
   };
 }
 
-describe('Step 6 Layer C: LLM passthrough wiring', () => {
+describe('qa-v2 LLM passthrough wiring (Phase 1 default-on)', () => {
   const originalFlag = process.env.QA_V2_LLM_PASSTHROUGH;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    delete process.env.QA_V2_LLM_PASSTHROUGH;
   });
 
   afterEach(() => {
@@ -53,27 +58,11 @@ describe('Step 6 Layer C: LLM passthrough wiring', () => {
     }
   });
 
-  it('is OFF by default — no LLM call when the flag is unset, engine returns L1 fallback', async () => {
-    delete process.env.QA_V2_LLM_PASSTHROUGH;
-
-    // A query that the rule-based engine has no specific handler for —
-    // without the flag it should emit the generic L1 fallback menu.
-    const result = await runQaV2Engine({
-      query: 'remind me who the carriers are on this package, in plain language please.',
-      session: makeSession({ currentTopic: 'Medical' }),
-    });
-
-    expect(result.tier).toBe('L1');
-    expect(vi.mocked(azureOpenAIService.generateChatCompletion)).not.toHaveBeenCalled();
-  });
-
-  it('when the flag is on and all L1 handlers miss, the engine defers to the LLM and returns its answer as L2', async () => {
-    process.env.QA_V2_LLM_PASSTHROUGH = '1';
-
+  it('is ON by default — when all L1 allowlist handlers miss, the engine defers to the LLM and returns its answer as L2', async () => {
     vi.mocked(azureOpenAIService.generateChatCompletion).mockResolvedValueOnce({
       content: 'The medical carriers on your package are BCBSTX and, in CA/OR/WA, Kaiser.',
       usage: { promptTokens: 100, completionTokens: 20, totalTokens: 120 },
-    });
+    } as any);
 
     const result = await runQaV2Engine({
       query: 'remind me who the carriers are on this package, in plain language please.',
@@ -86,9 +75,22 @@ describe('Step 6 Layer C: LLM passthrough wiring', () => {
     expect(vi.mocked(azureOpenAIService.generateChatCompletion)).toHaveBeenCalledTimes(1);
   });
 
-  it('when the LLM call fails, the engine falls through to the rule-based L1 fallback instead of throwing', async () => {
-    process.env.QA_V2_LLM_PASSTHROUGH = '1';
+  it('kill switch QA_V2_LLM_PASSTHROUGH=0 routes misses to the one-line counselor escalation — never a menu', async () => {
+    process.env.QA_V2_LLM_PASSTHROUGH = '0';
 
+    const result = await runQaV2Engine({
+      query: 'remind me who the carriers are on this package, in plain language please.',
+      session: makeSession({ currentTopic: 'Medical' }),
+    });
+
+    expect(result.tier).toBe('L1');
+    expect((result.metadata as any)?.intercept).toBe('counselor-escalation-v2');
+    expect(result.answer).toMatch(/888-217-4728/);
+    expect(result.answer).not.toMatch(/useful next .* step is usually one of these/i);
+    expect(vi.mocked(azureOpenAIService.generateChatCompletion)).not.toHaveBeenCalled();
+  });
+
+  it('when the LLM call fails, the engine gracefully falls through to the one-line counselor escalation', async () => {
     vi.mocked(azureOpenAIService.generateChatCompletion).mockRejectedValueOnce(
       new Error('LLM_TIMEOUT: OpenAI request exceeded 30 seconds'),
     );
@@ -98,17 +100,12 @@ describe('Step 6 Layer C: LLM passthrough wiring', () => {
       session: makeSession({ currentTopic: 'Medical' }),
     });
 
-    // Graceful degradation — the user gets the L1 menu, not a 500.
     expect(result.tier).toBe('L1');
-    expect((result.metadata as any)?.intercept).toBe('fallback-v2');
+    expect((result.metadata as any)?.intercept).toBe('counselor-escalation-v2');
+    expect(result.answer).toMatch(/benefits counselor/i);
   });
 
-  it('when the flag is on but a rule-based L1 handler matches first, the engine uses L1 and never calls the LLM', async () => {
-    process.env.QA_V2_LLM_PASSTHROUGH = '1';
-
-    // Step 3: "what's BCBSTX?" is answered by the package-term registry at L1.
-    // With the passthrough flag on, that L1 handler still wins — we only
-    // defer to the LLM when every rule-based path has missed.
+  it('deterministic allowlist wins before the LLM — "what\'s BCBSTX?" resolves via the term registry without any LLM call', async () => {
     const result = await runQaV2Engine({
       query: "what's BCBSTX?",
       session: makeSession({ currentTopic: 'Medical' }),
