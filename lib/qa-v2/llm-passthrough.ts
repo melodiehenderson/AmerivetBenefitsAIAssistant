@@ -159,7 +159,9 @@ export async function runLlmPassthrough(
   query: string,
   session: Session,
 ): Promise<LlmPassthroughResult | null> {
-  if (!isLlmPassthroughEnabled()) return null;
+  const flagEnabled = isLlmPassthroughEnabled();
+  logger.info(`[L2] passthrough entry: flag=${flagEnabled} queryLen=${query?.length ?? 0}`);
+  if (!flagEnabled) return null;
   const cleanQuery = query?.trim();
   if (!cleanQuery) return null;
 
@@ -193,6 +195,7 @@ export async function runLlmPassthrough(
     const systemPrompt = buildSystemPrompt(catalog, retrievalBlock, session);
     const userPrompt = buildUserPrompt(cleanQuery, session);
 
+    logger.info(`[L2] calling LLM: sysLen=${systemPrompt.length} userLen=${userPrompt.length} retrievalChunks=${retrievalChunks}`);
     const completion = await azureOpenAIService.generateChatCompletion(
       [
         { role: 'system', content: systemPrompt },
@@ -207,10 +210,11 @@ export async function runLlmPassthrough(
 
     const answer = completion?.content?.trim();
     if (!answer) {
-      logger.warn('L2 passthrough: empty LLM response; falling through to rule-based fallback');
+      logger.warn('[L2] empty LLM response; falling through to rule-based fallback');
       return null;
     }
 
+    logger.info(`[L2] LLM replied: chars=${answer.length} latencyMs=${Date.now() - start}`);
     return {
       answer,
       metadata: {
@@ -222,7 +226,7 @@ export async function runLlmPassthrough(
     };
   } catch (error) {
     logger.warn(
-      'L2 passthrough: LLM call failed; falling through to rule-based fallback',
+      `[L2] LLM call failed; falling through: ${(error as Error)?.message ?? 'unknown'}`,
       {},
       error as Error,
     );
