@@ -4500,6 +4500,84 @@ describe('qa-v2 transcript replays', () => {
     expect(result.answer).toMatch(/HSA stands for \*\*Health Savings Account\*\*/i);
   });
 
+  it('pivots cleanly from Dental to Vision on "show me the vision plan" without reprinting dental (Apr 20 v2 topic-pivot regression)', async () => {
+    const session = makeSession({
+      userName: 'Susan',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'GA',
+      dataConfirmed: true,
+      currentTopic: 'Dental',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      lastBotMessage: 'BCBSTX Dental PPO: preventive care is fully covered in-network; basic care and major care follow the usual deductible/coinsurance structure; orthodontia has a separate lifetime max.',
+    });
+
+    const result = await runQaV2Engine({ query: 'show me the vision plan', session });
+    expect(session.currentTopic).toBe('Vision');
+    expect(result.answer).toMatch(/VSP Vision Plus|vision/i);
+    expect(result.answer).not.toMatch(/BCBSTX Dental PPO|dental.*ppo|orthodontia/i);
+  });
+
+  it('pivots cleanly from Dental to Vision even with a dental pending-topic-suggestion active (Apr 20 v2 topic-pivot regression)', async () => {
+    const session = makeSession({
+      userName: 'Susan',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'GA',
+      dataConfirmed: true,
+      currentTopic: 'Dental',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      pendingTopicSuggestion: 'Vision',
+      lastBotMessage: 'If you want, I can pivot to vision next.',
+    });
+
+    const result = await runQaV2Engine({ query: 'show me the vision plan', session });
+    expect(session.currentTopic).toBe('Vision');
+    expect(result.answer).toMatch(/VSP Vision Plus|vision/i);
+    expect(result.answer).not.toMatch(/BCBSTX Dental PPO|orthodontia/i);
+  });
+
+  it('pivots cleanly from Vision to Dental on "tell me about dental" after vision discussion (Apr 20 v2 topic-pivot regression)', async () => {
+    const session = makeSession({
+      userName: 'Susan',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'GA',
+      dataConfirmed: true,
+      currentTopic: 'Vision',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      lastBotMessage: 'VSP Vision Plus covers routine eye exams, lenses, frames, and contacts.',
+    });
+
+    const result = await runQaV2Engine({ query: 'tell me about dental', session });
+    expect(session.currentTopic).toBe('Dental');
+    expect(result.answer).toMatch(/dental|BCBSTX Dental PPO|preventive/i);
+    expect(result.answer).not.toMatch(/VSP Vision Plus|eye exam|eyeglass/i);
+  });
+
+  it('pivots cleanly from Medical to Dental on "let\'s look at dental" without reprinting medical (Apr 20 v2 topic-pivot regression)', async () => {
+    const session = makeSession({
+      userName: 'Susan',
+      hasCollectedName: true,
+      userAge: 49,
+      userState: 'GA',
+      dataConfirmed: true,
+      currentTopic: 'Medical',
+      coverageTierLock: 'Employee + Family',
+      familyDetails: { hasSpouse: true, numChildren: 2 },
+      selectedPlan: 'Enhanced HSA',
+      lastBotMessage: 'Recommendation for Employee + Family coverage:\n\nMy recommendation: Enhanced HSA.',
+    });
+
+    const result = await runQaV2Engine({ query: "let's look at dental", session });
+    expect(session.currentTopic).toBe('Dental');
+    expect(result.answer).toMatch(/dental|BCBSTX Dental PPO|preventive/i);
+    expect(result.answer).not.toMatch(/Enhanced HSA|Standard HSA|Kaiser Standard HMO/);
+  });
+
   it('answers "what is an HMO?" with an HMO definition (Apr 20 v2 HMO-parity regression)', async () => {
     const session = makeSession({
       userName: 'Susan',
