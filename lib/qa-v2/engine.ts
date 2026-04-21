@@ -28,6 +28,7 @@ import {
 } from '@/lib/qa/routing-helpers';
 import { buildLiveSupportMessage, buildQleFilingOrderMessage } from '@/lib/qa/policy-response-builders';
 import { IRS_2026 } from '@/lib/data/irs-limits-2026';
+import { runLlmPassthrough } from '@/lib/qa-v2/llm-passthrough';
 
 const ENROLLMENT_PORTAL_URL = process.env.ENROLLMENT_PORTAL_URL || 'https://wd5.myworkday.com/amerivet/login.html';
 const HR_PHONE = process.env.HR_PHONE_NUMBER || '888-217-4728';
@@ -5137,7 +5138,7 @@ function buildProfileCorrectionReply(session: Session, query: string): string | 
 export async function runQaV2Engine(params: {
   query: string;
   session: Session;
-}): Promise<{ answer: string; tier: 'L1'; sessionContext: ReturnType<typeof buildSessionContext>; metadata?: Record<string, unknown> }> {
+}): Promise<{ answer: string; tier: 'L1' | 'L2'; sessionContext: ReturnType<typeof buildSessionContext>; metadata?: Record<string, unknown> }> {
   const { query, session } = params;
   incrementTurn(session);
 
@@ -5440,6 +5441,24 @@ export async function runQaV2Engine(params: {
     session.lastBotMessage = answer;
     session.messages.push({ role: 'assistant', content: answer });
     return { answer, tier: 'L1', sessionContext: buildSessionContext(session), metadata: { intercept: 'short-recommendation-ask-v2', topic: activeTopic } };
+  }
+
+  // Step 6 Layer C: LLM passthrough grounded in the AmeriVet catalog.
+  // This is the last tier before the generic rule-based fallback. OFF by
+  // default — gated behind env `QA_V2_LLM_PASSTHROUGH=1` — so enabling it
+  // cannot regress any existing rule-based behavior (every L1 handler
+  // still fires first, and this only runs when they all miss). On any
+  // failure, returns null and we fall through to `buildContextualFallback`.
+  const l2 = await runLlmPassthrough(query, session);
+  if (l2) {
+    session.lastBotMessage = l2.answer;
+    session.messages.push({ role: 'assistant', content: l2.answer });
+    return {
+      answer: l2.answer,
+      tier: 'L2',
+      sessionContext: buildSessionContext(session),
+      metadata: { ...l2.metadata, intercept: 'llm-passthrough-v2' },
+    };
   }
 
   const answer = buildContextualFallback(session);
