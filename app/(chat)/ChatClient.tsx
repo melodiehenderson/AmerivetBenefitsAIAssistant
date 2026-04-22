@@ -18,6 +18,15 @@ export default function ChatClient() {
   const [messages, setMessages] = React.useState<Message[]>([]);
   const [showSuggestions, setShowSuggestions] = React.useState(true);
   const [isMounted, setIsMounted] = React.useState(false);
+  const [showVideo, setShowVideo] = React.useState(false);
+
+  React.useEffect(() => {
+    const watched = localStorage.getItem('welcome_video_watched');
+    if (!watched) {
+      const t = setTimeout(() => setShowVideo(true), 500);
+      return () => clearTimeout(t);
+    }
+  }, []);
   const [initialQuestionsAnswered, setInitialQuestionsAnswered] = React.useState(false);
   const [nameInput, setNameInput] = React.useState('');
   const [stateInput, setStateInput] = React.useState('');
@@ -125,7 +134,12 @@ export default function ChatClient() {
   return (
     <div className="flex flex-col h-full">
       {/* Welcome Video Modal */}
-      <WelcomeVideoModal />
+      {showVideo && (
+        <WelcomeVideoModal onClose={() => {
+          localStorage.setItem('welcome_video_watched', 'true');
+          setShowVideo(false);
+        }} />
+      )}
       
       {/* Chat Header */}
       <div className="border-b p-4">
