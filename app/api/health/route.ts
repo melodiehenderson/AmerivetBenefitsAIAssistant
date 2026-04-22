@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getActiveIndexName } from "@/lib/rag/search-health";
-import { isCacheAvailable } from "@/lib/cache";
+import { getRedis } from "@/lib/cache";
 import { log } from "@/lib/logger";
 
 export const runtime = "nodejs";
@@ -21,7 +21,16 @@ export async function GET() {
   const started = Date.now();
   try {
     const index = getActiveIndexName();
-    const redis = isCacheAvailable();
+    let redis = false;
+    try {
+      const redisClient = getRedis();
+      if (redisClient) {
+        await redisClient.ping();
+        redis = true;
+      }
+    } catch {
+      redis = false;
+    }
     const openai = checkOpenAI();
     const commit = process.env.VERCEL_GIT_COMMIT_SHA || process.env.GITHUB_SHA || "unknown";
 
