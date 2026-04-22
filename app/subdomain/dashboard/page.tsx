@@ -35,6 +35,7 @@ export default function SubdomainDashboardPage() {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [showIntroVideo, setShowIntroVideo] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -125,8 +126,6 @@ export default function SubdomainDashboardPage() {
       </div>
     );
   }
-
-  const [showIntroVideo, setShowIntroVideo] = useState(false);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
