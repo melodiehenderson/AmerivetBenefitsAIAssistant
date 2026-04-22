@@ -204,9 +204,22 @@ function ChatPageContent() {
 
   const [showIntroVideo, setShowIntroVideo] = React.useState(false);
 
+  React.useEffect(() => {
+    const watched = localStorage.getItem('welcome_video_watched');
+    if (!watched) {
+      const t = setTimeout(() => setShowIntroVideo(true), 500);
+      return () => clearTimeout(t);
+    }
+  }, []);
+
   return (
     <div className="flex flex-col h-screen">
-      <WelcomeVideoModal forceOpen={showIntroVideo} onClose={() => setShowIntroVideo(false)} />
+      {showIntroVideo && (
+        <WelcomeVideoModal onClose={() => {
+          localStorage.setItem('welcome_video_watched', 'true');
+          setShowIntroVideo(false);
+        }} />
+      )}
       <AiDisclaimerBanner />
       {/* Chat Header */}
       <div className="border-b p-4 bg-white shrink-0">
