@@ -3,7 +3,12 @@
 import * as React from 'react';
 import dynamic from 'next/dynamic';
 import { useSearchParams } from 'next/navigation';
-import { marked } from 'marked';
+import { marked, Renderer } from 'marked';
+
+const markedRenderer = new Renderer();
+markedRenderer.link = ({ href, title, text }) =>
+  `<a href="${href}" target="_blank" rel="noopener noreferrer"${title ? ` title="${title}"` : ''}>${text}</a>`;
+marked.use({ renderer: markedRenderer });
 import { AmeriVetLogo } from '@/components/amerivet-logo';
 import { WelcomeVideoModal } from '@/components/welcome-video-modal';
 import { AiDisclaimerBanner } from '@/components/ai-disclaimer-banner';

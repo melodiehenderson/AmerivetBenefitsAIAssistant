@@ -505,7 +505,14 @@ export default function SubdomainChatPage() {
                       <div className="flex-1">
                         {message.role === 'assistant' ? (
                           <div className="text-sm prose prose-sm dark:prose-invert max-w-none prose-table:table-auto prose-table:w-full prose-th:text-left prose-td:align-top">
-                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                            <ReactMarkdown
+                              remarkPlugins={[remarkGfm]}
+                              components={{
+                                a: ({ href, children }) => (
+                                  <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>
+                                ),
+                              }}
+                            >
                               {message.content}
                             </ReactMarkdown>
                           </div>
