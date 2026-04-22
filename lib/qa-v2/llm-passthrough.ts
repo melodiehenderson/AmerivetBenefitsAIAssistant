@@ -101,7 +101,8 @@ function formatSessionFacts(session: Session): string {
   if (typeof session.userAge === 'number') lines.push(`Age: ${session.userAge}`);
   if (session.userState) lines.push(`State: ${session.userState}`);
   if (session.coverageTierLock) lines.push(`Coverage tier (locked): ${session.coverageTierLock}`);
-  if (session.currentTopic) lines.push(`Current topic: ${session.currentTopic}`);
+  if (typeof session.userSalary === 'number') lines.push(`Salary: $${session.userSalary.toLocaleString()}/yr`);
+
   if (session.familyDetails) {
     const { hasSpouse, numChildren } = session.familyDetails;
     const family: string[] = [];
@@ -109,7 +110,24 @@ function formatSessionFacts(session: Session): string {
     if (typeof numChildren === 'number' && numChildren > 0) family.push(`${numChildren} child(ren)`);
     if (family.length) lines.push(`Household: ${family.join(' + ')}`);
   }
-  if (session.selectedPlan) lines.push(`Selected plan so far: ${session.selectedPlan}`);
+
+  // Usage signals — the two signals we act on (pregnancy affects plan-type
+  // recommendation; upcoming surgery affects OOP max reasoning).
+  const usageSignals: string[] = [];
+  if (session.lifeEvents?.includes('pregnancy') || session.medicalNeeds?.includes('pregnancy/delivery')) {
+    usageSignals.push('PREGNANCY — recommend plans with lower deductible and OOP max; flag HMO network risk for OB');
+  }
+  if (session.medicalNeeds?.includes('upcoming-surgery')) {
+    usageSignals.push('UPCOMING SURGERY — employee will likely hit OOP max; prioritise lower OOP max over lower premium');
+  }
+  if (usageSignals.length) lines.push(`Usage signals:\n${usageSignals.map((s) => `  - ${s}`).join('\n')}`);
+
+  if (session.currentTopic) lines.push(`Current topic: ${session.currentTopic}`);
+  if (session.selectedPlan) lines.push(`Medical plan chosen: ${session.selectedPlan}`);
+
+  const covered = session.completedTopics ?? [];
+  if (covered.length) lines.push(`Topics already covered: ${covered.join(', ')}`);
+
   return lines.length ? lines.join('\n') : 'No profile facts on file yet.';
 }
 

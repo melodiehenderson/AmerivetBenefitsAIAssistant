@@ -289,9 +289,47 @@ function rememberMedicalDirection(session: Session, query: string) {
   }
 }
 
+function rememberMedicalNeeds(session: Session, query: string) {
+  const lower = query.toLowerCase();
+
+  // Pregnancy — also tracked as a lifeEvent; mirror into medicalNeeds for
+  // the LLM prompt where "delivery" is the actionable signal.
+  if (/\b(pregnan|expecting|having\s+a\s+baby|due\s+date|maternity|prenatal|postnatal|delivery|birth|we'?re\s+expecting|i'?m\s+pregnant|my\s+wife\s+is\s+pregnant)\b/i.test(lower)) {
+    upsertMedicalNeed(session, 'pregnancy/delivery');
+  }
+
+  // Upcoming surgery or major procedure — the signal that tells the LLM to
+  // favour lower OOP max over lower premium.
+  if (/\b(surger(?:y|ies)|operation|procedure|hospitali(?:z|s)ation?|going\s+under|going\s+to\s+(?:have|need|get)\s+(?:a\s+)?(?:surger|procedure|operation)|scheduled\s+(?:surger|procedure)|knee|hip\s+replacement|joint\s+replacement|c[- ]?section|csection|planned\s+procedure)\b/i.test(lower)) {
+    upsertMedicalNeed(session, 'upcoming-surgery');
+  }
+}
+
+function upsertMedicalNeed(session: Session, need: string) {
+  if (!session.medicalNeeds) session.medicalNeeds = [];
+  if (!session.medicalNeeds.includes(need)) session.medicalNeeds.push(need);
+}
+
+function rememberSalary(session: Session, query: string) {
+  // Only capture when the user is clearly stating their own salary, not
+  // when they're asking a general question about salary multiples.
+  const match = query.match(
+    /\b(?:my\s+(?:annual\s+)?salary\s+is|i\s+(?:make|earn)\s+(?:about\s+)?\$?|i(?:'?m)?\s+making\s+(?:about\s+)?\$?)\s*\$?([\d,]+)\s*(?:\/?\s*(?:year|yr|annually))?/i,
+  );
+  if (match) {
+    const raw = match[1].replace(/,/g, '');
+    const parsed = Number(raw);
+    if (parsed >= 20000 && parsed <= 1000000) {
+      session.userSalary = parsed;
+    }
+  }
+}
+
 function refreshSessionSignals(session: Session, query: string) {
   rememberHouseholdContext(session, query);
   rememberMedicalDirection(session, query);
+  rememberMedicalNeeds(session, query);
+  rememberSalary(session, query);
 }
 
 function extractExplicitHouseholdOverride(
