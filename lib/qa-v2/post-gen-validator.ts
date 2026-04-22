@@ -66,6 +66,11 @@ function buildAllowedAmounts(): Set<string> {
       addAmt(plan.premiums.employer.monthly);
       addAmt(plan.premiums.employer.biweekly);
     }
+    // Parse dollar amounts out of feature strings so the LLM can cite them verbatim.
+    for (const feature of plan.features ?? []) {
+      const featureAmounts = feature.match(/\$(\d[\d,]*(?:\.\d{1,2})?)/g) ?? [];
+      for (const m of featureAmounts) addAmt(parseFloat(m.replace(/[$,]/g, '')));
+    }
   }
 
   const hsaContrib = catalog.specialCoverage.hsa.employerContribution;

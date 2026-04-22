@@ -563,7 +563,7 @@ function extractState(message: string): string | null {
 function detectExplicitNameCorrection(query: string, currentName?: string | null): string | null {
   if (!currentName) return null;
   if (extractAge(query) || extractState(query) || benefitTopicFromQuery(query)) return null;
-  if (!/^(?:actually[, ]+)?(?:my name is|i'?m called|i am called|i'?m|i am|call me)\s+/i.test(query.trim())) return null;
+  if (!/^(?:actually[, ]+)?(?:my name is|i'?m called|i am called|call me)\s+/i.test(query.trim())) return null;
 
   const detectedName = extractName(query);
   if (!detectedName) return null;

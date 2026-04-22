@@ -42,11 +42,14 @@ export function extractName(query: string): string | null {
   }
 
   const explicitMatch = query.match(
-    // "my name is" / "call me" can capture multi-word names (e.g. "call me Mary Jane")
-    /(?:actually[, ]+)?(?:my name is|i'm called|i am called|call me)\s+([a-zA-Z][a-zA-Z' -]{0,30})|(?:actually[, ]+)?(?:i'm|i am)\s+(?!thinking\b|wondering\b|considering\b|looking\b|trying\b|asking\b|interested\b|focused\b|worried\b|done\b|in\b|from\b|confused\b|sorry\b|not\b|lost\b|frustrated\b|unsure\b|unclear\b|uncertain\b|ready\b|on\b|the\b|a\b|an\b|ready\b|glad\b|happy\b|fine\b|good\b|great\b|sure\b|just\b|still\b|getting\b|having\b|here\b|also\b)([a-zA-Z][a-zA-Z'-]{0,20})\b/i,
+    // Only match explicit naming statements. "I'm X" is intentionally excluded —
+    // it fires on too many conversational phrases ("I'm confused", "I'm on the
+    // family tier") that blocklist maintenance cannot reliably prevent.
+    // Bare-word capture below handles "Sarah" / "Mary Jane" inputs.
+    /(?:actually[, ]+)?(?:my name is|i'm called|i am called|call me)\s+([a-zA-Z][a-zA-Z' -]{0,30})/i,
   );
   if (explicitMatch) {
-    const candidate = (explicitMatch[1] || explicitMatch[2] || '').trim();
+    const candidate = (explicitMatch[1] || '').trim();
     const parts = candidate.split(/\s+/);
     if (parts.every((part) => /^[a-zA-Z][a-zA-Z'-]*$/.test(part) && !isReservedNameToken(part))) {
       return normalizeNamePhrase(candidate);
@@ -69,7 +72,7 @@ export function extractName(query: string): string | null {
 
 export function applyNameCapture(session: Session, query: string) {
   const detectedName = extractName(query);
-  const explicitRename = /(?:actually[, ]+)?(?:my name is|i'm called|i am called|i'm|i am|call me)\s+/i.test(query);
+  const explicitRename = /(?:actually[, ]+)?(?:my name is|i'm called|i am called|call me)\s+/i.test(query);
   if (detectedName && (explicitRename || !session.userName || session.userName === 'Guest')) {
     session.userName = detectedName;
     session.hasCollectedName = true;

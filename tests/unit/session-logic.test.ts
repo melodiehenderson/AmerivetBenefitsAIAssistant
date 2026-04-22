@@ -105,7 +105,7 @@ describe('session-logic', () => {
       hasCollectedName: true,
     };
 
-    const result = applyNameCapture(session, "actually, i'm Melodie");
+    const result = applyNameCapture(session, 'actually, my name is Melodie');
 
     expect(result.detectedName).toBe('Melodie');
     expect(result.session.userName).toBe('Melodie');
