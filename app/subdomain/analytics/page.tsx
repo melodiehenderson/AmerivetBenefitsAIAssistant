@@ -69,50 +69,43 @@ export default function AnalyticsPage() {
   ];
 
   const adminStats = [
-    { label: 'Total Users', value: '24', icon: MessageSquare, color: 'blue' },
-    { label: 'Active Sessions', value: '3', icon: TrendingUp, color: 'green' },
-    { label: 'Documents Available', value: '12', icon: FileText, color: 'purple' },
-    { label: 'Avg Response Time', value: '1.2s', icon: BarChart3, color: 'orange' },
+    { label: 'Benefit Topics Covered', value: '8', icon: MessageSquare, color: 'blue' },
+    { label: 'Plan Documents Indexed', value: '11', icon: FileText, color: 'green' },
+    { label: 'Active Users', value: userRole === 'admin' ? '—' : '0', icon: TrendingUp, color: 'purple' },
+    { label: 'QA Engine', value: 'Live', icon: BarChart3, color: 'orange' },
   ];
 
-  // FAQ data with categories
-  // NOTE: These are mock/sample numbers for demonstration purposes
-  // In production, these would be connected to real analytics data from Cosmos DB
   const faqData = [
-    { id: 1, question: 'What are my plan options?', category: 'all', count: 156, desc: 'Health insurance, retirement plans' },
-    { id: 2, question: 'What are the HSA plan details?', category: 'hsa', count: 89, desc: 'Health Savings Account specifics' },
-    { id: 3, question: 'How does PPO coverage work?', category: 'ppo', count: 76, desc: 'Preferred Provider Organization info' },
-    { id: 4, question: 'What is DHMO?', category: 'dhmo', count: 63, desc: 'Dental Health Maintenance Organization' },
-    { id: 5, question: 'How much does it cost?', category: 'all', count: 134, desc: 'Premiums, deductibles, out-of-pocket' },
-    { id: 6, question: 'What are dental plan options?', category: 'dental', count: 98, desc: 'Dental coverage and providers' },
-    { id: 7, question: 'Tell me about vision benefits', category: 'vision', count: 54, desc: 'Eye care and vision coverage' },
-    { id: 8, question: "What's the difference between plans?", category: 'all', count: 98, desc: 'Plan comparison and coverage details' },
-    { id: 9, question: 'How do I enroll?', category: 'enrollment', count: 87, desc: 'Enrollment process and deadlines' },
-    { id: 10, question: 'What is open enrollment?', category: 'enrollment', count: 71, desc: 'Open enrollment timeline and changes' },
-    { id: 11, question: 'Can I contact a benefits counselor?', category: 'support', count: 62, desc: 'Support and assistance options' },
-    { id: 12, question: 'What retirement options do I have?', category: 'retirement', count: 58, desc: '401k, pension, and retirement plans' },
-    { id: 13, question: 'How do I submit a claim?', category: 'claims', count: 45, desc: 'Claim submission process' },
-    { id: 14, question: 'What is my deductible?', category: 'costs', count: 82, desc: 'Out-of-pocket costs and deductibles' },
-    { id: 15, question: 'Can I change plans mid-year?', category: 'enrollment', count: 41, desc: 'Plan changes and life events' },
+    { id: 1, question: 'What medical plans does AmeriVet offer?', category: 'medical', desc: 'BCBSTX Standard HSA, Enhanced HSA, Kaiser Standard HMO' },
+    { id: 2, question: 'How does the HSA work?', category: 'hsa', desc: 'Employer seed, contribution limits, rollover rules' },
+    { id: 3, question: 'What does AmeriVet contribute to my HSA?', category: 'hsa', desc: 'Employer HSA seed amounts by coverage tier' },
+    { id: 4, question: 'What dental plan is available?', category: 'dental', desc: 'BCBSTX Dental PPO — preventive, basic, major services' },
+    { id: 5, question: 'What is the vision plan?', category: 'vision', desc: 'VSP Vision Plus — exams, frames, contacts' },
+    { id: 6, question: 'What life insurance does AmeriVet provide?', category: 'life', desc: 'Basic Life & AD&D (employer-paid) + Voluntary Term Life' },
+    { id: 7, question: 'What disability coverage is available?', category: 'disability', desc: 'Short-Term and Long-Term Disability through Unum' },
+    { id: 8, question: 'What is Critical Illness insurance?', category: 'supplemental', desc: 'Allstate Critical Illness — lump sum for serious diagnoses' },
+    { id: 9, question: 'When does coverage start as a new hire?', category: 'enrollment', desc: 'Coverage effective date for new employees' },
+    { id: 10, question: 'How do I enroll in benefits?', category: 'enrollment', desc: 'Workday enrollment portal and deadlines' },
+    { id: 11, question: 'What is Kaiser and is it available in my state?', category: 'medical', desc: 'Kaiser HMO availability by geography' },
+    { id: 12, question: 'How do premiums compare across plans?', category: 'costs', desc: 'Employee premium by plan and coverage tier' },
   ];
 
   const filterOptions = [
     { label: 'All', value: 'all' },
+    { label: 'Medical', value: 'medical' },
     { label: 'HSA', value: 'hsa' },
-    { label: 'PPO', value: 'ppo' },
-    { label: 'DHMO', value: 'dhmo' },
     { label: 'Dental', value: 'dental' },
     { label: 'Vision', value: 'vision' },
-    { label: 'Retirement', value: 'retirement' },
+    { label: 'Life', value: 'life' },
+    { label: 'Disability', value: 'disability' },
+    { label: 'Supplemental', value: 'supplemental' },
     { label: 'Enrollment', value: 'enrollment' },
-    { label: 'Claims', value: 'claims' },
     { label: 'Costs', value: 'costs' },
-    { label: 'Support', value: 'support' },
   ];
 
-  const filteredFAQ = faqFilter === 'all' 
-    ? faqData 
-    : faqData.filter(faq => faq.category === faqFilter || faq.category === 'all');
+  const filteredFAQ = faqFilter === 'all'
+    ? faqData
+    : faqData.filter(faq => faq.category === faqFilter);
 
   const stats = userRole === 'admin' ? adminStats : employeeStats;
 
@@ -193,46 +186,24 @@ export default function AnalyticsPage() {
           <>
             <Card className="mb-6">
               <CardHeader>
-                <CardTitle>System Performance</CardTitle>
-                <CardDescription>AI response quality and system health</CardDescription>
+                <CardTitle>Benefits Coverage</CardTitle>
+                <CardDescription>Topics the AI assistant is trained to answer</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  <div>
-                    <div className="flex justify-between text-sm mb-1">
-                      <span className="text-gray-600">Average Grounding Score</span>
-                      <span className="font-semibold text-green-600">94%</span>
-                    </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2">
-                      <div className="bg-green-600 h-2 rounded-full" style={{ width: '94%' }}></div>
-                    </div>
-                  </div>
-                  <div>
-                    <div className="flex justify-between text-sm mb-1">
-                      <span className="text-gray-600">Cache Hit Rate</span>
-                      <span className="font-semibold text-blue-600">78%</span>
-                    </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2">
-                      <div className="bg-blue-600 h-2 rounded-full" style={{ width: '78%' }}></div>
-                    </div>
-                  </div>
-                  <div>
-                    <div className="flex justify-between text-sm mb-1">
-                      <span className="text-gray-600">User Satisfaction</span>
-                      <span className="font-semibold text-purple-600">92%</span>
-                    </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2">
-                      <div className="bg-purple-600 h-2 rounded-full" style={{ width: '92%' }}></div>
-                    </div>
-                  </div>
+                <div className="flex flex-wrap gap-2">
+                  {['Medical', 'Dental', 'Vision', 'Life Insurance', 'Disability', 'Critical Illness', 'Accident / AD&D', 'HSA / FSA'].map(topic => (
+                    <span key={topic} className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-50 text-blue-700 text-sm rounded-full border border-blue-100">
+                      ✓ {topic}
+                    </span>
+                  ))}
                 </div>
               </CardContent>
             </Card>
 
             <Card className="mb-6">
               <CardHeader>
-                <CardTitle>FAQ - Frequently Asked Questions</CardTitle>
-                <CardDescription>Most common questions from users - filter by topic (Demo data for MVP)</CardDescription>
+                <CardTitle>Common Questions</CardTitle>
+                <CardDescription>Topics employees can ask the Benefits AI Assistant — filter by category</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="mb-4">

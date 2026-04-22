@@ -9,6 +9,8 @@ import { useRouter } from 'next/navigation';
 import remarkGfm from 'remark-gfm';
 import { getAmerivetPackageCopySnapshot } from '@/lib/data/amerivet-package-copy';
 import { AmeriVetLogo } from '@/components/amerivet-logo';
+import { WelcomeVideoModal } from '@/components/welcome-video-modal';
+import { AiDisclaimerBanner } from '@/components/ai-disclaimer-banner';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -404,9 +406,11 @@ export default function SubdomainChatPage() {
   }
 
   return (
-    <div className="min-h-screen bg-white dark:bg-gray-950">
+    <div className="min-h-screen bg-white">
+      <WelcomeVideoModal />
+      <AiDisclaimerBanner />
       {/* Header */}
-      <header className="sticky top-0 z-10 bg-white dark:bg-gray-900 dark:border-gray-800 shadow-sm border-b">
+      <header className="sticky top-0 z-10 bg-white shadow-sm border-b">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center h-16">
             <AmeriVetLogo
