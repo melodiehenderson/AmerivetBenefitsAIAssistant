@@ -275,7 +275,7 @@ export default function SubdomainDashboardPage() {
             </CardHeader>
             <CardContent className="relative">
               <p className="text-sm text-gray-600 mb-4">
-                Customize your experience, theme preferences, and notification settings.
+                Adjust the text size to suit your reading preference.
               </p>
               <div className="flex items-center text-gray-600 font-semibold text-sm group-hover:translate-x-1 transition-transform">
                 Customize <Settings className="w-4 h-4 ml-2" />
@@ -328,7 +328,7 @@ export default function SubdomainDashboardPage() {
             </li>
             <li className="flex items-start">
               <span className="text-green-600 font-bold mr-3">•</span>
-              <span>Customize your experience in Settings to suit your preferences</span>
+              <span>Adjust text size in Settings if you prefer larger or smaller text</span>
             </li>
             {user?.roles?.includes('admin') && (
               <li className="flex items-start">

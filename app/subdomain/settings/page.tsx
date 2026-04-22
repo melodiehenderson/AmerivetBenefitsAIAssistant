@@ -64,7 +64,7 @@ export default function SettingsPage() {
               <Settings className="w-6 h-6 mr-2" />
               Preferences
             </CardTitle>
-            <CardDescription>Customize your experience</CardDescription>
+            <CardDescription>Adjust text size to suit your reading preference</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             <div>
@@ -90,10 +90,7 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            <Button className="w-full" onClick={() => {
-              // persist theme choice as next-themes does automatically; persist text size already stored
-              alert('Preferences saved');
-            }}>Save Changes</Button>
+            <p className="text-sm text-gray-500">Changes are saved automatically.</p>
           </CardContent>
         </Card>
       </main>
