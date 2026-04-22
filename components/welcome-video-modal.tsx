@@ -1,9 +1,8 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Dialog, DialogContent, DialogOverlay } from '@/components/ui/dialog';
-import { Play, Pause, Volume2, VolumeX, X } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { X } from 'lucide-react';
 
 const VIDEO_URL = 'https://drive.google.com/file/d/1rb4X8k-_pqVO33v9H7SO4_Zf3XgYJ6jJ/preview';
 const STORAGE_KEY = 'welcome_video_watched';
@@ -15,43 +14,62 @@ interface WelcomeVideoModalProps {
 
 export function WelcomeVideoModal({ forceOpen, onClose }: WelcomeVideoModalProps = {}) {
   const [open, setOpen] = useState(false);
-  const [hasWatched, setHasWatched] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
 
   useEffect(() => {
     if (forceOpen) {
       setOpen(true);
+      setIsClosing(false);
       return;
     }
     const watched = localStorage.getItem(STORAGE_KEY);
     if (!watched) {
-      const timer = setTimeout(() => {
-        setOpen(true);
-      }, 500);
+      const timer = setTimeout(() => setOpen(true), 500);
       return () => clearTimeout(timer);
-    } else {
-      setHasWatched(true);
     }
   }, [forceOpen]);
 
-  const handleOpenChange = (newOpen: boolean) => {
-    if (!newOpen) {
+  const handleClose = () => {
+    // Start the fly-to-button animation, then close after it completes.
+    setIsClosing(true);
+    setTimeout(() => {
       localStorage.setItem(STORAGE_KEY, 'true');
-    }
-    setOpen(newOpen);
+      setOpen(false);
+      setIsClosing(false);
+      onClose?.();
+    }, 420);
   };
 
-  const handleClose = () => {
-    localStorage.setItem(STORAGE_KEY, 'true');
-    setOpen(false);
-    onClose?.();
+  const handleOpenChange = (newOpen: boolean) => {
+    if (!newOpen) handleClose();
   };
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogOverlay className="bg-black/90" />
+      <DialogOverlay
+        className="bg-black/90"
+        style={{
+          transition: 'opacity 0.42s ease',
+          opacity: isClosing ? 0 : undefined,
+        }}
+      />
       <DialogContent
         className="max-w-3xl w-full p-0 overflow-hidden bg-black"
         onPointerDownOutside={(e) => e.preventDefault()}
+        style={{
+          /*
+           * When closing, shrink toward top-right — the approximate location of
+           * the "Watch intro" button in the dashboard header.
+           * transformOrigin top-right makes it visually fly toward that corner.
+           */
+          transformOrigin: 'top right',
+          transition: isClosing
+            ? 'transform 0.4s cubic-bezier(0.4,0,0.2,1), opacity 0.35s ease'
+            : 'none',
+          transform: isClosing ? 'scale(0.04) translate(10%, -10%)' : undefined,
+          opacity: isClosing ? 0 : undefined,
+          pointerEvents: isClosing ? 'none' : undefined,
+        }}
       >
         <div className="relative">
           {/* Close button */}
