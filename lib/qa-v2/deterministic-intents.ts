@@ -80,7 +80,18 @@ function detectNudgedTopic(query: string, session: Session): string | null {
   if (!nextTopic || nextTopic === session.currentTopic) return null;
 
   const lastMsg = (session.lastBotMessage ?? '').toLowerCase();
-  return lastMsg.includes(nextTopic.toLowerCase()) ? nextTopic : null;
+  // Require nudge context — the last message must explicitly suggest moving to
+  // this topic, not merely mention it in passing (e.g. "BCBSTX Dental PPO plan"
+  // is not a nudge to Dental; "shall we move on to dental?" is).
+  // [^.]{0,80} stops at sentence boundaries so incidental mentions across
+  // sentences don't produce false positives.
+  const escapedTopic = nextTopic.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const nudgePattern = new RegExp(
+    `(next\\s+(?:topic\\s+is|up\\s+is)?|move\\s+on\\s+to|ready\\s+for|walk\\s+you\\s+through|let'?s\\s+(?:do|look\\s+at|cover|explore|go\\s+over|dive\\s+into)|shall\\s+we(?:\\s+(?:do|cover|look\\s+at|move\\s+on))?)[^.]{0,80}${escapedTopic}` +
+    `|${escapedTopic}[^.]{0,60}(?:is\\s+(?:the\\s+)?next|is\\s+up\\s+next|coming\\s+up|ready\\??)`,
+    'i',
+  );
+  return nudgePattern.test(lastMsg) ? nextTopic : null;
 }
 
 /**

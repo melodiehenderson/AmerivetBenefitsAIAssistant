@@ -455,9 +455,12 @@ function buildDirectSupportReply(session: Session, query: string): string | null
 function inferTopicFromLastBotMessage(lastBotMessage?: string | null): string | null {
   const lower = (lastBotMessage || '').toLowerCase();
   if (!lower) return null;
+  // Patterns cover both the deterministic handler's formatted output and the
+  // LLM's natural-language phrasing so that completedTopics stays accurate
+  // regardless of which path produced the response.
   if (/medical plan options|recommendation for .* coverage|projected healthcare costs|standard hsa|enhanced hsa|kaiser standard hmo/.test(lower)) return 'Medical';
-  if (/dental coverage:\s*\*\*bcbstx dental ppo\*\*|orthodontia rider/.test(lower)) return 'Dental';
-  if (/vision coverage:\s*\*\*vsp vision plus\*\*|glasses|contacts|eye exams?/.test(lower)) return 'Vision';
+  if (/dental coverage:\s*\*\*bcbstx dental ppo\*\*|orthodontia rider|bcbstx dental ppo|dental ppo plan/.test(lower)) return 'Dental';
+  if (/vision coverage:\s*\*\*vsp vision plus\*\*|vsp vision plus|glasses|contacts|eye exams?/.test(lower)) return 'Vision';
   if (/life insurance options|unum basic life|whole life|voluntary term(?: life)?/.test(lower)) return 'Life Insurance';
   if (/disability coverage|short-term disability|long-term disability/.test(lower)) return 'Disability';
   if (/accident\/ad&d coverage|accident\/ad&d is usually worth considering|accident\/ad&d versus critical illness/.test(lower)) return 'Accident/AD&D';
