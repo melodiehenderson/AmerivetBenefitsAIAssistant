@@ -912,7 +912,9 @@ export async function runQaV2Engine(params: {
     // own answer text. This covers the common case where the user says "yes" or
     // "tell me more" (no topic keyword in query) but the LLM shifts to discussing
     // a new benefit area — e.g., Life → Disability transition.
-    const topicFromQuery = detectedTopic && detectedTopic !== 'Benefits Overview' ? detectedTopic : null;
+    // Don't advance topic when the user is deferring it ("before we do X", "skip X for now")
+    const isDeferringTopic = /\b(before (we do|we get to|we talk about|we discuss)|skip|not yet|later|first let me|hold on)\b/i.test(query);
+    const topicFromQuery = !isDeferringTopic && detectedTopic && detectedTopic !== 'Benefits Overview' ? detectedTopic : null;
     const topicFromAnswer = topicFromQuery ? null : inferTopicFromLastBotMessage(l2.answer);
     if (topicFromQuery) setTopic(session, topicFromQuery);
     else if (topicFromAnswer && topicFromAnswer !== session.currentTopic) setTopic(session, topicFromAnswer);
