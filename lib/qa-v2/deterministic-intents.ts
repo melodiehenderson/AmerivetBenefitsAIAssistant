@@ -46,6 +46,43 @@ type DeterministicIntentContext = {
 
 const SUPPLEMENTAL_TOPICS = ['Life Insurance', 'Disability', 'Critical Illness', 'Accident/AD&D'] as const;
 
+const CANONICAL_TOPIC_ORDER = [
+  'Medical', 'Dental', 'Vision', 'Life Insurance',
+  'Disability', 'Critical Illness', 'Accident/AD&D', 'HSA/FSA',
+] as const;
+
+/**
+ * True when the query is a short confirmation with no substantive content.
+ * Used to detect "yes" / "sure" / "ok" responses to topic nudges.
+ */
+function isShortAffirmation(query: string): boolean {
+  const lower = query.trim().toLowerCase().replace(/[.!?]+$/, '').trim();
+  return /^(yes|yeah|yep|yup|sure|ok|okay|go ahead|sounds good|let'?s do it|let'?s go|absolutely|definitely|please|great|alright|of course|do it|yes please|sounds great|perfect|that works|i'?m ready|ready|go for it|go on|continue|next|move on|proceed)$/.test(lower);
+}
+
+/**
+ * When the bot just nudged the employee toward the next topic and they
+ * confirm with a short affirmation, return that topic so the caller can
+ * route directly to its deterministic overview rather than the LLM.
+ *
+ * Guards:
+ * - query must be a short affirmation
+ * - session must already have a currentTopic (not still in onboarding)
+ * - the next uncovered topic must differ from the current one
+ * - the last bot message must mention that next topic (confirms nudge context)
+ */
+function detectNudgedTopic(query: string, session: Session): string | null {
+  if (!isShortAffirmation(query)) return null;
+  if (!session.currentTopic) return null;
+
+  const covered = new Set(session.completedTopics ?? []);
+  const nextTopic = CANONICAL_TOPIC_ORDER.find((t) => !covered.has(t)) ?? null;
+  if (!nextTopic || nextTopic === session.currentTopic) return null;
+
+  const lastMsg = (session.lastBotMessage ?? '').toLowerCase();
+  return lastMsg.includes(nextTopic.toLowerCase()) ? nextTopic : null;
+}
+
 /**
  * Try every deterministic intent in order. Returns the first match or
  * null. The engine hands a null result to `runLlmPassthrough`.
@@ -54,6 +91,30 @@ export function tryDeterministicIntent(
   ctx: DeterministicIntentContext,
 ): DeterministicIntentResult | null {
   const { query, session, detectedTopic } = ctx;
+
+  // 0. Affirmation-after-nudge: "yes/sure/ok" after the bot nudged toward
+  //    the next topic → route directly to that topic's deterministic overview.
+  //    The LLM path produces weaker, inconsistent overviews (wrong tier,
+  //    missing employer-paid plans, etc.) — the deterministic handler is the
+  //    right tool for structured topic introductions.
+  const nudgedTopic = detectNudgedTopic(query, session);
+  if (nudgedTopic) {
+    const coverageTier = getCoverageTierForQuery(query, session);
+    const answer = buildCategoryExplorationResponse({
+      queryLower: nudgedTopic.toLowerCase(),
+      session,
+      coverageTier,
+      enrollmentPortalUrl: ctx.enrollmentPortalUrl,
+      hrPhone: ctx.hrPhone,
+    });
+    if (answer) {
+      return {
+        answer,
+        topic: nudgedTopic,
+        metadata: { intercept: 'affirmation-topic-nudge-v2', topic: nudgedTopic },
+      };
+    }
+  }
 
   // 1. Term registry — "what's BCBSTX?", "what does HMO stand for?"
   const termDefinition = tryTermRegistry(query, session);
