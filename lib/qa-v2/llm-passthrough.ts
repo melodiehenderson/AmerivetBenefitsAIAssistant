@@ -39,6 +39,7 @@ export type LlmPassthroughResult = {
     retrievalChunks: number;
     latencyMs: number;
     usedRetrieval: boolean;
+    retried?: boolean;
   };
 };
 
