@@ -8,11 +8,20 @@ import { Button } from '@/components/ui/button';
 const VIDEO_URL = 'https://drive.google.com/file/d/1rb4X8k-_pqVO33v9H7SO4_Zf3XgYJ6jJ/preview';
 const STORAGE_KEY = 'welcome_video_watched';
 
-export function WelcomeVideoModal() {
+interface WelcomeVideoModalProps {
+  forceOpen?: boolean;
+  onClose?: () => void;
+}
+
+export function WelcomeVideoModal({ forceOpen, onClose }: WelcomeVideoModalProps = {}) {
   const [open, setOpen] = useState(false);
   const [hasWatched, setHasWatched] = useState(false);
 
   useEffect(() => {
+    if (forceOpen) {
+      setOpen(true);
+      return;
+    }
     const watched = localStorage.getItem(STORAGE_KEY);
     if (!watched) {
       const timer = setTimeout(() => {
@@ -22,7 +31,7 @@ export function WelcomeVideoModal() {
     } else {
       setHasWatched(true);
     }
-  }, []);
+  }, [forceOpen]);
 
   const handleOpenChange = (newOpen: boolean) => {
     if (!newOpen) {
@@ -34,6 +43,7 @@ export function WelcomeVideoModal() {
   const handleClose = () => {
     localStorage.setItem(STORAGE_KEY, 'true');
     setOpen(false);
+    onClose?.();
   };
 
   return (

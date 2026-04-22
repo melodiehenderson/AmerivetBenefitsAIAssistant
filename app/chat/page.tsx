@@ -6,6 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import { marked } from 'marked';
 import { AmeriVetLogo } from '@/components/amerivet-logo';
 import { WelcomeVideoModal } from '@/components/welcome-video-modal';
+import { AiDisclaimerBanner } from '@/components/ai-disclaimer-banner';
 import { Textarea } from '@/components/ui/textarea';
 
 interface Message {
@@ -196,9 +197,12 @@ function ChatPageContent() {
     setIsSubmitting(false);
   }
 
+  const [showIntroVideo, setShowIntroVideo] = React.useState(false);
+
   return (
     <div className="flex flex-col h-screen">
-      <WelcomeVideoModal />
+      <WelcomeVideoModal forceOpen={showIntroVideo} onClose={() => setShowIntroVideo(false)} />
+      <AiDisclaimerBanner />
       {/* Chat Header */}
       <div className="border-b p-4 bg-white shrink-0">
         <div className="flex items-center space-x-3">
@@ -235,6 +239,13 @@ function ChatPageContent() {
                 onClick={() => { window.location.assign('/benefits/compare'); }}
               >
                 📊 Open Medical Plan Cost Comparison Tool
+              </button>
+              <button
+                type="button"
+                className="border rounded px-3 py-2 text-xs hover:bg-gray-100 col-span-2"
+                onClick={() => setShowIntroVideo(true)}
+              >
+                ▶ Watch intro again
               </button>
             </div>
             <div className="space-y-2">

@@ -9,11 +9,11 @@ type AmeriVetLogoProps = {
 
 const LOGO_SOURCES = {
   mark: {
-    src: '/api/brand/mark',
+    src: '/brand/amerivet-logo.png',
     aspectRatio: 259 / 129,
   },
   wordmark: {
-    src: '/api/brand/wordmark',
+    src: '/brand/amerivet-wordmark-logo.png',
     aspectRatio: 1000 / 300,
   },
 } as const;

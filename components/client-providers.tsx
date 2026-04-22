@@ -34,8 +34,8 @@ export function ClientProviders({ children }: ClientProvidersProps) {
     <TRPCProvider>
       <ThemeProvider
         attribute="class"
-        defaultTheme="system"
-        enableSystem
+        defaultTheme="light"
+        enableSystem={false}
         disableTransitionOnChange
       >
         <div className="flex items-center justify-center min-h-screen">
@@ -54,8 +54,8 @@ export function ClientProviders({ children }: ClientProvidersProps) {
       <TRPCProvider>
         <ThemeProvider
           attribute="class"
-          defaultTheme="system"
-          enableSystem
+          defaultTheme="light"
+          enableSystem={false}
           disableTransitionOnChange
         >
           {children}
@@ -76,8 +76,8 @@ export function ClientProviders({ children }: ClientProvidersProps) {
           <AuthProvider>
             <ThemeProvider
               attribute="class"
-              defaultTheme="system"
-              enableSystem
+              defaultTheme="light"
+              enableSystem={false}
               disableTransitionOnChange
             >
               {children}

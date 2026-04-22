@@ -130,7 +130,7 @@ export default function CalculatorPage() {
           <CardHeader>
             <CardTitle className="flex items-center">
               <Calculator className="w-6 h-6 mr-2 text-green-600" />
-              Interactive Benefits Medical Plan Cost Comparison Tool
+              Medical Plan Cost Comparison Tool
             </CardTitle>
             <CardDescription>
               Select a plan, adjust expected usage, and see your costs update instantly
