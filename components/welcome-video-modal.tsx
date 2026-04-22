@@ -1,60 +1,32 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { Dialog, DialogContent, DialogOverlay } from '@/components/ui/dialog';
 import { X } from 'lucide-react';
 
 const VIDEO_URL = 'https://drive.google.com/file/d/1rb4X8k-_pqVO33v9H7SO4_Zf3XgYJ6jJ/preview';
-const STORAGE_KEY = 'welcome_video_watched';
 
 interface WelcomeVideoModalProps {
-  forceOpen?: boolean;
-  onClose?: () => void;
+  onClose: () => void;
 }
 
-export function WelcomeVideoModal({ forceOpen, onClose }: WelcomeVideoModalProps = {}) {
-  const [open, setOpen] = useState(false);
+/**
+ * Always mounts open. Parent controls visibility via conditional rendering.
+ * Calling onClose triggers the fly-out animation, then unmounts via parent.
+ */
+export function WelcomeVideoModal({ onClose }: WelcomeVideoModalProps) {
   const [isClosing, setIsClosing] = useState(false);
-  // Increment to force iframe remount (reload video) on each open
-  const [iframeKey, setIframeKey] = useState(0);
-  const openedRef = useRef(false);
-
-  useEffect(() => {
-    if (forceOpen) {
-      setIframeKey((k) => k + 1);
-      setOpen(true);
-      setIsClosing(false);
-      openedRef.current = true;
-      return;
-    }
-    if (openedRef.current) return; // forceOpen just turned false after close — skip
-    const watched = localStorage.getItem(STORAGE_KEY);
-    if (!watched) {
-      const timer = setTimeout(() => {
-        setIframeKey((k) => k + 1);
-        setOpen(true);
-      }, 500);
-      return () => clearTimeout(timer);
-    }
-  }, [forceOpen]);
 
   const handleClose = () => {
+    if (isClosing) return;
     setIsClosing(true);
     setTimeout(() => {
-      localStorage.setItem(STORAGE_KEY, 'true');
-      setOpen(false);
-      setIsClosing(false);
-      openedRef.current = false;
-      onClose?.();
+      onClose();
     }, 420);
   };
 
-  const handleOpenChange = (newOpen: boolean) => {
-    if (!newOpen) handleClose();
-  };
-
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
+    <Dialog open={!isClosing} onOpenChange={(open) => { if (!open) handleClose(); }}>
       <DialogOverlay
         className="bg-black/90"
         style={{
@@ -75,7 +47,7 @@ export function WelcomeVideoModal({ forceOpen, onClose }: WelcomeVideoModalProps
           pointerEvents: isClosing ? 'none' : undefined,
         }}
       >
-        {/* Close button — rendered outside iframe stacking context */}
+        {/* Close button outside iframe stacking context */}
         <button
           onClick={handleClose}
           className="absolute -top-4 -right-4 z-50 p-2 rounded-full bg-black/80 hover:bg-black text-white transition-colors shadow-lg"
@@ -85,10 +57,9 @@ export function WelcomeVideoModal({ forceOpen, onClose }: WelcomeVideoModalProps
         </button>
 
         <div className="overflow-hidden rounded-md">
-          {/* 16:9 aspect ratio wrapper */}
+          {/* 16:9 aspect ratio */}
           <div className="relative w-full" style={{ paddingTop: '56.25%' }}>
             <iframe
-              key={iframeKey}
               src={VIDEO_URL}
               allow="autoplay"
               allowFullScreen
@@ -97,7 +68,6 @@ export function WelcomeVideoModal({ forceOpen, onClose }: WelcomeVideoModalProps
               style={{ background: 'black', display: 'block' }}
             />
           </div>
-
           <div className="px-4 py-3 bg-black/90 text-white text-sm font-medium text-center">
             Welcome to AmeriVet Benefits
           </div>

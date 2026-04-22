@@ -42,6 +42,17 @@ export default function SubdomainDashboardPage() {
     checkAuth();
   }, []);
 
+  // Auto-open on first visit (after auth resolves)
+  useEffect(() => {
+    if (!isLoading && user) {
+      const watched = localStorage.getItem('welcome_video_watched');
+      if (!watched) {
+        const t = setTimeout(() => setShowIntroVideo(true), 500);
+        return () => clearTimeout(t);
+      }
+    }
+  }, [isLoading, user]);
+
   const checkAuth = async () => {
     try {
       const response = await fetch('/api/subdomain/auth/session', {
@@ -129,7 +140,12 @@ export default function SubdomainDashboardPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
-      <WelcomeVideoModal forceOpen={showIntroVideo} onClose={() => setShowIntroVideo(false)} />
+      {showIntroVideo && (
+        <WelcomeVideoModal onClose={() => {
+          localStorage.setItem('welcome_video_watched', 'true');
+          setShowIntroVideo(false);
+        }} />
+      )}
       {/* Header */}
       <header className="sticky top-0 z-50 bg-gradient-to-r from-white via-blue-50 to-white shadow-md border-b border-blue-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
