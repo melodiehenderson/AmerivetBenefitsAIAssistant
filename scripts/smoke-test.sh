@@ -28,7 +28,7 @@ check() {
   local body
   body=$(curl -sf --max-time 15 -w "\n%{http_code}" "$url" 2>/dev/null) || { echo "FAIL  (connection refused / timeout)"; ((FAIL++)); return; }
   http_code=$(echo "$body" | tail -1)
-  body=$(echo "$body" | head -n -1)
+  body=$(echo "$body" | sed '$d')
 
   if [[ "$http_code" -ge 400 ]]; then
     echo "FAIL  (HTTP $http_code)"
