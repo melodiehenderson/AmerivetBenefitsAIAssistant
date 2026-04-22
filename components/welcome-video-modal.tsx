@@ -49,8 +49,8 @@ export function WelcomeVideoModal({ forceOpen, onClose }: WelcomeVideoModalProps
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogOverlay className="bg-black/90" />
-      <DialogContent 
-        className="max-w-4xl w-full p-0 overflow-hidden bg-black"
+      <DialogContent
+        className="max-w-3xl w-full p-0 overflow-hidden bg-black"
         onPointerDownOutside={(e) => e.preventDefault()}
       >
         <div className="relative">
@@ -63,24 +63,20 @@ export function WelcomeVideoModal({ forceOpen, onClose }: WelcomeVideoModalProps
             <X className="h-5 w-5" />
           </button>
 
-          {/* Google Drive Video Embed */}
-          <iframe
-            src={VIDEO_URL}
-            width="100%"
-            height="400"
-            allow="autoplay"
-            allowFullScreen
-            className="w-full h-auto max-h-[70vh] rounded-lg"
-            title="Welcome Video"
-            style={{ borderRadius: '8px', background: 'black' }}
-          ></iframe>
+          {/* 16:9 aspect ratio wrapper */}
+          <div className="relative w-full" style={{ paddingTop: '56.25%' }}>
+            <iframe
+              src={VIDEO_URL}
+              allow="autoplay"
+              allowFullScreen
+              title="Welcome to AmeriVet Benefits"
+              className="absolute inset-0 w-full h-full"
+              style={{ background: 'black' }}
+            />
+          </div>
 
-          <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent">
-            <div className="flex items-center justify-end">
-              <div className="text-white text-sm font-medium">
-                Welcome to Amerivet Benefits
-              </div>
-            </div>
+          <div className="px-4 py-3 bg-black/90 text-white text-sm font-medium text-center">
+            Welcome to AmeriVet Benefits
           </div>
         </div>
       </DialogContent>

@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AmeriVetLogo } from '@/components/amerivet-logo';
+import { WelcomeVideoModal } from '@/components/welcome-video-modal';
 import { 
   MessageSquare, 
   BarChart3, 
@@ -125,8 +126,11 @@ export default function SubdomainDashboardPage() {
     );
   }
 
+  const [showIntroVideo, setShowIntroVideo] = useState(false);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
+      <WelcomeVideoModal forceOpen={showIntroVideo} onClose={() => setShowIntroVideo(false)} />
       {/* Header */}
       <header className="sticky top-0 z-50 bg-gradient-to-r from-white via-blue-50 to-white shadow-md border-b border-blue-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -152,6 +156,9 @@ export default function SubdomainDashboardPage() {
                   {user?.roles?.[0] || 'unknown'}
                 </div>
               </div>
+              <Button variant="outline" size="sm" onClick={() => setShowIntroVideo(true)} className="border-blue-300 hover:bg-blue-50">
+                ▶ Watch intro
+              </Button>
               <Button variant="outline" size="sm" onClick={handleLogout} className="border-blue-300 hover:bg-red-50 hover:text-red-700 hover:border-red-300">
                 <LogOut className="w-4 h-4 mr-2" />
                 Logout

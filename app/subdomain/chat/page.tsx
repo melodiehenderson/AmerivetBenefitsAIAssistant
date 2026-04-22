@@ -9,7 +9,6 @@ import { useRouter } from 'next/navigation';
 import remarkGfm from 'remark-gfm';
 import { getAmerivetPackageCopySnapshot } from '@/lib/data/amerivet-package-copy';
 import { AmeriVetLogo } from '@/components/amerivet-logo';
-import { WelcomeVideoModal } from '@/components/welcome-video-modal';
 import { AiDisclaimerBanner } from '@/components/ai-disclaimer-banner';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -407,7 +406,6 @@ export default function SubdomainChatPage() {
 
   return (
     <div className="min-h-screen bg-white">
-      <WelcomeVideoModal />
       <AiDisclaimerBanner />
       {/* Header */}
       <header className="sticky top-0 z-10 bg-white shadow-sm border-b">
