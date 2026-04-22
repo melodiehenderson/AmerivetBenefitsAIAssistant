@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getActiveIndexName } from "@/lib/rag/search-health";
-import { getRedis } from "@/lib/cache";
+import { redisService } from "@/lib/azure/redis";
 import { log } from "@/lib/logger";
 
 export const runtime = "nodejs";
@@ -23,11 +23,8 @@ export async function GET() {
     const index = getActiveIndexName();
     let redis = false;
     try {
-      const redisClient = getRedis();
-      if (redisClient) {
-        await redisClient.ping();
-        redis = true;
-      }
+      const pong = await redisService.ping();
+      redis = pong === 'PONG';
     } catch {
       redis = false;
     }
