@@ -26,14 +26,14 @@ check() {
   printf "  %-35s" "$label"
   local http_code
   local body
-  body=$(curl -sf --max-time 15 -w "\n%{http_code}" "$url" 2>/dev/null) || { echo "FAIL  (connection refused / timeout)"; ((FAIL++)); return; }
+  body=$(curl -sf --max-time 15 -w "\n%{http_code}" "$url" 2>/dev/null) || { echo "FAIL  (connection refused / timeout)"; FAIL=$((FAIL + 1)); return; }
   http_code=$(echo "$body" | tail -1)
   body=$(echo "$body" | sed '$d')
 
   if [[ "$http_code" -ge 400 ]]; then
     echo "FAIL  (HTTP $http_code)"
     echo "        $(echo "$body" | head -c 200)"
-    ((FAIL++))
+    FAIL=$((FAIL + 1))
     return
   fi
 
@@ -42,23 +42,23 @@ check() {
     actual=$(echo "$body" | python3 -c "import sys,json; d=json.load(sys.stdin); v=$expect_field; print(str(v).lower())" 2>/dev/null || echo "parse-error")
     if [[ "$actual" == "parse-error" ]]; then
       echo "FAIL  (could not parse JSON)"
-      ((FAIL++))
+      FAIL=$((FAIL + 1))
       return
     fi
     if [[ -n "$expect_value" && "$actual" != "$expect_value" ]]; then
       echo "FAIL  (got: $actual, want: $expect_value)"
-      ((FAIL++))
+      FAIL=$((FAIL + 1))
       return
     fi
     if [[ "$actual" == "false" || "$actual" == "none" || "$actual" == "0" ]]; then
       echo "FAIL  ($expect_field = $actual)"
-      ((FAIL++))
+      FAIL=$((FAIL + 1))
       return
     fi
   fi
 
   echo "PASS  (HTTP $http_code)"
-  ((PASS++))
+  PASS=$((PASS + 1))
 }
 
 echo ""

@@ -5,20 +5,16 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useTheme } from 'next-themes';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { AmeriVetLogo } from '@/components/amerivet-logo';
 import { ArrowLeft, Settings } from 'lucide-react';
 
 export default function SettingsPage() {
   const router = useRouter();
-  const { theme, setTheme, resolvedTheme } = useTheme();
-  const [darkMode, setDarkMode] = useState(false);
   const [textSize, setTextSize] = useState<'sm' | 'md' | 'lg'>('md');
 
   useEffect(() => {
@@ -26,17 +22,14 @@ export default function SettingsPage() {
       .then(res => !res.ok && router.push('/subdomain/login'))
       .catch(() => router.push('/subdomain/login'));
 
-    // initialize from current theme and stored text size
     if (typeof window === 'undefined') return;
-    
-    setDarkMode((resolvedTheme || theme) === 'dark');
     const storedSize = localStorage.getItem('text-size') as 'sm' | 'md' | 'lg' | null;
     if (storedSize) {
       setTextSize(storedSize);
       document.documentElement.classList.remove('text-size-sm','text-size-md','text-size-lg');
       document.documentElement.classList.add(`text-size-${storedSize}`);
     }
-  }, [router, resolvedTheme, theme]);
+  }, [router]);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -74,14 +67,6 @@ export default function SettingsPage() {
             <CardDescription>Customize your experience</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <Label>Dark Mode</Label>
-                <p className="text-sm text-gray-500">Use dark theme for the app</p>
-              </div>
-              <Switch checked={darkMode} onCheckedChange={(v) => { setDarkMode(v); setTheme(v ? 'dark' : 'light'); }} />
-            </div>
-
             <div>
               <Label>Text Size</Label>
               <div className="mt-2 max-w-xs">
