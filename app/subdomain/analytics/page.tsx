@@ -17,6 +17,13 @@ interface ActivityLog {
   timeAgo: string;
 }
 
+interface IndexedDocument {
+  docId: string;
+  title: string;
+  fileName: string;
+  chunkCount: number;
+}
+
 export default function AnalyticsPage() {
   const router = useRouter();
   const [userRole, setUserRole] = useState<string>('');
@@ -24,6 +31,8 @@ export default function AnalyticsPage() {
   const [faqFilter, setFaqFilter] = useState<string>('all');
   const [activities, setActivities] = useState<ActivityLog[]>([]);
   const [loadingActivities, setLoadingActivities] = useState(true);
+  const [indexedDocs, setIndexedDocs] = useState<IndexedDocument[]>([]);
+  const [docsExpanded, setDocsExpanded] = useState(false);
 
   useEffect(() => {
     // Check auth and get role
@@ -36,6 +45,12 @@ export default function AnalyticsPage() {
         const data = await res.json();
         setUserRole(data.role || 'employee');
         setUserId(data.userId || '');
+
+        // Fetch indexed plan documents from search index
+        fetch('/api/admin/indexed-documents', { credentials: 'include' })
+          .then(res => res.json())
+          .then(d => setIndexedDocs(d.documents || []))
+          .catch(() => setIndexedDocs([]));
         
         // Fetch real activity logs from database
         const query = new URLSearchParams({
@@ -70,7 +85,7 @@ export default function AnalyticsPage() {
 
   const adminStats = [
     { label: 'Benefit Topics Covered', value: '8', icon: MessageSquare, color: 'blue' },
-    { label: 'Plan Documents Indexed', value: '11', icon: FileText, color: 'green' },
+    { label: 'Plan Documents Indexed', value: indexedDocs.length ? String(indexedDocs.length) : '11', icon: FileText, color: 'green' },
     { label: 'Active Users', value: userRole === 'admin' ? '—' : '0', icon: TrendingUp, color: 'purple' },
     { label: 'QA Engine', value: 'Live', icon: BarChart3, color: 'orange' },
   ];
@@ -184,6 +199,42 @@ export default function AnalyticsPage() {
 
         {userRole === 'admin' && (
           <>
+            {/* Indexed Plan Documents */}
+            <Card className="mb-6">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Plan Documents Indexed</CardTitle>
+                    <CardDescription>Source documents powering the AI assistant</CardDescription>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={() => setDocsExpanded(v => !v)}>
+                    {docsExpanded ? 'Collapse' : 'View all'}
+                  </Button>
+                </div>
+              </CardHeader>
+              {docsExpanded && (
+                <CardContent className="pt-0">
+                  {indexedDocs.length === 0 ? (
+                    <p className="text-sm text-gray-500">Loading documents…</p>
+                  ) : (
+                    <ul className="divide-y divide-gray-100">
+                      {indexedDocs.map(doc => (
+                        <li key={doc.docId} className="py-2.5 flex items-center justify-between gap-4">
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-gray-900 truncate">{doc.title || doc.fileName || doc.docId}</p>
+                            {doc.fileName && doc.fileName !== doc.title && (
+                              <p className="text-xs text-gray-400 truncate">{doc.fileName}</p>
+                            )}
+                          </div>
+                          <span className="shrink-0 text-xs text-gray-400">{doc.chunkCount} chunks</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </CardContent>
+              )}
+            </Card>
+
             <Card className="mb-6">
               <CardHeader>
                 <CardTitle>Benefits Coverage</CardTitle>
