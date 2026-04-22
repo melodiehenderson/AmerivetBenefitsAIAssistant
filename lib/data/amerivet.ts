@@ -322,7 +322,7 @@ export const amerivetBenefits2024_2025: AmerivetBenefitsCatalog = {
     },
     features: [
       '$200 frame allowance (every 12 months)',
-      '$130 contact lens allowance (in lieu of glasses, per benefit period)',
+      'Contact lens allowance — confirm exact amount in Workday',
       'LASIK discounts available through VSP network',
     ],
     limitations: [
