@@ -9,6 +9,10 @@ const NOT_NAMES = new Set([
   'ready', 'glad', 'happy', 'fine', 'good', 'great', 'done', 'sure', 'just',
   'still', 'trying', 'getting', 'having', 'wondering', 'thinking', 'asking',
   'interested', 'looking', 'worried', 'considering', 'here', 'back', 'also',
+  // Prepositions / articles that appear in "I'm on the family tier" etc.
+  'on', 'the', 'a', 'an', 'in', 'at', 'to', 'for', 'with', 'by', 'of',
+  // Coverage / enrollment words
+  'family', 'tier', 'coverage', 'employee', 'only', 'spouse', 'children', 'option',
 ]);
 
 function normalizeNameToken(token: string): string {
@@ -38,7 +42,8 @@ export function extractName(query: string): string | null {
   }
 
   const explicitMatch = query.match(
-    /(?:actually[, ]+)?(?:my name is|i'm called|i am called|call me)\s+([a-zA-Z][a-zA-Z' -]{0,30})|(?:actually[, ]+)?(?:i'm|i am)\s+(?!thinking\b|wondering\b|considering\b|looking\b|trying\b|asking\b|interested\b|focused\b|worried\b|done\b|in\b|from\b|confused\b|sorry\b|not\b|lost\b|frustrated\b|unsure\b|unclear\b|uncertain\b|ready\b|glad\b|happy\b|fine\b|good\b|great\b|sure\b|just\b|still\b|getting\b|having\b|here\b|also\b)([a-zA-Z][a-zA-Z' -]{0,30})/i,
+    // "my name is" / "call me" can capture multi-word names (e.g. "call me Mary Jane")
+    /(?:actually[, ]+)?(?:my name is|i'm called|i am called|call me)\s+([a-zA-Z][a-zA-Z' -]{0,30})|(?:actually[, ]+)?(?:i'm|i am)\s+(?!thinking\b|wondering\b|considering\b|looking\b|trying\b|asking\b|interested\b|focused\b|worried\b|done\b|in\b|from\b|confused\b|sorry\b|not\b|lost\b|frustrated\b|unsure\b|unclear\b|uncertain\b|ready\b|on\b|the\b|a\b|an\b|ready\b|glad\b|happy\b|fine\b|good\b|great\b|sure\b|just\b|still\b|getting\b|having\b|here\b|also\b)([a-zA-Z][a-zA-Z'-]{0,20})\b/i,
   );
   if (explicitMatch) {
     const candidate = (explicitMatch[1] || explicitMatch[2] || '').trim();

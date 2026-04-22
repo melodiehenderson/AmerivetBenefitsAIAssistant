@@ -306,6 +306,9 @@ export function getAmerivetCatalogForPrompt(
   lines.push(`  - Kaiser HMO is ONLY available in CA, GA, OR, WA. Employees in other states cannot enroll.`);
   lines.push(`  - Basic Life & AD&D ($25,000) is employer-paid. Employee cost = $0.`);
   lines.push(`  - Domestic partners are eligible dependents (same rules as spouse).`);
+  lines.push(`  - HSA vs FSA: Standard HSA and Enhanced HSA are both HSA-eligible (HDHP) plans. Employees on these plans CAN contribute to an HSA. They CANNOT use a general-purpose Healthcare FSA alongside an HSA — these are mutually exclusive. A Dependent Care FSA (for childcare) is separate and can be used alongside an HSA.`);
+  lines.push(`  - Kaiser HMO is NOT HSA-eligible. Employees on Kaiser can use a Healthcare FSA instead.`);
+  lines.push(`  - For employees in non-Kaiser states (ID, TX, FL, etc.), both available plans are HSA-eligible. Healthcare FSA is NOT a realistic option for these employees — do not present it as a choice alongside HSA.`);
 
   return lines.join('\n');
 }

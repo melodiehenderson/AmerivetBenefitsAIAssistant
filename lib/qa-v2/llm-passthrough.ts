@@ -40,6 +40,7 @@ export type LlmPassthroughResult = {
     latencyMs: number;
     usedRetrieval: boolean;
     retried?: boolean;
+    validationWarning?: boolean;
   };
 };
 
@@ -200,6 +201,7 @@ function buildSystemPrompt(
     `- Short paragraphs. No bullet-list scaffolding unless it genuinely helps.`,
     `- Never say "I'm an AI" or "Based on my training". You are the counselor.`,
     `- Never say "consult your HR representative" as your main answer — use the catalog below first, and only add an HR-contact line for truly off-catalog asks.`,
+    `- Never say "unfortunately" or use apologetic language when describing plan options. If there is only one plan available, present it confidently as the plan that covers this employee.`,
     `- Use the employee's name occasionally, not every turn.`,
     ``,
     `GROUNDING RULES (non-negotiable):`,
@@ -211,12 +213,14 @@ function buildSystemPrompt(
     ``,
     `RECOMMENDATION STYLE:`,
     `- When you give a recommendation, include (a) the pick, (b) one sentence on why it fits this specific employee, (c) one tradeoff worth knowing. No hedging.`,
+    `- When the employee asks "which one?", "what do you recommend?", "should I get X?", or confirms a plan choice — COMMIT to a specific answer. Never escalate on a recommendation or sizing question. If salary data is missing and needed, ask for it in one sentence rather than escalating.`,
     `- Clarifying-question budget: at most one per recommendation, and only if the answer genuinely changes. If the user's facts are thin, commit to the best-guess pick and note the assumption out loud.`,
     ``,
     `PROACTIVE NEXT DECISION (important):`,
-    `- When your answer closes out a topic (the employee has what they need to decide), end with a short one-sentence nudge toward the next decision they still have to make.`,
-    `- Topics still outstanding for this employee: ${topicsRemaining}.`,
-    `- Example phrasing: "That's medical settled — dental is the next decision. Want me to walk you through it?" / "Now that routine care is handled, the biggest call left is life vs disability — which matters more for your household?"`,
+    `- When your answer closes out a topic (the employee has what they need to decide), end with a short one-sentence nudge toward the next outstanding topic.`,
+    `- Topics still outstanding for this employee (IN THIS ORDER): ${topicsRemaining}.`,
+    `- Always nudge toward the FIRST topic in that list — do not skip ahead to a topic you think is more important. The order is intentional.`,
+    `- Example phrasing: "Dental is settled — vision is the next decision. Want me to walk you through it?" / "That covers medical — dental is next. Ready?"`,
     `- Skip the nudge if the employee is mid-question or the turn is clearly not a closing one.`,
     ``,
     `ESCALATION:`,
@@ -331,11 +335,25 @@ export async function runLlmPassthrough(
       }
       const retryValidation = validateLlmOutput(retryAnswer, session.userState ?? null);
       if (!retryValidation.valid) {
+        // Retry still has catalog violations. Return the retry answer anyway
+        // with a Workday verification note — a slightly-imperfect answer is
+        // far better than a counselor escalation for routine plan questions.
         logger.warn(
-          'L2 passthrough: retry still contains catalog violations; falling through to escalation',
+          'L2 passthrough: retry still contains catalog violations; returning with disclaimer',
           { offenders: retryValidation.offenders },
         );
-        return null;
+        const disclaimer = `\n\n*For exact figures, confirm in [Workday](https://wd5.myworkday.com/amerivet/login.html) or call a benefits counselor at 888-217-4728.*`;
+        return {
+          answer: retryAnswer + disclaimer,
+          metadata: {
+            tier: 'L2-llm',
+            retrievalChunks,
+            latencyMs: Date.now() - start,
+            usedRetrieval,
+            retried: true,
+            validationWarning: true,
+          },
+        };
       }
       return {
         answer: retryAnswer,
