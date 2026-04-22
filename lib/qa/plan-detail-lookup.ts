@@ -723,7 +723,8 @@ export function buildMedicalPlanDetailAnswer(
     ].join('\n');
   }
 
-  if (!noPregnancyOverride && /\b(maternity|pregnan\w*|delivery|prenatal|postnatal|baby|birth)\b/i.test(queryLower) && plansFromQuery.length !== 1) {
+  const isConfirmationFollowUp = /^\s*so\b/i.test(queryLower) && /\$[\d,]+/.test(queryLower);
+  if (!noPregnancyOverride && !isConfirmationFollowUp && /\b(maternity|pregnan\w*|delivery|prenatal|postnatal|baby|birth)\b/i.test(queryLower) && plansFromQuery.length !== 1) {
     return [
       buildServiceComparison(summaries, 'Maternity coverage', (plan) => plan.maternity),
       '',
