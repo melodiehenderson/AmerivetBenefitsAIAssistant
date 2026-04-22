@@ -276,17 +276,28 @@ export function buildCategoryExplorationResponse({
     const term = lifePlans.find((plan) => /term life/i.test(plan.name));
     const whole = lifePlans.find((plan) => /whole life/i.test(plan.name));
 
-    let msg = `Life insurance options:\n\n`;
-    if (basic) msg += `- **${basic.name}** (${basic.provider}) - ${basic.description}\n`;
-    if (term) msg += `- **${term.name}** (${term.provider}) - ${term.description}\n`;
-    if (whole) msg += `- **${whole.name}** (${whole.provider}) - ${whole.description}\n`;
+    let msg = `Life insurance overview:\n\n`;
 
-    const featureLines = (plan?: typeof basic) => !plan?.features?.length ? '' : plan.features.map((feature) => `- ${feature}`).join('\n');
-    if (basic?.features?.length) msg += `\n**Basic Life features:**\n${featureLines(basic)}\n`;
-    if (term?.features?.length) msg += `\n**Voluntary Term Life features:**\n${featureLines(term)}\n`;
-    if (whole?.features?.length) msg += `\n**Whole Life features:**\n${featureLines(whole)}\n`;
+    // Lead with the included employer-paid benefit so the employee always
+    // knows about it before we discuss voluntary add-ons.
+    if (basic) {
+      msg += `**What's already included at no cost to you:**\n`;
+      msg += `${basic.name} — a flat **$25,000** life and AD&D benefit, fully employer-paid. `;
+      msg += `Every benefits-eligible employee is automatically enrolled; nothing to opt into.\n\n`;
+    }
 
-    msg += `\nVoluntary life rates are age-banded. For your exact rate and coverage amount, check Workday: ${enrollmentPortalUrl}.`;
+    // Voluntary add-ons
+    if (term || whole) {
+      msg += `**Optional coverage you can add:**\n`;
+      if (term) msg += `- **${term.name}** (${term.provider}): ${term.description}\n`;
+      if (whole) msg += `- **${whole.name}** (${whole.provider}): ${whole.description}\n`;
+
+      const featureLines = (plan?: typeof basic) => !plan?.features?.length ? '' : plan.features.map((feature) => `  - ${feature}`).join('\n');
+      if (term?.features?.length) msg += `\n  Voluntary Term Life key features:\n${featureLines(term)}\n`;
+      if (whole?.features?.length) msg += `\n  Whole Life key features:\n${featureLines(whole)}\n`;
+    }
+
+    msg += `\nVoluntary life rates are age-banded — your exact premium depends on your age and the coverage amount you elect in Workday: ${enrollmentPortalUrl}.`;
     msg += `\n\n${buildPackageNextStepPrompt('Life', session)}`;
     return msg;
   };

@@ -867,7 +867,14 @@ export async function runQaV2Engine(params: {
   // a menu.
   const l2 = await runLlmPassthrough(query, session);
   if (l2) {
-    if (detectedTopic && detectedTopic !== 'Benefits Overview') setTopic(session, detectedTopic);
+    // Prefer user-query topic detection; fall back to inferring from the LLM's
+    // own answer text. This covers the common case where the user says "yes" or
+    // "tell me more" (no topic keyword in query) but the LLM shifts to discussing
+    // a new benefit area — e.g., Life → Disability transition.
+    const topicFromQuery = detectedTopic && detectedTopic !== 'Benefits Overview' ? detectedTopic : null;
+    const topicFromAnswer = topicFromQuery ? null : inferTopicFromLastBotMessage(l2.answer);
+    if (topicFromQuery) setTopic(session, topicFromQuery);
+    else if (topicFromAnswer && topicFromAnswer !== session.currentTopic) setTopic(session, topicFromAnswer);
     return emit(l2.answer, 'L2', session, { ...l2.metadata, intercept: 'llm-passthrough-v2' });
   }
 

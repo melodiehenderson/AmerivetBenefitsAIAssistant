@@ -269,7 +269,16 @@ export function getAmerivetCatalogForPrompt(
     lines.push('── VOLUNTARY / LIFE & DISABILITY ───────────────────────────────────────────');
     for (const plan of voluntaryPlans) {
       lines.push(`[${plan.id}] ${plan.name} | Provider: ${plan.provider}`);
-      lines.push(`  Premiums: Employee $${plan.tiers.employeeOnly}/mo | +Spouse $${plan.tiers.employeeSpouse}/mo | Family $${plan.tiers.employeeFamily}/mo`);
+      // Employer-paid plans have $0 employee tiers; age-banded plans also use $0 as a placeholder.
+      // Display each case explicitly so the LLM never reports "$0/mo" as the actual cost.
+      const eeOnly = plan.tiers.employeeOnly;
+      if (eeOnly === 0 && plan.premiums.employer && plan.premiums.employer.monthly > 0) {
+        lines.push(`  Premiums: EMPLOYER-PAID — employee cost $0/mo`);
+      } else if (eeOnly === 0) {
+        lines.push(`  Premiums: AGE-BANDED (employee-paid) — $0 here is a placeholder. Exact rate depends on age and coverage amount elected in Workday. Do NOT tell the employee the cost is $0.`);
+      } else {
+        lines.push(`  Premiums: Employee $${eeOnly}/mo | +Spouse $${plan.tiers.employeeSpouse}/mo | Family $${plan.tiers.employeeFamily}/mo`);
+      }
       lines.push(`  Key features: ${plan.features.join(' | ')}`);
       lines.push('');
     }

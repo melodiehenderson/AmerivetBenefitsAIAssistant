@@ -4,6 +4,11 @@ const NOT_NAMES = new Set([
   'hello', 'hi', 'hlo', 'hey', 'medical', 'dental', 'vision', 'help', 'benefits',
   'insurance', 'quote', 'cost', 'ok', 'yes', 'no', 'thanks', 'thank', 'pricing',
   'welcome', 'assistant', 'amerivet', 'plans', 'plan', 'state', 'age',
+  // Emotional / conversational words that "I'm X" patterns can wrongly capture as names
+  'confused', 'sorry', 'not', 'lost', 'frustrated', 'unsure', 'unclear', 'uncertain',
+  'ready', 'glad', 'happy', 'fine', 'good', 'great', 'done', 'sure', 'just',
+  'still', 'trying', 'getting', 'having', 'wondering', 'thinking', 'asking',
+  'interested', 'looking', 'worried', 'considering', 'here', 'back', 'also',
 ]);
 
 function normalizeNameToken(token: string): string {
@@ -33,7 +38,7 @@ export function extractName(query: string): string | null {
   }
 
   const explicitMatch = query.match(
-    /(?:actually[, ]+)?(?:my name is|i'm called|i am called|call me)\s+([a-zA-Z][a-zA-Z' -]{0,30})|(?:actually[, ]+)?(?:i'm|i am)\s+(?!thinking\b|wondering\b|considering\b|looking\b|trying\b|asking\b|interested\b|focused\b|worried\b|done\b|in\b|from\b)([a-zA-Z][a-zA-Z' -]{0,30})/i,
+    /(?:actually[, ]+)?(?:my name is|i'm called|i am called|call me)\s+([a-zA-Z][a-zA-Z' -]{0,30})|(?:actually[, ]+)?(?:i'm|i am)\s+(?!thinking\b|wondering\b|considering\b|looking\b|trying\b|asking\b|interested\b|focused\b|worried\b|done\b|in\b|from\b|confused\b|sorry\b|not\b|lost\b|frustrated\b|unsure\b|unclear\b|uncertain\b|ready\b|glad\b|happy\b|fine\b|good\b|great\b|sure\b|just\b|still\b|getting\b|having\b|here\b|also\b)([a-zA-Z][a-zA-Z' -]{0,30})/i,
   );
   if (explicitMatch) {
     const candidate = (explicitMatch[1] || explicitMatch[2] || '').trim();
