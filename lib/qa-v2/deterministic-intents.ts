@@ -55,7 +55,7 @@ const CANONICAL_TOPIC_ORDER = [
  * True when the query is a short confirmation with no substantive content.
  * Used to detect "yes" / "sure" / "ok" responses to topic nudges.
  */
-function isShortAffirmation(query: string): boolean {
+export function isShortAffirmation(query: string): boolean {
   const lower = query.trim().toLowerCase().replace(/[.!?]+$/, '').trim();
   return /^(yes|yeah|yep|yup|sure|ok|okay|go ahead|sounds good|let'?s do it|let'?s go|absolutely|definitely|please|great|alright|of course|do it|yes please|sounds great|perfect|that works|i'?m ready|ready|go for it|go on|continue|next|move on|proceed)$/.test(lower);
 }
@@ -71,7 +71,7 @@ function isShortAffirmation(query: string): boolean {
  * - the next uncovered topic must differ from the current one
  * - the last bot message must mention that next topic (confirms nudge context)
  */
-function detectNudgedTopic(query: string, session: Session): string | null {
+export function detectNudgedTopic(query: string, session: Session): string | null {
   if (!isShortAffirmation(query)) return null;
   if (!session.currentTopic) return null;
 
@@ -179,6 +179,16 @@ function tryTermRegistry(query: string, session: Session): DeterministicIntentRe
 }
 
 function tryMedicalPlanDetail(query: string, session: Session): DeterministicIntentResult | null {
+  // Questions about disability/leave policy, HSA/FSA tax concepts, QLE enrollment, and provider
+  // navigation should fall through to the LLM — they are not medical plan design questions.
+  const lq = query.toLowerCase();
+  if (
+    /\b(paid\s+(during|while|on)\s+(?:\w+\s+)*leave|maternity\s+leave\s+(policy|pay(?:ment)?|benefit|income|salary)|income\s+(replacement|protection)|short.?term\s+disab|leave\s+policy|fmla)\b/i.test(lq)
+    || /\b(tax\s+and\s+rollover|rollover\s+tradeoff|hsa\s+versus\s+fsa|use.it.or.lose.it)\b/i.test(lq)
+    || /\bjust\s+had\s+a\s+(baby|newborn)\b/i.test(lq)
+    || /\b(thinking\s+about\s+having|planning\s+to\s+have|planning\s+a\s+(baby|family|pregnancy))\b/i.test(lq)
+    || /\bhow\s+do\s+i\s+(find|locate|search\s+for)\b.*\busing\b/i.test(lq)
+  ) return null;
   const answer = buildMedicalPlanDetailAnswer(query, session);
   if (!answer) return null;
   return {
@@ -289,8 +299,10 @@ function tryComplianceFact(query: string, session: Session): DeterministicIntent
   }
 
   // ── Kaiser state availability ─────────────────────────────────────────────
-  if (/\b(kaiser\b.*\b(state|available|offer|enroll|access|in\s+[a-z]{2,})|which\s+states?\s+(have|offer)\s+kaiser|kaiser\s+hmo\s+(available|states?))\b/i.test(lower)
-    || /\bkais(er)?\b.*\b(availab|state|where)\b/i.test(lower)
+  // Pricing/premium questions about Kaiser fall through to the plan-detail handler.
+  if (!/\b(premium|employee.only\s+premium|rate\s+in|price\s+in)\b/i.test(lower)
+    && (/\b(kaiser\b.*\b(state|available|offer|enroll|access|in\s+[a-z]{2,})|which\s+states?\s+(have|offer)\s+kaiser|kaiser\s+hmo\s+(available|states?))\b/i.test(lower)
+    || /\bkais(er)?\b.*\b(availab|state|where)\b/i.test(lower))
   ) {
     const stateCodes = pkg.kaiserAvailableStateCodes;
     const stateNames = stateCodes
@@ -342,6 +354,7 @@ function tryComplianceFact(query: string, session: Session): DeterministicIntent
   if (
     /\b(basic\s+life|unum\s+(basic|life\s+&)|employer[\s-]paid\s+life)\b/i.test(lower)
     && /\b(cost|price|premium|how\s+much|free|pay(?:ing)?|charge|deducted?)\b/i.test(lower)
+    && !/\b(recommend|should\s+i|more\s+than|voluntary\s+term|whole\s+life)\b/i.test(lower)
   ) {
     const basicLife = catalog.voluntaryPlans.find((p) => p.id === 'unum-basic-life');
     const benefit = basicLife?.benefits.description ?? '$25,000 employer-paid basic life and AD&D';
@@ -360,7 +373,7 @@ function tryComplianceFact(query: string, session: Session): DeterministicIntent
   // ── HSA employer contribution ─────────────────────────────────────────────
   if (
     /\b(hsa|health\s+savings)\b/i.test(lower)
-    && /\b(employer|company|amerivet|contribut(?:es?|ion)|match|seed|fund(?:ing)?|put\s+in|add(?:ing)?|how\s+much)\b/i.test(lower)
+    && /\b(employer|company|amerivet|match|seed|fund(?:ing)?)\b/i.test(lower)
   ) {
     const hsaContrib = catalog.specialCoverage.hsa.employerContribution;
     let contribText: string;
@@ -399,7 +412,7 @@ function tryComplianceFact(query: string, session: Session): DeterministicIntent
   if (
     /\b(new\s+hire|new\s+employ(?:ee)?|just\s+(?:started|hired|joined)|when\s+(?:does|do|will|can)|how\s+(?:long|soon)|waiting\s+period|start\s+(?:date|of\s+coverage)|coverage\s+(start|begin|effective|kick\s+in))\b/i.test(lower)
     && /\b(cover(?:age|ed)?|insurance|benefits?|active|enroll(?:ment)?)\b/i.test(lower)
-    && !/\b(dental|vision|major\s+services)\b/i.test(lower)
+    && !/\b(dental|vision|major\s+services|married|marriage|divorced?|baby|newborn|birth|adoption|qualifying\s+life\s+event|qle|most\s+important|sign\s+up\s+for|recommend)\b/i.test(lower)
   ) {
     return {
       answer: [

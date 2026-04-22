@@ -7,24 +7,37 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+function checkOpenAI(): { configured: boolean; missing: string[] } {
+  const required = [
+    'AZURE_OPENAI_ENDPOINT',
+    'AZURE_OPENAI_API_KEY',
+    'AZURE_OPENAI_DEPLOYMENT_NAME',
+  ];
+  const missing = required.filter((k) => !process.env[k]);
+  return { configured: missing.length === 0, missing };
+}
+
 export async function GET() {
   const started = Date.now();
   try {
     const index = getActiveIndexName();
     const redis = isCacheAvailable();
+    const openai = checkOpenAI();
     const commit = process.env.VERCEL_GIT_COMMIT_SHA || process.env.GITHUB_SHA || "unknown";
 
+    const allHealthy = redis && openai.configured;
     const payload = {
-      status: "ok",
+      status: allHealthy ? "ok" : "degraded",
       services: {
         azureSearch: { index },
         redis: { available: redis },
+        openai: openai,
       },
       commit,
       timestamp: new Date().toISOString(),
-    } as const;
+    };
 
-    return NextResponse.json(payload, { status: 200 });
+    return NextResponse.json(payload, { status: allHealthy ? 200 : 503 });
 
   } catch (err) {
     log.error("/api/health failed", err as Error);

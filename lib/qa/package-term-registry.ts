@@ -54,13 +54,12 @@ const TERMS: TermEntry[] = [
   },
   {
     aliases: ['unum'],
-    topicContexts: ['Life Insurance', 'Disability', 'Accident/AD&D', 'Critical Illness'],
+    topicContexts: ['Life Insurance', 'Disability', 'Accident/AD&D'],
     build: (activeTopic) => {
       const topic = activeTopic && (
         activeTopic === 'Life Insurance'
         || activeTopic === 'Disability'
         || activeTopic === 'Accident/AD&D'
-        || activeTopic === 'Critical Illness'
       )
         ? activeTopic
         : 'Life Insurance';
@@ -69,15 +68,15 @@ const TERMS: TermEntry[] = [
           ? `In AmeriVet's package, Unum is the carrier behind the life insurance options (Basic Life & AD&D and Voluntary Term Life).`
           : topic === 'Disability'
             ? `In AmeriVet's package, Unum is the carrier behind the disability options (Short-Term and Long-Term Disability).`
-            : topic === 'Accident/AD&D'
-              ? `In AmeriVet's package, Unum is the carrier behind the Accident and AD&D coverage.`
-              : `In AmeriVet's package, Unum is the carrier behind the Critical Illness coverage.`;
+            : `In AmeriVet's package, Unum is the carrier behind the Accident and AD&D coverage.`;
       return [
         `Unum is an insurance carrier.`,
         ``,
         contextLine,
         ``,
-        `So when you see Unum in your benefits list, that is AmeriVet's supplemental protection carrier (life, disability, accident, and critical illness).`,
+        `So when you see Unum in your benefits list, that is AmeriVet's supplemental protection carrier (life, disability, and accident/AD&D).`,
+        ``,
+        `Note: **Allstate Critical Illness** is the plan for critical illness coverage at AmeriVet — not Unum.`,
       ].join('\n');
     },
   },
