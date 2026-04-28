@@ -14,10 +14,10 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { 
-  Send, 
-  Bot, 
-  User, 
+import {
+  Send,
+  Bot,
+  User,
   ArrowLeft,
   Loader2,
   MessageSquare,
@@ -25,7 +25,9 @@ import {
   FileText,
   Users,
   Heart,
-  Eye
+  Eye,
+  ThumbsUp,
+  ThumbsDown,
 } from 'lucide-react';
 
 interface Message {
@@ -33,6 +35,7 @@ interface Message {
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
+  feedback?: 'up' | 'down';
 }
 
 interface Scenario {
@@ -136,6 +139,25 @@ export default function SubdomainChatPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const welcomeTriggeredRef = useRef(false);
   const router = useRouter();
+
+  // ── Satisfaction feedback ──────────────────────────────────────────────
+  const [feedbackMap, setFeedbackMap] = useState<Record<string, 'up' | 'down'>>({});
+
+  const submitFeedback = (messageId: string, value: 'up' | 'down') => {
+    if (feedbackMap[messageId]) return; // already rated
+    setFeedbackMap(prev => ({ ...prev, [messageId]: value }));
+    fetch('/api/analytics/feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        sessionId,
+        messageId,
+        feedback: value,
+        companyId: 'amerivet',
+      }),
+    }).catch(() => {/* non-fatal */});
+  };
   const TEXTAREA_MIN_HEIGHT = 48;
   const TEXTAREA_MAX_HEIGHT = 200;
 
@@ -522,6 +544,42 @@ export default function SubdomainChatPage() {
                         <p className="text-xs opacity-70 mt-1">
                           {message.timestamp.toLocaleTimeString()}
                         </p>
+                        {/* Thumbs up / down — assistant messages only */}
+                        {message.role === 'assistant' && (
+                          <div className="flex items-center gap-2 mt-2">
+                            <button
+                              onClick={() => submitFeedback(message.id, 'up')}
+                              disabled={!!feedbackMap[message.id]}
+                              title="Helpful"
+                              className={`p-1 rounded transition-colors ${
+                                feedbackMap[message.id] === 'up'
+                                  ? 'text-green-600'
+                                  : feedbackMap[message.id] === 'down'
+                                  ? 'text-gray-300 cursor-default'
+                                  : 'text-gray-400 hover:text-green-600'
+                              }`}
+                            >
+                              <ThumbsUp className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => submitFeedback(message.id, 'down')}
+                              disabled={!!feedbackMap[message.id]}
+                              title="Not helpful"
+                              className={`p-1 rounded transition-colors ${
+                                feedbackMap[message.id] === 'down'
+                                  ? 'text-red-500'
+                                  : feedbackMap[message.id] === 'up'
+                                  ? 'text-gray-300 cursor-default'
+                                  : 'text-gray-400 hover:text-red-500'
+                              }`}
+                            >
+                              <ThumbsDown className="w-3.5 h-3.5" />
+                            </button>
+                            {feedbackMap[message.id] && (
+                              <span className="text-xs text-gray-400">Thanks</span>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>

@@ -69,6 +69,10 @@ export interface AnalyticsStats {
   // Quality
   completionRate: number | null;       // % conversations with messageCount >= 6
   completedConversations: number;
+  // Satisfaction
+  satisfactionRate: number | null;     // % thumbs-up out of all rated responses
+  positiveFeedback: number;            // raw thumbs-up count
+  totalFeedback: number;               // total ratings submitted
   // Timing
   peakDay: string | null;              // e.g. "Tuesday"
   peakHour: string | null;             // e.g. "12 PM–1 PM"
@@ -101,6 +105,9 @@ export async function GET(_request: NextRequest) {
     notYetEngaged: 0,
     completionRate: null,
     completedConversations: 0,
+    satisfactionRate: null,
+    positiveFeedback: 0,
+    totalFeedback: 0,
     peakDay: null,
     peakHour: null,
     escalatedConversations: 0,
@@ -298,6 +305,29 @@ export async function GET(_request: NextRequest) {
     }
   } catch (err) {
     logger.error('[AnalyticsStats] Azure Search doc count failed:', err);
+  }
+
+  // ── 5. Cosmos DB: satisfaction ratings ─────────────────────────────────
+  try {
+    const feedbackContainer = await getContainer('Feedback');
+    const { resources: feedbackRows } = await feedbackContainer.items
+      .query({
+        query: `SELECT f.feedback, COUNT(1) AS count FROM f
+                WHERE f.companyId = @companyId
+                GROUP BY f.feedback`,
+        parameters: [{ name: '@companyId', value: 'amerivet' }],
+      })
+      .fetchAll();
+
+    const upCount   = (feedbackRows as { feedback: string; count: number }[]).find(r => r.feedback === 'up')?.count   ?? 0;
+    const downCount = (feedbackRows as { feedback: string; count: number }[]).find(r => r.feedback === 'down')?.count ?? 0;
+    stats.positiveFeedback = upCount;
+    stats.totalFeedback    = upCount + downCount;
+    if (stats.totalFeedback > 0) {
+      stats.satisfactionRate = Math.round((upCount / stats.totalFeedback) * 100);
+    }
+  } catch (err) {
+    logger.error('[AnalyticsStats] Feedback query failed:', err);
   }
 
   return NextResponse.json(stats);

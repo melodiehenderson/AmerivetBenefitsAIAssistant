@@ -10,7 +10,7 @@ import { useRouter } from 'next/navigation';
 import { AmeriVetLogo } from '@/components/amerivet-logo';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ArrowLeft, BarChart3, TrendingUp, TrendingDown, MessageSquare, FileText, Users, Clock, ShieldCheck, PhoneForwarded, RefreshCw, CheckCircle2, CalendarDays } from 'lucide-react';
+import { ArrowLeft, BarChart3, TrendingUp, TrendingDown, MessageSquare, FileText, Users, Clock, ShieldCheck, PhoneForwarded, RefreshCw, CheckCircle2, CalendarDays, ThumbsUp } from 'lucide-react';
 
 interface ActivityLog {
   action: string;
@@ -34,6 +34,9 @@ interface AdminStats {
   notYetEngaged: number;
   completionRate: number | null;
   completedConversations: number;
+  satisfactionRate: number | null;
+  positiveFeedback: number;
+  totalFeedback: number;
   peakDay: string | null;
   peakHour: string | null;
   escalatedConversations: number;
@@ -199,6 +202,15 @@ export default function AnalyticsPage() {
       icon: PhoneForwarded,
       color: 'orange',
     },
+    {
+      label: 'Satisfaction Rate',
+      value: loadingStats ? '…' : (stats?.satisfactionRate != null ? `${stats.satisfactionRate}%` : '—'),
+      sub: (stats?.totalFeedback ?? 0) > 0
+        ? `${stats!.positiveFeedback} of ${stats!.totalFeedback} responses rated helpful by employees. Industry benchmark for HR self-service is 70–80%. If this dips below 60%, review recent escalation topics for content gaps.`
+        : 'Employees can rate each response 👍 or 👎 in the chat. Satisfaction rate will appear here once ratings come in.',
+      icon: ThumbsUp,
+      color: 'green',
+    },
   ];
 
   const faqData = [
@@ -315,7 +327,7 @@ export default function AnalyticsPage() {
               <h2 className="text-base font-semibold text-gray-700 uppercase tracking-wide">Engagement & ROI</h2>
               <p className="text-sm text-gray-500 mt-1">How deeply employees engage, and the time it frees up for your HR team.</p>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
               {engagementCards.map((card, i) => {
                 const Icon = card.icon;
                 return (
