@@ -184,9 +184,9 @@ export default function AnalyticsPage() {
     {
       label: 'Est. HR Time Saved',
       value: loadingStats ? '…' : (stats?.estimatedHoursSaved ? `${stats.estimatedHoursSaved} hrs` : '—'),
-      sub: stats?.estimatedDollarsSaved
-        ? `≈ $${stats.estimatedDollarsSaved.toLocaleString()} in staff time (at $85/hr median HR rate). Rough estimate — ~8 min saved per question answered by the AI instead of HR.`
-        : 'Rough estimate at ~8 min per question deflected from HR. Conservative — complex questions take longer.',
+      sub: (stats?.estimatedDollarsSaved ?? 0) > 0
+        ? `≈ $${stats!.estimatedDollarsSaved.toLocaleString()} in staff time (at $85/hr median HR rate). ~8 min saved per question the AI answered instead of HR.`
+        : 'Rough estimate: ~8 min saved per question the AI handles instead of HR. Dollar value (at $85/hr median HR rate) will appear here as usage grows.',
       icon: Clock,
       color: 'rose',
     },
@@ -336,7 +336,7 @@ export default function AnalyticsPage() {
             </div>
 
             {/* Conversation Quality */}
-            {stats && (stats.completionRate != null || stats.peakDay || stats.peakHour) && (
+            {stats && (
               <>
                 <div className="mb-3 mt-2">
                   <h2 className="text-base font-semibold text-gray-700 uppercase tracking-wide">Conversation Quality & Timing</h2>
@@ -344,49 +344,67 @@ export default function AnalyticsPage() {
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
                   {/* Completion Rate */}
-                  {stats.completionRate != null && (
-                    <Card>
-                      <CardContent className="p-6">
-                        <div className="flex items-start justify-between mb-3">
-                          <p className="text-sm text-gray-600 font-medium">Conversation Completion Rate</p>
-                          <div className="p-2.5 rounded-lg shrink-0 ml-2 bg-teal-100 text-teal-600">
-                            <CheckCircle2 className="w-5 h-5" />
+                  <Card>
+                    <CardContent className="p-6">
+                      <div className="flex items-start justify-between mb-3">
+                        <p className="text-sm text-gray-600 font-medium">Conversation Completion Rate</p>
+                        <div className="p-2.5 rounded-lg shrink-0 ml-2 bg-teal-100 text-teal-600">
+                          <CheckCircle2 className="w-5 h-5" />
+                        </div>
+                      </div>
+                      {stats.completionRate != null ? (
+                        <>
+                          <p className="text-3xl font-bold text-gray-900 mb-1">{stats.completionRate}%</p>
+                          <p className="text-xs text-gray-400 leading-snug mb-3">
+                            of conversations reached 3 or more back-and-forth exchanges ({stats.completedConversations.toLocaleString()} total). A high rate (above 50%) means employees are getting real value, not just asking one thing and leaving. Low rate may signal the answers aren't landing — worth reviewing common questions.
+                          </p>
+                          <div className="w-full bg-gray-100 rounded-full h-2">
+                            <div
+                              className="bg-teal-500 h-2 rounded-full transition-all duration-700"
+                              style={{ width: `${Math.min(100, stats.completionRate)}%` }}
+                            />
                           </div>
-                        </div>
-                        <p className="text-3xl font-bold text-gray-900 mb-1">{stats.completionRate}%</p>
-                        <p className="text-xs text-gray-400 leading-snug mb-3">
-                          of conversations reached 3 or more back-and-forth exchanges ({stats.completedConversations.toLocaleString()} total). A high rate (above 50%) means employees are getting real value, not just asking one thing and leaving. Low rate may signal the answers aren't landing — worth reviewing common questions.
-                        </p>
-                        <div className="w-full bg-gray-100 rounded-full h-2">
-                          <div
-                            className="bg-teal-500 h-2 rounded-full transition-all duration-700"
-                            style={{ width: `${Math.min(100, stats.completionRate)}%` }}
-                          />
-                        </div>
-                      </CardContent>
-                    </Card>
-                  )}
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-3xl font-bold text-gray-400 mb-1">—</p>
+                          <p className="text-xs text-gray-400 leading-snug">
+                            Will show the % of conversations with 3+ full exchanges. A high rate (above 50%) means employees are getting real value, not just asking one thing and leaving.
+                          </p>
+                        </>
+                      )}
+                    </CardContent>
+                  </Card>
 
                   {/* Peak Usage */}
-                  {(stats.peakDay || stats.peakHour) && (
-                    <Card>
-                      <CardContent className="p-6">
-                        <div className="flex items-start justify-between mb-3">
-                          <p className="text-sm text-gray-600 font-medium">Peak Usage</p>
-                          <div className="p-2.5 rounded-lg shrink-0 ml-2 bg-indigo-100 text-indigo-600">
-                            <CalendarDays className="w-5 h-5" />
-                          </div>
+                  <Card>
+                    <CardContent className="p-6">
+                      <div className="flex items-start justify-between mb-3">
+                        <p className="text-sm text-gray-600 font-medium">Peak Usage</p>
+                        <div className="p-2.5 rounded-lg shrink-0 ml-2 bg-indigo-100 text-indigo-600">
+                          <CalendarDays className="w-5 h-5" />
                         </div>
-                        <p className="text-3xl font-bold text-gray-900 mb-1">{stats.peakDay ?? '—'}</p>
-                        {stats.peakHour && (
-                          <p className="text-base font-medium text-indigo-600 mb-2">Peak hour: {stats.peakHour}</p>
-                        )}
-                        <p className="text-xs text-gray-400 leading-snug">
-                          Based on the last 90 days of activity. Employees reach for the assistant most on {stats.peakDay ?? 'this day'}{stats.peakHour ? ` around ${stats.peakHour}` : ''}. Schedule benefits communications or announcements just before this window to catch employees when they're already thinking about it.
-                        </p>
-                      </CardContent>
-                    </Card>
-                  )}
+                      </div>
+                      {stats.peakDay ? (
+                        <>
+                          <p className="text-3xl font-bold text-gray-900 mb-1">{stats.peakDay}</p>
+                          {stats.peakHour && (
+                            <p className="text-base font-medium text-indigo-600 mb-2">Peak hour: {stats.peakHour}</p>
+                          )}
+                          <p className="text-xs text-gray-400 leading-snug">
+                            Based on the last 90 days of activity. Schedule benefits communications just before this window to catch employees when they're already thinking about it.
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-3xl font-bold text-gray-400 mb-1">—</p>
+                          <p className="text-xs text-gray-400 leading-snug">
+                            Will show the busiest day of the week and peak hour once enough conversations have been logged. Use this to time benefits announcements for maximum reach.
+                          </p>
+                        </>
+                      )}
+                    </CardContent>
+                  </Card>
                 </div>
               </>
             )}
