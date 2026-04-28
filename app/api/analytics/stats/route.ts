@@ -85,6 +85,7 @@ export interface AnalyticsStats {
   // Content
   planDocumentsIndexed: number | null;
   topTopics: { topic: string; count: number }[];
+  contentGapTopics: { topic: string; count: number }[];
   fetchedAt: string;
 }
 
@@ -116,6 +117,7 @@ export async function GET(_request: NextRequest) {
     weeklyTrend: [],
     planDocumentsIndexed: null,
     topTopics: [],
+    contentGapTopics: [],
     fetchedAt: new Date().toISOString(),
   };
 
@@ -193,6 +195,19 @@ export async function GET(_request: NextRequest) {
     stats.escalationTopics = (escalTopicRows as { topic: string; escalations: number }[])
       .filter(r => r.topic && r.escalations > 0)
       .sort((a, b) => b.escalations - a.escalations)
+      .slice(0, 8);
+
+    // ── Content gap topics: topics where Search returned no relevant chunks ──
+    const { resources: gapTopicRows } = await container.items
+      .query(`SELECT c.metadata.currentTopic AS topic, SUM(c.contentGapCount) AS count
+              FROM c
+              WHERE IS_DEFINED(c.contentGapCount) AND c.contentGapCount > 0
+              AND IS_DEFINED(c.metadata.currentTopic) AND c.metadata.currentTopic != null
+              GROUP BY c.metadata.currentTopic`)
+      .fetchAll();
+    stats.contentGapTopics = (gapTopicRows as { topic: string; count: number }[])
+      .filter(r => r.topic && r.count > 0)
+      .sort((a, b) => b.count - a.count)
       .slice(0, 8);
 
     // ── Completion rate: conversations with 6+ messages (3+ full exchanges) ──

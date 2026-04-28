@@ -8,6 +8,7 @@ export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
+import { getContainer } from '@/lib/azure/cosmos-db';
 import { logger } from '@/lib/logger';
 
 export interface ServiceHealth {
@@ -123,5 +124,17 @@ export async function GET(_request: NextRequest) {
   };
 
   logger.info('[Health] Platform health check complete', { overall });
+
+  // ── Persist health log for 30-day uptime tracking (fire-and-forget) ────
+  const now = Date.now();
+  getContainer('HealthLogs')
+    .then(container => container.items.create({
+      id: `health-${now}`,
+      timestamp: now,
+      overall,
+      services: services.map(s => ({ name: s.name, status: s.status, latencyMs: s.latencyMs ?? null })),
+    }))
+    .catch(err => logger.error('[Health] Failed to persist health log:', err));
+
   return NextResponse.json(report);
 }

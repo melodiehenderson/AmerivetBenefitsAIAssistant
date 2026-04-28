@@ -34,7 +34,10 @@ export async function POST(req: NextRequest) {
     // Fire-and-forget: if Cosmos is unavailable the chat still returns normally.
     const userId = typeof body?.userId === 'string' && body.userId ? body.userId : `anon-${sessionId}`;
     const companyId = typeof body?.companyId === 'string' && body.companyId ? body.companyId : 'amerivet';
-    const isEscalation = result?.metadata?.intercept === 'counselor-escalation-v2';
+    const isEscalation  = result?.metadata?.intercept === 'counselor-escalation-v2';
+    // Content gap: Search returned no relevant chunks — topic may need better docs
+    const isContentGap  = result?.metadata?.retrievalChunks === 0
+                       && result?.metadata?.usedRetrieval === false;
 
     conversationService
       .getOrCreateForSession(sessionId, userId, companyId)
@@ -45,12 +48,12 @@ export async function POST(req: NextRequest) {
         return conversationService.incrementMessageCount(sessionId, 2, topicPatch);
       })
       .then(() => {
-        if (isEscalation) {
-          return conversationService.recordEscalation(sessionId);
-        }
+        if (isEscalation) return conversationService.recordEscalation(sessionId);
+      })
+      .then(() => {
+        if (isContentGap) return conversationService.recordContentGap(sessionId);
       })
       .catch((err) => {
-        // Log but never surface to the user
         console.error('[qa-v2] Cosmos persistence error (non-fatal):', err);
       });
     // ──────────────────────────────────────────────────────────────────────

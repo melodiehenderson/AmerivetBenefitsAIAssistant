@@ -10,7 +10,7 @@ import { useRouter } from 'next/navigation';
 import { AmeriVetLogo } from '@/components/amerivet-logo';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ArrowLeft, BarChart3, TrendingUp, TrendingDown, MessageSquare, FileText, Users, Clock, ShieldCheck, PhoneForwarded, RefreshCw, CheckCircle2, CalendarDays, ThumbsUp } from 'lucide-react';
+import { ArrowLeft, BarChart3, TrendingUp, TrendingDown, MessageSquare, FileText, Users, Clock, ShieldCheck, PhoneForwarded, RefreshCw, CheckCircle2, CalendarDays, ThumbsUp, SearchX } from 'lucide-react';
 
 interface ActivityLog {
   action: string;
@@ -45,6 +45,7 @@ interface AdminStats {
   weeklyTrend: { week: string; count: number }[];
   planDocumentsIndexed: number | null;
   topTopics: { topic: string; count: number }[];
+  contentGapTopics: { topic: string; count: number }[];
 }
 
 function fmt(n: number | null | undefined, suffix = ''): string {
@@ -570,6 +571,52 @@ export default function AnalyticsPage() {
                 </CardContent>
               </Card>
             )}
+
+            {/* Content Gaps */}
+            <Card className="mb-6">
+              <CardHeader>
+                <div className="flex items-start gap-3">
+                  <SearchX className="w-5 h-5 text-amber-500 mt-0.5 shrink-0" />
+                  <div>
+                    <CardTitle>Topics with No Document Coverage</CardTitle>
+                    <CardDescription className="mt-1">
+                      These are topics employees asked about where the AI couldn't find any relevant plan documents in the knowledge base. The bot still answered from its built-in catalog, but if a topic keeps appearing here it means uploading a document on that subject would improve answer quality. Think of this as your document upload priority list.
+                    </CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {loadingStats ? (
+                  <p className="text-sm text-gray-500">Loading…</p>
+                ) : !stats?.contentGapTopics?.length ? (
+                  <p className="text-sm text-gray-500 py-2">
+                    No gaps detected yet — this will populate as employees ask questions and conversation data accumulates.
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {stats.contentGapTopics.map(({ topic, count }, i) => {
+                      const max = stats.contentGapTopics[0].count;
+                      const pct = Math.round((count / max) * 100);
+                      return (
+                        <div key={topic} className="flex items-center gap-4">
+                          <span className="w-6 text-sm text-gray-400 shrink-0">#{i + 1}</span>
+                          <span className="w-36 text-sm font-medium text-gray-700 shrink-0">{topic}</span>
+                          <div className="flex-1 bg-gray-100 rounded-full h-2.5">
+                            <div
+                              className="bg-amber-400 h-2.5 rounded-full transition-all duration-500"
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                          <span className="text-sm text-gray-600 w-28 text-right">
+                            {count} turn{count !== 1 ? 's' : ''} no docs
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
 
             {/* Benefits Coverage */}
             <Card className="mb-6">

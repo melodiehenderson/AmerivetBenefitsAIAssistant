@@ -26,6 +26,21 @@ import {
   Users,
 } from 'lucide-react';
 
+interface TenantConfig {
+  companyId: string;
+  displayName: string;
+  contractValue: number | null;
+  renewalDate: string | null;
+  primaryContact: string | null;
+  notes: string | null;
+}
+
+interface ServiceUptime {
+  name: string;
+  uptimePct: number | null;
+  totalChecks: number;
+}
+
 interface TenantStats {
   companyId: string;
   totalConversations: number;
@@ -34,6 +49,8 @@ interface TenantStats {
   escalatedConversations: number;
   escalationRate: number | null;
   activeUsersThisMonth: number;
+  churnRisk: 'healthy' | 'watch' | 'at-risk' | 'no-data';
+  config: TenantConfig | null;
 }
 
 interface PlatformStats {
@@ -49,6 +66,7 @@ interface PlatformStats {
   momQuestionsDelta: number | null;
   momSessionsDelta: number | null;
   weeklyTrend: { week: string; count: number }[];
+  serviceUptime: ServiceUptime[];
   tenants: TenantStats[];
 }
 
@@ -334,6 +352,28 @@ export default function PlatformPage() {
                       })}
                     </div>
 
+                    {/* 30-day uptime */}
+                    {stats?.serviceUptime && stats.serviceUptime.length > 0 && (
+                      <div className="mt-4 pt-3 border-t">
+                        <p className="text-xs text-gray-500 font-medium mb-2">30-day uptime (based on manual re-checks)</p>
+                        <div className="flex flex-wrap gap-4">
+                          {stats.serviceUptime.map(svc => (
+                            <div key={svc.name} className="text-xs">
+                              <span className="text-gray-600">{svc.name}: </span>
+                              <span className={`font-semibold ${
+                                svc.uptimePct == null ? 'text-gray-400' :
+                                svc.uptimePct >= 99 ? 'text-green-600' :
+                                svc.uptimePct >= 95 ? 'text-amber-600' : 'text-red-500'
+                              }`}>
+                                {svc.uptimePct != null ? `${svc.uptimePct}%` : '—'}
+                              </span>
+                              <span className="text-gray-400"> ({svc.totalChecks} checks)</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     {/* Latency legend */}
                     <div className="mt-4 pt-3 border-t flex flex-wrap gap-x-4 gap-y-1">
                       <p className="text-xs text-gray-400 w-full mb-1 font-medium">Response time guide:</p>
@@ -361,15 +401,45 @@ export default function PlatformPage() {
               {stats?.tenants.map(tenant => (
                 <Card key={tenant.companyId} className="hover:shadow-md transition-shadow">
                   <CardHeader className="pb-3">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <CardTitle className="text-lg">{tenantLabel(tenant.companyId)}</CardTitle>
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <CardTitle className="text-lg">{tenantLabel(tenant.companyId)}</CardTitle>
+                          {/* Churn risk badge */}
+                          {tenant.churnRisk === 'at-risk' && (
+                            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-700">⚠ At Risk</span>
+                          )}
+                          {tenant.churnRisk === 'watch' && (
+                            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Watch</span>
+                          )}
+                          {tenant.churnRisk === 'healthy' && (
+                            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700">Healthy</span>
+                          )}
+                        </div>
                         <CardDescription className="font-mono text-xs">{tenant.companyId}</CardDescription>
+                        {/* Contract fields */}
+                        {tenant.config && (
+                          <div className="flex flex-wrap gap-x-4 gap-y-0.5 mt-1.5 text-xs text-gray-500">
+                            {tenant.config.contractValue != null && (
+                              <span>Contract: <span className="font-medium text-gray-700">${tenant.config.contractValue.toLocaleString()}/yr</span></span>
+                            )}
+                            {tenant.config.renewalDate && (
+                              <span>Renews: <span className="font-medium text-gray-700">{new Date(tenant.config.renewalDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span></span>
+                            )}
+                            {tenant.config.primaryContact && (
+                              <span>Contact: <span className="font-medium text-gray-700">{tenant.config.primaryContact}</span></span>
+                            )}
+                            {!tenant.config.contractValue && !tenant.config.renewalDate && !tenant.config.primaryContact && (
+                              <span className="text-gray-400 italic">Contract details not yet configured</span>
+                            )}
+                          </div>
+                        )}
                       </div>
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={() => router.push('/subdomain/analytics')}
+                        className="shrink-0"
                       >
                         Full Analytics
                         <ArrowRight className="w-4 h-4 ml-2" />

@@ -11,6 +11,7 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { getContainer, CONVERSATIONS_CONTAINER } from '@/lib/azure/cosmos-db';
+// HealthLogs and TenantConfigs containers are auto-created by getContainer()
 import { logger } from '@/lib/logger';
 
 function buildWeeklyTrend(timestamps: number[]): { week: string; count: number }[] {
@@ -29,6 +30,21 @@ function buildWeeklyTrend(timestamps: number[]): { week: string; count: number }
   return weeks.map(({ label, count }) => ({ week: label, count }));
 }
 
+export interface TenantConfig {
+  companyId: string;
+  displayName: string;
+  contractValue: number | null;    // USD annual
+  renewalDate: string | null;      // ISO date string e.g. "2026-12-01"
+  primaryContact: string | null;   // name or email
+  notes: string | null;
+}
+
+export interface ServiceUptime {
+  name: string;
+  uptimePct: number | null;        // % checks with status 'ok' in last 30 days
+  totalChecks: number;
+}
+
 export interface TenantStats {
   companyId: string;
   totalConversations: number;
@@ -37,6 +53,8 @@ export interface TenantStats {
   escalatedConversations: number;
   escalationRate: number | null;
   activeUsersThisMonth: number;
+  churnRisk: 'healthy' | 'watch' | 'at-risk' | 'no-data';
+  config: TenantConfig | null;
 }
 
 /** % change from previous to current. Returns null if previous was 0. */
@@ -58,6 +76,7 @@ export interface PlatformStats {
   momQuestionsDelta: number | null;
   momSessionsDelta: number | null;
   weeklyTrend: { week: string; count: number }[];   // cross-tenant
+  serviceUptime: ServiceUptime[];                   // 30-day uptime per service
   tenants: TenantStats[];
 }
 
@@ -82,6 +101,7 @@ export async function GET(_request: NextRequest) {
     momQuestionsDelta: null,
     momSessionsDelta: null,
     weeklyTrend: [],
+    serviceUptime: [],
     tenants: [],
   };
 
@@ -182,6 +202,18 @@ export async function GET(_request: NextRequest) {
         ? Math.round((escalatedConversations / totalConversations) * 100)
         : null;
 
+      // Churn risk heuristic
+      let churnRisk: TenantStats['churnRisk'] = 'no-data';
+      if (totalConversations > 0) {
+        if ((escalationRate ?? 0) > 30 && activeUsersThisMonth < 3) {
+          churnRisk = 'at-risk';
+        } else if ((escalationRate ?? 0) > 20 || activeUsersThisMonth === 0) {
+          churnRisk = 'watch';
+        } else {
+          churnRisk = 'healthy';
+        }
+      }
+
       platform.tenants.push({
         companyId,
         totalConversations,
@@ -190,6 +222,8 @@ export async function GET(_request: NextRequest) {
         escalatedConversations,
         escalationRate,
         activeUsersThisMonth,
+        churnRisk,
+        config: null,   // filled in below
       });
 
       // Platform totals
@@ -241,6 +275,73 @@ export async function GET(_request: NextRequest) {
 
   } catch (err) {
     logger.error('[PlatformStats] Cosmos query failed:', err);
+  }
+
+  // ── 30-day uptime from HealthLogs ──────────────────────────────────────
+  try {
+    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    const healthContainer = await getContainer('HealthLogs');
+    const { resources: healthLogs } = await healthContainer.items
+      .query({
+        query: 'SELECT c.services FROM c WHERE c.timestamp > @since',
+        parameters: [{ name: '@since', value: thirtyDaysAgo }],
+      })
+      .fetchAll();
+
+    if (healthLogs.length > 0) {
+      // Build per-service totals
+      const totals = new Map<string, { ok: number; total: number }>();
+      for (const log of healthLogs as { services: { name: string; status: string }[] }[]) {
+        for (const svc of log.services ?? []) {
+          if (!totals.has(svc.name)) totals.set(svc.name, { ok: 0, total: 0 });
+          const t = totals.get(svc.name)!;
+          t.total++;
+          if (svc.status === 'ok') t.ok++;
+        }
+      }
+      platform.serviceUptime = Array.from(totals.entries()).map(([name, { ok, total }]) => ({
+        name,
+        uptimePct: total > 0 ? Math.round((ok / total) * 100) : null,
+        totalChecks: total,
+      }));
+    }
+  } catch (err) {
+    logger.error('[PlatformStats] HealthLogs uptime query failed:', err);
+  }
+
+  // ── Tenant configs ─────────────────────────────────────────────────────
+  try {
+    const configContainer = await getContainer('TenantConfigs');
+    const { resources: configs } = await configContainer.items
+      .query('SELECT * FROM c')
+      .fetchAll();
+
+    const configMap = new Map<string, TenantConfig>();
+    for (const c of configs as TenantConfig[]) {
+      if (c.companyId) configMap.set(c.companyId, c);
+    }
+
+    // Seed default amerivet config if not yet in Cosmos
+    if (!configMap.has('amerivet')) {
+      const defaultConfig: TenantConfig = {
+        companyId: 'amerivet',
+        displayName: 'AmeriVet Partners',
+        contractValue: null,
+        renewalDate: null,
+        primaryContact: null,
+        notes: null,
+      };
+      configMap.set('amerivet', defaultConfig);
+      // Upsert so it exists for next time
+      configContainer.items.upsert({ id: 'amerivet', ...defaultConfig }).catch(() => {});
+    }
+
+    // Attach config to each tenant
+    for (const tenant of platform.tenants) {
+      tenant.config = configMap.get(tenant.companyId) ?? null;
+    }
+  } catch (err) {
+    logger.error('[PlatformStats] TenantConfig query failed:', err);
   }
 
   return NextResponse.json(platform);

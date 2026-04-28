@@ -18,6 +18,7 @@ export interface Conversation {
   messages: Message[];
   messageCount: number;       // total message turns (user + assistant)
   escalationCount: number;    // times counselor escalation was triggered
+  contentGapCount?: number;   // turns where Azure Search returned 0 relevant chunks
   timestamp: number;          // epoch ms — updatedAt in numeric form (used by analytics queries)
   createdAt: Date;
   updatedAt: Date;
@@ -151,6 +152,24 @@ class ConversationService {
       await this.db.item(conversationId, conversationId).replace(conversation);
     } catch (error) {
       logger.error('Error recording escalation', { error, conversationId }, error as Error);
+    }
+  }
+
+  /**
+   * Increments contentGapCount for a conversation.
+   * Called when the engine returns retrievalChunks === 0 — meaning Azure Search
+   * found no relevant document chunks for the query (potential content gap).
+   */
+  async recordContentGap(conversationId: string): Promise<void> {
+    await this.ensureInitialized();
+    try {
+      const conversation = await this.getConversation(conversationId);
+      if (!conversation) return;
+      conversation.contentGapCount = (conversation.contentGapCount ?? 0) + 1;
+      conversation.updatedAt = new Date();
+      await this.db.item(conversationId, conversationId).replace(conversation);
+    } catch (error) {
+      logger.error('Error recording content gap', { error, conversationId }, error as Error);
     }
   }
 
