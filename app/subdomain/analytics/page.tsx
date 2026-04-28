@@ -1,5 +1,6 @@
 /**
- * Analytics Dashboard for subdomain users
+ * Analytics Dashboard — Tenant Admin View
+ * All metrics are aggregated and anonymized. No individual user data is surfaced.
  */
 
 'use client';
@@ -9,7 +10,7 @@ import { useRouter } from 'next/navigation';
 import { AmeriVetLogo } from '@/components/amerivet-logo';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ArrowLeft, BarChart3, TrendingUp, MessageSquare, FileText, Users } from 'lucide-react';
+import { ArrowLeft, BarChart3, TrendingUp, MessageSquare, FileText, Users, Clock, ShieldCheck } from 'lucide-react';
 
 interface ActivityLog {
   action: string;
@@ -22,23 +23,25 @@ interface AdminStats {
   uniqueUsers: number;
   totalQuestions: number;
   activeUsersThisMonth: number;
+  avgMessagesPerConversation: number;
+  adoptionRate: number | null;
+  estimatedHoursSaved: number;
   planDocumentsIndexed: number | null;
   topTopics: { topic: string; count: number }[];
 }
 
-function fmt(n: number | null | undefined): string {
+function fmt(n: number | null | undefined, suffix = ''): string {
   if (n == null || n === 0) return '—';
-  return n.toLocaleString();
+  return n.toLocaleString() + suffix;
 }
 
 export default function AnalyticsPage() {
   const router = useRouter();
   const [userRole, setUserRole] = useState<string>('');
-  const [userId, setUserId] = useState<string>('');
   const [faqFilter, setFaqFilter] = useState<string>('all');
   const [activities, setActivities] = useState<ActivityLog[]>([]);
   const [loadingActivities, setLoadingActivities] = useState(true);
-  const [adminStats, setAdminStats] = useState<AdminStats | null>(null);
+  const [stats, setStats] = useState<AdminStats | null>(null);
   const [loadingStats, setLoadingStats] = useState(true);
 
   useEffect(() => {
@@ -49,26 +52,21 @@ export default function AnalyticsPage() {
         const role = data.role || 'employee';
         const uid = data.userId || '';
         setUserRole(role);
-        setUserId(uid);
 
-        // Fetch activity logs
-        const query = new URLSearchParams({
-          role,
-          limit: '10',
-          ...(uid && { userId: uid }),
-        });
-        fetch(`/api/analytics/activity-log?${query}`, { credentials: 'include' })
+        // Activity log
+        const q = new URLSearchParams({ role, limit: '10', ...(uid && { userId: uid }) });
+        fetch(`/api/analytics/activity-log?${q}`, { credentials: 'include' })
           .then(r => r.json())
           .then(d => setActivities(d.activities || []))
           .catch(() => setActivities([]))
           .finally(() => setLoadingActivities(false));
 
-        // Fetch real usage stats (admin only)
+        // Real usage stats (admin only)
         if (role === 'admin') {
           fetch('/api/analytics/stats', { credentials: 'include' })
             .then(r => r.json())
-            .then((d: AdminStats) => setAdminStats(d))
-            .catch(() => setAdminStats(null))
+            .then((d: AdminStats) => setStats(d))
+            .catch(() => setStats(null))
             .finally(() => setLoadingStats(false));
         } else {
           setLoadingStats(false);
@@ -81,46 +79,46 @@ export default function AnalyticsPage() {
       });
   }, [router]);
 
-  const statCards = userRole === 'admin'
-    ? [
-        {
-          label: 'Total Conversations',
-          value: loadingStats ? '…' : fmt(adminStats?.totalConversations),
-          icon: MessageSquare,
-          color: 'blue',
-        },
-        {
-          label: 'Questions Asked',
-          value: loadingStats ? '…' : fmt(adminStats?.totalQuestions),
-          icon: TrendingUp,
-          color: 'green',
-        },
-        {
-          label: 'Unique Users',
-          value: loadingStats ? '…' : fmt(adminStats?.uniqueUsers),
-          icon: Users,
-          color: 'purple',
-        },
-        {
-          label: 'Plan Docs Indexed',
-          value: loadingStats ? '…' : (adminStats?.planDocumentsIndexed != null ? String(adminStats.planDocumentsIndexed) : '11'),
-          icon: FileText,
-          color: 'orange',
-        },
-      ]
-    : [
-        { label: 'Questions Asked', value: '0', icon: MessageSquare, color: 'blue' },
-        { label: 'Documents Viewed', value: '0', icon: FileText, color: 'green' },
-        { label: 'Sessions This Month', value: '1', icon: TrendingUp, color: 'orange' },
-        { label: 'Active This Month', value: '1', icon: Users, color: 'purple' },
-      ];
-
   const colorClasses: Record<string, string> = {
     blue: 'bg-blue-100 text-blue-600',
     green: 'bg-green-100 text-green-600',
     purple: 'bg-purple-100 text-purple-600',
     orange: 'bg-orange-100 text-orange-600',
+    teal: 'bg-teal-100 text-teal-600',
+    rose: 'bg-rose-100 text-rose-600',
+    indigo: 'bg-indigo-100 text-indigo-600',
   };
+
+  const volumeCards = [
+    { label: 'Total Conversations', value: loadingStats ? '…' : fmt(stats?.totalConversations), icon: MessageSquare, color: 'blue' },
+    { label: 'Questions Asked', value: loadingStats ? '…' : fmt(stats?.totalQuestions), icon: TrendingUp, color: 'green' },
+    { label: 'Unique Users', value: loadingStats ? '…' : fmt(stats?.uniqueUsers), icon: Users, color: 'purple' },
+    { label: 'Plan Docs Indexed', value: loadingStats ? '…' : (stats?.planDocumentsIndexed != null ? String(stats.planDocumentsIndexed) : '11'), icon: FileText, color: 'orange' },
+  ];
+
+  const engagementCards = [
+    {
+      label: 'Adoption Rate',
+      value: loadingStats ? '…' : (stats?.adoptionRate != null ? `${stats.adoptionRate}%` : '—'),
+      sub: 'of registered users have engaged',
+      icon: Users,
+      color: 'indigo',
+    },
+    {
+      label: 'Avg Session Depth',
+      value: loadingStats ? '…' : (stats?.avgMessagesPerConversation ? `${stats.avgMessagesPerConversation}` : '—'),
+      sub: 'messages per conversation',
+      icon: BarChart3,
+      color: 'teal',
+    },
+    {
+      label: 'Est. HR Time Saved',
+      value: loadingStats ? '…' : (stats?.estimatedHoursSaved ? `${stats.estimatedHoursSaved} hrs` : '—'),
+      sub: 'at ~8 min per question deflected',
+      icon: Clock,
+      color: 'rose',
+    },
+  ];
 
   const faqData = [
     { id: 1, question: 'What medical plans does AmeriVet offer?', category: 'medical', desc: 'BCBSTX Standard HSA, Enhanced HSA, Kaiser Standard HMO' },
@@ -150,9 +148,7 @@ export default function AnalyticsPage() {
     { label: 'Costs', value: 'costs' },
   ];
 
-  const filteredFAQ = faqFilter === 'all'
-    ? faqData
-    : faqData.filter(faq => faq.category === faqFilter);
+  const filteredFAQ = faqFilter === 'all' ? faqData : faqData.filter(f => f.category === faqFilter);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -179,69 +175,106 @@ export default function AnalyticsPage() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-2">Overview</h2>
-          <p className="text-gray-600">
-            {userRole === 'admin'
-              ? 'Real usage metrics pulled live from the database'
-              : 'Track your benefit usage and engagement'}
-          </p>
-        </div>
-
-        {/* Stat cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          {statCards.map((stat, index) => {
-            const Icon = stat.icon;
-            return (
-              <Card key={index}>
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-gray-600 mb-1">{stat.label}</p>
-                      <p className="text-3xl font-bold text-gray-900">{stat.value}</p>
-                    </div>
-                    <div className={`p-3 rounded-lg ${colorClasses[stat.color]}`}>
-                      <Icon className="w-6 h-6" />
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
 
         {userRole === 'admin' && (
           <>
-            {/* Top Topics — only shown when there's data */}
-            {adminStats && adminStats.topTopics.length > 0 && (
+            {/* Privacy notice */}
+            <div className="flex items-start gap-3 mb-8 p-4 bg-blue-50 border border-blue-100 rounded-lg">
+              <ShieldCheck className="w-5 h-5 text-blue-600 mt-0.5 shrink-0" />
+              <p className="text-sm text-blue-800">
+                <span className="font-semibold">Privacy protected.</span> All metrics on this page are anonymized and aggregated. Topics with fewer than 3 conversations are excluded. No individual conversations, question text, or user identities are accessible here.
+              </p>
+            </div>
+
+            {/* Volume metrics */}
+            <div className="mb-3">
+              <h2 className="text-base font-semibold text-gray-700 uppercase tracking-wide">Usage Volume</h2>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+              {volumeCards.map((card, i) => {
+                const Icon = card.icon;
+                return (
+                  <Card key={i}>
+                    <CardContent className="p-6">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm text-gray-600 mb-1">{card.label}</p>
+                          <p className="text-3xl font-bold text-gray-900">{card.value}</p>
+                        </div>
+                        <div className={`p-3 rounded-lg ${colorClasses[card.color]}`}>
+                          <Icon className="w-6 h-6" />
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+
+            {/* Engagement metrics */}
+            <div className="mb-3">
+              <h2 className="text-base font-semibold text-gray-700 uppercase tracking-wide">Engagement & ROI</h2>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+              {engagementCards.map((card, i) => {
+                const Icon = card.icon;
+                return (
+                  <Card key={i}>
+                    <CardContent className="p-6">
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-sm text-gray-600">{card.label}</p>
+                        <div className={`p-2 rounded-lg ${colorClasses[card.color]}`}>
+                          <Icon className="w-5 h-5" />
+                        </div>
+                      </div>
+                      <p className="text-3xl font-bold text-gray-900 mb-1">{card.value}</p>
+                      <p className="text-xs text-gray-500">{card.sub}</p>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+
+            {/* Top Topics */}
+            {stats && stats.topTopics.length > 0 && (
               <Card className="mb-6">
                 <CardHeader>
-                  <CardTitle>Top Topics</CardTitle>
-                  <CardDescription>What employees are asking about most</CardDescription>
+                  <CardTitle>Topics Discussed Most</CardTitle>
+                  <CardDescription>
+                    Anonymous topic distribution — only shown when 3 or more conversations covered that topic
+                  </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-3">
-                    {adminStats.topTopics.map(({ topic, count }) => {
-                      const max = adminStats.topTopics[0].count;
+                  <div className="space-y-4">
+                    {stats.topTopics.map(({ topic, count }) => {
+                      const max = stats.topTopics[0].count;
                       const pct = Math.round((count / max) * 100);
                       return (
-                        <div key={topic} className="flex items-center gap-3">
-                          <span className="w-32 text-sm text-gray-700 shrink-0">{topic}</span>
-                          <div className="flex-1 bg-gray-100 rounded-full h-2">
+                        <div key={topic} className="flex items-center gap-4">
+                          <span className="w-36 text-sm font-medium text-gray-700 shrink-0">{topic}</span>
+                          <div className="flex-1 bg-gray-100 rounded-full h-2.5">
                             <div
-                              className="bg-blue-500 h-2 rounded-full transition-all"
+                              className="bg-blue-500 h-2.5 rounded-full transition-all duration-500"
                               style={{ width: `${pct}%` }}
                             />
                           </div>
-                          <span className="text-sm text-gray-500 w-8 text-right">{count}</span>
+                          <span className="text-sm text-gray-600 w-20 text-right">
+                            {count} conversation{count !== 1 ? 's' : ''}
+                          </span>
                         </div>
                       );
                     })}
                   </div>
+                  {stats.topTopics.length === 0 && (
+                    <p className="text-sm text-gray-500 py-4 text-center">
+                      Topic data will appear once enough conversations have occurred.
+                    </p>
+                  )}
                 </CardContent>
               </Card>
             )}
 
+            {/* Benefits Coverage */}
             <Card className="mb-6">
               <CardHeader>
                 <CardTitle>Benefits Coverage</CardTitle>
@@ -258,6 +291,7 @@ export default function AnalyticsPage() {
               </CardContent>
             </Card>
 
+            {/* Common Questions */}
             <Card className="mb-6">
               <CardHeader>
                 <CardTitle>Common Questions</CardTitle>
@@ -265,14 +299,12 @@ export default function AnalyticsPage() {
               </CardHeader>
               <CardContent>
                 <div className="mb-4 flex flex-wrap gap-2">
-                  {filterOptions.map((option) => (
+                  {filterOptions.map(option => (
                     <button
                       key={option.value}
                       onClick={() => setFaqFilter(option.value)}
                       className={`px-3 py-1.5 rounded-full text-sm font-medium transition ${
-                        faqFilter === option.value
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        faqFilter === option.value ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                       }`}
                     >
                       {option.label}
@@ -280,24 +312,21 @@ export default function AnalyticsPage() {
                   ))}
                 </div>
                 <div className="space-y-2 max-h-96 overflow-y-auto">
-                  {filteredFAQ.length === 0 ? (
-                    <p className="text-gray-500 py-4 text-center">No FAQs found for this category</p>
-                  ) : (
-                    filteredFAQ.map((faq) => (
-                      <div key={faq.id} className="py-3 border-b hover:bg-gray-50 px-2 rounded cursor-pointer transition">
-                        <p className="font-medium text-gray-900">{faq.question}</p>
-                        <p className="text-sm text-gray-500 mt-1">{faq.desc}</p>
-                      </div>
-                    ))
-                  )}
+                  {filteredFAQ.map(faq => (
+                    <div key={faq.id} className="py-3 border-b hover:bg-gray-50 px-2 rounded transition">
+                      <p className="font-medium text-gray-900">{faq.question}</p>
+                      <p className="text-sm text-gray-500 mt-1">{faq.desc}</p>
+                    </div>
+                  ))}
                 </div>
               </CardContent>
             </Card>
 
+            {/* Recent Activity */}
             <Card>
               <CardHeader>
                 <CardTitle>Recent Activity</CardTitle>
-                <CardDescription>Latest user interactions</CardDescription>
+                <CardDescription>Latest user interactions — anonymized session logs</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">

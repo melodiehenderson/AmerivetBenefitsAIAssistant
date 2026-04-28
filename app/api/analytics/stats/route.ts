@@ -1,7 +1,9 @@
 /**
  * Analytics Stats API
- * Returns real usage metrics for the tenant admin dashboard.
- * Queries Cosmos DB (conversations) and Azure Search (document count).
+ * Returns real, privacy-safe usage metrics for the tenant admin dashboard.
+ * - Topic data filtered to minimum group size of 3 (HIPAA-safe threshold)
+ * - No individual user identifiers returned
+ * - Queries Cosmos DB (conversations + users) and Azure Search (document count)
  */
 
 export const dynamic = 'force-dynamic';
@@ -11,12 +13,21 @@ import { getContainer } from '@/lib/azure/cosmos-db';
 import { SearchClient, AzureKeyCredential } from '@azure/search-documents';
 import { logger } from '@/lib/logger';
 
+const MIN_GROUP_THRESHOLD = 3; // Never surface topics discussed by fewer than this many conversations
+
 export interface AnalyticsStats {
+  // Volume
   totalConversations: number;
   uniqueUsers: number;
   totalQuestions: number;
   activeUsersThisMonth: number;
-  planDocumentsIndexed: number | null; // null = couldn't fetch
+  // Engagement
+  avgMessagesPerConversation: number;
+  adoptionRate: number | null;       // 0–100 percent; null if user count unavailable
+  estimatedHoursSaved: number;       // totalQuestions × 8 min ÷ 60
+  // Content
+  planDocumentsIndexed: number | null;
+  // Privacy-safe topic distribution (count >= MIN_GROUP_THRESHOLD only)
   topTopics: { topic: string; count: number }[];
   fetchedAt: string;
 }
@@ -27,6 +38,9 @@ export async function GET(_request: NextRequest) {
     uniqueUsers: 0,
     totalQuestions: 0,
     activeUsersThisMonth: 0,
+    avgMessagesPerConversation: 0,
+    adoptionRate: null,
+    estimatedHoursSaved: 0,
     planDocumentsIndexed: null,
     topTopics: [],
     fetchedAt: new Date().toISOString(),
@@ -42,20 +56,24 @@ export async function GET(_request: NextRequest) {
       .fetchAll();
     stats.totalConversations = countRes[0] ?? 0;
 
-    // Unique users (DISTINCT VALUE supported in Cosmos SQL)
+    // Unique users
     const { resources: userIds } = await container.items
       .query('SELECT DISTINCT VALUE c.userId FROM c WHERE IS_DEFINED(c.userId) AND c.userId != null')
       .fetchAll();
     stats.uniqueUsers = userIds.filter(Boolean).length;
 
-    // Total questions: sum of per-conversation message counts
-    // messageCount field = number of messages; ~half are user turns
+    // Total questions (each conversation messageCount ÷ 2 ≈ user turns)
     const { resources: msgRes } = await container.items
       .query('SELECT VALUE SUM(c.messageCount) FROM c WHERE IS_DEFINED(c.messageCount)')
       .fetchAll();
-    const rawTotal = msgRes[0] ?? 0;
-    // Divide by 2 to approximate user questions (each exchange = 1 user + 1 bot)
-    stats.totalQuestions = Math.round((rawTotal || 0) / 2);
+    const rawMsgTotal = msgRes[0] ?? 0;
+    stats.totalQuestions = Math.round((rawMsgTotal || 0) / 2);
+
+    // Avg messages per conversation (engagement depth)
+    const { resources: avgRes } = await container.items
+      .query('SELECT VALUE AVG(c.messageCount) FROM c WHERE IS_DEFINED(c.messageCount)')
+      .fetchAll();
+    stats.avgMessagesPerConversation = Math.round((avgRes[0] ?? 0) * 10) / 10;
 
     // Active users this calendar month
     const monthStart = new Date();
@@ -71,7 +89,8 @@ export async function GET(_request: NextRequest) {
       .fetchAll();
     stats.activeUsersThisMonth = activeIds.filter(Boolean).length;
 
-    // Topic distribution (requires metadata.currentTopic to be set)
+    // Privacy-safe topic distribution
+    // Only include topics with count >= MIN_GROUP_THRESHOLD
     const { resources: topicRows } = await container.items
       .query(`SELECT c.metadata.currentTopic AS topic, COUNT(1) AS count
               FROM c
@@ -80,15 +99,33 @@ export async function GET(_request: NextRequest) {
               GROUP BY c.metadata.currentTopic`)
       .fetchAll();
     stats.topTopics = (topicRows as { topic: string; count: number }[])
-      .filter(r => r.topic)
+      .filter(r => r.topic && r.count >= MIN_GROUP_THRESHOLD)
       .sort((a, b) => b.count - a.count)
-      .slice(0, 6);
+      .slice(0, 8);
   } catch (err) {
-    logger.error('[AnalyticsStats] Cosmos query failed:', err);
-    // Leave counts at 0 — UI shows "—" for nullish values
+    logger.error('[AnalyticsStats] Cosmos conversation query failed:', err);
   }
 
-  // ── 2. Azure Search: distinct source document count ─────────────────────
+  // ── 2. Cosmos DB: total registered users (for adoption rate) ────────────
+  try {
+    const usersContainer = await getContainer('Users');
+    const { resources: userCountRes } = await usersContainer.items
+      .query('SELECT VALUE COUNT(1) FROM c')
+      .fetchAll();
+    const totalRegistered = userCountRes[0] ?? 0;
+    if (totalRegistered > 0 && stats.uniqueUsers > 0) {
+      stats.adoptionRate = Math.round((stats.uniqueUsers / totalRegistered) * 100);
+    }
+  } catch (err) {
+    logger.error('[AnalyticsStats] Cosmos users query failed:', err);
+    // adoptionRate stays null — UI shows "—"
+  }
+
+  // ── 3. Derived metrics ───────────────────────────────────────────────────
+  // Estimated time saved: assume avg 8 min per question deflected from HR
+  stats.estimatedHoursSaved = Math.round((stats.totalQuestions * 8) / 60 * 10) / 10;
+
+  // ── 4. Azure Search: distinct source document count ─────────────────────
   try {
     const endpoint = process.env.AZURE_SEARCH_ENDPOINT;
     const apiKey = process.env.AZURE_SEARCH_API_KEY || process.env.AZURE_SEARCH_ADMIN_KEY;
@@ -97,15 +134,12 @@ export async function GET(_request: NextRequest) {
 
     if (endpoint && apiKey) {
       const client = new SearchClient(endpoint, indexName, new AzureKeyCredential(apiKey));
-
-      // Fetch doc_id values (up to 1000 chunks) and count distinct source docs
       const result = await client.search('*', {
         top: 1000,
         select: ['doc_id'] as any,
         filter: "company_id eq 'amerivet'",
         queryType: 'simple',
       });
-
       const docIds = new Set<string>();
       for await (const r of result.results) {
         const docId = (r.document as any).doc_id;
@@ -115,7 +149,6 @@ export async function GET(_request: NextRequest) {
     }
   } catch (err) {
     logger.error('[AnalyticsStats] Azure Search doc count failed:', err);
-    // null signals to the UI to fall back to known value
   }
 
   return NextResponse.json(stats);

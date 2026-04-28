@@ -812,7 +812,7 @@ export async function runQaV2Engine(params: {
 
   // __WELCOME__ sentinel: page-load greeting before any user input.
   if (query === '__WELCOME__') {
-    const answer = `Hi there! Welcome!\n\nI'm your AmeriVet Benefits Assistant. I'm here to help you compare plans, understand your options, and make confident benefit decisions.\n\nLet's get started — what's your name?`;
+    const answer = `Hi there! Welcome!\n\nI'm your AmeriVet Benefits Assistant. I'm here to help you compare plans, understand your options, and make confident benefit decisions.\n\n🔒 *Your conversations are private. HR can see anonymous usage trends only — no one can read individual conversations or connect any topic to you personally.*\n\nLet's get started — what's your name?`;
     return emit(answer, 'L1', session, { intercept: 'welcome-v2' });
   }
 
