@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getOrCreateSession, updateSession } from '@/lib/rag/session-store';
 import { runQaV2Engine } from '@/lib/qa-v2/engine';
+import { conversationService } from '@/lib/services/conversation-service';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,6 +29,31 @@ export async function POST(req: NextRequest) {
     }
     const result = await runQaV2Engine({ query, session });
     await updateSession(sessionId, session);
+
+    // ── Cosmos DB persistence (non-blocking — analytics only) ──────────────
+    // Fire-and-forget: if Cosmos is unavailable the chat still returns normally.
+    const userId = typeof body?.userId === 'string' && body.userId ? body.userId : `anon-${sessionId}`;
+    const companyId = typeof body?.companyId === 'string' && body.companyId ? body.companyId : 'amerivet';
+    const isEscalation = result?.metadata?.intercept === 'counselor-escalation-v2';
+
+    conversationService
+      .getOrCreateForSession(sessionId, userId, companyId)
+      .then(() => {
+        const topicPatch = session.currentTopic
+          ? { currentTopic: session.currentTopic }
+          : undefined;
+        return conversationService.incrementMessageCount(sessionId, 2, topicPatch);
+      })
+      .then(() => {
+        if (isEscalation) {
+          return conversationService.recordEscalation(sessionId);
+        }
+      })
+      .catch((err) => {
+        // Log but never surface to the user
+        console.error('[qa-v2] Cosmos persistence error (non-fatal):', err);
+      });
+    // ──────────────────────────────────────────────────────────────────────
 
     return NextResponse.json(result);
   } catch (error) {

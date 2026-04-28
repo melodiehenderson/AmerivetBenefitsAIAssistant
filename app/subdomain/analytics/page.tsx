@@ -10,7 +10,7 @@ import { useRouter } from 'next/navigation';
 import { AmeriVetLogo } from '@/components/amerivet-logo';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ArrowLeft, BarChart3, TrendingUp, MessageSquare, FileText, Users, Clock, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, BarChart3, TrendingUp, MessageSquare, FileText, Users, Clock, ShieldCheck, PhoneForwarded } from 'lucide-react';
 
 interface ActivityLog {
   action: string;
@@ -26,6 +26,8 @@ interface AdminStats {
   avgMessagesPerConversation: number;
   adoptionRate: number | null;
   estimatedHoursSaved: number;
+  escalatedConversations: number;
+  escalationRate: number | null;
   planDocumentsIndexed: number | null;
   topTopics: { topic: string; count: number }[];
 }
@@ -117,6 +119,15 @@ export default function AnalyticsPage() {
       sub: 'at ~8 min per question deflected',
       icon: Clock,
       color: 'rose',
+    },
+    {
+      label: 'HR Referral Rate',
+      value: loadingStats ? '…' : (stats?.escalationRate != null ? `${stats.escalationRate}%` : '—'),
+      sub: stats?.escalatedConversations
+        ? `${stats.escalatedConversations} conversation${stats.escalatedConversations !== 1 ? 's' : ''} referred to HR`
+        : 'conversations that needed HR follow-up',
+      icon: PhoneForwarded,
+      color: 'orange',
     },
   ];
 
@@ -215,7 +226,7 @@ export default function AnalyticsPage() {
             <div className="mb-3">
               <h2 className="text-base font-semibold text-gray-700 uppercase tracking-wide">Engagement & ROI</h2>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
               {engagementCards.map((card, i) => {
                 const Icon = card.icon;
                 return (

@@ -23,8 +23,11 @@ export interface AnalyticsStats {
   activeUsersThisMonth: number;
   // Engagement
   avgMessagesPerConversation: number;
-  adoptionRate: number | null;       // 0–100 percent; null if user count unavailable
-  estimatedHoursSaved: number;       // totalQuestions × 8 min ÷ 60
+  adoptionRate: number | null;         // 0–100 percent; null if user count unavailable
+  estimatedHoursSaved: number;         // totalQuestions × 8 min ÷ 60
+  // Escalation
+  escalatedConversations: number;      // conversations where escalationCount > 0
+  escalationRate: number | null;       // escalatedConversations / totalConversations × 100
   // Content
   planDocumentsIndexed: number | null;
   // Privacy-safe topic distribution (count >= MIN_GROUP_THRESHOLD only)
@@ -41,6 +44,8 @@ export async function GET(_request: NextRequest) {
     avgMessagesPerConversation: 0,
     adoptionRate: null,
     estimatedHoursSaved: 0,
+    escalatedConversations: 0,
+    escalationRate: null,
     planDocumentsIndexed: null,
     topTopics: [],
     fetchedAt: new Date().toISOString(),
@@ -102,6 +107,15 @@ export async function GET(_request: NextRequest) {
       .filter(r => r.topic && r.count >= MIN_GROUP_THRESHOLD)
       .sort((a, b) => b.count - a.count)
       .slice(0, 8);
+
+    // Escalation metrics
+    const { resources: escalatedRes } = await container.items
+      .query('SELECT VALUE COUNT(1) FROM c WHERE IS_DEFINED(c.escalationCount) AND c.escalationCount > 0')
+      .fetchAll();
+    stats.escalatedConversations = escalatedRes[0] ?? 0;
+    if (stats.totalConversations > 0) {
+      stats.escalationRate = Math.round((stats.escalatedConversations / stats.totalConversations) * 100);
+    }
   } catch (err) {
     logger.error('[AnalyticsStats] Cosmos conversation query failed:', err);
   }

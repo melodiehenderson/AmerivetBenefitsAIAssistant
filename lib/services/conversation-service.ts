@@ -1,5 +1,5 @@
 import { logger } from '@/lib/logger';
-import { getClient } from '@/lib/azure/cosmos';
+import { getContainer, CONVERSATIONS_CONTAINER } from '@/lib/azure/cosmos-db';
 import { Container } from '@azure/cosmos';
 
 export interface Message {
@@ -16,6 +16,9 @@ export interface Conversation {
   userId: string;
   companyId: string;
   messages: Message[];
+  messageCount: number;       // total message turns (user + assistant)
+  escalationCount: number;    // times counselor escalation was triggered
+  timestamp: number;          // epoch ms — updatedAt in numeric form (used by analytics queries)
   createdAt: Date;
   updatedAt: Date;
   metadata?: Record<string, any>;
@@ -31,9 +34,9 @@ class ConversationService {
 
   private async ensureInitialized() {
     if (this.container) return;
-    const client = await getClient();
-    if (!client) throw new Error('Cosmos client not available');
-    this.container = client.database('BenefitsDB').container('conversations');
+    // Use cosmos-db.ts getContainer() so this service writes to the same
+    // BenefitsChat.Conversations container that the analytics API reads from.
+    this.container = await getContainer(CONVERSATIONS_CONTAINER);
   }
 
   async addMessage(conversationId: string, message: Message): Promise<void> {
@@ -45,9 +48,12 @@ class ConversationService {
       }
 
       conversation.messages.push(message);
-      conversation.updatedAt = new Date();
+      conversation.messageCount = (conversation.messageCount ?? 0) + 1;
+      const now = new Date();
+      conversation.timestamp = now.getTime();
+      conversation.updatedAt = now;
 
-      await this.db.item(conversationId).replace(conversation);
+      await this.db.item(conversationId, conversationId).replace(conversation);
     } catch (error) {
       logger.error('Error adding message to conversation', { error, conversationId, messageId: message.id }, error as Error);
       throw error;
@@ -68,24 +74,83 @@ class ConversationService {
     }
   }
 
-  async createConversation(userId: string, companyId: string): Promise<Conversation> {
+  async createConversation(userId: string, companyId: string, id?: string): Promise<Conversation> {
     await this.ensureInitialized();
     try {
-    const conversation: Conversation = {
-      id: crypto.randomUUID(),
-      userId,
-      companyId,
-      messages: [],
-      metadata: {},
-      createdAt: new Date(),
-      updatedAt: new Date()
-    };
+      const now = new Date();
+      const conversation: Conversation = {
+        id: id ?? crypto.randomUUID(),
+        userId,
+        companyId,
+        messages: [],
+        messageCount: 0,
+        escalationCount: 0,
+        timestamp: now.getTime(),
+        metadata: {},
+        createdAt: now,
+        updatedAt: now,
+      };
 
       const { resource } = await this.db.items.create(conversation);
       return resource!;
     } catch (error) {
       logger.error({ error, userId, companyId }, 'Error creating conversation');
       throw error;
+    }
+  }
+
+  /**
+   * Gets an existing conversation by ID, or creates a new one if not found.
+   * Used by the qa-v2 route to ensure a Cosmos record exists for every session.
+   */
+  async getOrCreateForSession(sessionId: string, userId: string, companyId: string): Promise<Conversation> {
+    await this.ensureInitialized();
+    const existing = await this.getConversation(sessionId);
+    if (existing) return existing;
+    return this.createConversation(userId, companyId, sessionId);
+  }
+
+  /**
+   * Increments messageCount and refreshes timestamp + optional topic metadata.
+   * delta: number of message turns added this round (typically 2: user + assistant).
+   */
+  async incrementMessageCount(
+    conversationId: string,
+    delta: number,
+    topicPatch?: Record<string, any>,
+  ): Promise<void> {
+    await this.ensureInitialized();
+    try {
+      const conversation = await this.getConversation(conversationId);
+      if (!conversation) return;
+      const now = new Date();
+      conversation.messageCount = (conversation.messageCount ?? 0) + delta;
+      conversation.timestamp = now.getTime();
+      conversation.updatedAt = now;
+      if (topicPatch) {
+        conversation.metadata = { ...(conversation.metadata ?? {}), ...topicPatch };
+      }
+      await this.db.item(conversationId, conversationId).replace(conversation);
+    } catch (error) {
+      logger.error('Error incrementing message count', { error, conversationId }, error as Error);
+      // non-fatal — analytics will just be stale
+    }
+  }
+
+  /**
+   * Increments escalationCount for a conversation.
+   * Called when the engine emits intercept: 'counselor-escalation-v2'.
+   */
+  async recordEscalation(conversationId: string): Promise<void> {
+    await this.ensureInitialized();
+    try {
+      const conversation = await this.getConversation(conversationId);
+      if (!conversation) return;
+      conversation.escalationCount = (conversation.escalationCount ?? 0) + 1;
+      conversation.updatedAt = new Date();
+      await this.db.item(conversationId, conversationId).replace(conversation);
+    } catch (error) {
+      logger.error('Error recording escalation', { error, conversationId }, error as Error);
     }
   }
 
@@ -121,7 +186,7 @@ class ConversationService {
     };
     conversation.updatedAt = new Date();
 
-    const { resource } = await this.db.item(conversationId).replace(conversation);
+    const { resource } = await this.db.item(conversationId, conversationId).replace(conversation);
     return resource!;
   }
 }
