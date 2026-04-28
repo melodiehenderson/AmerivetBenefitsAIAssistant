@@ -66,8 +66,9 @@ export async function POST(req: Request) {
     // that Vercel CLI / PowerShell piping may inject into env vars
     const sanitize = (v: string) =>
       v.replace(/\\r\\n$|\\n$|\\r$/g, '').replace(/[\x00-\x1f\x7f]/g, '').trim().normalize('NFKC');
-    const EMP = sanitize(process.env.EMPLOYEE_PASSWORD ?? '');
-    const ADM = sanitize(process.env.ADMIN_PASSWORD ?? '');
+    const EMP   = sanitize(process.env.EMPLOYEE_PASSWORD    ?? '');
+    const ADM   = sanitize(process.env.ADMIN_PASSWORD       ?? '');
+    const SUPADM = sanitize(process.env.SUPER_ADMIN_PASSWORD ?? '');
 
     if (!EMP || !ADM) {
       return json(500, { ok: false, error: 'SERVER_MISCONFIG' });
@@ -75,12 +76,25 @@ export async function POST(req: Request) {
 
     // timing-safe compare
     const safeEq = async (a: string, b: string) => {
-      const A = Buffer.from(a.normalize('NFKC')); 
+      const A = Buffer.from(a.normalize('NFKC'));
       const B = Buffer.from(b);
       if (A.length !== B.length) return false;
       const crypto = await import('crypto');
       return crypto.timingSafeEqual(A, B);
     };
+
+    // Check super_admin first (most privileged)
+    if (SUPADM && await safeEq(password, SUPADM)) {
+      const cookie = [
+        `amerivet_session=super_admin`,
+        'Path=/',
+        'HttpOnly',
+        'SameSite=Lax',
+        'Secure',
+        'Max-Age=1800',
+      ].join('; ');
+      return json(200, { ok: true, role: 'super_admin', permissions: ['*'] }, { 'Set-Cookie': cookie });
+    }
 
     if (await safeEq(password, ADM)) {
       // set cookie (secure, 30 min)

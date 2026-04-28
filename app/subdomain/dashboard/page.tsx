@@ -12,14 +12,15 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AmeriVetLogo } from '@/components/amerivet-logo';
 import { WelcomeVideoModal } from '@/components/welcome-video-modal';
 import { 
-  MessageSquare, 
-  BarChart3, 
-  Calculator, 
-  Settings, 
+  MessageSquare,
+  BarChart3,
+  Calculator,
+  Settings,
   LogOut,
   User,
   Building,
-  Shield
+  Shield,
+  Globe
 } from 'lucide-react';
 
 interface User {
@@ -70,7 +71,7 @@ export default function SubdomainDashboardPage() {
         const userData = {
           id: 'subdomain-user',
           email: 'user@amerivet.com',
-          name: data.role === 'admin' ? 'Admin User' : 'Employee User',
+          name: data.role === 'super_admin' ? 'Platform Owner' : data.role === 'admin' ? 'Admin User' : 'Employee User',
           companyId: 'amerivet',
           roles: [data.role],
           permissions: data.permissions,
@@ -115,6 +116,10 @@ export default function SubdomainDashboardPage() {
 
   const navigateToAnalytics = () => {
     router.push('/subdomain/analytics');
+  };
+
+  const navigateToPlatform = () => {
+    router.push('/subdomain/platform');
   };
 
   if (isLoading) {
@@ -283,8 +288,8 @@ export default function SubdomainDashboardPage() {
             </CardContent>
           </Card>
 
-          {user?.roles?.includes('admin') && (
-            <Card 
+          {(user?.roles?.includes('admin') || user?.roles?.includes('super_admin')) && (
+            <Card
               className="group cursor-pointer border-0 bg-white hover:shadow-2xl transition-all duration-300 transform hover:scale-105 hover:-translate-y-1"
               onClick={navigateToAnalytics}
             >
@@ -308,6 +313,36 @@ export default function SubdomainDashboardPage() {
                 </p>
                 <div className="flex items-center text-purple-600 font-semibold text-sm group-hover:translate-x-1 transition-transform">
                   View Analytics <BarChart3 className="w-4 h-4 ml-2" />
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {user?.roles?.includes('super_admin') && (
+            <Card
+              className="group cursor-pointer border-0 bg-white hover:shadow-2xl transition-all duration-300 transform hover:scale-105 hover:-translate-y-1"
+              onClick={navigateToPlatform}
+            >
+              <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/10 via-transparent to-indigo-500/10 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+              <CardHeader className="relative">
+                <div className="flex items-start justify-between mb-2">
+                  <div className="flex items-center">
+                    <div className="p-3 bg-indigo-100 group-hover:bg-indigo-200 rounded-lg transition-colors">
+                      <Globe className="w-6 h-6 text-indigo-600" />
+                    </div>
+                    <div className="ml-3">
+                      <CardTitle className="text-lg">Platform Overview</CardTitle>
+                      <CardDescription>Cross-tenant view</CardDescription>
+                    </div>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="relative">
+                <p className="text-sm text-gray-600 mb-4">
+                  View usage metrics across all tenants on the platform.
+                </p>
+                <div className="flex items-center text-indigo-600 font-semibold text-sm group-hover:translate-x-1 transition-transform">
+                  View Platform <Globe className="w-4 h-4 ml-2" />
                 </div>
               </CardContent>
             </Card>

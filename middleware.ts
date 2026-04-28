@@ -7,7 +7,8 @@ export const config = { matcher: ['/api/admin/:path*', '/favicon.ico'] };
 
 // Map cookie values to admin roles
 const ADMIN_SESSIONS: Record<string, string> = {
-  admin: 'super_admin',
+  admin: 'admin',
+  super_admin: 'super_admin',
 };
 
 export function middleware(req: NextRequest) {
