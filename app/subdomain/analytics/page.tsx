@@ -5,12 +5,12 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { AmeriVetLogo } from '@/components/amerivet-logo';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ArrowLeft, BarChart3, TrendingUp, MessageSquare, FileText, Users, Clock, ShieldCheck, PhoneForwarded } from 'lucide-react';
+import { ArrowLeft, BarChart3, TrendingUp, MessageSquare, FileText, Users, Clock, ShieldCheck, PhoneForwarded, RefreshCw } from 'lucide-react';
 
 interface ActivityLog {
   action: string;
@@ -49,6 +49,23 @@ export default function AnalyticsPage() {
   const [loadingActivities, setLoadingActivities] = useState(true);
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [loadingStats, setLoadingStats] = useState(true);
+  const [fetchedAt, setFetchedAt] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const refreshStats = useCallback(() => {
+    setRefreshing(true);
+    fetch('/api/analytics/stats', { credentials: 'include' })
+      .then(r => r.json())
+      .then((d: AdminStats) => {
+        setStats(d);
+        setFetchedAt(new Date().toLocaleTimeString());
+      })
+      .catch(() => setStats(null))
+      .finally(() => {
+        setLoadingStats(false);
+        setRefreshing(false);
+      });
+  }, []);
 
   useEffect(() => {
     fetch('/api/subdomain/auth/session', { credentials: 'include' })
@@ -67,13 +84,9 @@ export default function AnalyticsPage() {
           .catch(() => setActivities([]))
           .finally(() => setLoadingActivities(false));
 
-        // Real usage stats (admin only)
-        if (role === 'admin') {
-          fetch('/api/analytics/stats', { credentials: 'include' })
-            .then(r => r.json())
-            .then((d: AdminStats) => setStats(d))
-            .catch(() => setStats(null))
-            .finally(() => setLoadingStats(false));
+        // Real usage stats (admin + super_admin)
+        if (role === 'admin' || role === 'super_admin') {
+          refreshStats();
         } else {
           setLoadingStats(false);
         }
@@ -83,7 +96,7 @@ export default function AnalyticsPage() {
         setLoadingActivities(false);
         setLoadingStats(false);
       });
-  }, [router]);
+  }, [router, refreshStats]);
 
   const colorClasses: Record<string, string> = {
     blue: 'bg-blue-100 text-blue-600',
@@ -96,31 +109,57 @@ export default function AnalyticsPage() {
   };
 
   const volumeCards = [
-    { label: 'Total Conversations', value: loadingStats ? '…' : fmt(stats?.totalConversations), icon: MessageSquare, color: 'blue' },
-    { label: 'Questions Asked', value: loadingStats ? '…' : fmt(stats?.totalQuestions), icon: TrendingUp, color: 'green' },
-    { label: 'Unique Users', value: loadingStats ? '…' : fmt(stats?.uniqueUsers), icon: Users, color: 'purple' },
-    { label: 'Plan Docs Indexed', value: loadingStats ? '…' : (stats?.planDocumentsIndexed != null ? String(stats.planDocumentsIndexed) : '11'), icon: FileText, color: 'orange' },
+    {
+      label: 'Total Conversations',
+      value: loadingStats ? '…' : fmt(stats?.totalConversations),
+      sub: 'Each time an employee opened and used the assistant.',
+      icon: MessageSquare,
+      color: 'blue',
+    },
+    {
+      label: 'Questions Asked',
+      value: loadingStats ? '…' : fmt(stats?.totalQuestions),
+      sub: 'Estimated from message counts. Each question is one that didn\'t land in HR\'s inbox.',
+      icon: TrendingUp,
+      color: 'green',
+    },
+    {
+      label: 'Sessions',
+      value: loadingStats ? '…' : fmt(stats?.uniqueUsers),
+      sub: 'Each page load = one session. Since everyone shares a password, one person visiting twice counts as two sessions here.',
+      icon: Users,
+      color: 'purple',
+    },
+    {
+      label: 'Plan Docs Indexed',
+      value: loadingStats ? '…' : (stats?.planDocumentsIndexed != null ? String(stats.planDocumentsIndexed) : '11'),
+      sub: 'Benefits documents the AI has read and can answer questions from. More docs = more complete answers.',
+      icon: FileText,
+      color: 'orange',
+    },
   ];
 
   const engagementCards = [
     {
       label: 'Adoption Rate',
       value: loadingStats ? '…' : (stats?.adoptionRate != null ? `${stats.adoptionRate}%` : '—'),
-      sub: 'of registered users have engaged',
+      sub: stats?.adoptionRate != null
+        ? 'of registered employees have started at least one conversation.'
+        : 'Available once individual employee accounts are enabled.',
       icon: Users,
       color: 'indigo',
     },
     {
       label: 'Avg Session Depth',
       value: loadingStats ? '…' : (stats?.avgMessagesPerConversation ? `${stats.avgMessagesPerConversation}` : '—'),
-      sub: 'messages per conversation',
+      sub: 'Messages per conversation. 4–8 is typical. Higher means employees are exploring multiple topics, not just asking one thing and leaving.',
       icon: BarChart3,
       color: 'teal',
     },
     {
       label: 'Est. HR Time Saved',
       value: loadingStats ? '…' : (stats?.estimatedHoursSaved ? `${stats.estimatedHoursSaved} hrs` : '—'),
-      sub: 'at ~8 min per question deflected',
+      sub: 'Rough estimate at ~8 min per question deflected from HR. Conservative — complex questions take longer.',
       icon: Clock,
       color: 'rose',
     },
@@ -128,8 +167,8 @@ export default function AnalyticsPage() {
       label: 'HR Referral Rate',
       value: loadingStats ? '…' : (stats?.escalationRate != null ? `${stats.escalationRate}%` : '—'),
       sub: stats?.escalatedConversations
-        ? `${stats.escalatedConversations} conversation${stats.escalatedConversations !== 1 ? 's' : ''} referred to HR`
-        : 'conversations that needed HR follow-up',
+        ? `${stats.escalatedConversations} conversation${stats.escalatedConversations !== 1 ? 's' : ''} referred to HR. 10–20% is typical. Higher may mean certain topics need better documentation.`
+        : 'How often the assistant recommended speaking with HR directly.',
       icon: PhoneForwarded,
       color: 'orange',
     },
@@ -164,6 +203,7 @@ export default function AnalyticsPage() {
   ];
 
   const filteredFAQ = faqFilter === 'all' ? faqData : faqData.filter(f => f.category === faqFilter);
+  const isAdmin = userRole === 'admin' || userRole === 'super_admin';
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -177,21 +217,37 @@ export default function AnalyticsPage() {
                 Back to Dashboard
               </Button>
               <h1 className="text-2xl font-bold text-gray-900">
-                {userRole === 'admin' ? 'Admin Analytics Dashboard' : 'Your Usage Analytics'}
+                {isAdmin ? 'Admin Analytics Dashboard' : 'Your Usage Analytics'}
               </h1>
             </div>
-            {userRole === 'admin' && (
-              <div className="bg-green-100 px-3 py-1 rounded-full">
-                <span className="text-sm font-medium text-green-800">Admin View</span>
-              </div>
-            )}
+            <div className="flex items-center gap-3">
+              {isAdmin && fetchedAt && (
+                <span className="text-xs text-gray-400 hidden sm:block">Updated {fetchedAt}</span>
+              )}
+              {isAdmin && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={refreshStats}
+                  disabled={refreshing}
+                >
+                  <RefreshCw className={`w-4 h-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+                  {refreshing ? 'Refreshing…' : 'Refresh'}
+                </Button>
+              )}
+              {isAdmin && (
+                <div className="bg-green-100 px-3 py-1 rounded-full">
+                  <span className="text-sm font-medium text-green-800">Admin View</span>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 
-        {userRole === 'admin' && (
+        {isAdmin && (
           <>
             {/* Privacy notice */}
             <div className="flex items-start gap-3 mb-8 p-4 bg-blue-50 border border-blue-100 rounded-lg">
@@ -204,6 +260,7 @@ export default function AnalyticsPage() {
             {/* Volume metrics */}
             <div className="mb-3">
               <h2 className="text-base font-semibold text-gray-700 uppercase tracking-wide">Usage Volume</h2>
+              <p className="text-sm text-gray-500 mt-1">How much the assistant is being used. A growing trend here means employees are finding it on their own — that's a good sign.</p>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
               {volumeCards.map((card, i) => {
@@ -211,15 +268,14 @@ export default function AnalyticsPage() {
                 return (
                   <Card key={i}>
                     <CardContent className="p-6">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-sm text-gray-600 mb-1">{card.label}</p>
-                          <p className="text-3xl font-bold text-gray-900">{card.value}</p>
-                        </div>
-                        <div className={`p-3 rounded-lg ${colorClasses[card.color]}`}>
-                          <Icon className="w-6 h-6" />
+                      <div className="flex items-start justify-between mb-3">
+                        <p className="text-sm text-gray-600 font-medium">{card.label}</p>
+                        <div className={`p-2.5 rounded-lg shrink-0 ml-2 ${colorClasses[card.color]}`}>
+                          <Icon className="w-5 h-5" />
                         </div>
                       </div>
+                      <p className="text-3xl font-bold text-gray-900 mb-2">{card.value}</p>
+                      <p className="text-xs text-gray-400 leading-snug">{card.sub}</p>
                     </CardContent>
                   </Card>
                 );
@@ -229,6 +285,7 @@ export default function AnalyticsPage() {
             {/* Engagement metrics */}
             <div className="mb-3">
               <h2 className="text-base font-semibold text-gray-700 uppercase tracking-wide">Engagement & ROI</h2>
+              <p className="text-sm text-gray-500 mt-1">How deeply employees engage, and the time it frees up for your HR team.</p>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
               {engagementCards.map((card, i) => {
@@ -236,14 +293,14 @@ export default function AnalyticsPage() {
                 return (
                   <Card key={i}>
                     <CardContent className="p-6">
-                      <div className="flex items-center justify-between mb-2">
-                        <p className="text-sm text-gray-600">{card.label}</p>
-                        <div className={`p-2 rounded-lg ${colorClasses[card.color]}`}>
+                      <div className="flex items-start justify-between mb-3">
+                        <p className="text-sm text-gray-600 font-medium">{card.label}</p>
+                        <div className={`p-2.5 rounded-lg shrink-0 ml-2 ${colorClasses[card.color]}`}>
                           <Icon className="w-5 h-5" />
                         </div>
                       </div>
-                      <p className="text-3xl font-bold text-gray-900 mb-1">{card.value}</p>
-                      <p className="text-xs text-gray-500">{card.sub}</p>
+                      <p className="text-3xl font-bold text-gray-900 mb-2">{card.value}</p>
+                      <p className="text-xs text-gray-400 leading-snug">{card.sub}</p>
                     </CardContent>
                   </Card>
                 );
@@ -255,7 +312,9 @@ export default function AnalyticsPage() {
               <Card className="mb-6">
                 <CardHeader>
                   <CardTitle>Employee Engagement</CardTitle>
-                  <CardDescription>How many registered employees have started a conversation</CardDescription>
+                  <CardDescription>
+                    How many of your registered employees have started a conversation. The employees who haven't yet are your best candidates for a nudge — a short email or Slack message pointing them to the tool during open enrollment can move this number significantly.
+                  </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="flex items-center gap-4 mb-3">
@@ -269,8 +328,8 @@ export default function AnalyticsPage() {
                       {stats.uniqueUsers} of {stats.totalRegisteredUsers}
                     </span>
                   </div>
-                  <div className="flex justify-between text-sm text-gray-500">
-                    <span className="text-blue-600 font-medium">{stats.uniqueUsers} engaged</span>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-blue-600 font-medium">{stats.uniqueUsers} have engaged</span>
                     {stats.notYetEngaged > 0 && (
                       <span className="text-amber-600 font-medium">
                         {stats.notYetEngaged} haven't started yet
@@ -286,7 +345,9 @@ export default function AnalyticsPage() {
               <Card className="mb-6">
                 <CardHeader>
                   <CardTitle>Conversations by Week</CardTitle>
-                  <CardDescription>Rolling 8-week view of conversation volume</CardDescription>
+                  <CardDescription>
+                    8-week rolling view of conversation volume. Spikes typically signal open enrollment season, a plan change announcement, or a wave of new hires. Use this to time your next benefits communication — if volume drops after a quiet period, a reminder email can re-engage employees before deadlines hit.
+                  </CardDescription>
                 </CardHeader>
                 <CardContent>
                   {stats.weeklyTrend.every(w => w.count === 0) ? (
@@ -294,15 +355,15 @@ export default function AnalyticsPage() {
                       Conversation data will appear here as employees use the assistant.
                     </p>
                   ) : (
-                    <div className="flex items-end gap-2 h-32">
+                    <div className="flex items-end gap-2 h-36">
                       {(() => {
                         const max = Math.max(...stats.weeklyTrend.map(w => w.count), 1);
                         return stats.weeklyTrend.map(({ week, count }) => (
                           <div key={week} className="flex-1 flex flex-col items-center gap-1">
                             <span className="text-xs text-gray-600 font-medium">{count || ''}</span>
-                            <div className="w-full flex items-end" style={{ height: '80px' }}>
+                            <div className="w-full flex items-end" style={{ height: '90px' }}>
                               <div
-                                className="w-full bg-blue-400 rounded-t transition-all duration-500"
+                                className="w-full bg-blue-400 hover:bg-blue-500 rounded-t transition-all duration-500"
                                 style={{ height: `${Math.round((count / max) * 100)}%`, minHeight: count > 0 ? '4px' : '0' }}
                               />
                             </div>
@@ -322,7 +383,7 @@ export default function AnalyticsPage() {
                 <CardHeader>
                   <CardTitle>Topics Discussed Most</CardTitle>
                   <CardDescription>
-                    Anonymous topic distribution — only shown when 3 or more conversations covered that topic
+                    What employees are most curious about right now. If Medical and HSA are dominating, consider featuring those topics in your next benefits email or announcement. Only shown when 3 or more conversations covered a topic — smaller groups are excluded to protect privacy.
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -339,18 +400,13 @@ export default function AnalyticsPage() {
                               style={{ width: `${pct}%` }}
                             />
                           </div>
-                          <span className="text-sm text-gray-600 w-20 text-right">
+                          <span className="text-sm text-gray-600 w-24 text-right">
                             {count} conversation{count !== 1 ? 's' : ''}
                           </span>
                         </div>
                       );
                     })}
                   </div>
-                  {stats.topTopics.length === 0 && (
-                    <p className="text-sm text-gray-500 py-4 text-center">
-                      Topic data will appear once enough conversations have occurred.
-                    </p>
-                  )}
                 </CardContent>
               </Card>
             )}
@@ -361,8 +417,7 @@ export default function AnalyticsPage() {
                 <CardHeader>
                   <CardTitle>Topics Most Often Referred to HR</CardTitle>
                   <CardDescription>
-                    When employees ask about these topics, the assistant most often recommends speaking with HR directly.
-                    These are your highest-priority gaps to address.
+                    These are the topics where the assistant most often said "you should talk to HR directly." Think of this as your to-do list: if COBRA or Leave Policy keeps appearing here, it likely means the AI doesn't have enough information on that topic. Adding a clear FAQ or uploading a policy document for that topic can reduce these referrals over time.
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -395,7 +450,7 @@ export default function AnalyticsPage() {
             <Card className="mb-6">
               <CardHeader>
                 <CardTitle>Benefits Coverage</CardTitle>
-                <CardDescription>Topics the AI assistant is trained to answer</CardDescription>
+                <CardDescription>Topics the AI assistant is trained to answer. If employees are asking about something not on this list, let us know and we can add it.</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="flex flex-wrap gap-2">
@@ -412,7 +467,7 @@ export default function AnalyticsPage() {
             <Card className="mb-6">
               <CardHeader>
                 <CardTitle>Common Questions</CardTitle>
-                <CardDescription>Topics employees can ask the Benefits AI Assistant — filter by category</CardDescription>
+                <CardDescription>Topics employees can ask the Benefits AI Assistant — filter by category to see what's covered in each area.</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="mb-4 flex flex-wrap gap-2">
@@ -443,7 +498,7 @@ export default function AnalyticsPage() {
             <Card>
               <CardHeader>
                 <CardTitle>Recent Activity</CardTitle>
-                <CardDescription>Latest user interactions — anonymized session logs</CardDescription>
+                <CardDescription>Latest interactions — anonymized. No names, no question text, no individual identifiers.</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
@@ -464,8 +519,8 @@ export default function AnalyticsPage() {
                     ))
                   ) : (
                     <div className="text-center py-6 text-gray-500">
-                      <p>No activity recorded yet</p>
-                      <p className="text-sm mt-1">Activities will appear here as users interact with the system</p>
+                      <p>No activity recorded yet.</p>
+                      <p className="text-sm mt-1">Activities will appear here as employees use the assistant.</p>
                     </div>
                   )}
                 </div>

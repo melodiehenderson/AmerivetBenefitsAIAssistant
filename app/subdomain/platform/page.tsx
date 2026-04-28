@@ -1,12 +1,11 @@
 /**
  * Platform Owner Dashboard — super_admin only
  * Cross-tenant view for Melodie and Brandon.
- * Shows platform-wide totals and a card per tenant.
  */
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { AmeriVetLogo } from '@/components/amerivet-logo';
 import { Button } from '@/components/ui/button';
@@ -21,6 +20,7 @@ import {
   XCircle,
   MessageSquare,
   PhoneForwarded,
+  RefreshCw,
   TrendingUp,
   Users,
 } from 'lucide-react';
@@ -73,6 +73,22 @@ function tenantLabel(companyId: string): string {
   return labels[companyId] ?? companyId;
 }
 
+/** Plain-English latency label with qualitative rating. */
+function latencyLabel(ms: number | null): { text: string; quality: 'great' | 'good' | 'slow' | 'down' } {
+  if (ms == null) return { text: 'no response', quality: 'down' };
+  if (ms < 400)   return { text: `${ms}ms — excellent`, quality: 'great' };
+  if (ms < 1500)  return { text: `${ms}ms — good`, quality: 'good' };
+  if (ms < 3500)  return { text: `${ms}ms — acceptable`, quality: 'slow' };
+  return           { text: `${ms}ms — slow`, quality: 'down' };
+}
+
+/** What each backend service does, in plain English. */
+const SERVICE_DESCRIPTIONS: Record<string, string> = {
+  'Azure OpenAI':  'The AI model that reads employee questions and writes responses. Response time here directly affects how fast employees get answers.',
+  'Redis':         'Session memory — keeps track of where each conversation left off between messages. If this goes down, the bot loses conversation context mid-chat.',
+  'Azure Search':  'The document index the bot searches before every answer. If this is slow, answers take longer. If it\'s down, the bot can\'t access benefits plan documents.',
+};
+
 export default function PlatformPage() {
   const router = useRouter();
   const [authorized, setAuthorized] = useState(false);
@@ -80,46 +96,54 @@ export default function PlatformPage() {
   const [health, setHealth] = useState<HealthReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [healthLoading, setHealthLoading] = useState(true);
+  const [statsUpdatedAt, setStatsUpdatedAt] = useState<string | null>(null);
+  const [healthUpdatedAt, setHealthUpdatedAt] = useState<string | null>(null);
+  const [refreshingStats, setRefreshingStats] = useState(false);
+  const [refreshingHealth, setRefreshingHealth] = useState(false);
+
+  const fetchStats = useCallback(() => {
+    setRefreshingStats(true);
+    fetch('/api/analytics/platform-stats', { credentials: 'include' })
+      .then(r => r.json())
+      .then((d: PlatformStats) => { setStats(d); setStatsUpdatedAt(new Date().toLocaleTimeString()); })
+      .catch(() => setStats(null))
+      .finally(() => { setLoading(false); setRefreshingStats(false); });
+  }, []);
+
+  const fetchHealth = useCallback(() => {
+    setRefreshingHealth(true);
+    fetch('/api/analytics/health', { credentials: 'include' })
+      .then(r => r.json())
+      .then((d: HealthReport) => { setHealth(d); setHealthUpdatedAt(new Date().toLocaleTimeString()); })
+      .catch(() => setHealth(null))
+      .finally(() => { setHealthLoading(false); setRefreshingHealth(false); });
+  }, []);
 
   useEffect(() => {
     fetch('/api/subdomain/auth/session', { credentials: 'include' })
       .then(async res => {
         if (!res.ok) { router.push('/subdomain/login'); return; }
         const data = await res.json();
-        if (data.role !== 'super_admin') {
-          router.push('/subdomain/dashboard');
-          return;
-        }
+        if (data.role !== 'super_admin') { router.push('/subdomain/dashboard'); return; }
         setAuthorized(true);
-
-        // Fetch platform stats and health in parallel
-        fetch('/api/analytics/platform-stats', { credentials: 'include' })
-          .then(r => r.json())
-          .then((d: PlatformStats) => setStats(d))
-          .catch(() => setStats(null))
-          .finally(() => setLoading(false));
-
-        fetch('/api/analytics/health', { credentials: 'include' })
-          .then(r => r.json())
-          .then((d: HealthReport) => setHealth(d))
-          .catch(() => setHealth(null))
-          .finally(() => setHealthLoading(false));
+        fetchStats();
+        fetchHealth();
       })
       .catch(() => {
         router.push('/subdomain/login');
         setLoading(false);
         setHealthLoading(false);
       });
-  }, [router]);
+  }, [router, fetchStats, fetchHealth]);
 
   if (!authorized && !loading) return null;
 
   const platformCards = stats ? [
-    { label: 'Total Tenants', value: fmt(stats.totalTenants), icon: Building2, color: 'bg-indigo-100 text-indigo-600' },
-    { label: 'Platform Conversations', value: fmt(stats.platform.totalConversations), icon: MessageSquare, color: 'bg-blue-100 text-blue-600' },
-    { label: 'Platform Users', value: fmt(stats.platform.uniqueUsers), icon: Users, color: 'bg-purple-100 text-purple-600' },
-    { label: 'Questions Answered', value: fmt(stats.platform.totalQuestions), icon: TrendingUp, color: 'bg-green-100 text-green-600' },
-    { label: 'HR Referrals (all tenants)', value: fmt(stats.platform.escalatedConversations), icon: PhoneForwarded, color: 'bg-orange-100 text-orange-600' },
+    { label: 'Active Tenants', value: fmt(stats.totalTenants), sub: 'Companies on the platform', icon: Building2, color: 'bg-indigo-100 text-indigo-600' },
+    { label: 'Total Conversations', value: fmt(stats.platform.totalConversations), sub: 'Across all tenants', icon: MessageSquare, color: 'bg-blue-100 text-blue-600' },
+    { label: 'Total Sessions', value: fmt(stats.platform.uniqueUsers), sub: 'Session-based; not deduplicated across page loads', icon: Users, color: 'bg-purple-100 text-purple-600' },
+    { label: 'Questions Answered', value: fmt(stats.platform.totalQuestions), sub: 'Estimated from message counts', icon: TrendingUp, color: 'bg-green-100 text-green-600' },
+    { label: 'HR Referrals', value: fmt(stats.platform.escalatedConversations), sub: 'Times the bot recommended speaking with HR', icon: PhoneForwarded, color: 'bg-orange-100 text-orange-600' },
   ] : [];
 
   return (
@@ -143,15 +167,23 @@ export default function PlatformPage() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-
         {loading ? (
           <div className="text-center py-20 text-gray-500">Loading platform data…</div>
         ) : (
           <>
             {/* Platform totals */}
-            <div className="mb-3">
-              <h2 className="text-base font-semibold text-gray-700 uppercase tracking-wide">Platform Totals</h2>
-              <p className="text-sm text-gray-500 mt-0.5">Aggregated across all tenants</p>
+            <div className="flex items-end justify-between mb-3">
+              <div>
+                <h2 className="text-base font-semibold text-gray-700 uppercase tracking-wide">Platform Totals</h2>
+                <p className="text-sm text-gray-500 mt-0.5">Aggregated across all tenants. Use this to track overall platform health at a glance.</p>
+              </div>
+              <div className="flex items-center gap-2">
+                {statsUpdatedAt && <span className="text-xs text-gray-400 hidden sm:block">Updated {statsUpdatedAt}</span>}
+                <Button variant="outline" size="sm" onClick={fetchStats} disabled={refreshingStats}>
+                  <RefreshCw className={`w-4 h-4 mr-2 ${refreshingStats ? 'animate-spin' : ''}`} />
+                  {refreshingStats ? 'Refreshing…' : 'Refresh'}
+                </Button>
+              </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-10">
               {platformCards.map((card, i) => {
@@ -159,15 +191,14 @@ export default function PlatformPage() {
                 return (
                   <Card key={i}>
                     <CardContent className="p-5">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-xs text-gray-500 mb-1">{card.label}</p>
-                          <p className="text-2xl font-bold text-gray-900">{card.value}</p>
-                        </div>
-                        <div className={`p-2.5 rounded-lg ${card.color}`}>
-                          <Icon className="w-5 h-5" />
+                      <div className="flex items-start justify-between mb-2">
+                        <p className="text-xs text-gray-500 font-medium">{card.label}</p>
+                        <div className={`p-2 rounded-lg shrink-0 ml-1 ${card.color}`}>
+                          <Icon className="w-4 h-4" />
                         </div>
                       </div>
+                      <p className="text-2xl font-bold text-gray-900 mb-1">{card.value}</p>
+                      <p className="text-xs text-gray-400 leading-snug">{card.sub}</p>
                     </CardContent>
                   </Card>
                 );
@@ -179,7 +210,9 @@ export default function PlatformPage() {
               <Card className="mb-8">
                 <CardHeader>
                   <CardTitle>Platform Conversations by Week</CardTitle>
-                  <CardDescription>Rolling 8-week volume across all tenants</CardDescription>
+                  <CardDescription>
+                    8-week rolling view across all tenants. Spikes may indicate open enrollment at a specific client — check the tenant cards below to see which company drove the volume.
+                  </CardDescription>
                 </CardHeader>
                 <CardContent>
                   {(!stats.weeklyTrend || stats.weeklyTrend.every(w => w.count === 0)) ? (
@@ -187,15 +220,15 @@ export default function PlatformPage() {
                       Conversation data will appear here as employees use the assistant.
                     </p>
                   ) : (
-                    <div className="flex items-end gap-2 h-32">
+                    <div className="flex items-end gap-2 h-36">
                       {(() => {
                         const max = Math.max(...stats.weeklyTrend.map(w => w.count), 1);
                         return stats.weeklyTrend.map(({ week, count }) => (
                           <div key={week} className="flex-1 flex flex-col items-center gap-1">
                             <span className="text-xs text-gray-600 font-medium">{count || ''}</span>
-                            <div className="w-full flex items-end" style={{ height: '80px' }}>
+                            <div className="w-full flex items-end" style={{ height: '90px' }}>
                               <div
-                                className="w-full bg-indigo-400 rounded-t transition-all duration-500"
+                                className="w-full bg-indigo-400 hover:bg-indigo-500 rounded-t transition-all duration-500"
                                 style={{ height: `${Math.round((count / max) * 100)}%`, minHeight: count > 0 ? '4px' : '0' }}
                               />
                             </div>
@@ -210,9 +243,21 @@ export default function PlatformPage() {
             )}
 
             {/* System Health */}
-            <div className="mb-3">
-              <h2 className="text-base font-semibold text-gray-700 uppercase tracking-wide">System Health</h2>
-              <p className="text-sm text-gray-500 mt-0.5">Live status of platform services</p>
+            <div className="flex items-end justify-between mb-3">
+              <div>
+                <h2 className="text-base font-semibold text-gray-700 uppercase tracking-wide">System Health</h2>
+                <p className="text-sm text-gray-500 mt-0.5">
+                  Live status of the three services that power every employee conversation.
+                  This runs a real ping each time — hit Refresh to re-check at any moment.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                {healthUpdatedAt && <span className="text-xs text-gray-400 hidden sm:block">Checked {healthUpdatedAt}</span>}
+                <Button variant="outline" size="sm" onClick={fetchHealth} disabled={refreshingHealth}>
+                  <RefreshCw className={`w-4 h-4 mr-2 ${refreshingHealth ? 'animate-spin' : ''}`} />
+                  {refreshingHealth ? 'Checking…' : 'Re-check'}
+                </Button>
+              </div>
             </div>
             <Card className="mb-10">
               <CardContent className="p-6">
@@ -221,44 +266,65 @@ export default function PlatformPage() {
                 ) : !health ? (
                   <p className="text-sm text-gray-500">Health data unavailable.</p>
                 ) : (
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-2 mb-2">
-                      {health.overall === 'ok' && <CheckCircle2 className="w-5 h-5 text-green-500" />}
+                  <>
+                    <div className="flex items-center gap-2 mb-4">
+                      {health.overall === 'ok'       && <CheckCircle2 className="w-5 h-5 text-green-500" />}
                       {health.overall === 'degraded' && <AlertTriangle className="w-5 h-5 text-amber-500" />}
-                      {health.overall === 'down' && <XCircle className="w-5 h-5 text-red-500" />}
+                      {health.overall === 'down'     && <XCircle className="w-5 h-5 text-red-500" />}
                       <span className={`text-sm font-semibold ${
-                        health.overall === 'ok' ? 'text-green-700' :
+                        health.overall === 'ok'       ? 'text-green-700' :
                         health.overall === 'degraded' ? 'text-amber-700' : 'text-red-700'
                       }`}>
-                        {health.overall === 'ok' ? 'All systems operational' :
+                        {health.overall === 'ok'       ? 'All systems operational' :
                          health.overall === 'degraded' ? 'Some services degraded' :
                          'Service disruption detected'}
                       </span>
                     </div>
-                    {health.services.map(svc => (
-                      <div key={svc.name} className="flex items-center justify-between py-2 border-t">
-                        <div className="flex items-center gap-3">
-                          {svc.status === 'ok'       && <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />}
-                          {svc.status === 'degraded' && <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />}
-                          {svc.status === 'down'     && <XCircle className="w-4 h-4 text-red-500 shrink-0" />}
-                          <span className="text-sm font-medium text-gray-900">{svc.name}</span>
-                          {svc.detail && (
-                            <span className="text-xs text-gray-400">{svc.detail}</span>
-                          )}
-                        </div>
-                        <span className={`text-xs font-mono px-2 py-0.5 rounded-full ${
-                          svc.status === 'ok'       ? 'bg-green-50 text-green-700' :
-                          svc.status === 'degraded' ? 'bg-amber-50 text-amber-700' :
-                          'bg-red-50 text-red-700'
-                        }`}>
-                          {svc.latencyMs != null ? `${svc.latencyMs}ms` : svc.status}
-                        </span>
-                      </div>
-                    ))}
-                    <p className="text-xs text-gray-400 pt-1">
-                      Checked at {new Date(health.fetchedAt).toLocaleTimeString()}
-                    </p>
-                  </div>
+
+                    <div className="space-y-1">
+                      {health.services.map(svc => {
+                        const lbl = latencyLabel(svc.latencyMs);
+                        const desc = SERVICE_DESCRIPTIONS[svc.name];
+                        const latencyColor =
+                          lbl.quality === 'great' ? 'bg-green-50 text-green-700' :
+                          lbl.quality === 'good'  ? 'bg-green-50 text-green-700' :
+                          lbl.quality === 'slow'  ? 'bg-amber-50 text-amber-700' :
+                          'bg-red-50 text-red-700';
+                        return (
+                          <div key={svc.name} className="py-3 border-t first:border-t-0">
+                            <div className="flex items-start justify-between gap-4">
+                              <div className="flex items-start gap-3 min-w-0">
+                                <div className="mt-0.5 shrink-0">
+                                  {svc.status === 'ok'       && <CheckCircle2 className="w-4 h-4 text-green-500" />}
+                                  {svc.status === 'degraded' && <AlertTriangle className="w-4 h-4 text-amber-500" />}
+                                  {svc.status === 'down'     && <XCircle className="w-4 h-4 text-red-500" />}
+                                </div>
+                                <div>
+                                  <p className="text-sm font-medium text-gray-900">{svc.name}</p>
+                                  {desc && <p className="text-xs text-gray-400 mt-0.5 leading-snug">{desc}</p>}
+                                  {svc.detail && svc.status !== 'ok' && (
+                                    <p className="text-xs text-red-500 mt-0.5">{svc.detail}</p>
+                                  )}
+                                </div>
+                              </div>
+                              <span className={`text-xs font-mono px-2 py-1 rounded-full whitespace-nowrap shrink-0 ${latencyColor}`}>
+                                {lbl.text}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Latency legend */}
+                    <div className="mt-4 pt-3 border-t flex flex-wrap gap-x-4 gap-y-1">
+                      <p className="text-xs text-gray-400 w-full mb-1 font-medium">Response time guide:</p>
+                      <span className="text-xs text-green-600">Under 400ms — excellent (nearly instant)</span>
+                      <span className="text-xs text-green-600">400–1,500ms — good (typical cloud speed)</span>
+                      <span className="text-xs text-amber-600">1,500–3,500ms — acceptable (noticeable but fine)</span>
+                      <span className="text-xs text-red-500">Over 3,500ms — slow (may affect experience)</span>
+                    </div>
+                  </>
                 )}
               </CardContent>
             </Card>
@@ -269,7 +335,7 @@ export default function PlatformPage() {
               <p className="text-sm text-gray-500 mt-0.5">
                 {stats?.totalTenants === 0
                   ? 'No tenant data yet — conversations will appear here once employees start chatting.'
-                  : `${stats?.totalTenants} active tenant${stats?.totalTenants !== 1 ? 's' : ''}`}
+                  : `${stats?.totalTenants} active tenant${stats?.totalTenants !== 1 ? 's' : ''}. Click "Full Analytics" to drill into the HR admin view for any tenant.`}
               </p>
             </div>
 
@@ -295,27 +361,27 @@ export default function PlatformPage() {
                   <CardContent>
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
                       <div>
-                        <p className="text-xs text-gray-500">Conversations</p>
+                        <p className="text-xs text-gray-400">Conversations</p>
                         <p className="text-xl font-semibold text-gray-900">{fmt(tenant.totalConversations)}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-gray-500">Unique Users</p>
+                        <p className="text-xs text-gray-400">Sessions</p>
                         <p className="text-xl font-semibold text-gray-900">{fmt(tenant.uniqueUsers)}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-gray-500">Active This Month</p>
+                        <p className="text-xs text-gray-400">Active This Month</p>
                         <p className="text-xl font-semibold text-gray-900">{fmt(tenant.activeUsersThisMonth)}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-gray-500">Questions Answered</p>
+                        <p className="text-xs text-gray-400">Questions Answered</p>
                         <p className="text-xl font-semibold text-gray-900">{fmt(tenant.totalQuestions)}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-gray-500">HR Referrals</p>
+                        <p className="text-xs text-gray-400">HR Referrals</p>
                         <p className="text-xl font-semibold text-gray-900">{fmt(tenant.escalatedConversations)}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-gray-500">Referral Rate</p>
+                        <p className="text-xs text-gray-400">Referral Rate</p>
                         <p className="text-xl font-semibold text-gray-900">
                           {tenant.escalationRate != null ? `${tenant.escalationRate}%` : '—'}
                         </p>
@@ -335,12 +401,6 @@ export default function PlatformPage() {
                 </Card>
               )}
             </div>
-
-            {stats?.fetchedAt && (
-              <p className="text-xs text-gray-400 mt-6 text-right">
-                Data as of {new Date(stats.fetchedAt).toLocaleString()}
-              </p>
-            )}
           </>
         )}
       </main>
