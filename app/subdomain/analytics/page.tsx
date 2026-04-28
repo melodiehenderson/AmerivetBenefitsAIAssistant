@@ -9,12 +9,26 @@ import { useRouter } from 'next/navigation';
 import { AmeriVetLogo } from '@/components/amerivet-logo';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ArrowLeft, BarChart3, TrendingUp, MessageSquare, FileText, Calculator as CalcIcon, X } from 'lucide-react';
+import { ArrowLeft, BarChart3, TrendingUp, MessageSquare, FileText, Users } from 'lucide-react';
 
 interface ActivityLog {
   action: string;
   description: string;
   timeAgo: string;
+}
+
+interface AdminStats {
+  totalConversations: number;
+  uniqueUsers: number;
+  totalQuestions: number;
+  activeUsersThisMonth: number;
+  planDocumentsIndexed: number | null;
+  topTopics: { topic: string; count: number }[];
+}
+
+function fmt(n: number | null | undefined): string {
+  if (n == null || n === 0) return '—';
+  return n.toLocaleString();
 }
 
 export default function AnalyticsPage() {
@@ -24,56 +38,89 @@ export default function AnalyticsPage() {
   const [faqFilter, setFaqFilter] = useState<string>('all');
   const [activities, setActivities] = useState<ActivityLog[]>([]);
   const [loadingActivities, setLoadingActivities] = useState(true);
+  const [adminStats, setAdminStats] = useState<AdminStats | null>(null);
+  const [loadingStats, setLoadingStats] = useState(true);
 
   useEffect(() => {
-    // Check auth and get role
     fetch('/api/subdomain/auth/session', { credentials: 'include' })
       .then(async res => {
-        if (!res.ok) {
-          router.push('/subdomain/login');
-          return;
-        }
+        if (!res.ok) { router.push('/subdomain/login'); return; }
         const data = await res.json();
-        setUserRole(data.role || 'employee');
-        setUserId(data.userId || '');
+        const role = data.role || 'employee';
+        const uid = data.userId || '';
+        setUserRole(role);
+        setUserId(uid);
 
-        // Fetch real activity logs from database
+        // Fetch activity logs
         const query = new URLSearchParams({
-          role: data.role || 'employee',
+          role,
           limit: '10',
-          ...(data.userId && { userId: data.userId }),
+          ...(uid && { userId: uid }),
         });
-        
         fetch(`/api/analytics/activity-log?${query}`, { credentials: 'include' })
-          .then(res => res.json())
-          .then(data => {
-            setActivities(data.activities || []);
-          })
-          .catch(err => {
-            console.error('Failed to fetch activity logs:', err);
-            setActivities([]);
-          })
+          .then(r => r.json())
+          .then(d => setActivities(d.activities || []))
+          .catch(() => setActivities([]))
           .finally(() => setLoadingActivities(false));
+
+        // Fetch real usage stats (admin only)
+        if (role === 'admin') {
+          fetch('/api/analytics/stats', { credentials: 'include' })
+            .then(r => r.json())
+            .then((d: AdminStats) => setAdminStats(d))
+            .catch(() => setAdminStats(null))
+            .finally(() => setLoadingStats(false));
+        } else {
+          setLoadingStats(false);
+        }
       })
       .catch(() => {
         router.push('/subdomain/login');
         setLoadingActivities(false);
+        setLoadingStats(false);
       });
   }, [router]);
 
-  const employeeStats = [
-    { label: 'Questions Asked', value: '0', icon: MessageSquare, color: 'blue' },
-    { label: 'Documents Viewed', value: '0', icon: FileText, color: 'green' },
-    { label: 'Calculations Made', value: '0', icon: CalcIcon, color: 'purple' },
-    { label: 'Sessions This Month', value: '1', icon: TrendingUp, color: 'orange' },
-  ];
+  const statCards = userRole === 'admin'
+    ? [
+        {
+          label: 'Total Conversations',
+          value: loadingStats ? '…' : fmt(adminStats?.totalConversations),
+          icon: MessageSquare,
+          color: 'blue',
+        },
+        {
+          label: 'Questions Asked',
+          value: loadingStats ? '…' : fmt(adminStats?.totalQuestions),
+          icon: TrendingUp,
+          color: 'green',
+        },
+        {
+          label: 'Unique Users',
+          value: loadingStats ? '…' : fmt(adminStats?.uniqueUsers),
+          icon: Users,
+          color: 'purple',
+        },
+        {
+          label: 'Plan Docs Indexed',
+          value: loadingStats ? '…' : (adminStats?.planDocumentsIndexed != null ? String(adminStats.planDocumentsIndexed) : '11'),
+          icon: FileText,
+          color: 'orange',
+        },
+      ]
+    : [
+        { label: 'Questions Asked', value: '0', icon: MessageSquare, color: 'blue' },
+        { label: 'Documents Viewed', value: '0', icon: FileText, color: 'green' },
+        { label: 'Sessions This Month', value: '1', icon: TrendingUp, color: 'orange' },
+        { label: 'Active This Month', value: '1', icon: Users, color: 'purple' },
+      ];
 
-  const adminStats = [
-    { label: 'Benefit Topics Covered', value: '8', icon: MessageSquare, color: 'blue' },
-    { label: 'Plan Documents Indexed', value: '11', icon: FileText, color: 'green' },
-    { label: 'Active Users', value: userRole === 'admin' ? '—' : '0', icon: TrendingUp, color: 'purple' },
-    { label: 'QA Engine', value: 'Live', icon: BarChart3, color: 'orange' },
-  ];
+  const colorClasses: Record<string, string> = {
+    blue: 'bg-blue-100 text-blue-600',
+    green: 'bg-green-100 text-green-600',
+    purple: 'bg-purple-100 text-purple-600',
+    orange: 'bg-orange-100 text-orange-600',
+  };
 
   const faqData = [
     { id: 1, question: 'What medical plans does AmeriVet offer?', category: 'medical', desc: 'BCBSTX Standard HSA, Enhanced HSA, Kaiser Standard HMO' },
@@ -107,25 +154,14 @@ export default function AnalyticsPage() {
     ? faqData
     : faqData.filter(faq => faq.category === faqFilter);
 
-  const stats = userRole === 'admin' ? adminStats : employeeStats;
-
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white shadow-sm border-b sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <AmeriVetLogo
-                alt="AmeriVet"
-                width={40}
-                height={40}
-                className="w-10 h-10 object-contain"
-              />
-              <Button 
-                variant="outline" 
-                size="sm"
-                onClick={() => router.push('/subdomain/dashboard')}
-              >
+              <AmeriVetLogo alt="AmeriVet" width={40} height={40} className="w-10 h-10 object-contain" />
+              <Button variant="outline" size="sm" onClick={() => router.push('/subdomain/dashboard')}>
                 <ArrowLeft className="w-4 h-4 mr-2" />
                 Back to Dashboard
               </Button>
@@ -134,10 +170,8 @@ export default function AnalyticsPage() {
               </h1>
             </div>
             {userRole === 'admin' && (
-              <div className="flex items-center space-x-3">
-                <div className="bg-green-100 px-3 py-1 rounded-full">
-                  <span className="text-sm font-medium text-green-800">Admin View</span>
-                </div>
+              <div className="bg-green-100 px-3 py-1 rounded-full">
+                <span className="text-sm font-medium text-green-800">Admin View</span>
               </div>
             )}
           </div>
@@ -149,21 +183,15 @@ export default function AnalyticsPage() {
           <h2 className="text-lg font-semibold text-gray-900 mb-2">Overview</h2>
           <p className="text-gray-600">
             {userRole === 'admin'
-              ? 'Real-time system metrics and user activity monitoring'
+              ? 'Real usage metrics pulled live from the database'
               : 'Track your benefit usage and engagement'}
           </p>
         </div>
 
+        {/* Stat cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          {stats.map((stat, index) => {
+          {statCards.map((stat, index) => {
             const Icon = stat.icon;
-            const colorClasses = {
-              blue: 'bg-blue-100 text-blue-600',
-              green: 'bg-green-100 text-green-600',
-              purple: 'bg-purple-100 text-purple-600',
-              orange: 'bg-orange-100 text-orange-600',
-            };
-
             return (
               <Card key={index}>
                 <CardContent className="p-6">
@@ -172,7 +200,7 @@ export default function AnalyticsPage() {
                       <p className="text-sm text-gray-600 mb-1">{stat.label}</p>
                       <p className="text-3xl font-bold text-gray-900">{stat.value}</p>
                     </div>
-                    <div className={`p-3 rounded-lg ${colorClasses[stat.color as keyof typeof colorClasses]}`}>
+                    <div className={`p-3 rounded-lg ${colorClasses[stat.color]}`}>
                       <Icon className="w-6 h-6" />
                     </div>
                   </div>
@@ -184,6 +212,36 @@ export default function AnalyticsPage() {
 
         {userRole === 'admin' && (
           <>
+            {/* Top Topics — only shown when there's data */}
+            {adminStats && adminStats.topTopics.length > 0 && (
+              <Card className="mb-6">
+                <CardHeader>
+                  <CardTitle>Top Topics</CardTitle>
+                  <CardDescription>What employees are asking about most</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {adminStats.topTopics.map(({ topic, count }) => {
+                      const max = adminStats.topTopics[0].count;
+                      const pct = Math.round((count / max) * 100);
+                      return (
+                        <div key={topic} className="flex items-center gap-3">
+                          <span className="w-32 text-sm text-gray-700 shrink-0">{topic}</span>
+                          <div className="flex-1 bg-gray-100 rounded-full h-2">
+                            <div
+                              className="bg-blue-500 h-2 rounded-full transition-all"
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                          <span className="text-sm text-gray-500 w-8 text-right">{count}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             <Card className="mb-6">
               <CardHeader>
                 <CardTitle>Benefits Coverage</CardTitle>
@@ -206,32 +264,27 @@ export default function AnalyticsPage() {
                 <CardDescription>Topics employees can ask the Benefits AI Assistant — filter by category</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="mb-4">
-                  <div className="flex flex-wrap gap-2">
-                    {filterOptions.map((option) => (
-                      <button
-                        key={option.value}
-                        onClick={() => setFaqFilter(option.value)}
-                        className={`px-3 py-1.5 rounded-full text-sm font-medium transition ${
-                          faqFilter === option.value
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
+                <div className="mb-4 flex flex-wrap gap-2">
+                  {filterOptions.map((option) => (
+                    <button
+                      key={option.value}
+                      onClick={() => setFaqFilter(option.value)}
+                      className={`px-3 py-1.5 rounded-full text-sm font-medium transition ${
+                        faqFilter === option.value
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
                 </div>
                 <div className="space-y-2 max-h-96 overflow-y-auto">
                   {filteredFAQ.length === 0 ? (
                     <p className="text-gray-500 py-4 text-center">No FAQs found for this category</p>
                   ) : (
                     filteredFAQ.map((faq) => (
-                      <div
-                        key={faq.id}
-                        className="py-3 border-b hover:bg-gray-50 px-2 rounded cursor-pointer transition"
-                      >
+                      <div key={faq.id} className="py-3 border-b hover:bg-gray-50 px-2 rounded cursor-pointer transition">
                         <p className="font-medium text-gray-900">{faq.question}</p>
                         <p className="text-sm text-gray-500 mt-1">{faq.desc}</p>
                       </div>
@@ -244,14 +297,12 @@ export default function AnalyticsPage() {
             <Card>
               <CardHeader>
                 <CardTitle>Recent Activity</CardTitle>
-                <CardDescription>Latest user interactions and system events</CardDescription>
+                <CardDescription>Latest user interactions</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
                   {loadingActivities ? (
-                    <div className="text-center py-6 text-gray-500">
-                      <p>Loading activity data...</p>
-                    </div>
+                    <div className="text-center py-6 text-gray-500">Loading activity data…</div>
                   ) : activities.length > 0 ? (
                     activities.map((activity, idx) => (
                       <div
