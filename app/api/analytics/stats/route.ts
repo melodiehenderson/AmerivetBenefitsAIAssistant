@@ -14,7 +14,7 @@ import { SearchClient, AzureKeyCredential } from '@azure/search-documents';
 import { logger } from '@/lib/logger';
 
 const MIN_GROUP_THRESHOLD = 3;
-const HR_HOURLY_RATE = 85; // USD — median HR specialist rate; configurable per tenant later
+const HR_HOURLY_RATE = 26; // USD — median benefits counselor rate at an insurance call center; configurable per tenant later
 
 /** % change from previous to current. Returns null if previous was 0 (no baseline). */
 function pctDelta(current: number, previous: number): number | null {

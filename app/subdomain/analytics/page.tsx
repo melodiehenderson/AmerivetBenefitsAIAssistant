@@ -185,8 +185,8 @@ export default function AnalyticsPage() {
       label: 'Est. HR Time Saved',
       value: loadingStats ? '…' : (stats?.estimatedHoursSaved ? `${stats.estimatedHoursSaved} hrs` : '—'),
       sub: (stats?.estimatedDollarsSaved ?? 0) > 0
-        ? `≈ $${stats!.estimatedDollarsSaved.toLocaleString()} in staff time (at $85/hr median HR rate). ~8 min saved per question the AI answered instead of HR.`
-        : 'Rough estimate: ~8 min saved per question the AI handles instead of HR. Dollar value (at $85/hr median HR rate) will appear here as usage grows.',
+        ? `≈ $${stats!.estimatedDollarsSaved.toLocaleString()} in call-center time (at $26/hr — median benefits counselor rate). ~8 min saved per question the AI handled instead.`
+        : 'Rough estimate: ~8 min saved per question the AI handles instead of a benefits counselor. Dollar value (at $26/hr call-center rate) will appear here as usage grows.',
       icon: Clock,
       color: 'rose',
     },
