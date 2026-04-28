@@ -39,6 +39,12 @@ export interface TenantStats {
   activeUsersThisMonth: number;
 }
 
+/** % change from previous to current. Returns null if previous was 0. */
+function pctDelta(current: number, previous: number): number | null {
+  if (previous === 0) return null;
+  return Math.round(((current - previous) / previous) * 100);
+}
+
 export interface PlatformStats {
   fetchedAt: string;
   totalTenants: number;
@@ -48,6 +54,9 @@ export interface PlatformStats {
     totalQuestions: number;
     escalatedConversations: number;
   };
+  momConversationsDelta: number | null;
+  momQuestionsDelta: number | null;
+  momSessionsDelta: number | null;
   weeklyTrend: { week: string; count: number }[];   // cross-tenant
   tenants: TenantStats[];
 }
@@ -69,6 +78,9 @@ export async function GET(_request: NextRequest) {
       totalQuestions: 0,
       escalatedConversations: 0,
     },
+    momConversationsDelta: null,
+    momQuestionsDelta: null,
+    momSessionsDelta: null,
     weeklyTrend: [],
     tenants: [],
   };
@@ -186,6 +198,32 @@ export async function GET(_request: NextRequest) {
       platform.platform.totalQuestions += Math.round(totalMessages / 2);
       platform.platform.escalatedConversations += escalatedConversations;
     }
+
+    // ── Month-over-month: last 2 months of conversations (platform-wide) ──────
+    const now = new Date();
+    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0).getTime();
+    const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1, 0, 0, 0, 0).getTime();
+
+    const { resources: recentConvos } = await container.items
+      .query({
+        query: `SELECT c.timestamp, c.messageCount, c.userId FROM c
+                WHERE IS_DEFINED(c.timestamp) AND c.timestamp >= @since`,
+        parameters: [{ name: '@since', value: lastMonthStart }],
+      })
+      .fetchAll();
+
+    const thisMonth = recentConvos.filter((c: any) => c.timestamp >= thisMonthStart);
+    const lastMonth = recentConvos.filter((c: any) => c.timestamp >= lastMonthStart && c.timestamp < thisMonthStart);
+
+    platform.momConversationsDelta = pctDelta(thisMonth.length, lastMonth.length);
+    platform.momQuestionsDelta = pctDelta(
+      Math.round(thisMonth.reduce((s: number, c: any) => s + (c.messageCount || 0), 0) / 2),
+      Math.round(lastMonth.reduce((s: number, c: any) => s + (c.messageCount || 0), 0) / 2),
+    );
+    platform.momSessionsDelta = pctDelta(
+      new Set(thisMonth.map((c: any) => c.userId).filter(Boolean)).size,
+      new Set(lastMonth.map((c: any) => c.userId).filter(Boolean)).size,
+    );
 
     // Cross-tenant weekly trend
     const eightWeeksAgo = Date.now() - 8 * 7 * 24 * 60 * 60 * 1000;

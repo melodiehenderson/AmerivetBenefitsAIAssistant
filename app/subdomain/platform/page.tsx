@@ -22,6 +22,7 @@ import {
   PhoneForwarded,
   RefreshCw,
   TrendingUp,
+  TrendingDown,
   Users,
 } from 'lucide-react';
 
@@ -44,6 +45,9 @@ interface PlatformStats {
     totalQuestions: number;
     escalatedConversations: number;
   };
+  momConversationsDelta: number | null;
+  momQuestionsDelta: number | null;
+  momSessionsDelta: number | null;
   weeklyTrend: { week: string; count: number }[];
   tenants: TenantStats[];
 }
@@ -64,6 +68,19 @@ interface HealthReport {
 function fmt(n: number | null | undefined, suffix = ''): string {
   if (n == null || n === 0) return '—';
   return n.toLocaleString() + suffix;
+}
+
+/** Inline ↑/↓ badge for month-over-month delta */
+function DeltaBadge({ delta }: { delta: number | null | undefined }) {
+  if (delta == null) return null;
+  const up = delta >= 0;
+  const Icon = up ? TrendingUp : TrendingDown;
+  return (
+    <span className={`inline-flex items-center gap-0.5 text-xs font-semibold px-1.5 py-0.5 rounded-full ${up ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+      <Icon className="w-3 h-3" />
+      {up ? '+' : ''}{delta}% vs last mo
+    </span>
+  );
 }
 
 function tenantLabel(companyId: string): string {
@@ -139,11 +156,11 @@ export default function PlatformPage() {
   if (!authorized && !loading) return null;
 
   const platformCards = stats ? [
-    { label: 'Active Tenants', value: fmt(stats.totalTenants), sub: 'Companies on the platform', icon: Building2, color: 'bg-indigo-100 text-indigo-600' },
-    { label: 'Total Conversations', value: fmt(stats.platform.totalConversations), sub: 'Across all tenants', icon: MessageSquare, color: 'bg-blue-100 text-blue-600' },
-    { label: 'Total Sessions', value: fmt(stats.platform.uniqueUsers), sub: 'Session-based; not deduplicated across page loads', icon: Users, color: 'bg-purple-100 text-purple-600' },
-    { label: 'Questions Answered', value: fmt(stats.platform.totalQuestions), sub: 'Estimated from message counts', icon: TrendingUp, color: 'bg-green-100 text-green-600' },
-    { label: 'HR Referrals', value: fmt(stats.platform.escalatedConversations), sub: 'Times the bot recommended speaking with HR', icon: PhoneForwarded, color: 'bg-orange-100 text-orange-600' },
+    { label: 'Active Tenants', value: fmt(stats.totalTenants), delta: undefined, sub: 'Companies on the platform', icon: Building2, color: 'bg-indigo-100 text-indigo-600' },
+    { label: 'Total Conversations', value: fmt(stats.platform.totalConversations), delta: stats.momConversationsDelta, sub: 'Across all tenants', icon: MessageSquare, color: 'bg-blue-100 text-blue-600' },
+    { label: 'Total Sessions', value: fmt(stats.platform.uniqueUsers), delta: stats.momSessionsDelta, sub: 'Session-based; not deduplicated across page loads', icon: Users, color: 'bg-purple-100 text-purple-600' },
+    { label: 'Questions Answered', value: fmt(stats.platform.totalQuestions), delta: stats.momQuestionsDelta, sub: 'Estimated from message counts', icon: TrendingUp, color: 'bg-green-100 text-green-600' },
+    { label: 'HR Referrals', value: fmt(stats.platform.escalatedConversations), delta: undefined, sub: 'Times the bot recommended speaking with HR', icon: PhoneForwarded, color: 'bg-orange-100 text-orange-600' },
   ] : [];
 
   return (
@@ -198,6 +215,7 @@ export default function PlatformPage() {
                         </div>
                       </div>
                       <p className="text-2xl font-bold text-gray-900 mb-1">{card.value}</p>
+                      {card.delta != null && <div className="mb-1"><DeltaBadge delta={card.delta} /></div>}
                       <p className="text-xs text-gray-400 leading-snug">{card.sub}</p>
                     </CardContent>
                   </Card>

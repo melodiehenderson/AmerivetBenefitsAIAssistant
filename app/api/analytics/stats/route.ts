@@ -13,9 +13,26 @@ import { getContainer } from '@/lib/azure/cosmos-db';
 import { SearchClient, AzureKeyCredential } from '@azure/search-documents';
 import { logger } from '@/lib/logger';
 
-const MIN_GROUP_THRESHOLD = 3; // Never surface topics discussed by fewer than this many conversations
+const MIN_GROUP_THRESHOLD = 3;
+const HR_HOURLY_RATE = 85; // USD — median HR specialist rate; configurable per tenant later
 
-/** Bucket a list of epoch-ms timestamps into rolling 8-week windows, newest last. */
+/** % change from previous to current. Returns null if previous was 0 (no baseline). */
+function pctDelta(current: number, previous: number): number | null {
+  if (previous === 0) return null;
+  return Math.round(((current - previous) / previous) * 100);
+}
+
+/** Format a 0-23 hour index as a human-readable range: "12 PM–1 PM" */
+function formatHourRange(h: number): string {
+  const fmt = (hour: number) => {
+    if (hour === 0)  return '12 AM';
+    if (hour === 12) return '12 PM';
+    return hour < 12 ? `${hour} AM` : `${hour - 12} PM`;
+  };
+  return `${fmt(h)}–${fmt((h + 1) % 24)}`;
+}
+
+/** Bucket epoch-ms timestamps into rolling 8-week windows, oldest first. */
 function buildWeeklyTrend(timestamps: number[]): { week: string; count: number }[] {
   const now = Date.now();
   const MS_PER_WEEK = 7 * 24 * 60 * 60 * 1000;
@@ -38,21 +55,31 @@ export interface AnalyticsStats {
   uniqueUsers: number;
   totalQuestions: number;
   activeUsersThisMonth: number;
+  // Month-over-month deltas (null = no prior-month baseline yet)
+  momConversationsDelta: number | null;
+  momQuestionsDelta: number | null;
+  momSessionsDelta: number | null;
   // Engagement
   avgMessagesPerConversation: number;
-  adoptionRate: number | null;         // 0–100 percent; null if user count unavailable
-  estimatedHoursSaved: number;         // totalQuestions × 8 min ÷ 60
-  totalRegisteredUsers: number;        // from Users container
-  notYetEngaged: number;               // totalRegisteredUsers - uniqueUsers
+  adoptionRate: number | null;
+  estimatedHoursSaved: number;
+  estimatedDollarsSaved: number;       // estimatedHoursSaved × HR_HOURLY_RATE
+  totalRegisteredUsers: number;
+  notYetEngaged: number;
+  // Quality
+  completionRate: number | null;       // % conversations with messageCount >= 6
+  completedConversations: number;
+  // Timing
+  peakDay: string | null;              // e.g. "Tuesday"
+  peakHour: string | null;             // e.g. "12 PM–1 PM"
   // Escalation
-  escalatedConversations: number;      // conversations where escalationCount > 0
-  escalationRate: number | null;       // escalatedConversations / totalConversations × 100
-  escalationTopics: { topic: string; escalations: number }[];  // which topics most often needed HR
+  escalatedConversations: number;
+  escalationRate: number | null;
+  escalationTopics: { topic: string; escalations: number }[];
   // Trends
-  weeklyTrend: { week: string; count: number }[];  // last 8 weeks of conversation volume
+  weeklyTrend: { week: string; count: number }[];
   // Content
   planDocumentsIndexed: number | null;
-  // Privacy-safe topic distribution (count >= MIN_GROUP_THRESHOLD only)
   topTopics: { topic: string; count: number }[];
   fetchedAt: string;
 }
@@ -63,11 +90,19 @@ export async function GET(_request: NextRequest) {
     uniqueUsers: 0,
     totalQuestions: 0,
     activeUsersThisMonth: 0,
+    momConversationsDelta: null,
+    momQuestionsDelta: null,
+    momSessionsDelta: null,
     avgMessagesPerConversation: 0,
     adoptionRate: null,
     estimatedHoursSaved: 0,
+    estimatedDollarsSaved: 0,
     totalRegisteredUsers: 0,
     notYetEngaged: 0,
+    completionRate: null,
+    completedConversations: 0,
+    peakDay: null,
+    peakHour: null,
     escalatedConversations: 0,
     escalationRate: null,
     escalationTopics: [],
@@ -87,20 +122,19 @@ export async function GET(_request: NextRequest) {
       .fetchAll();
     stats.totalConversations = countRes[0] ?? 0;
 
-    // Unique users
+    // Unique users (sessions)
     const { resources: userIds } = await container.items
       .query('SELECT DISTINCT VALUE c.userId FROM c WHERE IS_DEFINED(c.userId) AND c.userId != null')
       .fetchAll();
     stats.uniqueUsers = userIds.filter(Boolean).length;
 
-    // Total questions (each conversation messageCount ÷ 2 ≈ user turns)
+    // Total questions
     const { resources: msgRes } = await container.items
       .query('SELECT VALUE SUM(c.messageCount) FROM c WHERE IS_DEFINED(c.messageCount)')
       .fetchAll();
-    const rawMsgTotal = msgRes[0] ?? 0;
-    stats.totalQuestions = Math.round((rawMsgTotal || 0) / 2);
+    stats.totalQuestions = Math.round(((msgRes[0] ?? 0) || 0) / 2);
 
-    // Avg messages per conversation (engagement depth)
+    // Avg messages per conversation
     const { resources: avgRes } = await container.items
       .query('SELECT VALUE AVG(c.messageCount) FROM c WHERE IS_DEFINED(c.messageCount)')
       .fetchAll();
@@ -120,13 +154,11 @@ export async function GET(_request: NextRequest) {
       .fetchAll();
     stats.activeUsersThisMonth = activeIds.filter(Boolean).length;
 
-    // Privacy-safe topic distribution
-    // Only include topics with count >= MIN_GROUP_THRESHOLD
+    // Topic distribution (privacy-safe, min threshold)
     const { resources: topicRows } = await container.items
       .query(`SELECT c.metadata.currentTopic AS topic, COUNT(1) AS count
               FROM c
-              WHERE IS_DEFINED(c.metadata.currentTopic)
-              AND c.metadata.currentTopic != null
+              WHERE IS_DEFINED(c.metadata.currentTopic) AND c.metadata.currentTopic != null
               GROUP BY c.metadata.currentTopic`)
       .fetchAll();
     stats.topTopics = (topicRows as { topic: string; count: number }[])
@@ -134,7 +166,7 @@ export async function GET(_request: NextRequest) {
       .sort((a, b) => b.count - a.count)
       .slice(0, 8);
 
-    // Escalation metrics
+    // Escalation count + rate
     const { resources: escalatedRes } = await container.items
       .query('SELECT VALUE COUNT(1) FROM c WHERE IS_DEFINED(c.escalationCount) AND c.escalationCount > 0')
       .fetchAll();
@@ -143,7 +175,7 @@ export async function GET(_request: NextRequest) {
       stats.escalationRate = Math.round((stats.escalatedConversations / stats.totalConversations) * 100);
     }
 
-    // Escalation topic breakdown — which topics most often needed HR follow-up
+    // Escalation topic breakdown
     const { resources: escalTopicRows } = await container.items
       .query(`SELECT c.metadata.currentTopic AS topic, SUM(c.escalationCount) AS escalations
               FROM c
@@ -156,20 +188,74 @@ export async function GET(_request: NextRequest) {
       .sort((a, b) => b.escalations - a.escalations)
       .slice(0, 8);
 
-    // Weekly conversation trend — last 8 rolling weeks
-    const eightWeeksAgo = Date.now() - 8 * 7 * 24 * 60 * 60 * 1000;
-    const { resources: tsRows } = await container.items
+    // ── Completion rate: conversations with 6+ messages (3+ full exchanges) ──
+    const { resources: completedRes } = await container.items
+      .query('SELECT VALUE COUNT(1) FROM c WHERE IS_DEFINED(c.messageCount) AND c.messageCount >= 6')
+      .fetchAll();
+    stats.completedConversations = completedRes[0] ?? 0;
+    if (stats.totalConversations > 0) {
+      stats.completionRate = Math.round((stats.completedConversations / stats.totalConversations) * 100);
+    }
+
+    // ── Month-over-month: fetch last 2 months of conversations in one query ──
+    const now = new Date();
+    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0).getTime();
+    const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1, 0, 0, 0, 0).getTime();
+
+    const { resources: recentConvos } = await container.items
       .query({
-        query: 'SELECT VALUE c.timestamp FROM c WHERE IS_DEFINED(c.timestamp) AND c.timestamp > @since',
-        parameters: [{ name: '@since', value: eightWeeksAgo }],
+        query: `SELECT c.timestamp, c.messageCount, c.userId FROM c
+                WHERE IS_DEFINED(c.timestamp) AND c.timestamp >= @since`,
+        parameters: [{ name: '@since', value: lastMonthStart }],
       })
       .fetchAll();
-    stats.weeklyTrend = buildWeeklyTrend((tsRows as number[]).filter(Boolean));
+
+    const thisMonth = recentConvos.filter((c: any) => c.timestamp >= thisMonthStart);
+    const lastMonth = recentConvos.filter((c: any) => c.timestamp >= lastMonthStart && c.timestamp < thisMonthStart);
+
+    stats.momConversationsDelta = pctDelta(thisMonth.length, lastMonth.length);
+    stats.momQuestionsDelta     = pctDelta(
+      Math.round(thisMonth.reduce((s: number, c: any) => s + (c.messageCount || 0), 0) / 2),
+      Math.round(lastMonth.reduce((s: number, c: any) => s + (c.messageCount || 0), 0) / 2),
+    );
+    stats.momSessionsDelta = pctDelta(
+      new Set(thisMonth.map((c: any) => c.userId).filter(Boolean)).size,
+      new Set(lastMonth.map((c: any) => c.userId).filter(Boolean)).size,
+    );
+
+    // ── Timestamps: last 90 days → weekly trend + peak day/hour ─────────────
+    const ninetyDaysAgo  = Date.now() - 90 * 24 * 60 * 60 * 1000;
+    const eightWeeksAgo  = Date.now() - 56 * 24 * 60 * 60 * 1000;
+
+    const { resources: allTsRows } = await container.items
+      .query({
+        query: 'SELECT VALUE c.timestamp FROM c WHERE IS_DEFINED(c.timestamp) AND c.timestamp > @since',
+        parameters: [{ name: '@since', value: ninetyDaysAgo }],
+      })
+      .fetchAll();
+    const allTs = (allTsRows as number[]).filter(Boolean);
+
+    stats.weeklyTrend = buildWeeklyTrend(allTs.filter(ts => ts > eightWeeksAgo));
+
+    // Peak day of week and hour of day
+    const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+    const dayCounts  = new Array(7).fill(0);
+    const hourCounts = new Array(24).fill(0);
+    for (const ts of allTs) {
+      const d = new Date(ts);
+      dayCounts[d.getDay()]++;
+      hourCounts[d.getHours()]++;
+    }
+    const maxDay  = Math.max(...dayCounts);
+    const maxHour = Math.max(...hourCounts);
+    if (maxDay  > 0) stats.peakDay  = DAYS[dayCounts.indexOf(maxDay)];
+    if (maxHour > 0) stats.peakHour = formatHourRange(hourCounts.indexOf(maxHour));
+
   } catch (err) {
     logger.error('[AnalyticsStats] Cosmos conversation query failed:', err);
   }
 
-  // ── 2. Cosmos DB: total registered users (for adoption rate) ────────────
+  // ── 2. Cosmos DB: total registered users ────────────────────────────────
   try {
     const usersContainer = await getContainer('Users');
     const { resources: userCountRes } = await usersContainer.items
@@ -183,19 +269,17 @@ export async function GET(_request: NextRequest) {
     }
   } catch (err) {
     logger.error('[AnalyticsStats] Cosmos users query failed:', err);
-    // adoptionRate stays null — UI shows "—"
   }
 
   // ── 3. Derived metrics ───────────────────────────────────────────────────
-  // Estimated time saved: assume avg 8 min per question deflected from HR
-  stats.estimatedHoursSaved = Math.round((stats.totalQuestions * 8) / 60 * 10) / 10;
+  stats.estimatedHoursSaved  = Math.round((stats.totalQuestions * 8) / 60 * 10) / 10;
+  stats.estimatedDollarsSaved = Math.round(stats.estimatedHoursSaved * HR_HOURLY_RATE);
 
-  // ── 4. Azure Search: distinct source document count ─────────────────────
+  // ── 4. Azure Search: plan document count ────────────────────────────────
   try {
-    const endpoint = process.env.AZURE_SEARCH_ENDPOINT;
-    const apiKey = process.env.AZURE_SEARCH_API_KEY || process.env.AZURE_SEARCH_ADMIN_KEY;
-    const indexName =
-      process.env.AZURE_SEARCH_INDEX || process.env.AZURE_SEARCH_INDEX_NAME || 'chunks_prod_v1';
+    const endpoint  = process.env.AZURE_SEARCH_ENDPOINT;
+    const apiKey    = process.env.AZURE_SEARCH_API_KEY || process.env.AZURE_SEARCH_ADMIN_KEY;
+    const indexName = process.env.AZURE_SEARCH_INDEX || process.env.AZURE_SEARCH_INDEX_NAME || 'chunks_prod_v1';
 
     if (endpoint && apiKey) {
       const client = new SearchClient(endpoint, indexName, new AzureKeyCredential(apiKey));

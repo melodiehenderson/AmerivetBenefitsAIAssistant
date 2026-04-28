@@ -10,7 +10,7 @@ import { useRouter } from 'next/navigation';
 import { AmeriVetLogo } from '@/components/amerivet-logo';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ArrowLeft, BarChart3, TrendingUp, MessageSquare, FileText, Users, Clock, ShieldCheck, PhoneForwarded, RefreshCw } from 'lucide-react';
+import { ArrowLeft, BarChart3, TrendingUp, TrendingDown, MessageSquare, FileText, Users, Clock, ShieldCheck, PhoneForwarded, RefreshCw, CheckCircle2, CalendarDays } from 'lucide-react';
 
 interface ActivityLog {
   action: string;
@@ -23,11 +23,19 @@ interface AdminStats {
   uniqueUsers: number;
   totalQuestions: number;
   activeUsersThisMonth: number;
+  momConversationsDelta: number | null;
+  momQuestionsDelta: number | null;
+  momSessionsDelta: number | null;
   avgMessagesPerConversation: number;
   adoptionRate: number | null;
   estimatedHoursSaved: number;
+  estimatedDollarsSaved: number;
   totalRegisteredUsers: number;
   notYetEngaged: number;
+  completionRate: number | null;
+  completedConversations: number;
+  peakDay: string | null;
+  peakHour: string | null;
   escalatedConversations: number;
   escalationRate: number | null;
   escalationTopics: { topic: string; escalations: number }[];
@@ -39,6 +47,19 @@ interface AdminStats {
 function fmt(n: number | null | undefined, suffix = ''): string {
   if (n == null || n === 0) return '—';
   return n.toLocaleString() + suffix;
+}
+
+/** Inline ↑/↓ badge for month-over-month delta */
+function DeltaBadge({ delta }: { delta: number | null | undefined }) {
+  if (delta == null) return null;
+  const up = delta >= 0;
+  const Icon = up ? TrendingUp : TrendingDown;
+  return (
+    <span className={`inline-flex items-center gap-0.5 text-xs font-semibold px-1.5 py-0.5 rounded-full ${up ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+      <Icon className="w-3 h-3" />
+      {up ? '+' : ''}{delta}% vs last mo
+    </span>
+  );
 }
 
 export default function AnalyticsPage() {
@@ -112,6 +133,7 @@ export default function AnalyticsPage() {
     {
       label: 'Total Conversations',
       value: loadingStats ? '…' : fmt(stats?.totalConversations),
+      delta: stats?.momConversationsDelta,
       sub: 'Each time an employee opened and used the assistant.',
       icon: MessageSquare,
       color: 'blue',
@@ -119,6 +141,7 @@ export default function AnalyticsPage() {
     {
       label: 'Questions Asked',
       value: loadingStats ? '…' : fmt(stats?.totalQuestions),
+      delta: stats?.momQuestionsDelta,
       sub: 'Estimated from message counts. Each question is one that didn\'t land in HR\'s inbox.',
       icon: TrendingUp,
       color: 'green',
@@ -126,6 +149,7 @@ export default function AnalyticsPage() {
     {
       label: 'Sessions',
       value: loadingStats ? '…' : fmt(stats?.uniqueUsers),
+      delta: stats?.momSessionsDelta,
       sub: 'Each page load = one session. Since everyone shares a password, one person visiting twice counts as two sessions here.',
       icon: Users,
       color: 'purple',
@@ -133,6 +157,7 @@ export default function AnalyticsPage() {
     {
       label: 'Plan Docs Indexed',
       value: loadingStats ? '…' : (stats?.planDocumentsIndexed != null ? String(stats.planDocumentsIndexed) : '11'),
+      delta: undefined,
       sub: 'Benefits documents the AI has read and can answer questions from. More docs = more complete answers.',
       icon: FileText,
       color: 'orange',
@@ -159,7 +184,9 @@ export default function AnalyticsPage() {
     {
       label: 'Est. HR Time Saved',
       value: loadingStats ? '…' : (stats?.estimatedHoursSaved ? `${stats.estimatedHoursSaved} hrs` : '—'),
-      sub: 'Rough estimate at ~8 min per question deflected from HR. Conservative — complex questions take longer.',
+      sub: stats?.estimatedDollarsSaved
+        ? `≈ $${stats.estimatedDollarsSaved.toLocaleString()} in staff time (at $85/hr median HR rate). Rough estimate — ~8 min saved per question answered by the AI instead of HR.`
+        : 'Rough estimate at ~8 min per question deflected from HR. Conservative — complex questions take longer.',
       icon: Clock,
       color: 'rose',
     },
@@ -274,7 +301,8 @@ export default function AnalyticsPage() {
                           <Icon className="w-5 h-5" />
                         </div>
                       </div>
-                      <p className="text-3xl font-bold text-gray-900 mb-2">{card.value}</p>
+                      <p className="text-3xl font-bold text-gray-900 mb-1">{card.value}</p>
+                      {!loadingStats && <div className="mb-2"><DeltaBadge delta={card.delta} /></div>}
                       <p className="text-xs text-gray-400 leading-snug">{card.sub}</p>
                     </CardContent>
                   </Card>
@@ -306,6 +334,62 @@ export default function AnalyticsPage() {
                 );
               })}
             </div>
+
+            {/* Conversation Quality */}
+            {stats && (stats.completionRate != null || stats.peakDay || stats.peakHour) && (
+              <>
+                <div className="mb-3 mt-2">
+                  <h2 className="text-base font-semibold text-gray-700 uppercase tracking-wide">Conversation Quality & Timing</h2>
+                  <p className="text-sm text-gray-500 mt-1">How substantive the conversations are, and when employees are most likely to reach for the assistant.</p>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                  {/* Completion Rate */}
+                  {stats.completionRate != null && (
+                    <Card>
+                      <CardContent className="p-6">
+                        <div className="flex items-start justify-between mb-3">
+                          <p className="text-sm text-gray-600 font-medium">Conversation Completion Rate</p>
+                          <div className="p-2.5 rounded-lg shrink-0 ml-2 bg-teal-100 text-teal-600">
+                            <CheckCircle2 className="w-5 h-5" />
+                          </div>
+                        </div>
+                        <p className="text-3xl font-bold text-gray-900 mb-1">{stats.completionRate}%</p>
+                        <p className="text-xs text-gray-400 leading-snug mb-3">
+                          of conversations reached 3 or more back-and-forth exchanges ({stats.completedConversations.toLocaleString()} total). A high rate (above 50%) means employees are getting real value, not just asking one thing and leaving. Low rate may signal the answers aren't landing — worth reviewing common questions.
+                        </p>
+                        <div className="w-full bg-gray-100 rounded-full h-2">
+                          <div
+                            className="bg-teal-500 h-2 rounded-full transition-all duration-700"
+                            style={{ width: `${Math.min(100, stats.completionRate)}%` }}
+                          />
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* Peak Usage */}
+                  {(stats.peakDay || stats.peakHour) && (
+                    <Card>
+                      <CardContent className="p-6">
+                        <div className="flex items-start justify-between mb-3">
+                          <p className="text-sm text-gray-600 font-medium">Peak Usage</p>
+                          <div className="p-2.5 rounded-lg shrink-0 ml-2 bg-indigo-100 text-indigo-600">
+                            <CalendarDays className="w-5 h-5" />
+                          </div>
+                        </div>
+                        <p className="text-3xl font-bold text-gray-900 mb-1">{stats.peakDay ?? '—'}</p>
+                        {stats.peakHour && (
+                          <p className="text-base font-medium text-indigo-600 mb-2">Peak hour: {stats.peakHour}</p>
+                        )}
+                        <p className="text-xs text-gray-400 leading-snug">
+                          Based on the last 90 days of activity. Employees reach for the assistant most on {stats.peakDay ?? 'this day'}{stats.peakHour ? ` around ${stats.peakHour}` : ''}. Schedule benefits communications or announcements just before this window to catch employees when they're already thinking about it.
+                        </p>
+                      </CardContent>
+                    </Card>
+                  )}
+                </div>
+              </>
+            )}
 
             {/* Engagement Gap */}
             {stats && stats.totalRegisteredUsers > 0 && (
@@ -344,10 +428,21 @@ export default function AnalyticsPage() {
             {stats && stats.weeklyTrend.length > 0 && (
               <Card className="mb-6">
                 <CardHeader>
-                  <CardTitle>Conversations by Week</CardTitle>
-                  <CardDescription>
-                    8-week rolling view of conversation volume. Spikes typically signal open enrollment season, a plan change announcement, or a wave of new hires. Use this to time your next benefits communication — if volume drops after a quiet period, a reminder email can re-engage employees before deadlines hit.
-                  </CardDescription>
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <CardTitle>Conversations by Week</CardTitle>
+                      <CardDescription className="mt-1">
+                        8-week rolling view of conversation volume. Spikes typically signal open enrollment season, a plan change announcement, or a wave of new hires. Use this to time your next benefits communication — if volume drops after a quiet period, a reminder email can re-engage employees before deadlines hit.
+                      </CardDescription>
+                    </div>
+                    {(stats.peakDay || stats.peakHour) && (
+                      <div className="shrink-0 text-right text-xs text-gray-500 bg-gray-50 border border-gray-100 rounded-lg px-3 py-2 min-w-[130px]">
+                        <p className="font-semibold text-gray-700 mb-0.5">Most active</p>
+                        {stats.peakDay && <p>{stats.peakDay}</p>}
+                        {stats.peakHour && <p className="text-indigo-600">{stats.peakHour}</p>}
+                      </div>
+                    )}
+                  </div>
                 </CardHeader>
                 <CardContent>
                   {stats.weeklyTrend.every(w => w.count === 0) ? (
