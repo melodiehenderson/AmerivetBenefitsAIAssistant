@@ -13,6 +13,22 @@ import { cookies } from 'next/headers';
 import { getContainer, CONVERSATIONS_CONTAINER } from '@/lib/azure/cosmos-db';
 import { logger } from '@/lib/logger';
 
+function buildWeeklyTrend(timestamps: number[]): { week: string; count: number }[] {
+  const now = Date.now();
+  const MS_PER_WEEK = 7 * 24 * 60 * 60 * 1000;
+  const weeks = Array.from({ length: 8 }, (_, i) => {
+    const start = now - (7 - i) * MS_PER_WEEK;
+    const end   = start + MS_PER_WEEK - 1;
+    const label = new Date(start).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    return { label, start, end, count: 0 };
+  });
+  for (const ts of timestamps) {
+    const bucket = weeks.find(w => ts >= w.start && ts <= w.end);
+    if (bucket) bucket.count++;
+  }
+  return weeks.map(({ label, count }) => ({ week: label, count }));
+}
+
 export interface TenantStats {
   companyId: string;
   totalConversations: number;
@@ -32,6 +48,7 @@ export interface PlatformStats {
     totalQuestions: number;
     escalatedConversations: number;
   };
+  weeklyTrend: { week: string; count: number }[];   // cross-tenant
   tenants: TenantStats[];
 }
 
@@ -52,6 +69,7 @@ export async function GET(_request: NextRequest) {
       totalQuestions: 0,
       escalatedConversations: 0,
     },
+    weeklyTrend: [],
     tenants: [],
   };
 
@@ -168,6 +186,16 @@ export async function GET(_request: NextRequest) {
       platform.platform.totalQuestions += Math.round(totalMessages / 2);
       platform.platform.escalatedConversations += escalatedConversations;
     }
+
+    // Cross-tenant weekly trend
+    const eightWeeksAgo = Date.now() - 8 * 7 * 24 * 60 * 60 * 1000;
+    const { resources: tsRows } = await container.items
+      .query({
+        query: 'SELECT VALUE c.timestamp FROM c WHERE IS_DEFINED(c.timestamp) AND c.timestamp > @since',
+        parameters: [{ name: '@since', value: eightWeeksAgo }],
+      })
+      .fetchAll();
+    platform.weeklyTrend = buildWeeklyTrend((tsRows as number[]).filter(Boolean));
 
     // Sort tenants by conversation volume desc
     platform.tenants.sort((a, b) => b.totalConversations - a.totalConversations);

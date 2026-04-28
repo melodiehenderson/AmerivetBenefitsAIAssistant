@@ -16,6 +16,9 @@ import {
   ArrowRight,
   BarChart3,
   Building2,
+  CheckCircle2,
+  AlertTriangle,
+  XCircle,
   MessageSquare,
   PhoneForwarded,
   TrendingUp,
@@ -41,7 +44,21 @@ interface PlatformStats {
     totalQuestions: number;
     escalatedConversations: number;
   };
+  weeklyTrend: { week: string; count: number }[];
   tenants: TenantStats[];
+}
+
+interface ServiceHealth {
+  name: string;
+  status: 'ok' | 'degraded' | 'down';
+  latencyMs: number | null;
+  detail?: string;
+}
+
+interface HealthReport {
+  fetchedAt: string;
+  overall: 'ok' | 'degraded' | 'down';
+  services: ServiceHealth[];
 }
 
 function fmt(n: number | null | undefined, suffix = ''): string {
@@ -60,7 +77,9 @@ export default function PlatformPage() {
   const router = useRouter();
   const [authorized, setAuthorized] = useState(false);
   const [stats, setStats] = useState<PlatformStats | null>(null);
+  const [health, setHealth] = useState<HealthReport | null>(null);
   const [loading, setLoading] = useState(true);
+  const [healthLoading, setHealthLoading] = useState(true);
 
   useEffect(() => {
     fetch('/api/subdomain/auth/session', { credentials: 'include' })
@@ -72,12 +91,25 @@ export default function PlatformPage() {
           return;
         }
         setAuthorized(true);
-        return fetch('/api/analytics/platform-stats', { credentials: 'include' });
+
+        // Fetch platform stats and health in parallel
+        fetch('/api/analytics/platform-stats', { credentials: 'include' })
+          .then(r => r.json())
+          .then((d: PlatformStats) => setStats(d))
+          .catch(() => setStats(null))
+          .finally(() => setLoading(false));
+
+        fetch('/api/analytics/health', { credentials: 'include' })
+          .then(r => r.json())
+          .then((d: HealthReport) => setHealth(d))
+          .catch(() => setHealth(null))
+          .finally(() => setHealthLoading(false));
       })
-      .then(r => r?.json())
-      .then((d: PlatformStats) => setStats(d))
-      .catch(() => setStats(null))
-      .finally(() => setLoading(false));
+      .catch(() => {
+        router.push('/subdomain/login');
+        setLoading(false);
+        setHealthLoading(false);
+      });
   }, [router]);
 
   if (!authorized && !loading) return null;
@@ -141,6 +173,95 @@ export default function PlatformPage() {
                 );
               })}
             </div>
+
+            {/* Weekly trend — cross-tenant */}
+            {stats && (
+              <Card className="mb-8">
+                <CardHeader>
+                  <CardTitle>Platform Conversations by Week</CardTitle>
+                  <CardDescription>Rolling 8-week volume across all tenants</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {(!stats.weeklyTrend || stats.weeklyTrend.every(w => w.count === 0)) ? (
+                    <p className="text-sm text-gray-500 py-4 text-center">
+                      Conversation data will appear here as employees use the assistant.
+                    </p>
+                  ) : (
+                    <div className="flex items-end gap-2 h-32">
+                      {(() => {
+                        const max = Math.max(...stats.weeklyTrend.map(w => w.count), 1);
+                        return stats.weeklyTrend.map(({ week, count }) => (
+                          <div key={week} className="flex-1 flex flex-col items-center gap-1">
+                            <span className="text-xs text-gray-600 font-medium">{count || ''}</span>
+                            <div className="w-full flex items-end" style={{ height: '80px' }}>
+                              <div
+                                className="w-full bg-indigo-400 rounded-t transition-all duration-500"
+                                style={{ height: `${Math.round((count / max) * 100)}%`, minHeight: count > 0 ? '4px' : '0' }}
+                              />
+                            </div>
+                            <span className="text-xs text-gray-400 text-center leading-tight">{week}</span>
+                          </div>
+                        ));
+                      })()}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* System Health */}
+            <div className="mb-3">
+              <h2 className="text-base font-semibold text-gray-700 uppercase tracking-wide">System Health</h2>
+              <p className="text-sm text-gray-500 mt-0.5">Live status of platform services</p>
+            </div>
+            <Card className="mb-10">
+              <CardContent className="p-6">
+                {healthLoading ? (
+                  <p className="text-sm text-gray-500">Pinging services…</p>
+                ) : !health ? (
+                  <p className="text-sm text-gray-500">Health data unavailable.</p>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      {health.overall === 'ok' && <CheckCircle2 className="w-5 h-5 text-green-500" />}
+                      {health.overall === 'degraded' && <AlertTriangle className="w-5 h-5 text-amber-500" />}
+                      {health.overall === 'down' && <XCircle className="w-5 h-5 text-red-500" />}
+                      <span className={`text-sm font-semibold ${
+                        health.overall === 'ok' ? 'text-green-700' :
+                        health.overall === 'degraded' ? 'text-amber-700' : 'text-red-700'
+                      }`}>
+                        {health.overall === 'ok' ? 'All systems operational' :
+                         health.overall === 'degraded' ? 'Some services degraded' :
+                         'Service disruption detected'}
+                      </span>
+                    </div>
+                    {health.services.map(svc => (
+                      <div key={svc.name} className="flex items-center justify-between py-2 border-t">
+                        <div className="flex items-center gap-3">
+                          {svc.status === 'ok'       && <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />}
+                          {svc.status === 'degraded' && <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />}
+                          {svc.status === 'down'     && <XCircle className="w-4 h-4 text-red-500 shrink-0" />}
+                          <span className="text-sm font-medium text-gray-900">{svc.name}</span>
+                          {svc.detail && (
+                            <span className="text-xs text-gray-400">{svc.detail}</span>
+                          )}
+                        </div>
+                        <span className={`text-xs font-mono px-2 py-0.5 rounded-full ${
+                          svc.status === 'ok'       ? 'bg-green-50 text-green-700' :
+                          svc.status === 'degraded' ? 'bg-amber-50 text-amber-700' :
+                          'bg-red-50 text-red-700'
+                        }`}>
+                          {svc.latencyMs != null ? `${svc.latencyMs}ms` : svc.status}
+                        </span>
+                      </div>
+                    ))}
+                    <p className="text-xs text-gray-400 pt-1">
+                      Checked at {new Date(health.fetchedAt).toLocaleTimeString()}
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
 
             {/* Per-tenant breakdown */}
             <div className="mb-3">

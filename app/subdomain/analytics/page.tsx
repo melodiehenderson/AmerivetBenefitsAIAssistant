@@ -26,8 +26,12 @@ interface AdminStats {
   avgMessagesPerConversation: number;
   adoptionRate: number | null;
   estimatedHoursSaved: number;
+  totalRegisteredUsers: number;
+  notYetEngaged: number;
   escalatedConversations: number;
   escalationRate: number | null;
+  escalationTopics: { topic: string; escalations: number }[];
+  weeklyTrend: { week: string; count: number }[];
   planDocumentsIndexed: number | null;
   topTopics: { topic: string; count: number }[];
 }
@@ -246,6 +250,72 @@ export default function AnalyticsPage() {
               })}
             </div>
 
+            {/* Engagement Gap */}
+            {stats && stats.totalRegisteredUsers > 0 && (
+              <Card className="mb-6">
+                <CardHeader>
+                  <CardTitle>Employee Engagement</CardTitle>
+                  <CardDescription>How many registered employees have started a conversation</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center gap-4 mb-3">
+                    <div className="flex-1 bg-gray-100 rounded-full h-3 overflow-hidden">
+                      <div
+                        className="bg-blue-500 h-3 rounded-full transition-all duration-700"
+                        style={{ width: `${Math.min(100, Math.round((stats.uniqueUsers / stats.totalRegisteredUsers) * 100))}%` }}
+                      />
+                    </div>
+                    <span className="text-sm font-semibold text-gray-700 whitespace-nowrap">
+                      {stats.uniqueUsers} of {stats.totalRegisteredUsers}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-sm text-gray-500">
+                    <span className="text-blue-600 font-medium">{stats.uniqueUsers} engaged</span>
+                    {stats.notYetEngaged > 0 && (
+                      <span className="text-amber-600 font-medium">
+                        {stats.notYetEngaged} haven't started yet
+                      </span>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Weekly Trend */}
+            {stats && stats.weeklyTrend.length > 0 && (
+              <Card className="mb-6">
+                <CardHeader>
+                  <CardTitle>Conversations by Week</CardTitle>
+                  <CardDescription>Rolling 8-week view of conversation volume</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {stats.weeklyTrend.every(w => w.count === 0) ? (
+                    <p className="text-sm text-gray-500 py-4 text-center">
+                      Conversation data will appear here as employees use the assistant.
+                    </p>
+                  ) : (
+                    <div className="flex items-end gap-2 h-32">
+                      {(() => {
+                        const max = Math.max(...stats.weeklyTrend.map(w => w.count), 1);
+                        return stats.weeklyTrend.map(({ week, count }) => (
+                          <div key={week} className="flex-1 flex flex-col items-center gap-1">
+                            <span className="text-xs text-gray-600 font-medium">{count || ''}</span>
+                            <div className="w-full flex items-end" style={{ height: '80px' }}>
+                              <div
+                                className="w-full bg-blue-400 rounded-t transition-all duration-500"
+                                style={{ height: `${Math.round((count / max) * 100)}%`, minHeight: count > 0 ? '4px' : '0' }}
+                              />
+                            </div>
+                            <span className="text-xs text-gray-400 text-center leading-tight">{week}</span>
+                          </div>
+                        ));
+                      })()}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
             {/* Top Topics */}
             {stats && stats.topTopics.length > 0 && (
               <Card className="mb-6">
@@ -281,6 +351,42 @@ export default function AnalyticsPage() {
                       Topic data will appear once enough conversations have occurred.
                     </p>
                   )}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Escalation Topics */}
+            {stats && stats.escalationTopics.length > 0 && (
+              <Card className="mb-6">
+                <CardHeader>
+                  <CardTitle>Topics Most Often Referred to HR</CardTitle>
+                  <CardDescription>
+                    When employees ask about these topics, the assistant most often recommends speaking with HR directly.
+                    These are your highest-priority gaps to address.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {stats.escalationTopics.map(({ topic, escalations }, i) => {
+                      const max = stats.escalationTopics[0].escalations;
+                      const pct = Math.round((escalations / max) * 100);
+                      return (
+                        <div key={topic} className="flex items-center gap-4">
+                          <span className="w-6 text-sm text-gray-400 shrink-0">#{i + 1}</span>
+                          <span className="w-36 text-sm font-medium text-gray-700 shrink-0">{topic}</span>
+                          <div className="flex-1 bg-gray-100 rounded-full h-2.5">
+                            <div
+                              className="bg-orange-400 h-2.5 rounded-full transition-all duration-500"
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                          <span className="text-sm text-gray-600 w-28 text-right">
+                            {escalations} referral{escalations !== 1 ? 's' : ''}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </CardContent>
               </Card>
             )}

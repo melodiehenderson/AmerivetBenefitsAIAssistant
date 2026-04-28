@@ -15,6 +15,23 @@ import { logger } from '@/lib/logger';
 
 const MIN_GROUP_THRESHOLD = 3; // Never surface topics discussed by fewer than this many conversations
 
+/** Bucket a list of epoch-ms timestamps into rolling 8-week windows, newest last. */
+function buildWeeklyTrend(timestamps: number[]): { week: string; count: number }[] {
+  const now = Date.now();
+  const MS_PER_WEEK = 7 * 24 * 60 * 60 * 1000;
+  const weeks = Array.from({ length: 8 }, (_, i) => {
+    const start = now - (7 - i) * MS_PER_WEEK;
+    const end   = start + MS_PER_WEEK - 1;
+    const label = new Date(start).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    return { label, start, end, count: 0 };
+  });
+  for (const ts of timestamps) {
+    const bucket = weeks.find(w => ts >= w.start && ts <= w.end);
+    if (bucket) bucket.count++;
+  }
+  return weeks.map(({ label, count }) => ({ week: label, count }));
+}
+
 export interface AnalyticsStats {
   // Volume
   totalConversations: number;
@@ -25,9 +42,14 @@ export interface AnalyticsStats {
   avgMessagesPerConversation: number;
   adoptionRate: number | null;         // 0–100 percent; null if user count unavailable
   estimatedHoursSaved: number;         // totalQuestions × 8 min ÷ 60
+  totalRegisteredUsers: number;        // from Users container
+  notYetEngaged: number;               // totalRegisteredUsers - uniqueUsers
   // Escalation
   escalatedConversations: number;      // conversations where escalationCount > 0
   escalationRate: number | null;       // escalatedConversations / totalConversations × 100
+  escalationTopics: { topic: string; escalations: number }[];  // which topics most often needed HR
+  // Trends
+  weeklyTrend: { week: string; count: number }[];  // last 8 weeks of conversation volume
   // Content
   planDocumentsIndexed: number | null;
   // Privacy-safe topic distribution (count >= MIN_GROUP_THRESHOLD only)
@@ -44,8 +66,12 @@ export async function GET(_request: NextRequest) {
     avgMessagesPerConversation: 0,
     adoptionRate: null,
     estimatedHoursSaved: 0,
+    totalRegisteredUsers: 0,
+    notYetEngaged: 0,
     escalatedConversations: 0,
     escalationRate: null,
+    escalationTopics: [],
+    weeklyTrend: [],
     planDocumentsIndexed: null,
     topTopics: [],
     fetchedAt: new Date().toISOString(),
@@ -116,6 +142,29 @@ export async function GET(_request: NextRequest) {
     if (stats.totalConversations > 0) {
       stats.escalationRate = Math.round((stats.escalatedConversations / stats.totalConversations) * 100);
     }
+
+    // Escalation topic breakdown — which topics most often needed HR follow-up
+    const { resources: escalTopicRows } = await container.items
+      .query(`SELECT c.metadata.currentTopic AS topic, SUM(c.escalationCount) AS escalations
+              FROM c
+              WHERE IS_DEFINED(c.escalationCount) AND c.escalationCount > 0
+              AND IS_DEFINED(c.metadata.currentTopic) AND c.metadata.currentTopic != null
+              GROUP BY c.metadata.currentTopic`)
+      .fetchAll();
+    stats.escalationTopics = (escalTopicRows as { topic: string; escalations: number }[])
+      .filter(r => r.topic && r.escalations > 0)
+      .sort((a, b) => b.escalations - a.escalations)
+      .slice(0, 8);
+
+    // Weekly conversation trend — last 8 rolling weeks
+    const eightWeeksAgo = Date.now() - 8 * 7 * 24 * 60 * 60 * 1000;
+    const { resources: tsRows } = await container.items
+      .query({
+        query: 'SELECT VALUE c.timestamp FROM c WHERE IS_DEFINED(c.timestamp) AND c.timestamp > @since',
+        parameters: [{ name: '@since', value: eightWeeksAgo }],
+      })
+      .fetchAll();
+    stats.weeklyTrend = buildWeeklyTrend((tsRows as number[]).filter(Boolean));
   } catch (err) {
     logger.error('[AnalyticsStats] Cosmos conversation query failed:', err);
   }
@@ -127,6 +176,8 @@ export async function GET(_request: NextRequest) {
       .query('SELECT VALUE COUNT(1) FROM c')
       .fetchAll();
     const totalRegistered = userCountRes[0] ?? 0;
+    stats.totalRegisteredUsers = totalRegistered;
+    stats.notYetEngaged = Math.max(0, totalRegistered - stats.uniqueUsers);
     if (totalRegistered > 0 && stats.uniqueUsers > 0) {
       stats.adoptionRate = Math.round((stats.uniqueUsers / totalRegistered) * 100);
     }
