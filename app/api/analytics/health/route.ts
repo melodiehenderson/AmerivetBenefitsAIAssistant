@@ -96,7 +96,7 @@ export async function GET(_request: NextRequest) {
       if (!endpoint || !apiKey) throw new Error('env vars not set');
       const { SearchClient, AzureKeyCredential } = await import('@azure/search-documents');
       const client = new SearchClient(endpoint, indexName, new AzureKeyCredential(apiKey));
-      const result = await client.search('*', { top: 1, select: ['id'] as any });
+      const result = await client.search('*', { top: 1 });
       // Just need the iterator to not throw
       for await (const _ of result.results) { break; }
     }),
